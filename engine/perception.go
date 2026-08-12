@@ -1,0 +1,188 @@
+package engine
+
+import (
+	"math"
+	"math/rand"
+)
+
+// SelfView is what an agent knows about itself, which is everything.
+type SelfView struct {
+	ID       int
+	X, Y     float64
+	Sex      Sex
+	Vitality float64
+	Hunger   float64
+
+	Power        float64
+	Rationality  float64
+	Intelligence float64
+
+	// CanReproduce is false while the agent still has to look after itself.
+	CanReproduce bool
+
+	// AttackerID is who is currently hitting this agent, 0 if nobody.
+	AttackerID int
+
+	// FoodScarcity is how contested the neighbourhood feels: roughly how many
+	// other agents there are per food item in sight. It is the crude proxy the
+	// pre-emptive attack rule leans on, so that a well stocked world removes
+	// the motive for violence all by itself.
+	FoodScarcity float64
+}
+
+// FoodView is one food item as an agent sees it.
+type FoodView struct {
+	ID   int
+	X, Y float64
+	Dist float64
+
+	// RivalDist is how far the nearest other agent is from this item. Getting
+	// there first is a race, and this is what tells the agent its odds.
+	RivalDist float64
+	// RivalID is that agent, 0 when nobody else is near enough to matter.
+	RivalID int
+}
+
+// AgentView is somebody else as an agent sees them.
+//
+// It deliberately carries no true ability: combat power is a hidden parameter,
+// and all a controller ever gets is its own estimate of it, plus how unsure
+// that estimate is. Everything here has already been blurred according to the
+// observer's rationality.
+type AgentView struct {
+	ID       int
+	X, Y     float64
+	Dist     float64
+	Sex      Sex
+	Vitality float64 // visible from the body's condition
+
+	Paired      bool
+	Seeking     bool // looks like it is after a mate
+	AttackingMe bool
+	// Rejected is set for a candidate this agent recently walked away from and
+	// is not interested in comparing again just yet.
+	Rejected bool
+
+	EstStrength float64 // believed power
+	Uncertainty float64 // variance of that belief
+	Risk        float64 // vitality this one has already cost the observer
+
+	// Fitness is how good a mate they look, ability and condition together,
+	// already blurred by the observer's rationality.
+	Fitness float64
+}
+
+// Perception is the slice of the world a controller gets to reason about. The
+// slices are owned by the world and are rebuilt for the next decision, so a
+// controller must not hold on to them.
+type Perception struct {
+	Tick   int
+	Cfg    *Config
+	Self   SelfView
+	Foods  []FoodView
+	Others []AgentView
+
+	// Rand is the simulation's single random source. A controller that needs
+	// to break a tie draws from it, so that a run stays reproducible from its
+	// seed; a human controller ignores it.
+	Rand *rand.Rand
+}
+
+// perceive fills the world's reusable perception buffer for one agent.
+func (w *World) perceive(a *Agent) *Perception {
+	p := &w.perception
+	p.Tick = w.tick
+	p.Cfg = &w.cfg
+	p.Rand = w.rng
+	p.Foods = p.Foods[:0]
+	p.Others = p.Others[:0]
+
+	p.Self = SelfView{
+		ID:           a.ID,
+		X:            a.X,
+		Y:            a.Y,
+		Sex:          a.Sex,
+		Vitality:     a.Vitality,
+		Hunger:       a.Hunger,
+		Power:        a.Power,
+		Rationality:  a.Rationality,
+		Intelligence: a.Intelligence,
+		CanReproduce: a.CanReproduce(&w.cfg),
+		AttackerID:   a.attackerID,
+	}
+
+	r2 := w.cfg.PerceptionRadius * w.cfg.PerceptionRadius
+
+	for i := range w.foods {
+		f := &w.foods[i]
+		d2 := dist2(a.X, a.Y, f.X, f.Y)
+		if d2 > r2 {
+			continue
+		}
+		p.Foods = append(p.Foods, FoodView{
+			ID:        f.ID,
+			X:         f.X,
+			Y:         f.Y,
+			Dist:      math.Sqrt(d2),
+			RivalDist: math.Inf(1),
+		})
+	}
+
+	for i := range w.agents {
+		o := &w.agents[i]
+		if !o.Alive || o.ID == a.ID {
+			continue
+		}
+		d2 := dist2(a.X, a.Y, o.X, o.Y)
+		if d2 > r2 {
+			continue
+		}
+
+		// Whoever else is around is also a rival for every item in sight.
+		for j := range p.Foods {
+			f := &p.Foods[j]
+			if d := dist2(o.X, o.Y, f.X, f.Y); d < f.RivalDist*f.RivalDist {
+				f.RivalDist = math.Sqrt(d)
+				f.RivalID = o.ID
+			}
+		}
+
+		op := w.opinionOf(a, o.ID)
+		blur := w.judgementError(a, w.cfg.JudgementNoise)
+		p.Others = append(p.Others, AgentView{
+			ID:          o.ID,
+			X:           o.X,
+			Y:           o.Y,
+			Dist:        math.Sqrt(d2),
+			Sex:         o.Sex,
+			Vitality:    o.Vitality,
+			Paired:      o.PartnerID != 0,
+			Seeking:     o.State == StateSeekMate,
+			Rejected:    a.isRejected(o.ID),
+			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
+			EstStrength: clamp(op.Strength+blur, MinAbility, MaxAbility),
+			Uncertainty: op.Variance,
+			Risk:        w.decayedRisk(op),
+			Fitness:     fitness(o) + w.judgementError(a, w.cfg.JudgementNoise*0.5),
+		})
+	}
+
+	if len(p.Foods) > 0 {
+		p.Self.FoodScarcity = float64(len(p.Others)) / float64(len(p.Foods))
+	} else if len(p.Others) > 0 {
+		p.Self.FoodScarcity = float64(len(p.Others))
+	}
+
+	return p
+}
+
+// judgementError draws the error an observer makes when sizing up somebody
+// else. Reading the world correctly is an ability of its own: the higher the
+// rationality, the smaller the error.
+func (w *World) judgementError(observer *Agent, scale float64) float64 {
+	std := (MaxAbility - observer.Rationality) / MaxAbility * scale
+	if std <= 0 {
+		return 0
+	}
+	return w.rng.NormFloat64() * std
+}

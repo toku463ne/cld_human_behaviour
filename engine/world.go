@@ -5,36 +5,52 @@ import (
 	"math/rand"
 )
 
-// Weights of the traits that make an agent an attractive mate: a partner with
-// high ability and resources gives the offspring a better starting position.
+// Weights of what makes an agent a good mate: ability, plus the condition it is
+// in. They add up to 1, so fitness shares the 0..100 scale of an ability.
 const (
-	fitnessPowerWeight       = 0.5
-	fitnessRationalityWeight = 0.2
-	fitnessFoodWeight        = 0.3
+	fitnessPowerWeight        = 0.35
+	fitnessRationalityWeight  = 0.15
+	fitnessIntelligenceWeight = 0.15
+	fitnessVitalityWeight     = 0.35
 
-	// Stored food also helps in a fight over the next meal.
-	contestFoodWeight = 0.15
+	// Speed of an agent that is following its partner rather than chasing a
+	// target of its own.
+	pairFollowEffort = 0.35
 
-	// Food beyond this amount stops adding any advantage.
-	usefulFoodCap = 100.0
+	// How often the onlookers around a fight, and the two in it, take a fresh
+	// reading of each other. Updating on every single tick of a long fight
+	// would cost a lot and tell them almost nothing new.
+	spectateInterval = 20
 
-	// Speed factor of a paired agent, which follows its partner instead of
-	// chasing a target of its own.
-	pairFollowSpeedFactor = 0.6
+	// How long ActObserve takes before it has told the watcher anything.
+	observeTicks = 10
 )
 
 // Stats is an aggregated view of the world, cheap enough to compute per frame.
 type Stats struct {
-	Tick           int
-	Population     int
-	Males          int
-	Females        int
-	FoodItems      int
-	Births         int
-	Deaths         int
-	MaxGeneration  int
-	AvgPower       float64
-	AvgRationality float64
+	Tick          int
+	Population    int
+	Males         int
+	Females       int
+	FoodItems     int
+	Births        int
+	Deaths        int
+	Kills         int
+	Fights        int
+	MaxGeneration int
+
+	AvgPower        float64
+	AvgRationality  float64
+	AvgIntelligence float64
+	AvgVitality     float64
+	AvgHunger       float64
+}
+
+// attack is one blow queued during a tick, applied once everybody has acted so
+// that two agents hitting each other trade damage simultaneously.
+type attack struct {
+	fromID, toID int
+	effort       float64
 }
 
 // World holds the whole simulation state. It knows nothing about rendering or
@@ -43,21 +59,32 @@ type Stats struct {
 type World struct {
 	cfg Config
 
-	// rng is the single source of randomness of the simulation. Everything goes
-	// through it, so a given seed always produces the same run.
+	// rng is the single source of randomness of the simulation. Everything,
+	// including the controllers, draws from it, so a given seed always
+	// reproduces the same run.
 	rng *rand.Rand
 
 	agents []Agent
 	foods  []Food
 
-	// index maps an agent ID to its position in agents, so that looking up a
-	// partner does not scan the whole population.
-	index map[int]int
+	// index maps an agent ID to its position in agents, and foodIndex does the
+	// same for food, so that following a target does not scan everything.
+	index     map[int]int
+	foodIndex map[int]int
 
 	// newborns buffers the children of this tick. They are appended after the
-	// agent loop, because appending during the loop could move the backing
-	// array while it is being walked through pointers.
+	// agent loop, because appending during it could move the backing array
+	// while it is being walked through pointers.
 	newborns []Agent
+
+	// ai is the controller every agent uses unless one was installed for it.
+	ai *AIController
+
+	// perception is rebuilt for each decision instead of allocated.
+	perception Perception
+
+	// attacks buffers the blows of the current tick.
+	attacks []attack
 
 	nextAgentID int
 	nextFoodID  int
@@ -67,6 +94,8 @@ type World struct {
 
 	births        int
 	deaths        int
+	kills         int
+	fights        int
 	maxGeneration int
 }
 
@@ -79,6 +108,8 @@ func NewWorld(cfg Config) *World {
 		agents:      make([]Agent, 0, cfg.InitialPopulation),
 		foods:       make([]Food, 0, cfg.InitialFoodItems),
 		index:       make(map[int]int, cfg.InitialPopulation),
+		foodIndex:   make(map[int]int, cfg.InitialFoodItems),
+		ai:          &AIController{},
 		nextAgentID: 1,
 		nextFoodID:  1,
 	}
@@ -114,6 +145,19 @@ func (w *World) AgentByID(id int) (Agent, bool) {
 	return *a, true
 }
 
+// SetController installs a controller on one agent. This is the seam the game
+// will use: hand one node to a human player, and when that node dies hand the
+// same controller to one of its children.
+func (w *World) SetController(id int, c Controller) bool {
+	a := w.agentByID(id)
+	if a == nil {
+		return false
+	}
+	a.controller = c
+	a.needsDecision = true
+	return true
+}
+
 // Stats summarises the current population.
 func (w *World) Stats() Stats {
 	s := Stats{
@@ -122,9 +166,11 @@ func (w *World) Stats() Stats {
 		FoodItems:     len(w.foods),
 		Births:        w.births,
 		Deaths:        w.deaths,
+		Kills:         w.kills,
+		Fights:        w.fights,
 		MaxGeneration: w.maxGeneration,
 	}
-	var sumPower, sumRationality float64
+	var sumPower, sumRationality, sumIntelligence, sumVitality, sumHunger float64
 	for i := range w.agents {
 		a := &w.agents[i]
 		if a.Sex == Female {
@@ -134,138 +180,228 @@ func (w *World) Stats() Stats {
 		}
 		sumPower += a.Power
 		sumRationality += a.Rationality
+		sumIntelligence += a.Intelligence
+		sumVitality += a.Vitality
+		sumHunger += a.Hunger
 	}
 	if s.Population > 0 {
 		n := float64(s.Population)
 		s.AvgPower = sumPower / n
 		s.AvgRationality = sumRationality / n
+		s.AvgIntelligence = sumIntelligence / n
+		s.AvgVitality = sumVitality / n
+		s.AvgHunger = sumHunger / n
 	}
 	return s
 }
 
 // Step advances the simulation by one tick.
+//
+// The order matters: everybody decides on the world as it was, then everybody
+// acts, then the blows land together. Otherwise the agent that happens to sit
+// early in the slice would fight a world that has already moved.
 func (w *World) Step() {
 	w.tick++
 	w.spawnFoodOfTick()
 
 	for i := range w.agents {
 		a := &w.agents[i]
+		if !a.Alive || a.PartnerID != 0 {
+			continue
+		}
+		if w.shouldDecide(a) {
+			w.decide(a)
+		}
+	}
+
+	w.attacks = w.attacks[:0]
+	for i := range w.agents {
+		a := &w.agents[i]
 		if !a.Alive {
 			continue
 		}
-
 		a.Age++
-		a.Food -= w.cfg.Metabolism
-
-		if a.Food <= 0 || a.Age >= a.MaxAge {
-			w.kill(a)
-			continue
-		}
-
+		a.effortSpent = 0
+		a.actionTicks++
 		if a.CooldownTimer > 0 {
 			a.CooldownTimer--
 		}
 
-		if a.State == StatePaired {
+		if a.PartnerID != 0 {
 			w.stepPaired(a)
-			continue
-		}
-
-		// Priority 1 is staying alive: a hungry agent forages, no matter what
-		// else is around. Priority 2, looking for a mate, is only reachable
-		// with a comfortable reserve and after the previous bond's cooldown.
-		hungry := a.Food < w.cfg.FoodLowThreshold
-		canSeekMate := !hungry && a.Food >= w.cfg.ReproFoodThreshold && a.CooldownTimer <= 0
-		if canSeekMate {
-			if a.State != StateSeekMate {
-				a.State = StateSeekMate
-				a.courtStartTick = w.tick
-			}
 		} else {
-			a.State = StateForage
+			w.perform(a)
 		}
-
-		if a.State == StateSeekMate {
-			w.stepSeekMate(a)
-		} else {
-			w.stepForage(a)
-		}
-
 		a.pruneRejected(w.tick)
 		w.keepInBounds(a)
 	}
+
+	w.resolveAttacks()
+	w.metabolise()
 
 	w.commitNewborns()
 	w.removeDead()
 }
 
-// --- behaviour -------------------------------------------------------------
+// --- deciding --------------------------------------------------------------
 
-// stepForage looks for the nearest food. If somebody else is already on it, the
-// agent first estimates whether the fight is winnable; a contest it cannot win
-// is not worth entering, so it goes looking somewhere else instead.
-func (w *World) stepForage(a *Agent) {
-	fi := w.nearestFood(a)
-	if fi < 0 {
-		w.wander(a)
-		return
+// shouldDecide reports whether anything happened that is worth thinking about
+// again. Deciding is trigger driven rather than continuous, both because it is
+// the expensive part and because an agent that re-planned every tick would
+// never follow a plan through.
+func (w *World) shouldDecide(a *Agent) bool {
+	// Goal reached, goal lost, or somebody just hit us.
+	if a.needsDecision {
+		return true
 	}
-
-	f := &w.foods[fi]
-	w.moveToward(a, f.X, f.Y, w.cfg.AgentSpeed)
-	if dist2(a.X, a.Y, f.X, f.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
-		return
+	if a.lastAttackTick == w.tick-1 {
+		return true
 	}
-
-	rival := w.contestantFor(a, f)
-	if rival == nil {
-		w.eat(a, fi)
-		return
+	// A noticeable dent in the vitality. This says "think again", not "run
+	// away": what to do about it is up to the utility comparison.
+	if a.vitalityAtDecision-a.Vitality >= w.cfg.TriggerVitalityDrop {
+		return true
 	}
-
-	own := w.effectiveContestPower(a)
-	if w.perceivedPower(a, rival) > own*w.cfg.ContestAvoidMargin {
-		// Judged too strong: do not fight on that ground, look elsewhere.
-		a.reject(rejectFood, f.ID, w.tick+w.cfg.FoodRejectDuration)
-		return
+	// Nothing has happened for a while, so an agent does not stay stuck on a
+	// decision the world has moved past.
+	if w.tick-a.lastDecisionTick >= w.cfg.TriggerIdleTicks {
+		return true
 	}
+	// Food came into view while the agent had nothing better to do.
+	if a.Action.Kind == ActRest || a.Action.Kind == ActMove {
+		if w.nearestFoodInSight(a) >= 0 {
+			return true
+		}
+	}
+	return false
+}
 
-	own += w.rng.NormFloat64() * w.cfg.ContestNoise
-	theirs := w.effectiveContestPower(rival) + w.rng.NormFloat64()*w.cfg.ContestNoise
-	if own >= theirs {
-		w.eat(a, fi)
-	} else {
-		a.Food = math.Max(0, a.Food-w.cfg.ContestLossPenalty)
+func (w *World) decide(a *Agent) {
+	c := a.controller
+	if c == nil {
+		c = w.ai
+	}
+	a.Action = c.Decide(w.perceive(a))
+	a.lastDecisionTick = w.tick
+	a.vitalityAtDecision = a.Vitality
+	a.needsDecision = false
+	a.actionTicks = 0
+
+	switch a.Action.Kind {
+	case ActCourt:
+		if a.State != StateSeekMate {
+			a.courtStartTick = w.tick
+		}
+		a.State = StateSeekMate
+	case ActAttack:
+		a.State = StateFighting
+	case ActFlee:
+		a.State = StateFleeing
+	case ActRest:
+		a.State = StateResting
+	default:
+		a.State = StateForage
 	}
 }
 
-// stepSeekMate walks towards the most promising candidate in sight. Committing
-// costs time, so an agent compares candidates for a while before settling, and
-// a pair is only formed when both sides agree.
-func (w *World) stepSeekMate(a *Agent) {
-	best, bestFitness := w.bestCandidate(a)
-	if best == nil {
-		w.wander(a)
-		return
-	}
+// --- acting ----------------------------------------------------------------
 
-	w.moveToward(a, best.X, best.Y, w.cfg.AgentSpeed)
-	if dist2(a.X, a.Y, best.X, best.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
-		return
-	}
-	if best.State != StateSeekMate || best.PartnerID != 0 {
-		return
-	}
+func (w *World) perform(a *Agent) {
+	switch a.Action.Kind {
+	case ActRest:
+		// Doing nothing is what lets a satiated agent recover.
 
-	if w.willCommit(a, bestFitness) && w.willCommit(best, w.perceivedFitness(best, a)) {
-		w.bond(a, best)
-		return
+	case ActMove:
+		w.moveDir(a, a.Action.DX, a.Action.DY, a.Action.Effort)
+
+	case ActEat:
+		f := w.foodByID(a.Action.TargetID)
+		if f == nil {
+			a.needsDecision = true // somebody else got it
+			return
+		}
+		if dist2(a.X, a.Y, f.X, f.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
+			w.moveToward(a, f.X, f.Y, a.Action.Effort)
+			return
+		}
+		w.eat(a, f.ID)
+		a.needsDecision = true
+
+	case ActAttack:
+		o := w.agentByID(a.Action.TargetID)
+		if o == nil || !o.Alive {
+			a.needsDecision = true
+			return
+		}
+		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.CombatRadius*w.cfg.CombatRadius {
+			w.moveToward(a, o.X, o.Y, a.Action.Effort)
+			return
+		}
+		w.attacks = append(w.attacks, attack{fromID: a.ID, toID: o.ID, effort: a.Action.Effort})
+		a.Vitality -= w.cfg.AttackCost * a.Action.Effort
+		a.effortSpent = math.Max(a.effortSpent, a.Action.Effort)
+
+	case ActFlee:
+		o := w.agentByID(a.Action.TargetID)
+		if o == nil || !o.Alive {
+			a.needsDecision = true
+			return
+		}
+		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.PerceptionRadius*w.cfg.PerceptionRadius {
+			a.needsDecision = true // out of sight, out of danger
+			return
+		}
+		w.moveDir(a, a.X-o.X, a.Y-o.Y, a.Action.Effort)
+
+	case ActObserve:
+		o := w.agentByID(a.Action.TargetID)
+		if o == nil || !o.Alive {
+			a.needsDecision = true
+			return
+		}
+		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.PerceptionRadius*w.cfg.PerceptionRadius {
+			w.moveToward(a, o.X, o.Y, a.Action.Effort)
+			return
+		}
+		if a.actionTicks >= observeTicks {
+			w.observeStrength(a, o, w.cfg.CombatObsVariance*w.cfg.SpectateObsFactor)
+			a.needsDecision = true
+		}
+
+	case ActCourt:
+		w.court(a)
 	}
-	// Not convinced yet: keep this one aside and go and see the others.
-	a.reject(rejectMate, best.ID, w.tick+w.cfg.MateRejectDuration)
 }
 
-// stepPaired keeps the two partners together until the bond has run its course,
+// court walks up to a candidate and, once there, sees whether both sides are
+// ready. Committing costs time, so an agent compares for a while first, and a
+// pair only forms when both agree.
+func (w *World) court(a *Agent) {
+	o := w.agentByID(a.Action.TargetID)
+	if o == nil || !o.Alive || o.PartnerID != 0 || o.Sex == a.Sex {
+		a.needsDecision = true
+		return
+	}
+	if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
+		w.moveToward(a, o.X, o.Y, a.Action.Effort)
+		return
+	}
+	if !o.CanReproduce(&w.cfg) {
+		// Approached somebody who has themselves to look after first.
+		a.needsDecision = true
+		return
+	}
+	// Both sides have to be convinced, each on its own comparison clock.
+	if w.willCommit(a, w.perceivedFitness(a, o)) && w.willCommit(o, w.perceivedFitness(o, a)) {
+		w.bond(a, o)
+		return
+	}
+	// Not convinced yet: put this one aside and go and see the others.
+	a.reject(o.ID, w.tick+w.cfg.MateRejectDuration)
+	a.needsDecision = true
+}
+
+// stepPaired keeps two partners together until the bond has run its course,
 // which is when their child is born.
 func (w *World) stepPaired(a *Agent) {
 	partner := w.agentByID(a.PartnerID)
@@ -273,8 +409,9 @@ func (w *World) stepPaired(a *Agent) {
 		w.releaseFromBond(a, w.cfg.MatingCooldown/2)
 		return
 	}
-
-	w.moveToward(a, partner.X, partner.Y, w.cfg.AgentSpeed*pairFollowSpeedFactor)
+	// The bond is settled before anybody moves, so that both partners are
+	// treated alike: otherwise whichever of them the loop reached first would
+	// have paid for a step the other never took.
 	a.PairTimer--
 	if a.PairTimer <= 0 {
 		// The lower ID of the pair performs the birth, so it happens once.
@@ -283,9 +420,106 @@ func (w *World) stepPaired(a *Agent) {
 		}
 		w.releaseFromBond(a, w.cfg.MatingCooldown)
 		w.releaseFromBond(partner, w.cfg.MatingCooldown)
+		return
 	}
-	w.keepInBounds(a)
+	w.moveToward(a, partner.X, partner.Y, pairFollowEffort)
 }
+
+// --- combat ----------------------------------------------------------------
+
+// resolveAttacks lands every blow of this tick at once.
+//
+// The asymmetry is the whole point: the target loses AttackDamage while the
+// attacker only paid AttackCost. Two agents laying into each other therefore
+// both pay both, and hitting somebody who is not hitting back — an ambush, or
+// running down someone who is fleeing — is by far the cheapest damage
+// available.
+func (w *World) resolveAttacks() {
+	for i := range w.attacks {
+		at := &w.attacks[i]
+		from, to := w.agentByID(at.fromID), w.agentByID(at.toID)
+		if from == nil || to == nil || !from.Alive || !to.Alive {
+			continue
+		}
+		w.fights++
+
+		damage := damagePerTick(&w.cfg, from.Power, at.effort)
+		to.Vitality -= damage
+
+		// The one taking the hits remembers exactly what they cost.
+		w.rememberDamage(to, from.ID, damage)
+		to.attackerID = from.ID
+		to.lastAttackTick = w.tick
+
+		if w.tick%spectateInterval == 0 {
+			w.exchangeReadings(from, to)
+		}
+	}
+}
+
+// exchangeReadings updates what the two fighters and everybody watching believe
+// about the strength of those involved. Fighting somebody teaches you the most
+// about them; watching from the sidelines teaches you less, but it is free and
+// it adds up.
+func (w *World) exchangeReadings(x, y *Agent) {
+	w.observeStrength(x, y, w.cfg.CombatObsVariance)
+	w.observeStrength(y, x, w.cfg.CombatObsVariance)
+
+	r2 := w.cfg.PerceptionRadius * w.cfg.PerceptionRadius
+	spectated := w.cfg.CombatObsVariance * w.cfg.SpectateObsFactor
+	for i := range w.agents {
+		o := &w.agents[i]
+		if !o.Alive || o.ID == x.ID || o.ID == y.ID {
+			continue
+		}
+		if dist2(o.X, o.Y, x.X, x.Y) > r2 {
+			continue
+		}
+		w.observeStrength(o, x, spectated)
+		w.observeStrength(o, y, spectated)
+	}
+}
+
+// --- metabolism ------------------------------------------------------------
+
+// metabolise runs the one directional coupling between the three state axes:
+// hunger climbs on its own, high hunger drains vitality, and an agent that is
+// both fed and not exerting itself slowly recovers.
+func (w *World) metabolise() {
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+
+		a.Hunger = math.Min(w.cfg.MaxHunger, a.Hunger+w.cfg.HungerRate)
+
+		if drain := hungerDrain(&w.cfg, a.Hunger); drain > 0 {
+			a.Vitality -= drain
+		} else if a.Hunger <= w.cfg.SatiatedHunger {
+			a.Vitality += w.cfg.RegenRate * (1 - clamp(a.effortSpent, 0, 1))
+		}
+		a.Vitality = math.Min(a.Vitality, w.cfg.MaxVitality)
+
+		// The comparison clock starts when an agent first has the means to
+		// think past staying alive.
+		if ready := a.CanReproduce(&w.cfg); ready != a.reproReady {
+			a.reproReady = ready
+			if ready {
+				a.courtStartTick = w.tick
+			}
+		}
+
+		if a.lastAttackTick < w.tick {
+			a.attackerID = 0
+		}
+		if a.Vitality <= 0 {
+			w.kill(a)
+		}
+	}
+}
+
+// --- reproduction ----------------------------------------------------------
 
 func (w *World) bond(a, b *Agent) {
 	a.State, b.State = StatePaired, StatePaired
@@ -298,6 +532,7 @@ func (w *World) releaseFromBond(a *Agent, cooldown int) {
 	a.PartnerID = 0
 	a.PairTimer = 0
 	a.CooldownTimer = cooldown
+	a.needsDecision = true
 }
 
 // tryBirth produces a child whose abilities are the average of its parents plus
@@ -306,13 +541,12 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	if len(w.agents)+len(w.newborns) >= w.cfg.MaxPopulation {
 		return
 	}
-	if pa.Food+pb.Food < w.cfg.BirthCost {
+	share := w.cfg.BirthVitalityCost / 2
+	if pa.Vitality <= share || pb.Vitality <= share {
 		return
 	}
-
-	share := w.cfg.BirthCost / 2
-	pa.Food -= share
-	pb.Food -= share
+	pa.Vitality -= share
+	pb.Vitality -= share
 
 	child := w.newAgent(
 		(pa.X+pb.X)/2+w.randRange(-8, 8),
@@ -320,9 +554,10 @@ func (w *World) tryBirth(pa, pb *Agent) {
 		w.randomSex(),
 		(pa.Power+pb.Power)/2+w.rng.NormFloat64()*w.cfg.MutationStd,
 		(pa.Rationality+pb.Rationality)/2+w.rng.NormFloat64()*w.cfg.MutationStd,
-		w.cfg.ChildInitialFood,
+		(pa.Intelligence+pb.Intelligence)/2+w.rng.NormFloat64()*w.cfg.MutationStd,
 		max(pa.Generation, pb.Generation)+1,
 	)
+	child.ParentIDs = [2]int{pa.ID, pb.ID}
 
 	if child.Generation > w.maxGeneration {
 		w.maxGeneration = child.Generation
@@ -334,6 +569,9 @@ func (w *World) tryBirth(pa, pb *Agent) {
 func (w *World) kill(a *Agent) {
 	a.Alive = false
 	w.deaths++
+	if a.lastAttackTick >= w.tick-1 {
+		w.kills++
+	}
 	if a.PartnerID != 0 {
 		if p := w.agentByID(a.PartnerID); p != nil && p.Alive {
 			w.releaseFromBond(p, w.cfg.MatingCooldown/2)
@@ -342,39 +580,20 @@ func (w *World) kill(a *Agent) {
 	}
 }
 
-func (w *World) eat(a *Agent, foodIndex int) {
-	a.Food = math.Min(w.cfg.MaxFoodStore, a.Food+w.cfg.FoodNutrition)
-	w.removeFood(foodIndex)
+func (w *World) eat(a *Agent, foodID int) {
+	a.Hunger = math.Max(0, a.Hunger-w.cfg.FoodNutrition)
+	w.removeFoodByID(foodID)
 }
 
 // --- judgement -------------------------------------------------------------
 
-// fitness is how good a mate an agent is: ability plus the resources it brings.
+// fitness is how good a mate an agent is: what it can pass on, and the shape it
+// is in to raise a child.
 func fitness(a *Agent) float64 {
 	return a.Power*fitnessPowerWeight +
 		a.Rationality*fitnessRationalityWeight +
-		math.Min(a.Food, usefulFoodCap)*fitnessFoodWeight
-}
-
-// effectiveContestPower is the real strength an agent brings to a fight over
-// food. Holding resources is an advantage in itself.
-func (w *World) effectiveContestPower(a *Agent) float64 {
-	return a.Power + math.Min(a.Food, usefulFoodCap)*contestFoodWeight
-}
-
-// judgementError draws the error an observer makes when sizing up somebody
-// else. Being able to read the situation is an ability of its own: the higher
-// the rationality, the smaller the error.
-func (w *World) judgementError(observer *Agent, scale float64) float64 {
-	std := (MaxAbility - observer.Rationality) / MaxAbility * scale
-	if std <= 0 {
-		return 0
-	}
-	return w.rng.NormFloat64() * std
-}
-
-func (w *World) perceivedPower(observer, rival *Agent) float64 {
-	return w.effectiveContestPower(rival) + w.judgementError(observer, w.cfg.JudgementNoise)
+		a.Intelligence*fitnessIntelligenceWeight +
+		a.Vitality*fitnessVitalityWeight
 }
 
 func (w *World) perceivedFitness(observer, target *Agent) float64 {
@@ -387,8 +606,8 @@ func (w *World) patienceTicks(a *Agent) int {
 	return int(w.cfg.PatienceBase + a.Rationality*w.cfg.PatienceRationality)
 }
 
-// willCommit reports whether an agent accepts the candidate it is standing next
-// to: either it has compared long enough, or the candidate is obviously good.
+// willCommit reports whether an agent accepts the candidate in front of it:
+// either it has compared long enough, or the candidate is an obvious catch.
 func (w *World) willCommit(a *Agent, candidateFitness float64) bool {
 	if w.tick-a.courtStartTick >= w.patienceTicks(a) {
 		return true
@@ -398,66 +617,21 @@ func (w *World) willCommit(a *Agent, candidateFitness float64) bool {
 
 // --- neighbourhood queries -------------------------------------------------
 //
-// These are plain linear scans, which is enough for the few hundred agents the
-// simulation runs with. If the population grows, only the bodies of these
-// functions need to be replaced by a spatial index.
+// Plain linear scans, which are enough for the few hundred agents this runs
+// with. If the population grows, only these bodies need a spatial index.
 
-// nearestFood returns the index in w.foods of the closest food item the agent
-// is still interested in, or -1.
-func (w *World) nearestFood(a *Agent) int {
-	best, bestDist := -1, math.Inf(1)
+// nearestFoodInSight returns the index of the closest food item within
+// perception range, or -1.
+func (w *World) nearestFoodInSight(a *Agent) int {
+	r2 := w.cfg.PerceptionRadius * w.cfg.PerceptionRadius
+	best, bestDist := -1, r2
 	for i := range w.foods {
 		f := &w.foods[i]
-		if a.isRejected(rejectFood, f.ID) {
-			continue
-		}
-		if d := dist2(a.X, a.Y, f.X, f.Y); d < bestDist {
+		if d := dist2(a.X, a.Y, f.X, f.Y); d <= bestDist {
 			bestDist, best = d, i
 		}
 	}
 	return best
-}
-
-// contestantFor returns another agent already standing on the food item, if any.
-func (w *World) contestantFor(a *Agent, f *Food) *Agent {
-	r2 := w.cfg.GrabRadius * w.cfg.GrabRadius
-	for i := range w.agents {
-		o := &w.agents[i]
-		if !o.Alive || o.ID == a.ID {
-			continue
-		}
-		if dist2(o.X, o.Y, f.X, f.Y) <= r2 {
-			return o
-		}
-	}
-	return nil
-}
-
-// bestCandidate returns the most attractive candidate within perception range,
-// as this agent perceives it, together with that perceived fitness.
-func (w *World) bestCandidate(a *Agent) (*Agent, float64) {
-	r2 := w.cfg.PerceptionRadius * w.cfg.PerceptionRadius
-	var best *Agent
-	bestFitness := math.Inf(-1)
-	for i := range w.agents {
-		o := &w.agents[i]
-		if !o.Alive || o.ID == a.ID || o.Sex == a.Sex {
-			continue
-		}
-		if o.State == StatePaired || o.CooldownTimer > 0 {
-			continue
-		}
-		if a.isRejected(rejectMate, o.ID) {
-			continue
-		}
-		if dist2(a.X, a.Y, o.X, o.Y) > r2 {
-			continue
-		}
-		if f := w.perceivedFitness(a, o); f > bestFitness {
-			bestFitness, best = f, o
-		}
-	}
-	return best, bestFitness
 }
 
 func (w *World) agentByID(id int) *Agent {
@@ -468,24 +642,35 @@ func (w *World) agentByID(id int) *Agent {
 	return &w.agents[i]
 }
 
+func (w *World) foodByID(id int) *Food {
+	i, ok := w.foodIndex[id]
+	if !ok {
+		return nil
+	}
+	return &w.foods[i]
+}
+
 // --- movement --------------------------------------------------------------
 
-func (w *World) moveToward(a *Agent, tx, ty, speed float64) {
-	dx, dy := tx-a.X, ty-a.Y
+// moveToward walks one tick towards a point. Speed grows with the square root
+// of the effort while the cost grows linearly, so covering ground in a hurry
+// costs more vitality per unit of distance than taking it steady.
+func (w *World) moveToward(a *Agent, tx, ty, effort float64) {
+	w.moveDir(a, tx-a.X, ty-a.Y, effort)
+}
+
+func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 	d := math.Hypot(dx, dy)
 	if d < 1e-9 {
 		return
 	}
+	effort = clamp(effort, 0, 1)
+	speed := speedAt(&w.cfg, effort)
 	a.X += dx / d * speed
 	a.Y += dy / d * speed
-}
-
-// wander is what an agent does with no target in sight.
-func (w *World) wander(a *Agent) {
-	a.VX = clamp(a.VX+w.randRange(-0.25, 0.25), -1, 1)
-	a.VY = clamp(a.VY+w.randRange(-0.25, 0.25), -1, 1)
-	a.X += a.VX
-	a.Y += a.VY
+	a.VX, a.VY = dx/d, dy/d
+	a.Vitality -= moveCostAt(&w.cfg, effort)
+	a.effortSpent = math.Max(a.effortSpent, effort)
 }
 
 func (w *World) keepInBounds(a *Agent) {
@@ -507,31 +692,35 @@ func (w *World) keepInBounds(a *Agent) {
 // --- population bookkeeping ------------------------------------------------
 
 // newAgent builds an agent without inserting it into the world.
-func (w *World) newAgent(x, y float64, sex Sex, power, rationality, food float64, generation int) Agent {
+func (w *World) newAgent(x, y float64, sex Sex, power, rationality, intelligence float64, generation int) Agent {
 	return Agent{
 		X: x, Y: y,
-		VX:          w.randRange(-0.3, 0.3),
-		VY:          w.randRange(-0.3, 0.3),
-		Sex:         sex,
-		Power:       clamp(power, MinAbility, MaxAbility),
-		Rationality: clamp(rationality, MinAbility, MaxAbility),
-		Food:        clamp(food, 0, w.cfg.MaxFoodStore),
-		MaxAge:      w.cfg.MinLifespan + w.rng.Intn(w.cfg.MaxLifespan-w.cfg.MinLifespan+1),
-		Generation:  generation,
-		Alive:       true,
+		VX:           w.randRange(-0.3, 0.3),
+		VY:           w.randRange(-0.3, 0.3),
+		Sex:          sex,
+		Power:        clamp(power, MinAbility, MaxAbility),
+		Rationality:  clamp(rationality, MinAbility, MaxAbility),
+		Intelligence: clamp(intelligence, MinAbility, MaxAbility),
+		Vitality:     w.cfg.ChildVitality,
+		Hunger:       w.cfg.ChildHunger,
+		Generation:   generation,
+		Alive:        true,
 	}
 }
 
 func (w *World) randomAgent() Agent {
-	return w.newAgent(
+	a := w.newAgent(
 		w.randRange(20, w.cfg.Width-20),
 		w.randRange(20, w.cfg.Height-20),
 		w.randomSex(),
 		w.randRange(25, 75),
 		w.randRange(25, 75),
-		w.randRange(55, 90),
+		w.randRange(25, 75),
 		0,
 	)
+	a.Vitality = w.randRange(w.cfg.MaxVitality*0.6, w.cfg.MaxVitality)
+	a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
+	return a
 }
 
 // addAgent inserts an agent into the world and returns its assigned ID.
@@ -539,20 +728,28 @@ func (w *World) addAgent(a Agent) int {
 	a.ID = w.nextAgentID
 	w.nextAgentID++
 	a.Alive = true
-	if a.MaxAge <= 0 {
-		a.MaxAge = w.cfg.MaxLifespan
+	a.needsDecision = true
+	if a.Vitality <= 0 {
+		a.Vitality = w.cfg.MaxVitality
 	}
 	w.index[a.ID] = len(w.agents)
 	w.agents = append(w.agents, a)
 	return a.ID
 }
 
+// commitNewborns adds this tick's children and closes the lineage links, so
+// that a parent can be followed to its descendants later.
 func (w *World) commitNewborns() {
 	if len(w.newborns) == 0 {
 		return
 	}
 	for i := range w.newborns {
-		w.addAgent(w.newborns[i])
+		id := w.addAgent(w.newborns[i])
+		for _, parentID := range w.newborns[i].ParentIDs {
+			if p := w.agentByID(parentID); p != nil {
+				p.ChildIDs = append(p.ChildIDs, id)
+			}
+		}
 	}
 	w.newborns = w.newborns[:0]
 }
@@ -574,10 +771,6 @@ func (w *World) removeDead() {
 		return
 	}
 	w.agents = w.agents[:n]
-	w.reindex()
-}
-
-func (w *World) reindex() {
 	clear(w.index)
 	for i := range w.agents {
 		w.index[w.agents[i].ID] = i
@@ -613,16 +806,23 @@ func (w *World) addFood(x, y float64) int {
 	}
 	f := Food{ID: w.nextFoodID, X: x, Y: y}
 	w.nextFoodID++
+	w.foodIndex[f.ID] = len(w.foods)
 	w.foods = append(w.foods, f)
 	return f.ID
 }
 
-// removeFood drops the item at the given index. The order of w.foods carries no
-// meaning, so the last item is swapped in.
-func (w *World) removeFood(i int) {
+// removeFoodByID drops an item. The order of w.foods carries no meaning, so the
+// last item is swapped into the hole.
+func (w *World) removeFoodByID(id int) {
+	i, ok := w.foodIndex[id]
+	if !ok {
+		return
+	}
 	last := len(w.foods) - 1
 	w.foods[i] = w.foods[last]
+	w.foodIndex[w.foods[i].ID] = i
 	w.foods = w.foods[:last]
+	delete(w.foodIndex, id)
 }
 
 // --- small helpers ---------------------------------------------------------

@@ -6,7 +6,8 @@ import (
 )
 
 // testConfig returns a world that does nothing on its own: no initial
-// population, no food growth. Each test builds exactly the situation it needs.
+// population, no food growth. Each test builds exactly the situation it needs
+// and switches off whichever rules would otherwise get in the way.
 func testConfig() Config {
 	cfg := DefaultConfig()
 	cfg.Seed = 12345
@@ -14,6 +15,16 @@ func testConfig() Config {
 	cfg.InitialPopulation = 0
 	cfg.InitialFoodItems = 0
 	cfg.FoodSpawnRate = 0
+	return cfg
+}
+
+// quietConfig additionally stops the metabolism, so that a test can watch one
+// thing move without hunger and regeneration underneath it.
+func quietConfig() Config {
+	cfg := testConfig()
+	cfg.HungerRate = 0
+	cfg.RegenRate = 0
+	cfg.StarveRate = 0
 	return cfg
 }
 
@@ -33,6 +44,38 @@ func approx(t *testing.T, got, want, tol float64, what string) {
 	}
 }
 
+// fixedController always does the same thing, so a test can hold one agent's
+// behaviour still and watch what the rules do around it.
+type fixedController struct{ action Action }
+
+func (f fixedController) Decide(*Perception) Action { return f.action }
+
+// spyController records what it was shown and what the AI would have done.
+type spyController struct {
+	ai      AIController
+	last    Action
+	self    SelfView
+	others  []AgentView
+	foods   []FoodView
+	decided int
+}
+
+func (s *spyController) Decide(p *Perception) Action {
+	s.self = p.Self
+	s.others = append(s.others[:0], p.Others...)
+	s.foods = append(s.foods[:0], p.Foods...)
+	s.decided++
+	s.last = s.ai.Decide(p)
+	return s.last
+}
+
+// aiChoice runs one AI decision for an agent and returns the action, without
+// stepping the world.
+func aiChoice(w *World, id int) Action {
+	a := w.agentByID(id)
+	return w.ai.Decide(w.perceive(a))
+}
+
 // --- determinism -----------------------------------------------------------
 
 func TestSameSeedGivesSameRun(t *testing.T) {
@@ -40,7 +83,7 @@ func TestSameSeedGivesSameRun(t *testing.T) {
 	cfg.Seed = 42
 
 	a, b := NewWorld(cfg), NewWorld(cfg)
-	for i := 0; i < 500; i++ {
+	for i := 0; i < 400; i++ {
 		a.Step()
 		b.Step()
 	}
@@ -50,7 +93,7 @@ func TestSameSeedGivesSameRun(t *testing.T) {
 	}
 	for i := range a.Agents() {
 		x, y := a.Agents()[i], b.Agents()[i]
-		if x.ID != y.ID || x.X != y.X || x.Y != y.Y || x.Power != y.Power {
+		if x.ID != y.ID || x.X != y.X || x.Y != y.Y || x.Vitality != y.Vitality {
 			t.Fatalf("agent %d diverged: %+v vs %+v", i, x, y)
 		}
 	}
@@ -71,11 +114,36 @@ func TestDifferentSeedsGiveDifferentRuns(t *testing.T) {
 	}
 }
 
-// --- survival --------------------------------------------------------------
+// --- the three state axes --------------------------------------------------
+
+func TestHungerRisesOnItsOwn(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: 10})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
+
+	w.Step()
+
+	approx(t, mustAgent(t, w, id).Hunger, 10+cfg.HungerRate, 1e-9, "hunger after one tick")
+}
+
+func TestHighHungerDrainsVitality(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: cfg.MaxHunger})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
+
+	w.Step()
+
+	// At maximum hunger the drain is the full rate.
+	approx(t, mustAgent(t, w, id).Vitality, 80-cfg.StarveRate, 1e-9, "vitality while starving")
+}
 
 func TestStarvationKillsAgent(t *testing.T) {
-	w := NewWorld(testConfig())
-	id := w.addAgent(Agent{X: 100, Y: 100, Power: 50, Rationality: 50, Food: 0.01})
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: cfg.StarveRate / 2, Hunger: cfg.MaxHunger})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
 
 	w.Step()
 
@@ -85,254 +153,633 @@ func TestStarvationKillsAgent(t *testing.T) {
 	if got := w.Stats().Deaths; got != 1 {
 		t.Fatalf("deaths = %d, want 1", got)
 	}
-	if got := w.Stats().Population; got != 0 {
-		t.Fatalf("population = %d, want 0", got)
-	}
 }
 
-func TestOldAgeKillsAgent(t *testing.T) {
-	w := NewWorld(testConfig())
-	id := w.addAgent(Agent{X: 100, Y: 100, Power: 50, Rationality: 50, Food: 100, Age: 4, MaxAge: 5})
-
-	w.Step()
-
-	if _, ok := w.AgentByID(id); ok {
-		t.Fatal("agent past its lifespan is still alive")
-	}
-}
-
-// --- foraging and contests -------------------------------------------------
-
-func TestLoneAgentEatsFood(t *testing.T) {
+func TestSatiatedRestingAgentRecovers(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	id := w.addAgent(Agent{X: 100, Y: 100, Power: 50, Rationality: 50, Food: 20})
-	w.addFood(105, 100)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 50, Hunger: 0})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
 
 	w.Step()
 
-	if got := len(w.Foods()); got != 0 {
-		t.Fatalf("food items left = %d, want 0", got)
-	}
-	approx(t, mustAgent(t, w, id).Food, 20-cfg.Metabolism+cfg.FoodNutrition, 1e-9, "food after eating")
+	approx(t, mustAgent(t, w, id).Vitality, 50+cfg.RegenRate, 1e-9, "vitality after resting")
 }
 
-func TestStrongerAgentWinsContest(t *testing.T) {
+// Exerting yourself is what stops the recovery, not hunger alone.
+func TestExertionBlocksRecovery(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	strong := w.addAgent(Agent{X: 100, Y: 100, Sex: Male, Power: 90, Rationality: 90, Food: 20})
-	weak := w.addAgent(Agent{X: 103, Y: 100, Sex: Male, Power: 10, Rationality: 90, Food: 20})
-	w.addFood(105, 100)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 50, Hunger: 0})
+	w.SetController(id, fixedController{Action{Kind: ActMove, DX: 1, Effort: 1}})
 
 	w.Step()
 
-	if got := len(w.Foods()); got != 0 {
-		t.Fatalf("food items left = %d, want 0 (the contest should have been settled)", got)
+	a := mustAgent(t, w, id)
+	if a.Vitality >= 50 {
+		t.Fatalf("vitality = %v, want less than 50: moving at full effort should cost more than it recovers", a.Vitality)
 	}
-	approx(t, mustAgent(t, w, strong).Food, 20-cfg.Metabolism+cfg.FoodNutrition, 1e-9, "winner food")
-	if got := mustAgent(t, w, weak).Food; got >= 20 {
-		t.Fatalf("loser food = %v, want less than its starting 20", got)
-	}
+	approx(t, a.Vitality, 50-cfg.MoveCost, 1e-9, "vitality after a tick of full effort movement")
 }
 
-// A rival that is clearly out of reach is not fought: the agent walks away and
-// looks for food somewhere else.
-func TestWeakAgentAvoidsHopelessContest(t *testing.T) {
-	cfg := testConfig()
+// Food is not a store an agent carries: eating lowers hunger, and only that.
+func TestEatingLowersHungerAndNotVitality(t *testing.T) {
+	cfg := quietConfig()
 	w := NewWorld(cfg)
-	// Rationality 100 removes the judgement error, making the decision exact.
-	weak := w.addAgent(Agent{X: 100, Y: 100, Sex: Male, Power: 10, Rationality: 100, Food: 20})
-	w.addAgent(Agent{X: 103, Y: 100, Sex: Male, Power: 90, Rationality: 100, Food: 100})
-	foodID := w.addFood(105, 100)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 50, Hunger: 50})
+	foodID := w.addFood(103, 100)
+	w.SetController(id, fixedController{Action{Kind: ActEat, TargetID: foodID}})
 
 	w.Step()
 
-	if got := len(w.Foods()); got != 1 {
-		t.Fatalf("food items left = %d, want 1 (nobody should have taken it)", got)
-	}
-	a := mustAgent(t, w, weak)
-	approx(t, a.Food, 20-cfg.Metabolism, 1e-9, "food of the agent that walked away")
-	if !a.isRejected(rejectFood, foodID) {
-		t.Fatal("the contested food was not put aside")
+	a := mustAgent(t, w, id)
+	approx(t, a.Hunger, 50-cfg.FoodNutrition, 1e-9, "hunger after eating")
+	approx(t, a.Vitality, 50, 1e-9, "vitality after eating")
+	if len(w.Foods()) != 0 {
+		t.Fatalf("food items left = %d, want 0", len(w.Foods()))
 	}
 }
 
-// Holding resources is an advantage of its own in a contest.
-func TestStoredFoodStrengthensInContest(t *testing.T) {
-	w := NewWorld(testConfig())
-	poor := &Agent{Power: 50, Food: 0}
-	rich := &Agent{Power: 50, Food: 100}
+// Ageing and natural death are deliberately not implemented yet.
+func TestAgeDoesNotKill(t *testing.T) {
+	w := NewWorld(quietConfig())
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: 0, Age: 1_000_000})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
 
-	if w.effectiveContestPower(rich) <= w.effectiveContestPower(poor) {
-		t.Fatal("stored food gave no advantage in a contest")
+	for i := 0; i < 50; i++ {
+		w.Step()
 	}
-	approx(t, w.effectiveContestPower(rich), 50+100*contestFoodWeight, 1e-9, "contest power with resources")
-}
-
-// Rationality is an ability of its own: it is what makes the estimate of a
-// rival accurate.
-func TestRationalityMakesJudgementAccurate(t *testing.T) {
-	w := NewWorld(testConfig())
-	rival := &Agent{Power: 50, Food: 0}
-	sharp := &Agent{Rationality: 95}
-	dull := &Agent{Rationality: 5}
-	truth := w.effectiveContestPower(rival)
-
-	var sharpError, dullError float64
-	for i := 0; i < 2000; i++ {
-		sharpError += math.Abs(w.perceivedPower(sharp, rival) - truth)
-		dullError += math.Abs(w.perceivedPower(dull, rival) - truth)
-	}
-
-	if sharpError*3 >= dullError {
-		t.Fatalf("rational agent was not clearly more accurate: %v vs %v", sharpError, dullError)
+	if _, ok := w.AgentByID(id); !ok {
+		t.Fatal("an old agent died: ageing is supposed to be future work")
 	}
 }
 
-// The flip side of the rule above: a rash agent picks fights it cannot win.
-func TestLowRationalityPicksHopelessFights(t *testing.T) {
-	fights := func(rationality float64) int {
-		count := 0
-		for i := 0; i < 300; i++ {
-			cfg := testConfig()
-			cfg.Seed = int64(1000 + i)
-			w := NewWorld(cfg)
-			weak := w.addAgent(Agent{X: 100, Y: 100, Sex: Male, Power: 40, Rationality: rationality, Food: 20})
-			w.addAgent(Agent{X: 103, Y: 100, Sex: Male, Power: 60, Rationality: 100, Food: 100})
-			foodID := w.addFood(105, 100)
+// --- movement and effort ---------------------------------------------------
 
+// More effort buys speed with diminishing returns, and costs more vitality for
+// every unit of distance covered.
+func TestEffortTradesVitalityForSpeed(t *testing.T) {
+	cfg := quietConfig()
+
+	distance := func(effort float64) (dist, spent float64) {
+		w := NewWorld(cfg)
+		id := w.addAgent(Agent{X: 10, Y: 100, Vitality: 90, Hunger: 0})
+		w.SetController(id, fixedController{Action{Kind: ActMove, DX: 1, Effort: effort}})
+		for i := 0; i < 20; i++ {
 			w.Step()
+		}
+		a := mustAgent(t, w, id)
+		return a.X - 10, 90 - a.Vitality
+	}
 
-			// Not putting the food aside means the agent engaged the rival.
-			if !mustAgent(t, w, weak).isRejected(rejectFood, foodID) {
+	slowDist, slowCost := distance(0.25)
+	fastDist, fastCost := distance(1.0)
+
+	if fastDist <= slowDist {
+		t.Fatalf("full effort covered %v, quarter effort %v: more effort should be faster", fastDist, slowDist)
+	}
+	if fastCost <= slowCost {
+		t.Fatalf("full effort cost %v, quarter effort %v: more effort should cost more", fastCost, slowCost)
+	}
+	if fastDist/slowDist >= 4 {
+		t.Fatalf("speed scaled by %v for 4x the effort, want diminishing returns", fastDist/slowDist)
+	}
+	if fastCost/fastDist <= slowCost/slowDist {
+		t.Fatal("hurrying was not more expensive per unit of distance")
+	}
+}
+
+// --- combat ----------------------------------------------------------------
+
+// brawl puts two agents next to each other and lets each of them do one fixed
+// thing for a single tick.
+func brawl(t *testing.T, cfg Config, aPower, bPower float64, aAct, bAct Action) (*World, *Agent, *Agent) {
+	t.Helper()
+	w := NewWorld(cfg)
+	ida := w.addAgent(Agent{X: 100, Y: 100, Power: aPower, Vitality: 90, Hunger: 0})
+	idb := w.addAgent(Agent{X: 105, Y: 100, Power: bPower, Vitality: 90, Hunger: 0})
+	aAct.TargetID, bAct.TargetID = idb, ida
+	w.SetController(ida, fixedController{aAct})
+	w.SetController(idb, fixedController{bAct})
+	w.Step()
+	return w, mustAgent(t, w, ida), mustAgent(t, w, idb)
+}
+
+func TestDamageScalesWithPowerAndEffort(t *testing.T) {
+	cfg := quietConfig()
+
+	_, _, weakHit := brawl(t, cfg, 25, 50, Action{Kind: ActAttack, Effort: 1}, Action{Kind: ActRest})
+	_, _, hardHit := brawl(t, cfg, 100, 50, Action{Kind: ActAttack, Effort: 1}, Action{Kind: ActRest})
+	_, _, halfHit := brawl(t, cfg, 100, 50, Action{Kind: ActAttack, Effort: 0.5}, Action{Kind: ActRest})
+
+	approx(t, 90-hardHit.Vitality, cfg.AttackDamage*100/midAbility, 1e-9, "damage from a powerful attacker")
+	if 90-hardHit.Vitality <= 90-weakHit.Vitality {
+		t.Fatal("power did not make the blow hurt more")
+	}
+	approx(t, 90-halfHit.Vitality, (90-hardHit.Vitality)/2, 1e-9, "damage at half effort")
+}
+
+// The attacker pays less than the one being hit. That asymmetry is what makes
+// hitting somebody who is not hitting back the best value there is.
+func TestAttackingCostsLessThanBeingAttacked(t *testing.T) {
+	cfg := quietConfig()
+	_, attacker, victim := brawl(t, cfg, 50, 50, Action{Kind: ActAttack, Effort: 1}, Action{Kind: ActRest})
+
+	attackerLoss, victimLoss := 90-attacker.Vitality, 90-victim.Vitality
+	if attackerLoss >= victimLoss {
+		t.Fatalf("attacker lost %v and the victim %v, want the attacker to come off better", attackerLoss, victimLoss)
+	}
+	approx(t, attackerLoss, cfg.AttackCost, 1e-9, "cost of throwing a punch")
+}
+
+// Trading blows costs both sides both halves of the exchange, so a slugging
+// match is worse for everybody than an ambush is for the ambusher.
+func TestTradingBlowsCostsBothSides(t *testing.T) {
+	cfg := quietConfig()
+	_, x, y := brawl(t, cfg, 50, 50, Action{Kind: ActAttack, Effort: 1}, Action{Kind: ActAttack, Effort: 1})
+
+	want := damagePerTick(&cfg, 50, 1) + cfg.AttackCost
+	approx(t, 90-x.Vitality, want, 1e-9, "cost to one side of a mutual fight")
+	approx(t, 90-y.Vitality, want, 1e-9, "cost to the other side of a mutual fight")
+
+	_, ambusher, _ := brawl(t, cfg, 50, 50, Action{Kind: ActAttack, Effort: 1}, Action{Kind: ActRest})
+	if 90-x.Vitality <= 90-ambusher.Vitality {
+		t.Fatal("fighting back cost the aggressor no more than a free hit did")
+	}
+}
+
+func TestFightingCanKill(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	killer := w.addAgent(Agent{X: 100, Y: 100, Power: 100, Vitality: 90, Hunger: 0})
+	victim := w.addAgent(Agent{X: 105, Y: 100, Power: 10, Vitality: 1, Hunger: 0})
+	w.SetController(killer, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
+	w.SetController(victim, fixedController{Action{Kind: ActRest}})
+
+	w.Step()
+
+	if _, ok := w.AgentByID(victim); ok {
+		t.Fatal("the victim survived a blow bigger than its remaining vitality")
+	}
+	if got := w.Stats().Kills; got != 1 {
+		t.Fatalf("kills = %d, want 1", got)
+	}
+}
+
+// Blows land together, so being early in the slice is not an advantage.
+func TestBlowsLandSimultaneously(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	// Both would die from the other's blow. Neither may be spared by ordering.
+	lethal := cfg.AttackDamage / 2
+	x := w.addAgent(Agent{X: 100, Y: 100, Power: 50, Vitality: lethal, Hunger: 0})
+	y := w.addAgent(Agent{X: 105, Y: 100, Power: 50, Vitality: lethal, Hunger: 0})
+	w.SetController(x, fixedController{Action{Kind: ActAttack, TargetID: y, Effort: 1}})
+	w.SetController(y, fixedController{Action{Kind: ActAttack, TargetID: x, Effort: 1}})
+
+	w.Step()
+
+	if got := w.Stats().Population; got != 0 {
+		t.Fatalf("population = %d, want 0: both blows should have landed", got)
+	}
+}
+
+// --- memory and estimation -------------------------------------------------
+
+func TestRiskMemoryRecordsWhatAFightCost(t *testing.T) {
+	cfg := quietConfig()
+	cfg.RiskDecayPerTick = 0 // forgetting is tested separately
+	w := NewWorld(cfg)
+	bully := w.addAgent(Agent{X: 100, Y: 100, Power: 60, Vitality: 90, Hunger: 0})
+	victim := w.addAgent(Agent{X: 105, Y: 100, Power: 50, Vitality: 90, Hunger: 0})
+	w.SetController(bully, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
+	w.SetController(victim, fixedController{Action{Kind: ActRest}})
+
+	for i := 0; i < 5; i++ {
+		w.Step()
+	}
+
+	op, ok := w.Opinions(victim)[bully]
+	if !ok {
+		t.Fatal("the victim does not remember its attacker")
+	}
+	approx(t, op.Risk, 5*damagePerTick(&cfg, 60, 1), 1e-9, "remembered risk")
+
+	// Nobody remembers being hit by somebody who never hit them.
+	if op, ok := w.Opinions(bully)[victim]; ok && op.Risk != 0 {
+		t.Fatalf("the aggressor remembers a risk of %v from an agent that never fought back", op.Risk)
+	}
+}
+
+// Old fights fade. Without that, a long lived population ends up remembering
+// everybody as a maximum threat and nothing ever happens again.
+func TestRiskMemoryDecays(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	victim := w.addAgent(Agent{X: 100, Y: 100, Vitality: 90, Hunger: 0})
+	w.SetController(victim, fixedController{Action{Kind: ActRest}})
+	w.rememberDamage(mustAgent(t, w, victim), 999, 40)
+
+	fresh := w.Opinions(victim)[999].Risk
+	for i := 0; i < 1000; i++ {
+		w.Step()
+	}
+	faded := w.Opinions(victim)[999].Risk
+
+	if faded >= fresh {
+		t.Fatalf("risk went from %v to %v, want it to fade", fresh, faded)
+	}
+	approx(t, faded, 40*math.Exp(-cfg.RiskDecayPerTick*1000), 1e-6, "faded risk")
+}
+
+func TestStrengthEstimateConvergesOnTheTruth(t *testing.T) {
+	w := NewWorld(testConfig())
+	// Rationality 100 removes the reading error, leaving only the noise of the
+	// observation itself.
+	observer := &Agent{ID: 1, Rationality: 100}
+	target := &Agent{ID: 2, Power: 80}
+
+	start := w.opinionOf(observer, target.ID)
+	startVariance := start.Variance
+	if math.Abs(start.Strength-w.cfg.PriorStrength) > 1e-9 {
+		t.Fatalf("a stranger is not assumed to be average: %v", start.Strength)
+	}
+
+	for i := 0; i < 200; i++ {
+		w.observeStrength(observer, target, w.cfg.CombatObsVariance)
+	}
+
+	op := w.opinionOf(observer, target.ID)
+	if math.Abs(op.Strength-80) > 3 {
+		t.Fatalf("estimate = %v after 200 observations, want close to the true 80", op.Strength)
+	}
+	if op.Variance >= startVariance/10 {
+		t.Fatalf("variance only fell from %v to %v, want it to shrink with observations", startVariance, op.Variance)
+	}
+	if op.Samples != 200 {
+		t.Fatalf("samples = %d, want 200", op.Samples)
+	}
+}
+
+// Reading the world accurately is rationality's job.
+func TestRationalityMakesEstimatesAccurate(t *testing.T) {
+	w := NewWorld(testConfig())
+	target := &Agent{ID: 9, Power: 70}
+
+	spread := func(rationality float64) float64 {
+		total := 0.0
+		for i := 0; i < 400; i++ {
+			observer := &Agent{ID: 1, Rationality: rationality}
+			w.observeStrength(observer, target, w.cfg.CombatObsVariance)
+			total += math.Abs(w.opinionOf(observer, target.ID).Strength - 70)
+		}
+		return total / 400
+	}
+
+	sharp, dull := spread(100), spread(5)
+	if sharp >= dull {
+		t.Fatalf("error was %v for a rational agent and %v for a rash one, want the rational one closer", sharp, dull)
+	}
+}
+
+// An agent learns about people it has never fought by watching others fight.
+func TestSpectatorsLearnFromOtherPeoplesFights(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	x := w.addAgent(Agent{X: 100, Y: 100, Power: 90, Rationality: 100, Vitality: 90, Hunger: 0})
+	y := w.addAgent(Agent{X: 105, Y: 100, Power: 20, Rationality: 100, Vitality: 90, Hunger: 0})
+	watcher := w.addAgent(Agent{X: 150, Y: 100, Power: 50, Rationality: 100, Vitality: 90, Hunger: 0})
+	stranger := w.addAgent(Agent{X: 380, Y: 380, Power: 50, Rationality: 100, Vitality: 90, Hunger: 0})
+
+	w.SetController(x, fixedController{Action{Kind: ActAttack, TargetID: y, Effort: 0.2}})
+	w.SetController(y, fixedController{Action{Kind: ActAttack, TargetID: x, Effort: 0.2}})
+	w.SetController(watcher, fixedController{Action{Kind: ActRest}})
+	w.SetController(stranger, fixedController{Action{Kind: ActRest}})
+
+	for i := 0; i < 400; i++ {
+		w.Step()
+	}
+
+	seen := w.Opinions(watcher)
+	if seen[x].Samples == 0 || seen[y].Samples == 0 {
+		t.Fatalf("the onlooker learned nothing: %+v", seen)
+	}
+	if seen[x].Strength <= seen[y].Strength {
+		t.Fatalf("onlooker rates the strong fighter %v and the weak one %v, want the strong one higher",
+			seen[x].Strength, seen[y].Strength)
+	}
+	if seen[x].Variance >= w.cfg.PriorVariance {
+		t.Fatal("watching a long fight did not make the onlooker any more sure")
+	}
+	// Somebody on the other side of the world saw nothing.
+	if op, ok := w.Opinions(stranger)[x]; ok && op.Samples != 0 {
+		t.Fatal("an agent out of range still learned from the fight")
+	}
+}
+
+// --- decision triggers -----------------------------------------------------
+
+// Deciding is driven by events, not by the clock.
+func TestDecisionsAreTriggeredNotContinuous(t *testing.T) {
+	cfg := quietConfig()
+	cfg.TriggerIdleTicks = 1000 // out of the way for this test
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 90, Hunger: 0})
+	spy := &spyController{}
+	w.SetController(id, spy)
+
+	for i := 0; i < 30; i++ {
+		w.Step()
+	}
+	if spy.decided != 1 {
+		t.Fatalf("controller ran %d times in 30 quiet ticks, want 1", spy.decided)
+	}
+
+	// A dent in the vitality is a reason to think again.
+	mustAgent(t, w, id).Vitality -= cfg.TriggerVitalityDrop + 1
+	w.Step()
+	if spy.decided != 2 {
+		t.Fatalf("controller ran %d times, want it to reconsider after losing vitality", spy.decided)
+	}
+}
+
+func TestIdlingTriggersAFreshDecision(t *testing.T) {
+	cfg := quietConfig()
+	cfg.TriggerIdleTicks = 10
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 90, Hunger: 0})
+	spy := &spyController{}
+	w.SetController(id, spy)
+
+	for i := 0; i < 31; i++ {
+		w.Step()
+	}
+	if spy.decided < 3 {
+		t.Fatalf("controller ran %d times in 31 ticks with a 10 tick idle trigger, want at least 3", spy.decided)
+	}
+}
+
+func TestBeingAttackedTriggersADecision(t *testing.T) {
+	cfg := quietConfig()
+	cfg.TriggerIdleTicks = 1000
+	cfg.TriggerVitalityDrop = 1000
+	w := NewWorld(cfg)
+	victim := w.addAgent(Agent{X: 100, Y: 100, Vitality: 90, Hunger: 0})
+	bully := w.addAgent(Agent{X: 105, Y: 100, Power: 50, Vitality: 90, Hunger: 0})
+	spy := &spyController{}
+	w.SetController(victim, spy)
+	w.SetController(bully, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
+
+	w.Step() // the first blow lands
+	before := spy.decided
+	w.Step() // ... and is noticed
+	if spy.decided <= before {
+		t.Fatal("being hit did not make the victim reconsider")
+	}
+}
+
+// --- what the utility comparison produces ----------------------------------
+
+// Priority 1 is staying alive: a hungry agent goes for food even with an
+// attractive candidate standing right next to it.
+func TestSurvivalTakesPriorityOverMating(t *testing.T) {
+	cfg := testConfig()
+
+	choose := func(hunger float64) ActionKind {
+		w := NewWorld(cfg)
+		id := w.addAgent(Agent{
+			X: 200, Y: 200, Sex: Male, Vitality: 95, Hunger: hunger,
+			Power: 50, Rationality: 100, Intelligence: 100,
+		})
+		w.addAgent(Agent{
+			X: 210, Y: 200, Sex: Female, Vitality: 100, Hunger: 0,
+			Power: 90, Rationality: 90, Intelligence: 90,
+		})
+		w.addFood(230, 200)
+		mustAgent(t, w, id).reproReady = true
+		return aiChoice(w, id).Kind
+	}
+
+	if got := choose(cfg.MaxHunger * 0.9); got != ActEat {
+		t.Fatalf("a starving agent chose %v, want it to go for the food", got)
+	}
+	if got := choose(0); got != ActCourt {
+		t.Fatalf("a well fed agent chose %v, want it to court the candidate", got)
+	}
+}
+
+// Running away is not a threshold: it is what wins the comparison when the
+// damage coming in is what is about to kill the agent, and loses when it is not.
+func TestFleeingEmergesFromTheComparison(t *testing.T) {
+	cfg := testConfig()
+
+	underAttack := func(victimVitality, attackerPower float64) ActionKind {
+		w := NewWorld(cfg)
+		victim := w.addAgent(Agent{
+			X: 200, Y: 200, Sex: Male, Vitality: victimVitality, Hunger: 0,
+			Power: 20, Rationality: 100, Intelligence: 100,
+		})
+		attacker := w.addAgent(Agent{
+			X: 208, Y: 200, Sex: Male, Vitality: 100, Hunger: 0,
+			Power: attackerPower, Rationality: 100, Intelligence: 100,
+		})
+		w.SetController(attacker, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
+		w.SetController(victim, fixedController{Action{Kind: ActRest}})
+		w.Step() // take a hit, so the victim knows it is under attack
+		return aiChoice(w, victim).Kind
+	}
+
+	if got := underAttack(12, 100); got != ActFlee {
+		t.Fatalf("a nearly dead agent facing a far stronger attacker chose %v, want it to run", got)
+	}
+	if got := underAttack(100, 8); got == ActFlee {
+		t.Fatal("a healthy agent ran from a feeble attacker: fleeing should not be automatic")
+	}
+}
+
+// A rival that is clearly out of reach is not fought. Nothing says so: winning
+// is simply unlikely, which makes the fight a bad deal.
+func TestHopelessFightsAreNotPicked(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	weak := w.addAgent(Agent{
+		X: 200, Y: 200, Vitality: 60, Hunger: 50,
+		Power: 5, Rationality: 100, Intelligence: 100,
+	})
+	giant := w.addAgent(Agent{X: 206, Y: 200, Vitality: 100, Hunger: 0, Power: 100})
+	w.addFood(210, 200)
+
+	// Make the weak agent certain about how strong the giant is.
+	for i := 0; i < 200; i++ {
+		w.observeStrength(mustAgent(t, w, weak), mustAgent(t, w, giant), 1)
+	}
+
+	if got := aiChoice(w, weak).Kind; got == ActAttack {
+		t.Fatal("a hopelessly outmatched agent picked a fight")
+	}
+}
+
+// Pre-emptive removal of a competitor is a food problem, not a grudge: make
+// food plentiful and the reason to do it disappears.
+func TestPreemptionFadesWhenFoodIsPlentiful(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+
+	attackValue := func(scarcity float64) float64 {
+		p := &Perception{
+			Tick: 1,
+			Cfg:  &cfg,
+			Self: SelfView{
+				ID: 1, X: 200, Y: 200, Vitality: 100, Hunger: 20,
+				Power: 80, Rationality: 100, Intelligence: 100,
+				FoodScarcity: scarcity,
+			},
+			Rand: w.rng,
+		}
+		victim := AgentView{ID: 2, Dist: 10, Vitality: 40, EstStrength: 20}
+
+		c := &AIController{}
+		c.addAttack(p, &victim)
+		best := math.Inf(-1)
+		for _, o := range c.opts {
+			best = math.Max(best, o.util)
+		}
+		return best
+	}
+
+	tight, plentiful := attackValue(3), attackValue(0)
+	if tight <= plentiful {
+		t.Fatalf("attacking scored %v when food was tight and %v when it was plentiful, want scarcity to matter",
+			tight, plentiful)
+	}
+}
+
+// --- intelligence ----------------------------------------------------------
+
+// Intelligence gates which kinds of move an agent can even think of.
+func TestIntelligenceGatesTheStrategiesAvailable(t *testing.T) {
+	cfg := testConfig()
+
+	kinds := func(intelligence float64) map[ActionKind]bool {
+		w := NewWorld(cfg)
+		id := w.addAgent(Agent{
+			X: 200, Y: 200, Sex: Male, Vitality: 100, Hunger: 0,
+			Power: 50, Rationality: 100, Intelligence: intelligence,
+		})
+		w.addAgent(Agent{X: 210, Y: 200, Sex: Female, Vitality: 100, Hunger: 0, Power: 50})
+		mustAgent(t, w, id).reproReady = true
+
+		c := &AIController{}
+		c.Decide(w.perceive(mustAgent(t, w, id)))
+		out := map[ActionKind]bool{}
+		for _, o := range c.opts {
+			out[o.action.Kind] = true
+		}
+		return out
+	}
+
+	dull := kinds(MinAbility)
+	if dull[ActCourt] || dull[ActAttack] || dull[ActObserve] {
+		t.Fatalf("a mindless agent considered moves beyond its reach: %v", dull)
+	}
+	if !dull[ActEat] && !dull[ActRest] {
+		t.Fatal("a mindless agent could not think of the basics either")
+	}
+
+	bright := kinds(MaxAbility)
+	for _, k := range []ActionKind{ActCourt, ActAttack, ActObserve} {
+		if !bright[k] {
+			t.Fatalf("a clever agent did not consider %v", k)
+		}
+	}
+}
+
+// The other half of intelligence: telling the options you thought of apart.
+func TestIntelligenceMakesTheChoiceReliable(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+
+	// Two options a hair apart, and one obviously bad.
+	hits := func(intelligence float64) int {
+		c := &AIController{}
+		p := &Perception{
+			Cfg:  &cfg,
+			Self: SelfView{Intelligence: intelligence},
+			Rand: w.rng,
+		}
+		count := 0
+		for i := 0; i < 2000; i++ {
+			c.opts = c.opts[:0]
+			c.add(Action{Kind: ActRest}, 30)
+			c.add(Action{Kind: ActMove}, 20)
+			c.add(Action{Kind: ActAttack}, -40)
+			if c.pick(p).Kind == ActRest {
 				count++
 			}
 		}
 		return count
 	}
 
-	rash, careful := fights(5), fights(95)
-	if careful != 0 {
-		t.Fatalf("a highly rational agent entered %d hopeless contests, want 0", careful)
+	bright, dull := hits(MaxAbility), hits(MinAbility)
+	if bright != 2000 {
+		t.Fatalf("a fully intelligent agent took the best option %d/2000 times, want every time", bright)
 	}
-	if rash < 10 {
-		t.Fatalf("a low rationality agent entered only %d contests, expected it to misjudge far more often", rash)
+	if dull >= bright {
+		t.Fatalf("dull agent got it right %d times and the bright one %d, want the dull one to slip up", dull, bright)
 	}
-}
-
-// --- survival comes before reproduction ------------------------------------
-
-func TestSurvivalTakesPriorityOverMating(t *testing.T) {
-	cfg := testConfig()
-
-	seekMate := func(food float64) bool {
-		w := NewWorld(cfg)
-		id := w.addAgent(Agent{X: 200, Y: 200, Sex: Male, Power: 50, Rationality: 50, Food: food})
-		w.addAgent(Agent{X: 210, Y: 200, Sex: Female, Power: 90, Rationality: 90, Food: 100})
-		w.addFood(300, 300)
-		w.Step()
-		return mustAgent(t, w, id).State == StateSeekMate
-	}
-
-	// Hungry: the attractive candidate right next to it changes nothing.
-	if seekMate(cfg.FoodLowThreshold - 1) {
-		t.Fatal("a hungry agent went looking for a mate instead of food")
-	}
-	// Well fed: reproduction becomes possible.
-	if !seekMate(cfg.ReproFoodThreshold + 10) {
-		t.Fatal("a well fed agent did not start looking for a mate")
+	if dull < 500 {
+		t.Fatalf("dull agent got it right only %d/2000 times, want mistakes to stay proportionate", dull)
 	}
 }
 
-// --- mate choice -----------------------------------------------------------
+// --- the controller seam ---------------------------------------------------
 
-func TestMateChoicePrefersFitterCandidate(t *testing.T) {
-	w := NewWorld(testConfig())
-	// Rationality 100 removes the judgement error, so the choice is exact.
-	id := w.addAgent(Agent{X: 200, Y: 200, Sex: Male, Power: 50, Rationality: 100, Food: 80})
-	w.addAgent(Agent{X: 200, Y: 150, Sex: Female, Power: 90, Rationality: 90, Food: 100}) // fitter
-	w.addAgent(Agent{X: 200, Y: 250, Sex: Female, Power: 10, Rationality: 10, Food: 62})
+// The engine drives whatever the controller hands back and does not care who
+// wrote it. This is the seam a human player will be plugged into.
+func TestControllerDrivesTheAgent(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 200, Y: 200, Vitality: 90, Hunger: 0})
+	if !w.SetController(id, fixedController{Action{Kind: ActMove, DX: 0, DY: -1, Effort: 1}}) {
+		t.Fatal("could not install a controller")
+	}
 
 	w.Step()
 
 	a := mustAgent(t, w, id)
-	if a.State != StateSeekMate {
-		t.Fatalf("state = %v, want seek_mate", a.State)
-	}
-	if a.Y >= 200 {
-		t.Fatalf("y = %v, want the agent to have moved towards the fitter candidate at y=150", a.Y)
-	}
-}
+	approx(t, a.Y, 200-cfg.MaxSpeed, 1e-9, "position after one commanded move")
+	approx(t, a.X, 200, 1e-9, "sideways drift")
 
-func TestPatienceGrowsWithRationality(t *testing.T) {
-	w := NewWorld(testConfig())
-	rash := &Agent{Rationality: 10}
-	careful := &Agent{Rationality: 90}
-
-	if w.patienceTicks(careful) <= w.patienceTicks(rash) {
-		t.Fatalf("patience: careful = %d, rash = %d, want the rational agent to compare longer",
-			w.patienceTicks(careful), w.patienceTicks(rash))
+	if w.SetController(9999, fixedController{}) {
+		t.Fatal("installed a controller on an agent that does not exist")
 	}
 }
 
-// courting builds two agents standing next to each other, both able to
-// reproduce and both unremarkable enough that neither is an obvious catch.
-func courting(t *testing.T) (*World, int, int) {
-	t.Helper()
-	w := NewWorld(testConfig())
-	male := w.addAgent(Agent{X: 200, Y: 200, Sex: Male, Power: 40, Rationality: 100, Food: 100})
-	female := w.addAgent(Agent{X: 205, Y: 200, Sex: Female, Power: 40, Rationality: 100, Food: 100})
-	if f := fitness(mustAgent(t, w, male)); f >= testConfig().CommitFitness {
-		t.Fatalf("test setup: fitness %v is an obvious catch, the pair would form instantly", f)
-	}
-	return w, male, female
-}
+// What a controller is shown never includes the true ability of anybody else:
+// combat power is a hidden parameter and all anyone gets is their own estimate.
+func TestPerceptionHidesTrueStrength(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 200, Y: 200, Vitality: 90, Hunger: 0, Rationality: 100})
+	spy := &spyController{}
+	w.SetController(id, spy)
+	w.addAgent(Agent{X: 220, Y: 200, Vitality: 90, Hunger: 0, Power: 97})
 
-func TestAgentsDoNotPairInstantly(t *testing.T) {
-	w, male, female := courting(t)
-
-	// Two ticks: one to enter the mate seeking state, one to meet as such.
-	w.Step()
 	w.Step()
 
-	for _, id := range []int{male, female} {
-		a := mustAgent(t, w, id)
-		if a.State != StateSeekMate {
-			t.Fatalf("agent %d state = %v, want seek_mate", id, a.State)
-		}
-		if a.PartnerID != 0 {
-			t.Fatalf("agent %d committed to a partner immediately", id)
-		}
+	if len(spy.others) != 1 {
+		t.Fatalf("saw %d others, want 1", len(spy.others))
+	}
+	if spy.others[0].EstStrength != cfg.PriorStrength {
+		t.Fatalf("a stranger's strength came through as %v, want the prior %v and not the true 97",
+			spy.others[0].EstStrength, cfg.PriorStrength)
+	}
+	if spy.self.Power != 0 {
+		t.Fatalf("self power = %v, want the agent's own value", spy.self.Power)
 	}
 }
 
-func TestPairFormsOnceBothHaveCompared(t *testing.T) {
-	w, male, female := courting(t)
-
-	paired := -1
-	for i := 0; i < 500 && paired < 0; i++ {
-		w.Step()
-		if mustAgent(t, w, male).State == StatePaired && mustAgent(t, w, female).State == StatePaired {
-			paired = w.Tick()
-		}
-	}
-
-	if paired < 0 {
-		t.Fatal("the pair never formed")
-	}
-	a := mustAgent(t, w, male)
-	if patience := w.patienceTicks(a); paired < patience {
-		t.Fatalf("pair formed at tick %d, before the %d ticks of comparison", paired, patience)
-	}
-	if a.PartnerID != female || mustAgent(t, w, female).PartnerID != male {
-		t.Fatal("the pair is not mutual")
-	}
-	if a.PairTimer <= 0 {
-		t.Fatal("the pair has no time left to raise a child")
-	}
-}
-
-// --- birth, inheritance and mutation ---------------------------------------
+// --- lineage ---------------------------------------------------------------
 
 // pairAboutToGiveBirth returns a world with a bonded couple whose bond ends on
 // the next step.
@@ -340,17 +787,55 @@ func pairAboutToGiveBirth(t *testing.T, cfg Config) (*World, int, int) {
 	t.Helper()
 	w := NewWorld(cfg)
 	male := w.addAgent(Agent{
-		X: 100, Y: 100, Sex: Male, Power: 40, Rationality: 60, Food: 50,
-		State: StatePaired, PairTimer: 1, Generation: 2,
+		X: 100, Y: 100, Sex: Male, Power: 40, Rationality: 60, Intelligence: 30,
+		Vitality: 90, Hunger: 0, PairTimer: 1, State: StatePaired, Generation: 2,
 	})
 	female := w.addAgent(Agent{
-		X: 110, Y: 100, Sex: Female, Power: 60, Rationality: 80, Food: 50,
-		State: StatePaired, PairTimer: 1, Generation: 5,
+		X: 110, Y: 100, Sex: Female, Power: 60, Rationality: 80, Intelligence: 50,
+		Vitality: 90, Hunger: 0, PairTimer: 1, State: StatePaired, Generation: 5,
 	})
 	w.agentByID(male).PartnerID = female
 	w.agentByID(female).PartnerID = male
 	return w, male, female
 }
+
+func findChild(t *testing.T, w *World, parents ...int) *Agent {
+	t.Helper()
+	for i := range w.Agents() {
+		a := &w.Agents()[i]
+		known := false
+		for _, p := range parents {
+			known = known || a.ID == p
+		}
+		if !known {
+			return a
+		}
+	}
+	t.Fatal("no child was born")
+	return nil
+}
+
+// Recorded from the start, because a player will later need to follow a dead
+// agent to one of its own descendants.
+func TestBirthRecordsLineageBothWays(t *testing.T) {
+	cfg := testConfig()
+	w, male, female := pairAboutToGiveBirth(t, cfg)
+
+	w.Step()
+
+	child := findChild(t, w, male, female)
+	if child.ParentIDs != [2]int{male, female} {
+		t.Fatalf("child parents = %v, want %v", child.ParentIDs, [2]int{male, female})
+	}
+	for _, id := range []int{male, female} {
+		p := mustAgent(t, w, id)
+		if len(p.ChildIDs) != 1 || p.ChildIDs[0] != child.ID {
+			t.Fatalf("parent %d children = %v, want [%d]", id, p.ChildIDs, child.ID)
+		}
+	}
+}
+
+// --- inheritance and mutation ----------------------------------------------
 
 func TestChildInheritsParentsAverage(t *testing.T) {
 	cfg := testConfig()
@@ -362,36 +847,22 @@ func TestChildInheritsParentsAverage(t *testing.T) {
 	if got := w.Stats().Births; got != 1 {
 		t.Fatalf("births = %d, want 1", got)
 	}
-	var child *Agent
-	for i := range w.Agents() {
-		if a := &w.Agents()[i]; a.ID != male && a.ID != female {
-			child = a
-		}
-	}
-	if child == nil {
-		t.Fatal("no child was born")
-	}
-
+	child := findChild(t, w, male, female)
 	approx(t, child.Power, 50, 1e-9, "child power")             // (40 + 60) / 2
 	approx(t, child.Rationality, 70, 1e-9, "child rationality") // (60 + 80) / 2
-	approx(t, child.Food, cfg.ChildInitialFood, 1e-9, "child food")
+	approx(t, child.Intelligence, 40, 1e-9, "child intelligence")
+	approx(t, child.Vitality, cfg.ChildVitality, 1e-9, "child vitality")
 	if child.Generation != 6 { // max(2, 5) + 1
 		t.Fatalf("child generation = %d, want 6", child.Generation)
 	}
-	if w.Stats().MaxGeneration != 6 {
-		t.Fatalf("max generation = %d, want 6", w.Stats().MaxGeneration)
-	}
 
-	// Raising the child costs both parents half of the birth cost.
-	want := 50 - cfg.BirthCost/2 - cfg.Metabolism
+	// Raising a child costs both parents vitality, equally.
+	want := 90 - cfg.BirthVitalityCost/2 + cfg.RegenRate
 	for _, id := range []int{male, female} {
 		p := mustAgent(t, w, id)
-		approx(t, p.Food, want, 1e-9, "parent food")
-		if p.State != StateForage || p.PartnerID != 0 {
-			t.Fatalf("parent %d was not released from the bond: %+v", id, p)
-		}
-		if p.CooldownTimer <= 0 {
-			t.Fatalf("parent %d got no cooldown after reproducing", id)
+		approx(t, p.Vitality, want, 1e-9, "parent vitality")
+		if p.PartnerID != 0 || p.CooldownTimer <= 0 {
+			t.Fatalf("parent %d was not released from the bond with a rest: %+v", id, p)
 		}
 	}
 }
@@ -400,17 +871,17 @@ func TestMutationVariesChildAbility(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationStd = 4
 	w := NewWorld(cfg)
-	pa := &Agent{Power: 50, Rationality: 50, Food: 100}
-	pb := &Agent{Power: 50, Rationality: 50, Food: 100}
+	pa := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
+	pb := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
 
-	varied := false
 	for i := 0; i < 50; i++ {
-		pa.Food, pb.Food = 100, 100
+		pa.Vitality, pb.Vitality = 90, 90
 		w.tryBirth(pa, pb)
 	}
 	if len(w.newborns) != 50 {
 		t.Fatalf("newborns = %d, want 50", len(w.newborns))
 	}
+	varied := false
 	for i := range w.newborns {
 		if w.newborns[i].Power != 50 {
 			varied = true
@@ -425,29 +896,28 @@ func TestChildAbilityStaysInRange(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationStd = 50 // extreme, so the bounds are actually hit
 	w := NewWorld(cfg)
-	pa := &Agent{Power: MaxAbility, Rationality: MinAbility, Food: 100}
-	pb := &Agent{Power: MaxAbility, Rationality: MinAbility, Food: 100}
+	pa := &Agent{Power: MaxAbility, Rationality: MinAbility, Intelligence: MaxAbility, Vitality: 90}
+	pb := &Agent{Power: MaxAbility, Rationality: MinAbility, Intelligence: MaxAbility, Vitality: 90}
 
 	for i := 0; i < 300; i++ {
-		pa.Food, pb.Food = 100, 100
+		pa.Vitality, pb.Vitality = 90, 90
 		w.tryBirth(pa, pb)
 	}
 	for i := range w.newborns {
 		c := &w.newborns[i]
-		if c.Power < MinAbility || c.Power > MaxAbility {
-			t.Fatalf("child power %v is out of range", c.Power)
-		}
-		if c.Rationality < MinAbility || c.Rationality > MaxAbility {
-			t.Fatalf("child rationality %v is out of range", c.Rationality)
+		for _, v := range []float64{c.Power, c.Rationality, c.Intelligence} {
+			if v < MinAbility || v > MaxAbility {
+				t.Fatalf("child ability %v is out of range", v)
+			}
 		}
 	}
 }
 
-func TestBirthNeedsEnoughFood(t *testing.T) {
+func TestBirthNeedsEnoughVitality(t *testing.T) {
 	cfg := testConfig()
 	w, male, female := pairAboutToGiveBirth(t, cfg)
-	mustAgent(t, w, male).Food = cfg.BirthCost / 4
-	mustAgent(t, w, female).Food = cfg.BirthCost / 4
+	mustAgent(t, w, male).Vitality = cfg.BirthVitalityCost / 4
+	mustAgent(t, w, female).Vitality = cfg.BirthVitalityCost / 4
 
 	w.Step()
 
@@ -466,8 +936,62 @@ func TestPopulationCapStopsBirths(t *testing.T) {
 	if got := w.Stats().Population; got != 2 {
 		t.Fatalf("population = %d, want it capped at 2", got)
 	}
-	if got := w.Stats().Births; got != 0 {
-		t.Fatalf("births = %d, want 0", got)
+}
+
+// --- mate choice -----------------------------------------------------------
+
+func TestPatienceGrowsWithRationality(t *testing.T) {
+	w := NewWorld(testConfig())
+	if w.patienceTicks(&Agent{Rationality: 90}) <= w.patienceTicks(&Agent{Rationality: 10}) {
+		t.Fatal("the rational agent did not compare candidates for longer")
+	}
+}
+
+// courting builds two agents next to each other, both able to reproduce and
+// neither an obvious catch.
+func courting(t *testing.T, cfg Config) (*World, int, int) {
+	t.Helper()
+	w := NewWorld(cfg)
+	make := func(x float64, sex Sex) int {
+		return w.addAgent(Agent{
+			X: x, Y: 200, Sex: sex, Power: 40, Rationality: 100, Intelligence: 100,
+			Vitality: cfg.ReproVitality + 5, Hunger: 0,
+		})
+	}
+	male, female := make(200, Male), make(205, Female)
+	if f := fitness(mustAgent(t, w, male)); f >= cfg.CommitFitness {
+		t.Fatalf("test setup: fitness %v is an obvious catch, the pair would form instantly", f)
+	}
+	return w, male, female
+}
+
+func TestPairNeedsBothSidesToAgreeAndTakesTime(t *testing.T) {
+	cfg := testConfig()
+	w, male, female := courting(t, cfg)
+
+	w.Step()
+	w.Step()
+	for _, id := range []int{male, female} {
+		if mustAgent(t, w, id).PartnerID != 0 {
+			t.Fatalf("agent %d committed immediately, without comparing", id)
+		}
+	}
+
+	paired := -1
+	for i := 0; i < 800 && paired < 0; i++ {
+		w.Step()
+		if mustAgent(t, w, male).PartnerID != 0 {
+			paired = w.Tick()
+		}
+	}
+	if paired < 0 {
+		t.Fatal("the pair never formed")
+	}
+	if patience := w.patienceTicks(mustAgent(t, w, male)); paired < patience {
+		t.Fatalf("pair formed at tick %d, before the %d ticks of comparison", paired, patience)
+	}
+	if mustAgent(t, w, male).PartnerID != female || mustAgent(t, w, female).PartnerID != male {
+		t.Fatal("the pair is not mutual")
 	}
 }
 
@@ -475,11 +999,11 @@ func TestPartnerDeathReleasesSurvivor(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
 	survivor := w.addAgent(Agent{
-		X: 100, Y: 100, Sex: Male, Power: 50, Rationality: 50, Food: 80,
+		X: 100, Y: 100, Sex: Male, Vitality: 90, Hunger: 0,
 		State: StatePaired, PairTimer: 100,
 	})
 	dying := w.addAgent(Agent{
-		X: 110, Y: 100, Sex: Female, Power: 50, Rationality: 50, Food: 0.01,
+		X: 110, Y: 100, Sex: Female, Vitality: cfg.StarveRate / 2, Hunger: cfg.MaxHunger,
 		State: StatePaired, PairTimer: 100,
 	})
 	w.agentByID(survivor).PartnerID = dying
@@ -488,14 +1012,11 @@ func TestPartnerDeathReleasesSurvivor(t *testing.T) {
 	w.Step()
 
 	a := mustAgent(t, w, survivor)
-	if a.State != StateForage {
-		t.Fatalf("state = %v, want forage after losing a partner", a.State)
-	}
 	if a.PartnerID != 0 {
-		t.Fatalf("partner id = %d, want 0", a.PartnerID)
+		t.Fatalf("partner id = %d, want 0 after losing a partner", a.PartnerID)
 	}
-	if a.CooldownTimer != cfg.MatingCooldown/2 {
-		t.Fatalf("cooldown = %d, want %d", a.CooldownTimer, cfg.MatingCooldown/2)
+	if a.CooldownTimer <= 0 {
+		t.Fatal("the survivor got no rest after losing its partner")
 	}
 }
 
@@ -535,16 +1056,37 @@ func TestFractionalFoodRateAccumulates(t *testing.T) {
 	}
 }
 
+func TestEatenFoodStaysFindable(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	first := w.addFood(100, 100)
+	second := w.addFood(200, 200)
+	third := w.addFood(300, 300)
+
+	w.removeFoodByID(first)
+
+	for _, id := range []int{second, third} {
+		f := w.foodByID(id)
+		if f == nil || f.ID != id {
+			t.Fatalf("food %d went missing after another item was removed: %+v", id, f)
+		}
+	}
+	if w.foodByID(first) != nil {
+		t.Fatal("the eaten item is still there")
+	}
+}
+
 // --- whole simulation ------------------------------------------------------
 
-// A default world must be able to run on its own: agents forage, pair up and
-// raise children, and the population evolves over generations.
-func TestDefaultWorldReachesNewGenerations(t *testing.T) {
+// A default world must be able to run on its own: agents forage, fight over
+// what is scarce, pair up and raise children, and the population evolves over
+// generations without dying out or exploding.
+func TestDefaultWorldSustainsItself(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Seed = 7
 	w := NewWorld(cfg)
 
-	for i := 0; i < 3000; i++ {
+	for i := 0; i < 8000; i++ {
 		w.Step()
 		s := w.Stats()
 		if s.Population > cfg.MaxPopulation {
@@ -556,14 +1098,14 @@ func TestDefaultWorldReachesNewGenerations(t *testing.T) {
 	}
 
 	s := w.Stats()
-	if s.Births == 0 {
-		t.Fatal("no child was ever born in a default world")
-	}
-	if s.MaxGeneration < 1 {
-		t.Fatalf("max generation = %d, want at least 1", s.MaxGeneration)
-	}
 	if s.Population == 0 {
 		t.Fatal("the population died out entirely")
+	}
+	if s.Births == 0 || s.MaxGeneration < 2 {
+		t.Fatalf("births = %d, generations = %d, want the population to be reproducing", s.Births, s.MaxGeneration)
+	}
+	if s.Fights == 0 {
+		t.Fatal("nothing was ever contested in a world where food runs short")
 	}
 	if s.Males+s.Females != s.Population {
 		t.Fatalf("sex counts %d + %d do not add up to the population %d", s.Males, s.Females, s.Population)

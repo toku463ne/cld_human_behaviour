@@ -1,9 +1,13 @@
 package engine
 
-// Ability values (power, rationality) are always kept inside this range.
+// Ability values are always kept inside this range.
 const (
 	MinAbility = 1.0
 	MaxAbility = 100.0
+
+	// midAbility is the reference an ability is measured against, so that an
+	// agent of average power does exactly Config.AttackDamage per tick.
+	midAbility = (MinAbility + MaxAbility) / 2
 )
 
 // Sex of an agent. Only opposite sexes can form a pair.
@@ -21,15 +25,18 @@ func (s Sex) String() string {
 	return "male"
 }
 
-// State is what an agent is currently doing. Survival (foraging) always takes
-// priority over reproduction, so an agent only reaches StateSeekMate once it has
-// enough food stored.
+// State is a summary of what an agent is up to, derived from its current
+// action. It carries no rules of its own; it exists so that the viewer and the
+// tests can talk about behaviour without inspecting actions.
 type State uint8
 
 const (
 	StateForage State = iota
 	StateSeekMate
 	StatePaired
+	StateFighting
+	StateFleeing
+	StateResting
 )
 
 func (s State) String() string {
@@ -38,22 +45,15 @@ func (s State) String() string {
 		return "seek_mate"
 	case StatePaired:
 		return "paired"
+	case StateFighting:
+		return "fighting"
+	case StateFleeing:
+		return "fleeing"
+	case StateResting:
+		return "resting"
 	default:
 		return "forage"
 	}
-}
-
-// rejectKind tells apart the two things an agent can decide to walk away from.
-type rejectKind uint8
-
-const (
-	rejectFood rejectKind = iota
-	rejectMate
-)
-
-type rejectKey struct {
-	kind rejectKind
-	id   int
 }
 
 // Agent is one human, simplified to a single node.
@@ -61,64 +61,117 @@ type Agent struct {
 	ID   int
 	X, Y float64
 
-	// VX, VY are only used while wandering, so that an agent without a target
-	// keeps a smooth direction instead of jittering in place.
+	// VX, VY hold the direction of an agent that is only wandering, so that it
+	// keeps a smooth heading instead of jittering in place.
 	VX, VY float64
 
 	Sex Sex
 
-	// Abilities.
-	Power       float64
-	Rationality float64
+	// Abilities, with their roles kept apart: power is how much damage a unit
+	// of effort buys, rationality is how accurately the agent reads the world,
+	// and intelligence is how good a move it can pick once it has read it.
+	//
+	// When ageing arrives these become "inherited talent x age factor"; for now
+	// the age factor is always 1.
+	Power        float64
+	Rationality  float64
+	Intelligence float64
 
-	// Resources. Food is both the fuel to stay alive and an advantage in a
-	// contest; time is spent implicitly, by staying in a state.
-	Food float64
+	// The three state axes. Food is not stored: it lies in the world and
+	// eating it lowers hunger.
+	Vitality float64
+	Hunger   float64
 
 	Age        int
-	MaxAge     int
 	Generation int
 	Alive      bool
 
-	State         State
-	CooldownTimer int // ticks left before this agent may look for a mate again
-	PairTimer     int // ticks left in the current bond
+	// Lineage. Recorded from the start so that a player can later take over one
+	// of their own descendants when the agent they were playing dies.
+	ParentIDs [2]int
+	ChildIDs  []int
+
+	State  State
+	Action Action
+
+	// Pairing.
 	PartnerID     int // 0 when the agent has no partner
+	PairTimer     int // ticks left in the current bond
+	CooldownTimer int // ticks before this agent may look for a mate again
 
-	// courtStartTick is when the agent started comparing candidates. The longer
-	// it has been comparing, the more willing it is to commit.
+	// courtStartTick is when the agent became well enough off to think about
+	// offspring, which is when it starts comparing candidates. The longer it
+	// has been comparing, the more willing it is to settle. reproReady is the
+	// previous tick's answer, so the clock is only restarted on the way in.
 	courtStartTick int
+	reproReady     bool
 
-	// rejected holds food items and candidates this agent recently walked away
-	// from, mapped to the tick at which they become interesting again. The map
-	// is allocated lazily: most agents never reject anything.
-	rejected map[rejectKey]int
+	// controller is what decides this agent's actions. Nil means the world's
+	// shared AI controller.
+	controller Controller
+
+	// Decision bookkeeping. An agent re-decides on a trigger, not every tick.
+	lastDecisionTick   int
+	vitalityAtDecision float64
+	needsDecision      bool
+
+	// attackerID is who hit this agent last tick, 0 if nobody. Being attacked
+	// is itself a trigger to think again.
+	attackerID     int
+	lastAttackTick int
+
+	// effortSpent is the effort actually used this tick, which is what stops an
+	// agent from recovering while it is exerting itself.
+	effortSpent float64
+
+	// actionTicks counts how long the current action has been running, which is
+	// what makes an action that takes time (watching somebody) possible.
+	actionTicks int
+
+	// opinions is what this agent believes about others: how much it has been
+	// hurt by them, and how strong it reckons they are. Allocated lazily,
+	// because a young agent has met nobody.
+	opinions map[int]*Opinion
+
+	// rejected holds candidates recently passed over, mapped to the tick at
+	// which they become interesting again. Also lazily allocated.
+	rejected map[int]int
 }
 
-func (a *Agent) reject(kind rejectKind, id, until int) {
+// Controller returns the controller driving this agent, nil when it is run by
+// the world's shared AI.
+func (a *Agent) Controller() Controller { return a.controller }
+
+func (a *Agent) reject(id, until int) {
 	if a.rejected == nil {
-		a.rejected = make(map[rejectKey]int, 4)
+		a.rejected = make(map[int]int, 4)
 	}
-	a.rejected[rejectKey{kind, id}] = until
+	a.rejected[id] = until
 }
 
-func (a *Agent) isRejected(kind rejectKind, id int) bool {
+func (a *Agent) isRejected(id int) bool {
 	if a.rejected == nil {
 		return false
 	}
-	_, ok := a.rejected[rejectKey{kind, id}]
+	_, ok := a.rejected[id]
 	return ok
 }
 
-// pruneRejected drops the entries whose cooldown has expired. Iterating a map is
-// order dependent, but only deletions happen here, so it does not affect
-// reproducibility.
+// pruneRejected drops entries whose cooldown has expired. Map iteration order
+// is undefined, but only deletions happen here, so reproducibility is safe.
 func (a *Agent) pruneRejected(tick int) {
-	for k, until := range a.rejected {
+	for id, until := range a.rejected {
 		if tick > until {
-			delete(a.rejected, k)
+			delete(a.rejected, id)
 		}
 	}
+}
+
+// CanReproduce reports whether the agent is well enough off to spend time on
+// priority 2. Staying alive comes first: a hungry or battered agent does not
+// court, however attractive the candidate next to it.
+func (a *Agent) CanReproduce(cfg *Config) bool {
+	return a.Hunger < cfg.ReproHunger && a.Vitality >= cfg.ReproVitality && a.CooldownTimer <= 0
 }
 
 // Food is one edible item lying in the world.

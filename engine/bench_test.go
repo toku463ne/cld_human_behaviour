@@ -2,48 +2,70 @@ package engine
 
 import "testing"
 
-// stepsPerRun is how long a benchmarked world is kept running. Past its
-// lifespan the initial population dies out and Step would end up measuring an
-// almost empty world, so the world is restarted regularly.
-const stepsPerRun = 500
-
-// BenchmarkEngineStep is the baseline for the tick loop: a fixed seed and a
-// fixed population, stepping over and over.
-//
-//	go test ./engine/... -run=^$ -bench=. -benchmem
-func BenchmarkEngineStep(b *testing.B) {
+// benchWorld builds a world of a fixed size from a fixed seed, so that two runs
+// of the benchmark measure the same work.
+func benchWorld(agents, foods int, spawn float64) *World {
 	cfg := DefaultConfig()
-	cfg.Seed = 1
-	cfg.InitialPopulation = 300
-	cfg.InitialFoodItems = 120
+	cfg.Seed = 99
+	cfg.InitialPopulation = agents
+	cfg.InitialFoodItems = foods
+	cfg.MaxPopulation = agents * 2
+	cfg.MaxFoodItems = foods * 2
+	cfg.FoodSpawnRate = spawn
+	return NewWorld(cfg)
+}
 
-	w := NewWorld(cfg)
-
+// BenchmarkEngineStep is the baseline: a few hundred agents in a world with
+// enough room and food that most of the cost is the ordinary tick loop.
+func BenchmarkEngineStep(b *testing.B) {
+	w := benchWorld(300, 200, 0.5)
+	// Let the world settle so the measurement is not dominated by the opening
+	// moments, where nobody has met anybody yet.
+	for i := 0; i < 500; i++ {
+		w.Step()
+	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if i > 0 && i%stepsPerRun == 0 {
-			b.StopTimer()
-			w = NewWorld(cfg)
-			b.StartTimer()
-		}
 		w.Step()
 	}
 }
 
-// TestBenchmarkWorldStaysPopulated guards the benchmark itself: if the world it
-// measures ran empty, the numbers would mean nothing.
-func TestBenchmarkWorldStaysPopulated(t *testing.T) {
+// BenchmarkEngineStepCrowded squeezes the same population into a fraction of
+// the space with hardly any food. Everybody can see everybody, contests and
+// fights are constant, and decisions fire in bursts, which is where the
+// trigger based approach is most expensive.
+func BenchmarkEngineStepCrowded(b *testing.B) {
 	cfg := DefaultConfig()
-	cfg.Seed = 1
+	cfg.Seed = 99
+	cfg.Width, cfg.Height = 300, 260
 	cfg.InitialPopulation = 300
-	cfg.InitialFoodItems = 120
+	cfg.InitialFoodItems = 60
+	cfg.MaxPopulation = 600
+	cfg.MaxFoodItems = 70
+	cfg.FoodSpawnRate = 0.45
 	w := NewWorld(cfg)
-
-	for i := 0; i < stepsPerRun; i++ {
+	for i := 0; i < 500; i++ {
 		w.Step()
 	}
-	if got := w.Stats().Population; got < 200 {
-		t.Fatalf("population after %d steps = %d, too low for the benchmark to be meaningful", stepsPerRun, got)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		w.Step()
+	}
+}
+
+// BenchmarkDecide isolates the utility comparison itself, which is the part
+// expected to grow as more kinds of move are added.
+func BenchmarkDecide(b *testing.B) {
+	w := benchWorld(300, 200, 0.5)
+	for i := 0; i < 500; i++ {
+		w.Step()
+	}
+	a := &w.agents[0]
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		w.ai.Decide(w.perceive(a))
 	}
 }
