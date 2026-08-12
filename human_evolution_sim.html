@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>人間行動シミュレーション — 能力・資源・進化</title>
+<style>
+  :root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+
+    --series-1: #2a78d6; /* blue: power / population / male */
+    --series-2: #eb6834; /* orange: rationality */
+    --series-3: #1baf7a; /* aqua: food */
+    --series-5: #e87ba4; /* magenta: female */
+    --status-good: #0ca30c;
+    --status-critical: #d03b3b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+  }
+
+  #app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+  }
+
+  #stage {
+    flex: 1 1 auto;
+    position: relative;
+    background: var(--surface-1);
+  }
+
+  #world {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+  }
+
+  #topbar {
+    position: absolute;
+    top: 12px; left: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    z-index: 5;
+  }
+
+  #topbar button {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text-primary);
+  }
+  #topbar button:hover { background: #f1f1ee; }
+  #topbar button.active { background: var(--series-1); color: #fff; border-color: var(--series-1); }
+
+  #ticklabel {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: 4px;
+    white-space: nowrap;
+  }
+
+  aside {
+    flex: 0 0 320px;
+    max-width: 320px;
+    background: var(--surface-1);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 14px 16px 40px;
+  }
+
+  h1 {
+    font-size: 15px;
+    margin: 0 0 2px;
+  }
+  .subtitle {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin: 0 0 14px;
+  }
+
+  section { margin-bottom: 18px; }
+  section h2 {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12.5px;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+  .row label { color: var(--text-secondary); flex: 0 0 auto; }
+  .row .val { color: var(--text-primary); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+  .row input[type=range] { flex: 1 1 auto; margin: 0 8px; accent-color: var(--series-1); }
+
+  .statgrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+  }
+  .stattile {
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .stattile .k { font-size: 10.5px; color: var(--text-muted); }
+  .stattile .v { font-size: 15px; font-variant-numeric: tabular-nums; margin-top: 1px; }
+
+  .legend { display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+  .swatch.line { height: 2px; border-radius: 1px; }
+
+  .chartval { font-size: 11px; color: var(--text-muted); text-align: right; margin-bottom: 2px; }
+
+  #inspector {
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 12.5px;
+  }
+  #inspector .placeholder { color: var(--text-muted); }
+  #inspector .irow { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  #inspector .irow span:first-child { color: var(--text-secondary); }
+  #inspector .bar { height: 5px; border-radius: 3px; background: var(--grid); overflow: hidden; margin-top: 2px; margin-bottom: 6px; }
+  #inspector .bar > i { display: block; height: 100%; background: var(--series-1); }
+
+  details.help {
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+  details.help summary {
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text-primary);
+    font-weight: 600;
+    outline: none;
+  }
+  details.help ul { margin: 6px 0 0; padding-left: 18px; }
+  details.help li { margin-bottom: 4px; }
+
+  button.reset-btn {
+    width: 100%;
+    padding: 7px;
+    background: var(--status-critical);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  button.reset-btn:hover { opacity: .9; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="world"></canvas>
+    <div id="topbar">
+      <button id="btnPlay" class="active">⏸ 一時停止</button>
+      <button id="btnStep">1ステップ進める</button>
+      <span id="ticklabel">tick 0</span>
+    </div>
+  </div>
+
+  <aside>
+    <h1>人間行動シミュレーション</h1>
+    <p class="subtitle">能力・資源・適応・進化 — 神視点で観察するプロトタイプ</p>
+
+    <section>
+      <h2>統計</h2>
+      <div class="statgrid" id="statgrid"></div>
+    </section>
+
+    <section>
+      <h2>個体数の推移</h2>
+      <div class="chartval" id="popVal">—</div>
+      <svg id="popChart" viewBox="0 0 300 90" width="100%" height="90"></svg>
+      <div class="legend">
+        <div class="legend-item"><span class="swatch line" style="background:var(--series-1)"></span>個体数</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>平均能力の推移</h2>
+      <div class="chartval" id="abilityVal">—</div>
+      <svg id="abilityChart" viewBox="0 0 300 90" width="100%" height="90"></svg>
+      <div class="legend">
+        <div class="legend-item"><span class="swatch line" style="background:var(--series-1)"></span>パワー（相対能力）</div>
+        <div class="legend-item"><span class="swatch line" style="background:var(--series-2)"></span>理性（合理性）</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>選択した個体</h2>
+      <div id="inspector"><div class="placeholder">キャンバス上のノードをクリックすると詳細が表示されます。</div></div>
+    </section>
+
+    <section>
+      <h2>環境パラメータ</h2>
+      <div class="row"><label>初期個体数</label><input type="range" id="sInitPop" min="10" max="150" value="60"><span class="val" id="vInitPop">60</span></div>
+      <div class="row"><label>食料の湧く速さ</label><input type="range" id="sFood" min="0" max="50" value="15"><span class="val" id="vFood">1.5</span></div>
+      <div class="row"><label>突然変異の大きさ</label><input type="range" id="sMut" min="0" max="15" value="4"><span class="val" id="vMut">4</span></div>
+      <div class="row"><label>再生速度</label><input type="range" id="sSpeed" min="1" max="10" value="2"><span class="val" id="vSpeed">2</span></div>
+      <button class="reset-btn" id="btnReset">世界をリセット</button>
+    </section>
+
+    <section>
+      <details class="help">
+        <summary>ルールについて</summary>
+        <ul>
+          <li>各ノードは1人の人間。<b>青=♂ / ピンク=♀</b>。円の大きさ=食料の蓄え、輪の太さ=パワー。</li>
+          <li>行動の優先順位は「①生存（食料確保）→②繁殖（配偶者探し）」。生存が満たされない限り繁殖行動は起きない。</li>
+          <li>食料を巡って鉢合わせると、パワー（+食料による補正）が高い方が勝つ。ただし<b>理性</b>が高いほど相手との力量差を正確に見積もれるので、勝ち目のない争いは避けて別の食料を探す（低い理性だと無謀に争って負けやすい）。</li>
+          <li>体力に余裕ができると異性を探し始める。複数の候補が見えている間は、パワー・理性・食料を総合した「魅力度」が高い相手を選ぼうとする。</li>
+          <li>最初に見つけた相手にすぐ決めるとは限らない — 一定期間（理性が高いほど長く）様子を見てより良い相手がいないか比較してから、双方が納得すると<b>ペア成立</b>（線で接続）。ペア期間中はその相手のために時間を使うので他の相手は探さない。</li>
+          <li>ペア期間が終わると子を1人残す（能力は両親の平均＋突然変異）。世代を重ねるごとに、生存・繁殖に有利な能力が集団に広がっていく＝進化。</li>
+        </ul>
+      </details>
+    </section>
+  </aside>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- 定数 ----------
+  const FOOD_NUTRITION = 30;
+  const METABOLISM = 0.045;
+  const FOOD_LOW_THRESHOLD = 32;
+  const REPRO_FOOD_THRESHOLD = 62;
+  const BIRTH_COST = 24;
+  const PAIR_BOND_DURATION = 150;
+  const MATING_COOLDOWN = 70;
+  const PERCEPTION_RADIUS = 130;
+  const GRAB_RADIUS = 11;
+  const MAX_POPULATION = 240;
+  const MAX_FOOD_ITEMS = 160;
+  const AGENT_SPEED = 1.15;
+  const NOISE_SCALE = 34; // 理性が低いほど判断の誤差が大きくなる
+  const SAMPLE_EVERY = 12; // 何tickごとにグラフへ記録するか
+  const HISTORY_LEN = 200;
+
+  let W = 800, H = 600;
+  const canvas = document.getElementById('world');
+  const ctx = canvas.getContext('2d');
+
+  function resize(){
+    const rect = canvas.parentElement.getBoundingClientRect();
+    W = canvas.width = Math.floor(rect.width);
+    H = canvas.height = Math.floor(rect.height);
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- 乱数ヘルパ ----------
+  function rand(a,b){ return a + Math.random()*(b-a); }
+  function randInt(a,b){ return Math.floor(rand(a,b+1)); }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function gaussian(mean, std){
+    let u=0,v=0;
+    while(u===0) u=Math.random();
+    while(v===0) v=Math.random();
+    return mean + std * Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+  }
+  function dist2(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return dx*dx+dy*dy; }
+  function dist(a,b){ return Math.sqrt(dist2(a,b)); }
+
+  // ---------- パラメータ（スライダー連動） ----------
+  const params = {
+    initPop: 60,
+    foodRate: 1.5,   // 1tickあたりの期待湧き数
+    mutStd: 4,
+    speed: 2,        // 1フレームあたりのtick数
+  };
+
+  // ---------- シミュレーション状態 ----------
+  let agents = [];
+  let foods = [];
+  let idCounter = 1;
+  let tickCount = 0;
+  let foodAccum = 0;
+  let running = true;
+  let selectedId = null;
+  let births = 0, deaths = 0, maxGeneration = 0;
+
+  const history = { pop: [], power: [], rationality: [] };
+
+  function makeAgent(x, y, sex, power, rationality, food, generation){
+    return {
+      id: idCounter++,
+      x, y,
+      vx: rand(-0.3,0.3), vy: rand(-0.3,0.3),
+      sex, // 'M' or 'F'
+      power: clamp(power,1,100),
+      rationality: clamp(rationality,1,100),
+      food: clamp(food,0,120),
+      age: 0,
+      maxAge: randInt(1500, 2200),
+      generation,
+      alive: true,
+      state: 'forage', // forage(採食) | seek_mate(配偶者探索) | paired(ペア中) — cooldownTimer>0 なら繁殖クールダウン中
+      cooldownTimer: 0,
+      pairTimer: 0,
+      partnerId: null,
+      courtStartTick: 0,   // 配偶者探索を始めたtick（我慢強く比較する基準時刻）
+      rejectedIds: new Map(), // 直近見送った相手・食料の再挑戦クールダウン
+    };
+  }
+
+  function initialPopulation(n){
+    agents = [];
+    idCounter = 1;
+    births = 0; deaths = 0; maxGeneration = 0;
+    for(let i=0;i<n;i++){
+      agents.push(makeAgent(
+        rand(20,W-20), rand(20,H-20),
+        Math.random()<0.5?'M':'F',
+        rand(25,75), rand(25,75), rand(55,90), 0
+      ));
+    }
+  }
+
+  function spawnFoodItem(){
+    if(foods.length >= MAX_FOOD_ITEMS) return;
+    foods.push({ id: idCounter++, x: rand(10,W-10), y: rand(10,H-10) });
+  }
+
+  function reset(){
+    resize();
+    initialPopulation(params.initPop);
+    foods = [];
+    for(let i=0;i<Math.min(80, MAX_FOOD_ITEMS);i++) spawnFoodItem();
+    tickCount = 0;
+    foodAccum = 0;
+    selectedId = null;
+    history.pop = []; history.power = []; history.rationality = [];
+  }
+
+  // ---------- 適性・魅力度 ----------
+  function fitnessOf(a){
+    // パワー・理性・資源(食料)を総合した「魅力度」= 子孫が有利な立場に立ちやすいかの指標
+    return a.power*0.5 + a.rationality*0.2 + Math.min(a.food,100)*0.3;
+  }
+  function perceivedFitness(observer, target){
+    const noise = gaussian(0, (100-observer.rationality)/100 * NOISE_SCALE * 0.5);
+    return fitnessOf(target) + noise;
+  }
+  function effectiveContestPower(a){
+    return a.power + Math.min(a.food,100)*0.15;
+  }
+  function perceivedPower(observer, rival){
+    const noise = gaussian(0, (100-observer.rationality)/100 * NOISE_SCALE);
+    return effectiveContestPower(rival) + noise;
+  }
+  function patienceTicks(a){
+    return 25 + a.rationality*0.9; // 理性が高いほど、より良い相手を待てる
+  }
+
+  function nearestFood(a){
+    let best=null, bd=Infinity;
+    for(const f of foods){
+      if(a.rejectedIds.has('food_'+f.id)) continue; // 直近争って避けた食料は候補から外す
+      const d = dist2(a,f);
+      if(d<bd){ bd=d; best=f; }
+    }
+    return best;
+  }
+
+  function candidatesFor(a){
+    const oppSex = a.sex==='M' ? 'F':'M';
+    const list = [];
+    for(const o of agents){
+      if(!o.alive || o.id===a.id || o.sex!==oppSex) continue;
+      if(o.state==='paired' || o.cooldownTimer>0) continue;
+      if(a.rejectedIds.has(o.id)) continue;
+      if(dist2(a,o) <= PERCEPTION_RADIUS*PERCEPTION_RADIUS) list.push(o);
+    }
+    return list;
+  }
+
+  function moveToward(a, tx, ty, speed){
+    const dx = tx-a.x, dy=ty-a.y;
+    const d = Math.sqrt(dx*dx+dy*dy) || 1;
+    a.x += (dx/d) * speed;
+    a.y += (dy/d) * speed;
+  }
+
+  function wander(a){
+    a.vx += rand(-0.25,0.25);
+    a.vy += rand(-0.25,0.25);
+    a.vx = clamp(a.vx,-1.0,1.0);
+    a.vy = clamp(a.vy,-1.0,1.0);
+    a.x += a.vx; a.y += a.vy;
+  }
+
+  function keepInBounds(a){
+    if(a.x<8){a.x=8; a.vx=Math.abs(a.vx);}
+    if(a.x>W-8){a.x=W-8; a.vx=-Math.abs(a.vx);}
+    if(a.y<8){a.y=8; a.vy=Math.abs(a.vy);}
+    if(a.y>H-8){a.y=H-8; a.vy=-Math.abs(a.vy);}
+  }
+
+  function tryBirth(pa, pb){
+    if(agents.length >= MAX_POPULATION) return;
+    const combined = pa.food + pb.food;
+    if(combined < BIRTH_COST) return;
+    const share = BIRTH_COST/2;
+    pa.food -= share; pb.food -= share;
+    const power = (pa.power+pb.power)/2 + gaussian(0, params.mutStd);
+    const rationality = (pa.rationality+pb.rationality)/2 + gaussian(0, params.mutStd);
+    const gen = Math.max(pa.generation, pb.generation)+1;
+    maxGeneration = Math.max(maxGeneration, gen);
+    const child = makeAgent(
+      (pa.x+pb.x)/2 + rand(-8,8), (pa.y+pb.y)/2 + rand(-8,8),
+      Math.random()<0.5?'M':'F', power, rationality, 35, gen
+    );
+    agents.push(child);
+    births++;
+  }
+
+  function step(){
+    tickCount++;
+
+    // 食料の自然発生
+    foodAccum += params.foodRate;
+    while(foodAccum >= 1){ spawnFoodItem(); foodAccum -= 1; }
+
+    for(const a of agents){
+      if(!a.alive) continue;
+      a.age++;
+      a.food -= METABOLISM;
+
+      // 死亡判定
+      if(a.food<=0 || a.age>=a.maxAge){
+        a.alive = false;
+        deaths++;
+        if(a.partnerId){
+          const p = agents.find(x=>x.id===a.partnerId);
+          if(p && p.alive){ p.state='forage'; p.cooldownTimer=MATING_COOLDOWN*0.5; p.partnerId=null; }
+        }
+        continue;
+      }
+
+      if(a.cooldownTimer>0) a.cooldownTimer--;
+
+      // ---- ペア中 ----
+      if(a.state==='paired'){
+        const partner = agents.find(x=>x.id===a.partnerId);
+        if(!partner || !partner.alive){
+          a.state='forage'; a.cooldownTimer=MATING_COOLDOWN*0.5; a.partnerId=null;
+          continue;
+        }
+        // 互いに近くにとどまる
+        moveToward(a, partner.x, partner.y, AGENT_SPEED*0.6);
+        a.pairTimer--;
+        if(a.pairTimer<=0){
+          // 出産処理は片方（IDの小さい方）が代表して1回だけ行う
+          if(a.id < partner.id){
+            tryBirth(a, partner);
+          }
+          a.state='forage'; a.cooldownTimer=MATING_COOLDOWN; a.partnerId=null;
+          partner.state='forage'; partner.cooldownTimer=MATING_COOLDOWN; partner.partnerId=null;
+        }
+        keepInBounds(a);
+        continue;
+      }
+
+      // ---- 優先順位①: 生存（食料不足なら最優先で採食） ----
+      // クールダウン中（直前の繁殖で時間を使い果たした）も、生存のための採食は続ける。
+      const needsFood = a.food < FOOD_LOW_THRESHOLD;
+      const canSeekMate = !needsFood && a.food >= REPRO_FOOD_THRESHOLD && a.cooldownTimer<=0;
+
+      if(canSeekMate){
+        if(a.state!=='seek_mate'){
+          a.state='seek_mate';
+          a.courtStartTick = tickCount;
+        }
+      } else {
+        a.state='forage';
+      }
+
+      // ---- ②配偶者探し ----
+      if(a.state==='seek_mate'){
+        const cands = candidatesFor(a);
+        // 「今見えている中で」最も魅力的な相手を選ぶ（＝異性が選択できる状況では有利な相手を選ぶ）
+        let best=null, bestFit=-Infinity;
+        for(const c of cands){
+          const pf = perceivedFitness(a,c);
+          if(pf > bestFit){ bestFit = pf; best = c; }
+        }
+        if(best){
+          moveToward(a, best.x, best.y, AGENT_SPEED);
+          const withinReach = dist(a,best) <= GRAB_RADIUS;
+          if(withinReach && best.state==='seek_mate' && !best.partnerId){
+            const elapsed = tickCount - a.courtStartTick;
+            const patient = elapsed >= patienceTicks(a);
+            const clearlyGreat = bestFit >= 82;
+            // 見つけてすぐには決めない：十分に見比べた（＝我慢強く待った）か、明らかに良い相手でない限り即決しない
+            const wantsToCommit = patient || clearlyGreat;
+
+            const nElapsed = tickCount - best.courtStartTick;
+            const nPatient = nElapsed >= patienceTicks(best);
+            const nGreat = perceivedFitness(best,a) >= 82;
+            const otherAccepts = nPatient || nGreat;
+
+            if(wantsToCommit && otherAccepts){
+              a.state='paired'; a.partnerId=best.id; a.pairTimer=PAIR_BOND_DURATION;
+              best.state='paired'; best.partnerId=a.id; best.pairTimer=PAIR_BOND_DURATION;
+            } else {
+              // まだ決めない：この相手は一旦見送り、他の候補も見て回る
+              a.rejectedIds.set(best.id, tickCount+40);
+            }
+          }
+        } else {
+          wander(a);
+        }
+      }
+      // ---- ①採食 ----
+      else if(a.state==='forage'){
+        const f = nearestFood(a);
+        if(f){
+          moveToward(a, f.x, f.y, AGENT_SPEED);
+          if(dist(a,f) <= GRAB_RADIUS){
+            // 同じ食料の近くに他の個体がいれば競合とみなす
+            let contest = null;
+            for(const o of agents){
+              if(!o.alive || o.id===a.id) continue;
+              if(dist2(o,f) <= GRAB_RADIUS*GRAB_RADIUS){ contest=o; break; }
+            }
+            if(contest){
+              const myPow = effectiveContestPower(a);
+              const rivalPerceived = perceivedPower(a, contest);
+              if(rivalPerceived > myPow*1.05){
+                // 勝ち目が薄いと判断 → 争わず別の方法（他の食料）を探す
+                a.rejectedIds.set('food_'+f.id, tickCount+30);
+              } else {
+                const realWin = myPow + gaussian(0,6) >= effectiveContestPower(contest) + gaussian(0,6);
+                if(realWin){
+                  a.food = Math.min(120, a.food + FOOD_NUTRITION);
+                  const idx = foods.indexOf(f);
+                  if(idx>=0) foods.splice(idx,1);
+                } else {
+                  a.food = Math.max(0, a.food - 5);
+                }
+              }
+            } else {
+              a.food = Math.min(120, a.food + FOOD_NUTRITION);
+              const idx = foods.indexOf(f);
+              if(idx>=0) foods.splice(idx,1);
+            }
+          }
+        } else {
+          wander(a);
+        }
+      } else {
+        wander(a);
+      }
+
+      // 拒否リストの掃除
+      if(a.rejectedIds.size){
+        for(const [k,exp] of a.rejectedIds){ if(tickCount>exp) a.rejectedIds.delete(k); }
+      }
+
+      keepInBounds(a);
+    }
+
+    // 死亡個体の除去
+    if(tickCount % 30 === 0){
+      agents = agents.filter(a=>a.alive);
+    }
+
+    // サンプリング
+    if(tickCount % SAMPLE_EVERY === 0){
+      sampleHistory();
+    }
+  }
+
+  function sampleHistory(){
+    const alive = agents.filter(a=>a.alive);
+    const n = alive.length || 1;
+    let sp=0, sr=0;
+    for(const a of alive){ sp+=a.power; sr+=a.rationality; }
+    history.pop.push(alive.length);
+    history.power.push(sp/n);
+    history.rationality.push(sr/n);
+    if(history.pop.length>HISTORY_LEN){ history.pop.shift(); history.power.shift(); history.rationality.shift(); }
+  }
+
+  // ---------- 描画 ----------
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    // 食料
+    ctx.fillStyle = '#1baf7a';
+    for(const f of foods){
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 3, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // ペアの結線
+    ctx.strokeStyle = 'rgba(11,11,11,0.18)';
+    ctx.lineWidth = 1;
+    const seenPairs = new Set();
+    for(const a of agents){
+      if(!a.alive || a.state!=='paired' || !a.partnerId) continue;
+      const key = a.id<a.partnerId ? a.id+'-'+a.partnerId : a.partnerId+'-'+a.id;
+      if(seenPairs.has(key)) continue;
+      seenPairs.add(key);
+      const p = agents.find(x=>x.id===a.partnerId);
+      if(p){
+        ctx.beginPath();
+        ctx.moveTo(a.x,a.y);
+        ctx.lineTo(p.x,p.y);
+        ctx.stroke();
+      }
+    }
+
+    // エージェント
+    for(const a of agents){
+      if(!a.alive) continue;
+      const r = 3.5 + Math.min(a.food,100)/100*8.5;
+      const ringW = 1 + a.power/100*3;
+      let ringColor = '#c3c2b7'; // 採食中・休息中は共通のグレー
+      if(a.state==='seek_mate') ringColor = '#eb6834';
+      else if(a.state==='paired') ringColor = '#0ca30c';
+
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, r, 0, Math.PI*2);
+      ctx.fillStyle = a.sex==='M' ? '#2a78d6' : '#e87ba4';
+      ctx.fill();
+      ctx.lineWidth = ringW;
+      ctx.strokeStyle = ringColor;
+      ctx.stroke();
+
+      if(a.id===selectedId){
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, r+5, 0, Math.PI*2);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#0b0b0b';
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ---------- チャート ----------
+  function renderLineChart(svg, series, opts){
+    const w=300, h=90, padL=4, padR=4, padT=6, padB=4;
+    let maxV = opts.fixedMax;
+    if(maxV===undefined){
+      maxV = 1;
+      for(const s of series) for(const v of s.data) if(v>maxV) maxV=v;
+      maxV *= 1.15;
+    }
+    const n = series[0] && series[0].data.length || 0;
+    let html = `<rect x="0" y="0" width="${w}" height="${h}" fill="var(--surface-1)"/>`;
+    // ベースライン
+    html += `<line x1="${padL}" y1="${h-padB}" x2="${w-padR}" y2="${h-padB}" stroke="var(--baseline)" stroke-width="1"/>`;
+    if(n>1){
+      for(const s of series){
+        const pts = s.data.map((v,i)=>{
+          const x = padL + (i/(n-1))*(w-padL-padR);
+          const y = padT + (1 - v/maxV)*(h-padT-padB);
+          return x.toFixed(1)+','+y.toFixed(1);
+        }).join(' ');
+        if(s.fill){
+          const first = s.data.length ? padL : padL;
+          html += `<polygon points="${padL},${h-padB} ${pts} ${w-padR},${h-padB}" fill="${s.color}" fill-opacity="0.12" stroke="none"/>`;
+        }
+        html += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      }
+    }
+    svg.innerHTML = html;
+  }
+
+  function updateCharts(){
+    const popSvg = document.getElementById('popChart');
+    renderLineChart(popSvg, [{data: history.pop, color: '#2a78d6', fill:true}], {});
+    const abSvg = document.getElementById('abilityChart');
+    renderLineChart(abSvg, [
+      {data: history.power, color:'#2a78d6'},
+      {data: history.rationality, color:'#eb6834'},
+    ], {fixedMax:100});
+
+    const lastPop = history.pop.length ? history.pop[history.pop.length-1] : agents.filter(a=>a.alive).length;
+    document.getElementById('popVal').textContent = '現在: '+Math.round(lastPop)+' 人';
+    const lp = history.power.length ? history.power[history.power.length-1] : 0;
+    const lr = history.rationality.length ? history.rationality[history.rationality.length-1] : 0;
+    document.getElementById('abilityVal').textContent = `パワー ${lp.toFixed(1)} / 理性 ${lr.toFixed(1)}`;
+  }
+
+  // ---------- 統計パネル ----------
+  function updateStats(){
+    const alive = agents.filter(a=>a.alive);
+    const males = alive.filter(a=>a.sex==='M').length;
+    const females = alive.length - males;
+    const grid = document.getElementById('statgrid');
+    const tiles = [
+      ['個体数', alive.length],
+      ['世代（最大）', maxGeneration],
+      ['♂ / ♀', males+' / '+females],
+      ['食料アイテム数', foods.length],
+      ['累計出生', births],
+      ['累計死亡', deaths],
+    ];
+    grid.innerHTML = tiles.map(([k,v])=>`<div class="stattile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+    document.getElementById('ticklabel').textContent = 'tick '+tickCount;
+  }
+
+  function updateInspector(){
+    const box = document.getElementById('inspector');
+    const a = agents.find(x=>x.id===selectedId && x.alive);
+    if(!a){
+      box.innerHTML = '<div class="placeholder">キャンバス上のノードをクリックすると詳細が表示されます。</div>';
+      return;
+    }
+    let stateLabel = {forage:'採食中', seek_mate:'配偶者探索中', paired:'ペア中'}[a.state] || a.state;
+    if(a.state==='forage' && a.cooldownTimer>0) stateLabel = '休息中（採食）';
+    box.innerHTML = `
+      <div class="irow"><span>性別</span><span>${a.sex==='M'?'♂':'♀'}（世代 ${a.generation}）</span></div>
+      <div class="irow"><span>状態</span><span>${stateLabel}</span></div>
+      <div class="irow"><span>年齢</span><span>${a.age} / ${a.maxAge}</span></div>
+      <div>パワー ${a.power.toFixed(1)}</div>
+      <div class="bar"><i style="width:${a.power}%;background:#2a78d6"></i></div>
+      <div>理性 ${a.rationality.toFixed(1)}</div>
+      <div class="bar"><i style="width:${a.rationality}%;background:#eb6834"></i></div>
+      <div>食料 ${a.food.toFixed(1)}</div>
+      <div class="bar"><i style="width:${Math.min(100,a.food)}%;background:#1baf7a"></i></div>
+    `;
+  }
+
+  // ---------- イベント ----------
+  canvas.addEventListener('click', (e)=>{
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX-rect.left, my = e.clientY-rect.top;
+    let best=null, bd=400;
+    for(const a of agents){
+      if(!a.alive) continue;
+      const d = (a.x-mx)*(a.x-mx)+(a.y-my)*(a.y-my);
+      if(d<bd){ bd=d; best=a; }
+    }
+    selectedId = best ? best.id : null;
+    updateInspector();
+  });
+
+  document.getElementById('btnPlay').addEventListener('click', function(){
+    running = !running;
+    this.classList.toggle('active', running);
+    this.textContent = running ? '⏸ 一時停止' : '▶ 再生';
+  });
+  document.getElementById('btnStep').addEventListener('click', ()=>{
+    if(!running){ step(); draw(); updateStats(); updateInspector(); if(tickCount%SAMPLE_EVERY===0) updateCharts(); }
+  });
+  document.getElementById('btnReset').addEventListener('click', ()=>{
+    reset();
+    updateStats(); updateInspector(); updateCharts(); draw();
+  });
+
+  function bindSlider(id, valId, param, transform, display){
+    const el = document.getElementById(id);
+    const out = document.getElementById(valId);
+    el.addEventListener('input', ()=>{
+      const raw = Number(el.value);
+      const v = transform ? transform(raw) : raw;
+      params[param] = v;
+      out.textContent = display ? display(v) : v;
+    });
+    // 初期表示
+    const raw = Number(el.value);
+    const v = transform ? transform(raw) : raw;
+    params[param] = v;
+    out.textContent = display ? display(v) : v;
+  }
+  bindSlider('sInitPop','vInitPop','initPop');
+  bindSlider('sFood','vFood','foodRate', v=>v/10, v=>v.toFixed(1));
+  bindSlider('sMut','vMut','mutStd');
+  bindSlider('sSpeed','vSpeed','speed');
+
+  // ---------- メインループ ----------
+  let lastChartUpdate = 0;
+  function loop(){
+    if(running){
+      for(let i=0;i<params.speed;i++) step();
+    }
+    draw();
+    if(tickCount - lastChartUpdate >= SAMPLE_EVERY || !running){
+      updateCharts();
+      lastChartUpdate = tickCount;
+    }
+    updateStats();
+    if(selectedId!==null) updateInspector();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- 初期化 ----------
+  resize();
+  reset();
+  updateStats(); updateInspector(); updateCharts(); draw();
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
