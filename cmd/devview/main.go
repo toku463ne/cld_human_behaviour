@@ -2,9 +2,15 @@
 // network involved) and draws it, so that a new rule can be watched right after
 // it is written. It is not the real client, which will render snapshots
 // received from the server.
+//
+// Watching the whole population at speed answers "does the world hold
+// together". Following one node answers "why did it do that", which needs the
+// opposite: click a node to select it, slow the clock down or step tick by
+// tick, and read its decisions in the panel on the right.
 package main
 
 import (
+	"flag"
 	"fmt"
 	"image/color"
 	"log"
@@ -21,12 +27,18 @@ import (
 )
 
 const (
-	screenWidth  = 900
-	screenHeight = 650
+	worldWidth  = 820
+	worldHeight = 660
 
-	// The simulation tick rate is independent from the frame rate: several
-	// ticks are simulated per drawn frame.
-	ticksPerFrame = 2
+	// The panel on the right holds the selected node's decisions. It is text
+	// only: the point is to read the numbers the choice was made on.
+	panelWidth = 460
+	panelX     = worldWidth
+	lineHeight = 16
+	panelChars = panelWidth/6 - 2 // the debug font is 6 pixels wide
+
+	screenWidth  = worldWidth + panelWidth
+	screenHeight = worldHeight
 
 	minRadius   = 3.5
 	maxRadius   = 11.0
@@ -37,11 +49,29 @@ const (
 	pickRadius = 14.0
 
 	// How many of a selected agent's opinions to list.
-	maxOpinionRows = 8
+	maxOpinionRows = 12
 )
+
+// speeds are the playback rates, in simulation ticks per drawn frame. The slow
+// end is what following a single node needs: at 1/10 there is time to read a
+// decision before the next one happens.
+var speeds = []struct {
+	label string
+	ticks float64
+}{
+	{"1/10", 0.2},
+	{"1/5", 0.4},
+	{"1/2", 1},
+	{"normal", 2},
+	{"fast", 8},
+}
+
+const normalSpeed = 3 // index of the rate the viewer starts at
 
 var (
 	colorBackground = color.RGBA{0xfc, 0xfc, 0xfb, 0xff}
+	colorPanel      = color.RGBA{0xef, 0xef, 0xec, 0xff}
+	colorPanelEdge  = color.RGBA{0xc0, 0xc0, 0xba, 0xff}
 	colorFood       = color.RGBA{0x1b, 0xaf, 0x7a, 0xff}
 	colorMale       = color.RGBA{0x2a, 0x78, 0xd6, 0xff}
 	colorFemale     = color.RGBA{0xe8, 0x7b, 0xa4, 0xff}
@@ -54,35 +84,79 @@ var (
 	colorPairLink   = color.RGBA{0x0b, 0x0b, 0x0b, 0x30}
 	colorFightLink  = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
 	colorSelected   = color.RGBA{0x11, 0x11, 0x11, 0xff}
+	colorTarget     = color.RGBA{0x11, 0x11, 0x11, 0x60}
 	colorHungerBar  = color.RGBA{0xc9, 0x8a, 0x20, 0xff}
+)
+
+// panelMode is what the right hand panel shows about the selected node.
+type panelMode uint8
+
+const (
+	modeDecision panelMode = iota // the utility comparison behind its last moves
+	modeBeliefs                   // what it reckons about everybody it has met
 )
 
 type game struct {
 	world *engine.World
 
-	paused   bool
+	paused bool
+	speed  int
+	// tickAccum carries the fraction of a tick left over by a slow rate, so
+	// that 1/5 speed really is one tick every five frames.
+	tickAccum float64
+
 	selected int // agent ID, 0 for none
+	mode     panelMode
+	// traceBack is how far into the decision history the panel is looking:
+	// 0 is the most recent decision.
+	traceBack int
 }
 
 func (g *game) Update() error {
-	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
-		g.paused = !g.paused
-	}
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		g.pick(ebiten.CursorPosition())
-	}
+	g.handleInput()
 	if g.paused {
 		return nil
 	}
-	for i := 0; i < ticksPerFrame; i++ {
+	g.tickAccum += speeds[g.speed].ticks
+	for g.tickAccum >= 1 {
 		g.world.Step()
+		g.tickAccum--
 	}
 	return nil
 }
 
-// pick selects the node under the cursor, so that its view of everybody else
-// can be inspected.
-func (g *game) pick(mx, my int) {
+func (g *game) handleInput() {
+	switch {
+	case inpututil.IsKeyJustPressed(ebiten.KeySpace):
+		g.paused = !g.paused
+	case inpututil.IsKeyJustPressed(ebiten.KeyRight), inpututil.IsKeyJustPressed(ebiten.KeyN):
+		// One tick, and stay stopped: this is how a single decision gets read.
+		g.paused = true
+		g.tickAccum = 0
+		g.world.Step()
+	case inpututil.IsKeyJustPressed(ebiten.KeyMinus):
+		g.speed = max(g.speed-1, 0)
+	case inpututil.IsKeyJustPressed(ebiten.KeyEqual):
+		g.speed = min(g.speed+1, len(speeds)-1)
+	case inpututil.IsKeyJustPressed(ebiten.KeyTab):
+		g.mode = 1 - g.mode
+	case inpututil.IsKeyJustPressed(ebiten.KeyBracketLeft):
+		g.traceBack++ // further back in time
+	case inpututil.IsKeyJustPressed(ebiten.KeyBracketRight):
+		g.traceBack = max(g.traceBack-1, 0)
+	case inpututil.IsKeyJustPressed(ebiten.KeyEscape):
+		g.selectAgent(0)
+	}
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		mx, my := ebiten.CursorPosition()
+		if mx < worldWidth {
+			g.selectAgent(g.nodeAt(mx, my))
+		}
+	}
+}
+
+// nodeAt returns the node under the cursor, or 0.
+func (g *game) nodeAt(mx, my int) int {
 	best, bestDist := 0, pickRadius*pickRadius
 	for _, a := range g.world.Agents() {
 		dx, dy := a.X-float64(mx), a.Y-float64(my)
@@ -90,12 +164,37 @@ func (g *game) pick(mx, my int) {
 			bestDist, best = d, a.ID
 		}
 	}
-	g.selected = best
+	return best
+}
+
+// selectAgent switches which node is being followed. Only the selected one has
+// its decisions recorded, which is why the engine keeps tracing off by default.
+func (g *game) selectAgent(id int) {
+	if id == g.selected {
+		return
+	}
+	if g.selected != 0 {
+		g.world.TrackDecisions(g.selected, false)
+	}
+	g.selected = id
+	g.traceBack = 0
+	if id != 0 {
+		g.world.TrackDecisions(id, true)
+	}
 }
 
 func (g *game) Draw(screen *ebiten.Image) {
 	screen.Fill(colorBackground)
+	g.drawWorld(screen)
 
+	vector.DrawFilledRect(screen, panelX, 0, panelWidth, screenHeight, colorPanel, false)
+	vector.StrokeLine(screen, panelX, 0, panelX, screenHeight, 1, colorPanelEdge, false)
+
+	ebitenutil.DebugPrint(screen, g.overlay())
+	g.drawPanel(screen)
+}
+
+func (g *game) drawWorld(screen *ebiten.Image) {
 	for _, f := range g.world.Foods() {
 		vector.DrawFilledCircle(screen, float32(f.X), float32(f.Y), 3, colorFood, true)
 	}
@@ -138,10 +237,26 @@ func (g *game) Draw(screen *ebiten.Image) {
 		}
 		if a.ID == g.selected {
 			vector.StrokeCircle(screen, x, y, radius+5, 1.5, colorSelected, true)
+			g.markTarget(screen, a)
 		}
 	}
+}
 
-	ebitenutil.DebugPrint(screen, g.overlay())
+// markTarget rings whatever the selected node is currently acting on, so that
+// the target named in the trace can be found on the map.
+func (g *game) markTarget(screen *ebiten.Image, a *engine.Agent) {
+	switch a.Action.Kind {
+	case engine.ActEat:
+		for _, f := range g.world.Foods() {
+			if f.ID == a.Action.TargetID {
+				vector.StrokeCircle(screen, float32(f.X), float32(f.Y), 7, 1.5, colorTarget, true)
+			}
+		}
+	case engine.ActAttack, engine.ActFlee, engine.ActObserve, engine.ActCourt:
+		if t, ok := g.world.AgentByID(a.Action.TargetID); ok {
+			vector.StrokeCircle(screen, float32(t.X), float32(t.Y), 14, 1.5, colorTarget, true)
+		}
+	}
 }
 
 func stateColor(s engine.State) color.RGBA {
@@ -165,43 +280,181 @@ func (g *game) overlay() string {
 	s := g.world.Stats()
 	var b strings.Builder
 
-	pausedNote := ""
+	state := "playing " + speeds[g.speed].label
 	if g.paused {
-		pausedNote = "  [PAUSED]"
+		state = "PAUSED"
 	}
-	fmt.Fprintf(&b, "tick %d  pop %d (m %d / f %d)  food %d  births %d  deaths %d (kills %d)  gen %d%s\n",
-		s.Tick, s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, s.MaxGeneration, pausedNote)
+	fmt.Fprintf(&b, "tick %d  pop %d (m %d / f %d)  food %d  births %d  deaths %d (kills %d)  gen %d  [%s]\n",
+		s.Tick, s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, s.MaxGeneration, state)
 	fmt.Fprintf(&b, "avg power %.1f  rationality %.1f  intelligence %.1f  vitality %.1f  hunger %.1f\n",
 		s.AvgPower, s.AvgRationality, s.AvgIntelligence, s.AvgVitality, s.AvgHunger)
 	b.WriteString("radius = vitality, ring width = power, bar = hunger; blue male / pink female\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
-	b.WriteString("space pauses, click a node to see what it believes about the others\n")
-
-	g.describeSelected(&b)
+	b.WriteString("space pause   right/n one tick   -/= slower/faster   click a node   esc clear\n")
+	b.WriteString("tab decisions/beliefs   [ ] older/newer decision\n")
 	return b.String()
 }
 
-// describeSelected prints the selected agent and, below it, what it reckons
-// about everybody it has met: how strong they are, how sure it is, and what
-// they have already cost it.
-func (g *game) describeSelected(b *strings.Builder) {
+// --- the panel -------------------------------------------------------------
+
+// textBox writes the panel line by line, and stops when it runs out of room so
+// that a long list never spills over the bottom edge.
+type textBox struct {
+	screen *ebiten.Image
+	y      int
+}
+
+func (t *textBox) line(format string, args ...any) {
+	if t.y > screenHeight-lineHeight {
+		return
+	}
+	s := fmt.Sprintf(format, args...)
+	if len(s) > panelChars {
+		s = s[:panelChars]
+	}
+	ebitenutil.DebugPrintAt(t.screen, s, panelX+8, t.y)
+	t.y += lineHeight
+}
+
+// roomLeft is how many more lines fit.
+func (t *textBox) roomLeft() int {
+	return (screenHeight - lineHeight - t.y) / lineHeight
+}
+
+func (g *game) drawPanel(screen *ebiten.Image) {
+	t := &textBox{screen: screen, y: 8}
+
 	if g.selected == 0 {
-		return
-	}
-	a, ok := g.world.AgentByID(g.selected)
-	if !ok {
-		g.selected = 0
+		t.line("no node selected")
+		t.line("")
+		t.line("click a node to follow it. only the node you are")
+		t.line("following has its decisions recorded, so this is")
+		t.line("cheap enough to leave on.")
+		t.line("")
+		t.line("to watch one node decide:")
+		t.line("  - click it")
+		t.line("  - press - a few times, or space to stop")
+		t.line("  - press right (or n) to advance one tick")
 		return
 	}
 
-	fmt.Fprintf(b, "\n#%d %s gen %d  vit %.0f hun %.0f  pow %.0f rat %.0f int %.0f  %s(%s)\n",
-		a.ID, a.Sex, a.Generation, a.Vitality, a.Hunger,
-		a.Power, a.Rationality, a.Intelligence, a.State, a.Action.Kind)
-	fmt.Fprintf(b, "parents %v  children %v\n", a.ParentIDs, a.ChildIDs)
+	a, alive := g.world.AgentByID(g.selected)
+	if alive {
+		t.line("#%d %s  gen %d  age %d", a.ID, a.Sex, a.Generation, a.Age)
+		t.line("vit %5.1f  hun %5.1f   pow %.0f  rat %.0f  int %.0f",
+			a.Vitality, a.Hunger, a.Power, a.Rationality, a.Intelligence)
+		t.line("state %s   doing %s", a.State, describeAction(a.Action))
+		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
+	} else {
+		t.line("#%d is gone. its last decisions are below.", g.selected)
+	}
+	t.line("")
 
-	opinions := g.world.Opinions(a.ID)
+	if g.mode == modeBeliefs {
+		g.drawBeliefs(t)
+		return
+	}
+	g.drawDecision(t)
+}
+
+// drawDecision prints one recorded decision: what prompted it, every option it
+// weighed up with the terms behind the score, and which one it took.
+func (g *game) drawDecision(t *textBox) {
+	traces := g.world.DecisionTraces(g.selected)
+	if len(traces) == 0 {
+		t.line("no decision recorded yet.")
+		t.line("deciding is trigger driven, so nothing happens")
+		t.line("until something prompts it: food coming into")
+		t.line("sight, a blow landing, or a goal being reached.")
+		return
+	}
+
+	g.traceBack = min(g.traceBack, len(traces)-1)
+	tr := traces[len(traces)-1-g.traceBack]
+
+	t.line("DECISION %d of %d   tick %d (%d ticks ago)",
+		len(traces)-g.traceBack, len(traces), tr.Tick, g.world.Tick()-tr.Tick)
+	t.line("asked because: %s", tr.Trigger)
+	t.line("at the time: vit %.1f  hun %.1f  scarcity %.2f",
+		tr.Self.Vitality, tr.Self.Hunger, tr.Self.FoodScarcity)
+	t.line("took: %s", describeAction(tr.Action))
+	t.line("")
+
+	if len(tr.Options) == 0 {
+		t.line("(this controller does not report its options)")
+		return
+	}
+
+	// Best first, which is not the order they were scored in.
+	order := make([]int, len(tr.Options))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return tr.Options[order[i]].Score > tr.Options[order[j]].Score
+	})
+
+	shown := min(len(order), t.roomLeft()/3)
+	t.line("compared %d options, best first:", len(tr.Options))
+	for _, i := range order[:shown] {
+		o := tr.Options[i]
+		mark := "  "
+		if i == tr.Chosen {
+			mark = "=>"
+		}
+		noise := ""
+		if o.Noise != 0 {
+			noise = fmt.Sprintf("  (%+.2f misjudged)", o.Noise)
+		}
+		t.line("%s %-22s %8.3f%s", mark, describeAction(o.Action), o.Score, noise)
+		t.line("      %s", goalTerms(o.Utility))
+		t.line("      %s", costTerms(o.Utility))
+	}
+	if rest := len(order) - shown; rest > 0 {
+		t.line("   ... and %d worse", rest)
+	}
+}
+
+// goalTerms is the "what it is worth x how likely" half of the score.
+func goalTerms(u engine.Utility) string {
+	goals := u.Goals()
+	if len(goals) == 0 {
+		return "no goal served"
+	}
+	parts := make([]string, 0, len(goals))
+	for _, g := range goals {
+		parts = append(parts, fmt.Sprintf("%s %.2fx%.2f=%.2f", g.Name, g.Value, g.Chance, g.Score()))
+	}
+	return strings.Join(parts, "  ")
+}
+
+// costTerms is what the option costs: vitality, time, and being wary of
+// somebody who has hurt this agent before.
+func costTerms(u engine.Utility) string {
+	s := fmt.Sprintf("cost vit %.2f=-%.2f  time %.0ft=-%.2f", u.Vitality, u.VitalityCost, u.Ticks, u.TimeCost)
+	if u.Risk != 0 {
+		s += fmt.Sprintf("  risk -%.2f", u.Risk)
+	}
+	return s
+}
+
+func describeAction(a engine.Action) string {
+	switch a.Kind {
+	case engine.ActRest:
+		return "rest"
+	case engine.ActMove:
+		return fmt.Sprintf("move %+.1f%+.1f e%.2f", a.DX, a.DY, a.Effort)
+	default:
+		return fmt.Sprintf("%s #%d e%.2f", a.Kind, a.TargetID, a.Effort)
+	}
+}
+
+// drawBeliefs prints what the selected node reckons about everybody it has met:
+// how strong they are, how sure it is, and what they have already cost it.
+func (g *game) drawBeliefs(t *textBox) {
+	opinions := g.world.Opinions(g.selected)
 	if len(opinions) == 0 {
-		b.WriteString("has met nobody yet\n")
+		t.line("has met nobody yet")
 		return
 	}
 
@@ -217,10 +470,10 @@ func (g *game) describeSelected(b *strings.Builder) {
 		return ids[i] < ids[j]
 	})
 
-	b.WriteString("believes about others (true power in brackets):\n")
+	t.line("believes about others (true power in brackets):")
 	for i, id := range ids {
 		if i >= maxOpinionRows {
-			fmt.Fprintf(b, "  ... and %d more\n", len(ids)-maxOpinionRows)
+			t.line("  ... and %d more", len(ids)-maxOpinionRows)
 			break
 		}
 		op := opinions[id]
@@ -228,7 +481,7 @@ func (g *game) describeSelected(b *strings.Builder) {
 		if other, ok := g.world.AgentByID(id); ok {
 			truth = fmt.Sprintf("%.0f", other.Power)
 		}
-		fmt.Fprintf(b, "  #%-4d strength %5.1f +/- %5.1f  risk %5.1f  seen %2d  [%s]\n",
+		t.line("  #%-4d strength %5.1f +/- %5.1f  risk %5.1f  seen %2d [%s]",
 			id, op.Strength, math.Sqrt(op.Variance), op.Risk, op.Samples, truth)
 	}
 }
@@ -238,12 +491,24 @@ func (g *game) Layout(int, int) (int, int) {
 }
 
 func main() {
+	follow := flag.Int("follow", 0, "node ID to follow from the start (0 for none; nodes can also be clicked)")
+	seed := flag.Int64("seed", engine.DefaultConfig().Seed, "simulation seed")
+	slow := flag.Bool("slow", false, "start at 1/5 speed, for following a single node")
+	flag.Parse()
+
 	cfg := engine.DefaultConfig()
-	cfg.Width, cfg.Height = screenWidth, screenHeight
+	cfg.Width, cfg.Height = worldWidth, worldHeight
+	cfg.Seed = *seed
+
+	g := &game{world: engine.NewWorld(cfg), speed: normalSpeed}
+	if *slow {
+		g.speed = 1
+	}
+	g.selectAgent(*follow)
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("devview - human behaviour simulation")
-	if err := ebiten.RunGame(&game{world: engine.NewWorld(cfg)}); err != nil {
+	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
 }

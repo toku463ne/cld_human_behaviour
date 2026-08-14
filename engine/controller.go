@@ -23,7 +23,23 @@ const (
 	depthReactive  = 1 // fight over the food in front of you, run away, court
 	depthObserve   = 2 // spend time now to judge better later
 	depthPreemtive = 3 // remove a competitor before the competition happens
+
+	depthMax = depthPreemtive
 )
+
+// strategyDepth is how far ahead an agent can think.
+//
+// Setting Config.StrategyDepthUnlock to zero turns the gate off entirely, which
+// leaves intelligence acting through ChoiceNoise alone. That is the control arm
+// of the experiment: the gate is a hard threshold on a continuous ability, and
+// the thresholds it produces do not line up with the range abilities actually
+// occupy, so it has to be possible to run the world without it.
+func strategyDepth(cfg *Config, intelligence float64) int {
+	if cfg.StrategyDepthUnlock <= 0 {
+		return depthMax
+	}
+	return int(intelligence / cfg.StrategyDepthUnlock)
+}
 
 // fleeExposureTicks is how long an agent reckons it stays within reach of the
 // one it is running from.
@@ -52,6 +68,13 @@ type option struct {
 type AIController struct {
 	opts []option
 
+	// terms holds the breakdown of each option in opts, and is only filled in
+	// while tracing: an agent nobody is watching pays for the arithmetic but
+	// not for carrying the result around, which keeps the common case as cheap
+	// as it was before decisions could be explained.
+	terms   []Utility
+	tracing bool
+
 	// The best meal in sight and who is in the way of it, worked out while
 	// scoring the food and then reused when scoring a fight: driving that
 	// rival off is worth exactly the part of the meal they are costing.
@@ -62,8 +85,10 @@ type AIController struct {
 
 func (c *AIController) Decide(p *Perception) Action {
 	c.opts = c.opts[:0]
+	c.terms = c.terms[:0]
+	c.tracing = p.Trace != nil
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
-	maxDepth := int(p.Self.Intelligence / p.Cfg.StrategyDepthUnlock)
+	maxDepth := strategyDepth(p.Cfg, p.Self.Intelligence)
 
 	c.addRest(p)
 	c.addExplore(p)
@@ -150,8 +175,11 @@ func damagePerTick(cfg *Config, power, effort float64) float64 {
 	return cfg.AttackDamage * effort * power / midAbility
 }
 
-func (c *AIController) add(a Action, util float64) {
-	c.opts = append(c.opts, option{action: a, util: util})
+func (c *AIController) add(a Action, u Utility) {
+	c.opts = append(c.opts, option{action: a, util: u.Total()})
+	if c.tracing {
+		c.terms = append(c.terms, u)
+	}
 }
 
 // --- options ---------------------------------------------------------------
@@ -166,7 +194,9 @@ func (c *AIController) addRest(p *Perception) {
 	now := pressure(cfg, s.Vitality, drain+incoming)
 	// Whatever is hitting the agent goes on hitting it while it sits there.
 	after := pressure(cfg, s.Vitality+recoverable(cfg, s.Vitality, s.Hunger, incoming), drain+incoming)
-	c.add(Action{Kind: ActRest}, (now-after)*cfg.LifeValue)
+	c.add(Action{Kind: ActRest}, Utility{
+		Life: Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
+	})
 }
 
 // addExplore scores wandering off to look for something to eat. It is worth
@@ -184,8 +214,12 @@ func (c *AIController) addExplore(p *Perception) {
 		dx, dy = math.Cos(angle), math.Sin(angle)
 	}
 	effort := 0.4
-	util := cfg.ExploreValue*hungry - moveCostAt(cfg, effort)*cfg.VitalityWeight
-	c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, util)
+	cost := moveCostAt(cfg, effort)
+	c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, Utility{
+		Explore:      Goal{Value: cfg.ExploreValue, Chance: hungry},
+		Vitality:     cost,
+		VitalityCost: cost * cfg.VitalityWeight,
+	})
 }
 
 // addFood scores going for each item in sight. Reaching it is a race against
@@ -219,10 +253,13 @@ func (c *AIController) addFood(p *Perception) {
 			after := pressure(cfg, vitAfter, projectedDrain(cfg, hungerAfter)+incoming)
 
 			meal := (now - after) * cfg.LifeValue
-			util := meal*pGet -
-				cost*cfg.VitalityWeight -
-				ticks*cfg.TimeCost
-			c.add(Action{Kind: ActEat, TargetID: f.ID, Effort: effort}, util)
+			c.add(Action{Kind: ActEat, TargetID: f.ID, Effort: effort}, Utility{
+				Life:         Goal{Value: meal, Chance: pGet},
+				Vitality:     cost,
+				Ticks:        ticks,
+				VitalityCost: cost * cfg.VitalityWeight,
+				TimeCost:     ticks * cfg.TimeCost,
+			})
 
 			// Remember what the race is costing: that difference is what
 			// clearing the rival out of the way would buy.
@@ -270,7 +307,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 	theirScore := o.EstStrength * o.Vitality
 	pWin := myScore / (myScore + theirScore + 1e-9)
 
-	maxDepth := int(s.Intelligence / cfg.StrategyDepthUnlock)
+	maxDepth := strategyDepth(cfg, s.Intelligence)
 
 	for _, effort := range effortLevels {
 		// What the exchange is expected to cost, assuming the other side hits
@@ -296,25 +333,32 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		// The meal in front of them. Driving this one off wins the race for
 		// the item they are contesting, so it is worth the part of that meal
 		// the race was costing.
-		stake := 0.0
+		stake := Goal{}
 		if c.bestFoodRival == o.ID {
-			stake = c.bestFoodGap * pWin
+			stake = Goal{Value: c.bestFoodGap, Chance: pWin}
 		}
 
 		// Removing somebody who will be eating the same food later on. Only an
 		// agent that can think that far ahead sees this at all, and a world
 		// with food to spare makes the term vanish on its own.
-		competition := 0.0
+		competition := Goal{}
 		if maxDepth >= depthPreemtive {
-			competition = cfg.CompetitionWeight * cfg.LifeValue *
-				clamp(s.FoodScarcity, 0, 3) / 3 * pWin
+			competition = Goal{
+				Value:  cfg.CompetitionWeight * cfg.LifeValue * clamp(s.FoodScarcity, 0, 3) / 3,
+				Chance: pWin,
+			}
 		}
 
-		util := lifeTerm + stake + competition -
-			cfg.RiskWeight*o.Risk -
-			cost*cfg.VitalityWeight -
-			ticks*cfg.TimeCost
-		c.add(Action{Kind: ActAttack, TargetID: o.ID, Effort: effort}, util)
+		c.add(Action{Kind: ActAttack, TargetID: o.ID, Effort: effort}, Utility{
+			Life:         Goal{Value: lifeTerm, Chance: 1},
+			Stake:        stake,
+			Rival:        competition,
+			Risk:         cfg.RiskWeight * o.Risk,
+			Vitality:     cost,
+			Ticks:        ticks,
+			VitalityCost: cost * cfg.VitalityWeight,
+			TimeCost:     ticks * cfg.TimeCost,
+		})
 	}
 }
 
@@ -338,10 +382,13 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	pEscape := clamp(s.Vitality/(s.Vitality+o.Vitality+1e-9), 0.15, 0.9)
 	fled := pressure(cfg, s.Vitality-cost, drain)
 
-	util := (staying-fled)*cfg.LifeValue*pEscape -
-		cost*cfg.VitalityWeight -
-		fleeExposureTicks*cfg.TimeCost
-	c.add(Action{Kind: ActFlee, TargetID: o.ID, Effort: cfg.FleeEffort}, util)
+	c.add(Action{Kind: ActFlee, TargetID: o.ID, Effort: cfg.FleeEffort}, Utility{
+		Life:         Goal{Value: (staying - fled) * cfg.LifeValue, Chance: pEscape},
+		Vitality:     cost,
+		Ticks:        fleeExposureTicks,
+		VitalityCost: cost * cfg.VitalityWeight,
+		TimeCost:     fleeExposureTicks * cfg.TimeCost,
+	})
 }
 
 // addCourt scores going after a mate: priority 2, and only ever reachable once
@@ -354,10 +401,13 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	ticks := o.Dist/speedAt(cfg, effort) + 1
 	cost := moveCostAt(cfg, effort) * ticks
 
-	util := cfg.OffspringValue*clamp(o.Fitness/MaxAbility, 0, 1)*pAccept -
-		cost*cfg.VitalityWeight -
-		ticks*cfg.TimeCost
-	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, util)
+	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, Utility{
+		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: pAccept},
+		Vitality:     cost,
+		Ticks:        ticks,
+		VitalityCost: cost * cfg.VitalityWeight,
+		TimeCost:     ticks * cfg.TimeCost,
+	})
 }
 
 // addObserve scores spending a moment sizing somebody up instead of acting.
@@ -368,8 +418,11 @@ func (c *AIController) addObserve(p *Perception, o *AgentView) {
 	cfg := p.Cfg
 	unsure := clamp(o.Uncertainty/cfg.PriorVariance, 0, 1)
 	relevance := clamp(p.Self.FoodScarcity, 0, 3) / 3
-	util := cfg.InfoValue*unsure*relevance - observeTicks*cfg.TimeCost
-	c.add(Action{Kind: ActObserve, TargetID: o.ID, Effort: 0.3}, util)
+	c.add(Action{Kind: ActObserve, TargetID: o.ID, Effort: 0.3}, Utility{
+		Info:     Goal{Value: cfg.InfoValue * unsure, Chance: relevance},
+		Ticks:    observeTicks,
+		TimeCost: observeTicks * cfg.TimeCost,
+	})
 }
 
 // incoming is the damage the agent believes is currently landing on it.
@@ -402,13 +455,28 @@ func (c *AIController) pick(p *Perception) Action {
 	noise := (MaxAbility - p.Self.Intelligence) / MaxAbility * p.Cfg.ChoiceNoise
 	best, bestScore := 0, math.Inf(-1)
 	for i := range c.opts {
-		score := c.opts[i].util
+		misjudged := 0.0
 		if noise > 0 && p.Rand != nil {
-			score += p.Rand.NormFloat64() * noise
+			misjudged = p.Rand.NormFloat64() * noise
 		}
+		score := c.opts[i].util + misjudged
 		if score > bestScore {
 			bestScore, best = score, i
 		}
+		// Recording the whole comparison, and not merely its winner, is what
+		// makes a decision reviewable: it shows the runners up and by how much
+		// they lost. Only agents somebody asked to follow have a trace.
+		if c.tracing && i < len(c.terms) {
+			p.Trace.Options = append(p.Trace.Options, TracedOption{
+				Action:  c.opts[i].action,
+				Utility: c.terms[i],
+				Noise:   misjudged,
+				Score:   score,
+			})
+		}
+	}
+	if p.Trace != nil {
+		p.Trace.Chosen = best
 	}
 	return c.opts[best].action
 }

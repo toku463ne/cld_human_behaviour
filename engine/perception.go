@@ -86,6 +86,12 @@ type Perception struct {
 	// to break a tie draws from it, so that a run stays reproducible from its
 	// seed; a human controller ignores it.
 	Rand *rand.Rand
+
+	// Trace is where a controller records the options it compared, and is nil
+	// unless somebody asked to follow this agent (World.TrackDecisions).
+	// Filling it in is optional: the world records the trigger and the chosen
+	// action either way.
+	Trace *DecisionTrace
 }
 
 // perceive fills the world's reusable perception buffer for one agent.

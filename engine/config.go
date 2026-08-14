@@ -113,7 +113,10 @@ type Config struct {
 	// ones it thought of apart. The second is deliberately not the same as
 	// rationality: rationality is misreading the world, this is misjudging a
 	// move once the world has been read.
-	StrategyDepthUnlock float64 // ability points needed to unlock each lookahead level
+	// StrategyDepthUnlock is the ability points needed to unlock each lookahead
+	// level. Zero turns the gate off: everybody can think of everything, and
+	// intelligence is left acting through ChoiceNoise alone.
+	StrategyDepthUnlock float64
 	ChoiceNoise         float64 // spread of the error a mindless agent makes scoring an option
 
 	// --- reproduction ---
@@ -194,7 +197,13 @@ func DefaultConfig() Config {
 		TriggerVitalityDrop: 4,
 		TriggerIdleTicks:    40,
 
-		StrategyDepthUnlock: 16,
+		// The gate is off by default. Measured over 24 seeds it was the half of
+		// intelligence that did not work: spacing it at 16 left only one of its
+		// three thresholds inside the range abilities actually occupy, and
+		// tightening it to 20 turned the selection on intelligence negative.
+		// Intelligence now acts through ChoiceNoise alone, which trebles the
+		// pressure on it. See cmd/experiment and the design log for the numbers.
+		StrategyDepthUnlock: 0,
 		ChoiceNoise:         20,
 
 		ReproHunger:         35,

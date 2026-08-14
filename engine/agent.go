@@ -111,9 +111,16 @@ type Agent struct {
 	controller Controller
 
 	// Decision bookkeeping. An agent re-decides on a trigger, not every tick.
+	// pendingTrigger says which one raised needsDecision, so that a trace can
+	// report why the agent was asked rather than only what it answered.
 	lastDecisionTick   int
 	vitalityAtDecision float64
 	needsDecision      bool
+	pendingTrigger     Trigger
+
+	// trace is where this agent's decisions are recorded, nil unless somebody
+	// asked to follow it (World.TrackDecisions).
+	trace *traceLog
 
 	// attackerID is who hit this agent last tick, 0 if nobody. Being attacked
 	// is itself a trigger to think again.
@@ -141,6 +148,13 @@ type Agent struct {
 // Controller returns the controller driving this agent, nil when it is run by
 // the world's shared AI.
 func (a *Agent) Controller() Controller { return a.controller }
+
+// requestDecision asks for a fresh decision on the next tick and records what
+// prompted it.
+func (a *Agent) requestDecision(t Trigger) {
+	a.needsDecision = true
+	a.pendingTrigger = t
+}
 
 func (a *Agent) reject(id, until int) {
 	if a.rejected == nil {

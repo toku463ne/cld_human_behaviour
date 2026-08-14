@@ -656,9 +656,13 @@ func TestPreemptionFadesWhenFoodIsPlentiful(t *testing.T) {
 
 // --- intelligence ----------------------------------------------------------
 
-// Intelligence gates which kinds of move an agent can even think of.
+// Intelligence gates which kinds of move an agent can even think of, when the
+// gate is switched on. It is off in DefaultConfig, so this has to ask for it:
+// what is being checked here is that the mechanism still works, not that the
+// world is run with it.
 func TestIntelligenceGatesTheStrategiesAvailable(t *testing.T) {
 	cfg := testConfig()
+	cfg.StrategyDepthUnlock = 16
 
 	kinds := func(intelligence float64) map[ActionKind]bool {
 		w := NewWorld(cfg)
@@ -710,9 +714,9 @@ func TestIntelligenceMakesTheChoiceReliable(t *testing.T) {
 		count := 0
 		for i := 0; i < 2000; i++ {
 			c.opts = c.opts[:0]
-			c.add(Action{Kind: ActRest}, 30)
-			c.add(Action{Kind: ActMove}, 20)
-			c.add(Action{Kind: ActAttack}, -40)
+			c.add(Action{Kind: ActRest}, Utility{Life: Goal{Value: 30, Chance: 1}})
+			c.add(Action{Kind: ActMove}, Utility{Life: Goal{Value: 20, Chance: 1}})
+			c.add(Action{Kind: ActAttack}, Utility{Life: Goal{Value: -40, Chance: 1}})
 			if c.pick(p).Kind == ActRest {
 				count++
 			}
@@ -1109,5 +1113,64 @@ func TestDefaultWorldSustainsItself(t *testing.T) {
 	}
 	if s.Males+s.Females != s.Population {
 		t.Fatalf("sex counts %d + %d do not add up to the population %d", s.Males, s.Females, s.Population)
+	}
+}
+
+// --- spacing ---------------------------------------------------------------
+
+// Clumping has to answer the question the cooperation work asks of it: a crowd
+// packed into one corner reads higher than the same crowd spread out, whatever
+// the population size.
+func TestClumpingSeparatesAHuddleFromASpread(t *testing.T) {
+	const n = 40
+
+	layout := func(place func(i int) (float64, float64)) Spacing {
+		w := NewWorld(testConfig())
+		for i := 0; i < n; i++ {
+			x, y := place(i)
+			w.addAgent(Agent{X: x, Y: y, Vitality: 100, Power: 50})
+		}
+		return w.Spacing()
+	}
+
+	// Everybody inside one perception radius of everybody else.
+	huddle := layout(func(i int) (float64, float64) {
+		return 200 + float64(i%8)*5, 200 + float64(i/8)*5
+	})
+	// The same number of agents over the whole 400x400 world.
+	spread := layout(func(i int) (float64, float64) {
+		return 20 + float64(i%8)*45, 20 + float64(i/8)*70
+	})
+
+	if huddle.AvgNeighbours <= spread.AvgNeighbours {
+		t.Fatalf("a huddle should have more neighbours: %.1f vs %.1f",
+			huddle.AvgNeighbours, spread.AvgNeighbours)
+	}
+	if huddle.Clumping <= spread.Clumping {
+		t.Fatalf("clumping %.2f (huddle) should beat %.2f (spread)", huddle.Clumping, spread.Clumping)
+	}
+	if huddle.AvgNearestDist >= spread.AvgNearestDist {
+		t.Fatalf("a huddle should sit closer together: %.1f vs %.1f",
+			huddle.AvgNearestDist, spread.AvgNearestDist)
+	}
+}
+
+// Clumping is meant to be readable across populations of different sizes, which
+// is the whole reason it is a ratio: doubling the crowd at the same spread must
+// not look like grouping.
+func TestClumpingDoesNotRiseWithPopulationAlone(t *testing.T) {
+	spread := func(n int) float64 {
+		w := NewWorld(testConfig())
+		for i := 0; i < n; i++ {
+			// The same lattice either way; the larger population just fills
+			// more of it.
+			w.addAgent(Agent{X: 20 + float64(i%16)*24, Y: 20 + float64(i/16)*24, Vitality: 100, Power: 50})
+		}
+		return w.Spacing().Clumping
+	}
+
+	small, large := spread(32), spread(128)
+	if math.Abs(large-small)/small > 0.35 {
+		t.Fatalf("clumping moved from %.2f to %.2f on population alone", small, large)
 	}
 }

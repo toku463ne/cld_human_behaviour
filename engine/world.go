@@ -86,6 +86,10 @@ type World struct {
 	// attacks buffers the blows of the current tick.
 	attacks []attack
 
+	// traces holds the decision log of the agents somebody asked to follow,
+	// keyed by agent ID. Empty in a normal run: tracing is a debugging tool.
+	traces map[int]*traceLog
+
 	nextAgentID int
 	nextFoodID  int
 
@@ -154,7 +158,7 @@ func (w *World) SetController(id int, c Controller) bool {
 		return false
 	}
 	a.controller = c
-	a.needsDecision = true
+	a.requestDecision(TriggerControllerSet)
 	return true
 }
 
@@ -209,8 +213,8 @@ func (w *World) Step() {
 		if !a.Alive || a.PartnerID != 0 {
 			continue
 		}
-		if w.shouldDecide(a) {
-			w.decide(a)
+		if t := w.decisionTrigger(a); t != TriggerNone {
+			w.decide(a, t)
 		}
 	}
 
@@ -245,46 +249,64 @@ func (w *World) Step() {
 
 // --- deciding --------------------------------------------------------------
 
-// shouldDecide reports whether anything happened that is worth thinking about
-// again. Deciding is trigger driven rather than continuous, both because it is
-// the expensive part and because an agent that re-planned every tick would
-// never follow a plan through.
-func (w *World) shouldDecide(a *Agent) bool {
-	// Goal reached, goal lost, or somebody just hit us.
+// decisionTrigger reports what, if anything, is asking this agent to think
+// again, and TriggerNone when nothing is. Deciding is trigger driven rather
+// than continuous, both because it is the expensive part and because an agent
+// that re-planned every tick would never follow a plan through.
+func (w *World) decisionTrigger(a *Agent) Trigger {
+	// Goal reached, goal lost, or some other event that already said so.
 	if a.needsDecision {
-		return true
+		if a.pendingTrigger == TriggerNone {
+			return TriggerRequested
+		}
+		return a.pendingTrigger
 	}
 	if a.lastAttackTick == w.tick-1 {
-		return true
+		return TriggerAttacked
 	}
 	// A noticeable dent in the vitality. This says "think again", not "run
 	// away": what to do about it is up to the utility comparison.
 	if a.vitalityAtDecision-a.Vitality >= w.cfg.TriggerVitalityDrop {
-		return true
+		return TriggerVitalityDrop
 	}
 	// Nothing has happened for a while, so an agent does not stay stuck on a
 	// decision the world has moved past.
 	if w.tick-a.lastDecisionTick >= w.cfg.TriggerIdleTicks {
-		return true
+		return TriggerIdle
 	}
 	// Food came into view while the agent had nothing better to do.
 	if a.Action.Kind == ActRest || a.Action.Kind == ActMove {
 		if w.nearestFoodInSight(a) >= 0 {
-			return true
+			return TriggerFoodInSight
 		}
 	}
-	return false
+	return TriggerNone
 }
 
-func (w *World) decide(a *Agent) {
+func (w *World) decide(a *Agent, trigger Trigger) {
 	c := a.controller
 	if c == nil {
 		c = w.ai
 	}
-	a.Action = c.Decide(w.perceive(a))
+
+	p := w.perceive(a)
+	// Only an agent somebody asked to follow records anything. The controller
+	// fills in the options it compared; the world fills in the rest, so that a
+	// controller which ignores the trace still leaves a usable record.
+	p.Trace = nil
+	if a.trace != nil {
+		p.Trace = a.trace.begin(w.tick, a, trigger, p.Self)
+	}
+
+	a.Action = c.Decide(p)
+	if p.Trace != nil {
+		p.Trace.Action = a.Action
+	}
+
 	a.lastDecisionTick = w.tick
 	a.vitalityAtDecision = a.Vitality
 	a.needsDecision = false
+	a.pendingTrigger = TriggerNone
 	a.actionTicks = 0
 
 	switch a.Action.Kind {
@@ -317,7 +339,7 @@ func (w *World) perform(a *Agent) {
 	case ActEat:
 		f := w.foodByID(a.Action.TargetID)
 		if f == nil {
-			a.needsDecision = true // somebody else got it
+			a.requestDecision(TriggerTargetLost) // somebody else got it
 			return
 		}
 		if dist2(a.X, a.Y, f.X, f.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
@@ -325,12 +347,12 @@ func (w *World) perform(a *Agent) {
 			return
 		}
 		w.eat(a, f.ID)
-		a.needsDecision = true
+		a.requestDecision(TriggerGoalReached)
 
 	case ActAttack:
 		o := w.agentByID(a.Action.TargetID)
 		if o == nil || !o.Alive {
-			a.needsDecision = true
+			a.requestDecision(TriggerTargetLost)
 			return
 		}
 		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.CombatRadius*w.cfg.CombatRadius {
@@ -344,11 +366,11 @@ func (w *World) perform(a *Agent) {
 	case ActFlee:
 		o := w.agentByID(a.Action.TargetID)
 		if o == nil || !o.Alive {
-			a.needsDecision = true
+			a.requestDecision(TriggerTargetLost)
 			return
 		}
 		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.PerceptionRadius*w.cfg.PerceptionRadius {
-			a.needsDecision = true // out of sight, out of danger
+			a.requestDecision(TriggerGoalReached) // out of sight, out of danger
 			return
 		}
 		w.moveDir(a, a.X-o.X, a.Y-o.Y, a.Action.Effort)
@@ -356,7 +378,7 @@ func (w *World) perform(a *Agent) {
 	case ActObserve:
 		o := w.agentByID(a.Action.TargetID)
 		if o == nil || !o.Alive {
-			a.needsDecision = true
+			a.requestDecision(TriggerTargetLost)
 			return
 		}
 		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.PerceptionRadius*w.cfg.PerceptionRadius {
@@ -365,7 +387,7 @@ func (w *World) perform(a *Agent) {
 		}
 		if a.actionTicks >= observeTicks {
 			w.observeStrength(a, o, w.cfg.CombatObsVariance*w.cfg.SpectateObsFactor)
-			a.needsDecision = true
+			a.requestDecision(TriggerGoalReached)
 		}
 
 	case ActCourt:
@@ -379,7 +401,7 @@ func (w *World) perform(a *Agent) {
 func (w *World) court(a *Agent) {
 	o := w.agentByID(a.Action.TargetID)
 	if o == nil || !o.Alive || o.PartnerID != 0 || o.Sex == a.Sex {
-		a.needsDecision = true
+		a.requestDecision(TriggerTargetLost)
 		return
 	}
 	if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
@@ -388,7 +410,7 @@ func (w *World) court(a *Agent) {
 	}
 	if !o.CanReproduce(&w.cfg) {
 		// Approached somebody who has themselves to look after first.
-		a.needsDecision = true
+		a.requestDecision(TriggerTargetLost)
 		return
 	}
 	// Both sides have to be convinced, each on its own comparison clock.
@@ -396,9 +418,10 @@ func (w *World) court(a *Agent) {
 		w.bond(a, o)
 		return
 	}
-	// Not convinced yet: put this one aside and go and see the others.
+	// Not convinced yet: put this one aside and go and see the others. As far
+	// as the next decision is concerned this candidate is gone.
 	a.reject(o.ID, w.tick+w.cfg.MateRejectDuration)
-	a.needsDecision = true
+	a.requestDecision(TriggerTargetLost)
 }
 
 // stepPaired keeps two partners together until the bond has run its course,
@@ -532,7 +555,7 @@ func (w *World) releaseFromBond(a *Agent, cooldown int) {
 	a.PartnerID = 0
 	a.PairTimer = 0
 	a.CooldownTimer = cooldown
-	a.needsDecision = true
+	a.requestDecision(TriggerBondEnded)
 }
 
 // tryBirth produces a child whose abilities are the average of its parents plus
@@ -728,7 +751,7 @@ func (w *World) addAgent(a Agent) int {
 	a.ID = w.nextAgentID
 	w.nextAgentID++
 	a.Alive = true
-	a.needsDecision = true
+	a.requestDecision(TriggerSpawned)
 	if a.Vitality <= 0 {
 		a.Vitality = w.cfg.MaxVitality
 	}
