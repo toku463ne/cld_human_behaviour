@@ -135,7 +135,7 @@ go run ./cmd/experiment -variants baseline,nogate -csv out.csv  # 推移をCSV�
 | `killShare` | 死因に占める「殺された」の割合。食料供給を振ってもほとんど動かないので、争いの多さを見るのに使いやすい |
 | `clumping` | 同じ個体数を一様にばらまいた場合と比べて、どれだけ集まっているか。**相対値**で、1が一様という意味ではない（視界の円が世界の端で切れるぶん低めに出る）。条件間で比べる |
 | `neighbours` / `nearest` | 平均的な個体の視界内にいる他個体数／最近傍までの距離 |
-| `starved` / `killed` | 死因の内訳。合計が `deaths` |
+| `starved` / `killed` / `aged` | 死因の内訳。合計が `deaths`。`aged` は寿命消費（過小・過度な食事が背景で寿命を削る、`CLAUDE.md` 参照）が0まで達したケースで、既定値ではほぼ発生しない（`brittlelifespan` 条件で確認できる） |
 | `extinct` | 絶滅した回数の割合。0でないなら他の数字は読む価値がない |
 
 新しい条件を試すときは `cmd/experiment/main.go` の `variants` に1項目足します（`engine` 側に分岐を作らず、`Config` を書き換える関数として書く）。両方の条件が同じバイナリに入っていないと、同じシードで対にして比べられません。

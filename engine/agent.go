@@ -86,6 +86,14 @@ type Agent struct {
 	Generation int
 	Alive      bool
 
+	// Lifespan is a background wear budget, spent only by World.metabolise
+	// (chronic starving or overeating). It is deliberately absent from
+	// Perception and from the utility formula: an agent has no way to know
+	// it, plan around it, or act because of it. Reaching zero kills the
+	// agent, the same as Vitality reaching zero, but the two are independent
+	// causes of death.
+	Lifespan float64
+
 	// Lineage. Recorded from the start so that a player can later take over one
 	// of their own descendants when the agent they were playing dies.
 	ParentIDs [2]int

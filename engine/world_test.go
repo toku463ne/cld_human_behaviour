@@ -200,7 +200,8 @@ func TestEatingLowersHungerAndNotVitality(t *testing.T) {
 	}
 }
 
-// Ageing and natural death are deliberately not implemented yet.
+// Age itself carries no rule: only Lifespan (below) can kill from the passage
+// of time, and only indirectly, through chronic bad eating.
 func TestAgeDoesNotKill(t *testing.T) {
 	w := NewWorld(quietConfig())
 	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: 0, Age: 1_000_000})
@@ -210,8 +211,98 @@ func TestAgeDoesNotKill(t *testing.T) {
 		w.Step()
 	}
 	if _, ok := w.AgentByID(id); !ok {
-		t.Fatal("an old agent died: ageing is supposed to be future work")
+		t.Fatal("an old agent died: Age is not supposed to matter on its own")
 	}
+}
+
+// --- lifespan (background wear) --------------------------------------------
+//
+// Lifespan is spent only inside metabolise, gated on the same kind of hunger
+// that already drains vitality for a different reason. None of this is a
+// decision: there is no controller action for it, and Perception never
+// mentions Lifespan (see perception.go), so nothing here can be read off a
+// trace either.
+
+// Between OverfedHunger and StarveHunger sits a band where eating is simply
+// free: neither chronic rule fires.
+func TestModerateHungerDoesNotSpendLifespan(t *testing.T) {
+	cfg := testConfig()
+	cfg.HungerRate = 0
+	w := NewWorld(cfg)
+	hunger := (cfg.OverfedHunger + cfg.StarveHunger) / 2
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: hunger, Lifespan: cfg.MaxLifespan})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
+
+	for i := 0; i < 100; i++ {
+		w.Step()
+	}
+
+	approx(t, mustAgent(t, w, id).Lifespan, cfg.MaxLifespan, 1e-9, "lifespan after 100 ticks in the free band")
+}
+
+func TestChronicHungerSpendsLifespan(t *testing.T) {
+	cfg := testConfig()
+	cfg.HungerRate = 0
+	cfg.StarveRate = 0 // isolate lifespan from the vitality death it would otherwise race
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: cfg.StarveHunger + 1, Lifespan: cfg.MaxLifespan})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
+
+	w.Step()
+
+	approx(t, mustAgent(t, w, id).Lifespan, cfg.MaxLifespan-cfg.StarveLifespanRate, 1e-9, "lifespan after one tick of chronic hunger")
+}
+
+func TestChronicOverfeedingSpendsLifespan(t *testing.T) {
+	cfg := testConfig()
+	cfg.HungerRate = 0
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: cfg.OverfedHunger - 1, Lifespan: cfg.MaxLifespan})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
+
+	w.Step()
+
+	approx(t, mustAgent(t, w, id).Lifespan, cfg.MaxLifespan-cfg.OverfedLifespanRate, 1e-9, "lifespan after one tick of chronic overeating")
+}
+
+func TestLifespanExhaustionKillsAndIsCountedSeparatelyFromCombat(t *testing.T) {
+	cfg := testConfig()
+	cfg.HungerRate = 0
+	cfg.StarveRate = 0
+	w := NewWorld(cfg)
+	// Enough for three ticks of chronic hunger, not a fourth.
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: cfg.StarveHunger + 1, Lifespan: cfg.StarveLifespanRate * 3.5})
+	w.SetController(id, fixedController{Action{Kind: ActRest}})
+
+	for i := 0; i < 4; i++ {
+		w.Step()
+	}
+
+	if _, ok := w.AgentByID(id); ok {
+		t.Fatal("agent with exhausted lifespan is still in the world")
+	}
+	stats := w.Stats()
+	if stats.AgingDeaths != 1 {
+		t.Fatalf("aging deaths = %d, want 1", stats.AgingDeaths)
+	}
+	if stats.Kills != 0 {
+		t.Fatalf("kills = %d, want 0: this was not combat", stats.Kills)
+	}
+	if stats.Deaths != 1 {
+		t.Fatalf("deaths = %d, want 1", stats.Deaths)
+	}
+}
+
+// Most of this file's tests build agents from a bare Agent{...} literal and
+// never mention Lifespan. They still get a full budget, the same fallback
+// Vitality already has, so that omitting it does not silently mean "already
+// dying of old age".
+func TestBareAgentGetsAFullLifespanByDefault(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: 0})
+
+	approx(t, mustAgent(t, w, id).Lifespan, cfg.MaxLifespan, 1e-9, "lifespan of a freshly added bare agent")
 }
 
 // --- movement and effort ---------------------------------------------------

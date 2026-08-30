@@ -74,6 +74,18 @@ var variants = []variant{
 		about: "food spawning at 0.12: the same question from the other side",
 		apply: func(c *engine.Config) { c.FoodSpawnRate = 0.12 },
 	},
+	// Lifespan consumption (chronic starving/overfeeding wearing down
+	// Lifespan in the background) is brand new and its defaults are an
+	// untuned starting point: at the default MaxLifespan/rates it almost
+	// never fires within a normal run, because the agents that would
+	// otherwise accumulate enough bad ticks to hit zero are usually killed
+	// or starved first. This arm shrinks the budget so the mechanism is
+	// visible at all, as a lever for tuning it later.
+	{
+		name:  "brittlelifespan",
+		about: "MaxLifespan cut to 1500: how visible aging death becomes when the budget is tight",
+		apply: func(c *engine.Config) { c.MaxLifespan = 1500 },
+	},
 }
 
 func variantByName(name string) (variant, bool) {
@@ -97,7 +109,7 @@ func variantByName(name string) (variant, bool) {
 // are measured before any rule is written for them, so that there is something
 // to compare against afterwards.
 var metricNames = []string{
-	"pop", "gen", "births", "deaths", "starved", "killed", "killShare", "fights",
+	"pop", "gen", "births", "deaths", "starved", "killed", "killShare", "aged", "agedShare", "fights",
 	"clumping", "neighbours", "nearest",
 	"power", "rationality", "intelligence",
 	"dPower", "dRationality", "dIntelligence",
@@ -162,9 +174,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"gen":           float64(end.MaxGeneration),
 		"births":        float64(end.Births),
 		"deaths":        float64(end.Deaths),
-		"starved":       float64(end.Deaths - end.Kills),
+		"starved":       float64(end.Deaths - end.Kills - end.AgingDeaths),
 		"killed":        float64(end.Kills),
 		"killShare":     share(end.Kills, end.Deaths),
+		"aged":          float64(end.AgingDeaths),
+		"agedShare":     share(end.AgingDeaths, end.Deaths),
 		"fights":        float64(end.Fights),
 		"clumping":      tail.clumping,
 		"neighbours":    tail.neighbours,

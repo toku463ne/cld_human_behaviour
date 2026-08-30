@@ -35,6 +35,26 @@ type Config struct {
 	SatiatedHunger float64 // below this hunger, a resting agent recovers
 	RegenRate      float64 // vitality regained per tick while satiated and idle
 
+	// --- lifespan: background wear, spent by metabolise alone ---
+	//
+	// This is deliberately mechanical. Lifespan never appears in Perception and
+	// never enters the utility formula (no goal term reads it), so no agent
+	// knows its own remaining lifespan or that ageing is a cause of death.
+	// Selection on it can only act the slow way: across generations, through
+	// who happens to survive long enough to reproduce more.
+	MaxLifespan float64 // lifespan budget an agent starts with
+
+	// Undernourished: chronic hunger wears lifespan down, on top of the
+	// vitality it already drains, using the same StarveHunger threshold.
+	StarveLifespanRate float64 // lifespan lost per tick while Hunger > StarveHunger
+
+	// Overfed: eating well past "80% full" wears lifespan down too, so that
+	// gorging is not free. OverfedHunger sits below SatiatedHunger on purpose
+	// (satiation stops costing vitality well before it starts costing
+	// lifespan), which is what leaves a band where eating is simply free.
+	OverfedHunger       float64 // below this hunger, an agent is eating past "80% full"
+	OverfedLifespanRate float64 // lifespan lost per tick while Hunger < OverfedHunger
+
 	// --- movement and effort ---
 	//
 	// Effort is the decision variable of every physical action. Speed grows
@@ -162,6 +182,16 @@ func DefaultConfig() Config {
 		StarveRate:     0.16,
 		SatiatedHunger: 40,
 		RegenRate:      0.09,
+
+		// Starting points, not yet tuned with cmd/experiment. A chronically
+		// starving or chronically overfed agent exhausts MaxLifespan in about
+		// 30000 ticks of that condition, an order of magnitude slower than
+		// acute starvation (a few hundred ticks from full vitality) so that
+		// the two death causes stay distinguishable.
+		MaxLifespan:         6000,
+		StarveLifespanRate:  0.2,
+		OverfedHunger:       20,
+		OverfedLifespanRate: 0.2,
 
 		MaxSpeed:         1.7,
 		MoveCost:         0.035,

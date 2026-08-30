@@ -36,6 +36,7 @@ type Stats struct {
 	Births        int
 	Deaths        int
 	Kills         int
+	AgingDeaths   int // subset of Deaths caused by Lifespan reaching zero
 	Fights        int
 	MaxGeneration int
 
@@ -99,6 +100,7 @@ type World struct {
 	births        int
 	deaths        int
 	kills         int
+	agingDeaths   int
 	fights        int
 	maxGeneration int
 }
@@ -171,6 +173,7 @@ func (w *World) Stats() Stats {
 		Births:        w.births,
 		Deaths:        w.deaths,
 		Kills:         w.kills,
+		AgingDeaths:   w.agingDeaths,
 		Fights:        w.fights,
 		MaxGeneration: w.maxGeneration,
 	}
@@ -524,6 +527,11 @@ func (w *World) metabolise() {
 		}
 		a.Vitality = math.Min(a.Vitality, w.cfg.MaxVitality)
 
+		w.spendLifespan(a)
+		if !a.Alive {
+			continue
+		}
+
 		// The comparison clock starts when an agent first has the means to
 		// think past staying alive.
 		if ready := a.CanReproduce(&w.cfg); ready != a.reproReady {
@@ -539,6 +547,25 @@ func (w *World) metabolise() {
 		if a.Vitality <= 0 {
 			w.kill(a)
 		}
+	}
+}
+
+// spendLifespan is the only place Lifespan is ever touched. Chronic
+// undernutrition and chronic overeating both wear it down, gated by the same
+// hunger thresholds the vitality rules already use (StarveHunger) or a
+// dedicated one for overeating (OverfedHunger). This is pure background
+// bookkeeping: it is not part of Perception and never enters the utility
+// formula, so nothing here is a decision an agent makes.
+func (w *World) spendLifespan(a *Agent) {
+	if a.Hunger > w.cfg.StarveHunger {
+		a.Lifespan -= w.cfg.StarveLifespanRate
+	}
+	if a.Hunger < w.cfg.OverfedHunger {
+		a.Lifespan -= w.cfg.OverfedLifespanRate
+	}
+	if a.Lifespan <= 0 {
+		w.agingDeaths++
+		w.kill(a)
 	}
 }
 
@@ -728,6 +755,7 @@ func (w *World) newAgent(x, y float64, sex Sex, power, rationality, intelligence
 		Hunger:       w.cfg.ChildHunger,
 		Generation:   generation,
 		Alive:        true,
+		Lifespan:     w.cfg.MaxLifespan,
 	}
 }
 
@@ -743,6 +771,10 @@ func (w *World) randomAgent() Agent {
 	)
 	a.Vitality = w.randRange(w.cfg.MaxVitality*0.6, w.cfg.MaxVitality)
 	a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
+	// Founders are spread across a range of remaining lifespan too, the same
+	// way they are already spread across vitality and hunger, so the first
+	// generation does not all reach zero at once.
+	a.Lifespan = w.randRange(w.cfg.MaxLifespan*0.5, w.cfg.MaxLifespan)
 	return a
 }
 
@@ -754,6 +786,9 @@ func (w *World) addAgent(a Agent) int {
 	a.requestDecision(TriggerSpawned)
 	if a.Vitality <= 0 {
 		a.Vitality = w.cfg.MaxVitality
+	}
+	if a.Lifespan <= 0 {
+		a.Lifespan = w.cfg.MaxLifespan
 	}
 	w.index[a.ID] = len(w.agents)
 	w.agents = append(w.agents, a)

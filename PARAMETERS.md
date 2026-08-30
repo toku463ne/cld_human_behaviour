@@ -36,7 +36,8 @@
 | --- | --- | --- |
 | `Vitality` | 初期集団は60〜100、子は `ChildVitality` | 体力。0で死亡 |
 | `Hunger` | 初期集団は0〜`SatiatedHunger`、子は `ChildHunger` | 空腹度。時間で上昇 |
-| `Age` | 0 | tick数。**現在は何にも影響しない**（老いは未実装） |
+| `Age` | 0 | tick数。**現在は何にも影響しない**（能力の年齢補正・成長・育児期間は未実装。`PLAN.md` 段階7d） |
+| `Lifespan` | 初期集団は `MaxLifespan` の50〜100%、子は `MaxLifespan` | 寿命の残量。過小・過度な食事で背景処理（`World.spendLifespan`）が減らす。0で死亡（死因は `Vitality` 0 とは別に `Stats().AgingDeaths` で数える）。**`Perception` に載らず、ノード自身は知らない**（C-2b） |
 | `Generation` | 0 | 世代。子は `max(親) + 1` |
 | `ParentIDs` / `ChildIDs` | — | 血統リンク。**現在は記録のみで、判断には使われていない** |
 | `PartnerID` / `PairTimer` / `CooldownTimer` | 0 | ペアの状態 |
@@ -48,7 +49,7 @@
 
 ## C. 世界のパラメータ（`engine.Config`、全ノード共通）
 
-全部で58個あります（`Width, Height` のように1行に2つ書かれているものも1つずつ数えています）。「効く先」列は、その値が**世界の側の事実**なのか、**ノードの身体**なのか、**ノードの判断**なのかの区別です。
+全部で62個あります（`Width, Height` のように1行に2つ書かれているものも1つずつ数えています）。「効く先」列は、その値が**世界の側の事実**なのか、**ノードの身体**なのか、**ノードの判断**なのかの区別です。
 
 ### C-1. 世界そのもの
 
@@ -84,6 +85,17 @@
 | `CombatRadius` | 15 | 身体 | 打撃が届く距離 |
 
 `MaxSpeed × √effort` と `MoveCost × effort` の組み合わせが「急ぐほど距離あたりが高くつく」を作ります。
+
+### C-2b. 寿命（背景処理・ノードは知らない）
+
+**判断には一切効きません。** `Perception` に載らず、効用式にも項がありません。効くのは `World.metabolise` の中だけです。詳しいルールは `NODE.md` 2節。
+
+| 名前 | 既定値 | 効く先 | 意味 |
+| --- | --- | --- | --- |
+| `MaxLifespan` | 6000 | 身体（背景） | 誕生時の寿命の残量。**未調整の暫定値**——既定のrateでは標準実行長（20000〜60000tick）でほぼ枯渇しない（`cmd/experiment` の `brittlelifespan` 条件で発火を確認済み） |
+| `StarveLifespanRate` | 0.2 | 身体（背景） | `Hunger > StarveHunger` の間、1tickごとに引く寿命。0で過小側を完全に切れる |
+| `OverfedHunger` | 20 | 身体（背景） | これを空腹度が下回ると「腹八分目（満腹度80%）」を超えたとみなす。`SatiatedHunger`（40）より下に置いてあるので、そこそこ食べる分には寿命は減らない |
+| `OverfedLifespanRate` | 0.2 | 身体（背景） | `Hunger < OverfedHunger` の間、1tickごとに引く寿命。0で過度側を完全に切れる |
 
 ### C-3. 戦闘
 
