@@ -115,6 +115,7 @@ var metricNames = []string{
 	"gap", "gapP10", "gapRel",
 	"halfLife", "together", "censored",
 	"fightCompanion", "fightStranger", "fightRatio",
+	"species", "rareShare", "rareTrough", "rareSwing",
 	"power", "rationality", "intelligence",
 	"dPower", "dRationality", "dIntelligence",
 	"extinct",
@@ -177,6 +178,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		engine.DefaultClusterLinkDist, engine.DefaultMembershipStep, engine.DefaultMembershipLags)
 	fights := engine.NewFightTracker(
 		engine.DefaultClusterLinkDist, engine.DefaultMembershipStep, engine.DefaultCompanionLag)
+	// The census runs over the whole run rather than the tail: its window
+	// already trims it to the last stretch, and losing a species is a thing
+	// that has to be caught when it happens, because a window that has moved
+	// past a death cannot see it.
+	census := engine.NewCensusTracker(engine.DefaultCensusWindow)
 	watchFrom := ticks - max(ticks/5, 1)
 
 	var series []sample
@@ -205,12 +211,21 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			member.Observe(w)
 			fights.Observe(w)
 		}
+		if w.Tick()%engine.DefaultCensusStep == 0 {
+			census.Observe(w)
+		}
 	}
 
 	end := w.Stats()
 	tail := tailAverage(series)
 	mem := member.Result()
 	fr := fights.Result()
+	cen := census.Result()
+
+	// The rarest species is the one coexistence stands on: the others can look
+	// healthy while it goes. With humans alone it is the human population, and
+	// its trough is how close the world came to ending.
+	rare, _ := cen.Rarest()
 
 	// A censored half-life is a lower bound, not a zero: report the edge of the
 	// window and let the censored metric say how often that happened.
@@ -248,6 +263,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"fightCompanion": fr.Companion * 100,
 		"fightStranger":  fr.Stranger * 100,
 		"fightRatio":     fr.Ratio,
+		"species":        float64(cen.Living()),
+		"rareShare":      rare.Share,
+		"rareTrough":     rare.Trough,
+		"rareSwing":      rare.Swing,
 		"power":          tail.power,
 		"rationality":    tail.rat,
 		"intelligence":   tail.intel,

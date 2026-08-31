@@ -142,6 +142,8 @@ go run ./cmd/experiment -variants baseline,nogate -csv out.csv  # 推移をCSV�
 | `together` / `censored` | 500tick後もまだ一緒にいる組の割合／半減が窓（2000tick）の中で起きなかった実行の割合。`censored` が0でないなら `halfLife` は窓の端に張り付いた**下限値**なので、`together` のほうを比べます |
 | `fightCompanion` / `fightStranger` | 遭遇100回あたりの戦闘数（%）。**遭遇＝`CombatRadius` 以内にいる組**で、`fightCompanion` は200tick前から同じクラスタにいた組、`fightStranger` はそうでない組 |
 | `fightRatio` | 上の比（仲間 ÷ よそ者）。**1を下回るほど「集団の中では戦闘が少ない」。** 素直な「集団内戦闘率 ÷ 集団間戦闘率」が測れない理由は下記 |
+| `species` | 最後の観測時点で生き残っている種族の数。**今は必ず1**（human だけ）。0なら絶滅 |
+| `rareShare` / `rareTrough` / `rareSwing` | **種族ごとの個体数** — 一番少ない種族（今は human＝全体）の、直近5000tickの窓での「全体に占める割合」「窓の最小値 ÷ 平均（＝**振動の谷がどこまで下がるか**）」「(最大−最小) ÷ 平均（＝振動の大きさ）」。読むのは `rareTrough` のほうです。あるべき状態Aは**振動そのものは許す**ので、振れ幅の大きさは単独では何も言わず、**谷が0にどれだけ近づいたか**だけが「その種族が消えるか」を決めます。1に近いほど平ら、0なら絶滅 |
 | `grouped` / `largestShare` | 2体以上の集団に属する個体の割合／最大の集団に属する割合。`largestShare` は他の3つの信頼性チェックで、1に近いなら世界が1つの塊につながっただけ（単連結は数珠つなぎになる）で、集団数は何も意味しません |
 | `starved` / `killed` / `aged` | 死因の内訳。合計が `deaths`。`aged` は寿命消費（過小・過度な食事が背景で寿命を削る、`CLAUDE.md` 参照）が0まで達したケースで、既定値ではほぼ発生しない（`brittlelifespan` 条件で確認できる） |
 | `extinct` | 絶滅した回数の割合。0でないなら他の数字は読む価値がない |

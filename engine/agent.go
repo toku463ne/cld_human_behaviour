@@ -1,5 +1,7 @@
 package engine
 
+import "strconv"
+
 // Ability values are always kept inside this range.
 const (
 	MinAbility = 1.0
@@ -23,6 +25,26 @@ func (s Sex) String() string {
 		return "female"
 	}
 	return "male"
+}
+
+// Species is which kind of node an agent is.
+//
+// Only humans exist today, and nothing in the engine branches on this: no rule
+// reads it, and it is not in Perception. It exists ahead of stage 11 (the
+// generalised species and the enemies) because the census in census.go counts
+// per species, and a measurement that has to be redefined once there is
+// something to measure would lose its baseline. The zero value is a human, so
+// every agent built without naming a species is one; when enemies arrive they
+// will have to say so.
+type Species uint8
+
+const SpeciesHuman Species = 0
+
+func (s Species) String() string {
+	if s == SpeciesHuman {
+		return "human"
+	}
+	return "species " + strconv.Itoa(int(s))
 }
 
 // State is a summary of what an agent is up to, derived from its current
@@ -66,6 +88,9 @@ type Agent struct {
 	VX, VY float64
 
 	Sex Sex
+
+	// Species is what kind of node this is; see the type. Always human today.
+	Species Species
 
 	// Abilities, with their roles kept apart: power is how much damage a unit
 	// of effort buys, rationality is how accurately the agent reads the world,
