@@ -34,7 +34,7 @@ go test -race ./...
 go test ./engine/... -run=^$ -bench=. -benchmem
 ```
 
-`-run=^$` で通常のテストを飛ばしてベンチだけ回します。`BenchmarkEngineStep`（300体）／`BenchmarkEngineStepCrowded`（混雑時）／`BenchmarkDecide`（効用比較1回）の3本。
+`-run=^$` で通常のテストを飛ばしてベンチだけ回します。`BenchmarkEngineStep`（300体）／`BenchmarkEngineStepCrowded`（混雑時）／`BenchmarkDecide`（効用比較1回）／`BenchmarkEngineStepLarge`（同じ密度で9倍の広さ・1200体。空間インデックスは個体数が増えてはじめて効くので、既定の3本だけでは効果が見えない）の4本。
 
 特定のテストだけ動かす例:
 
