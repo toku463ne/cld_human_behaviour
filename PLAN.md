@@ -178,7 +178,7 @@
 - [x] クラスタ検出（グリッド上の単連結でよい。段階7a のグリッドが入るまでは素朴な実装で構わない）→ **クラスタ数・サイズ分布**（2026-08-31。`engine.World.Clusters(linkDist)` と `Clustering`。連結距離は `engine.DefaultClusterLinkDist = 30` に固定＝**距離が違う測定値どうしは比べられない**ため。`cmd/experiment` に `clusters` / `clusterSize` / `grouped` / `largestShare` を追加。値の決め方と現状のベースラインは `HISTORY.md` の同日の項）
 - [x] **membership half-life**（同じ顔ぶれが一緒に居続ける時間）。「集団」と「たまたま近くにいる塊」を区別する唯一の指標（2026-08-31。`engine.MembershipTracker`。**組（ペア）の共在生存曲線**として測る＝クラスタは合体・分裂するので「同じクラスタ、のちほど」は定義できないため。片方が死んだ組は離れたと数えない。`cmd/experiment` に `halfLife` / `together` / `censored`。現状のベースラインと曲線の形は `HISTORY.md` の同日の項）
 - [x] **集団内戦闘率 ÷ 集団間戦闘率**（2026-08-31。`engine.FightTracker`。**書かれたとおりには測れない**ことが実測で分かったので——打撃の届く `CombatRadius`(15) が連結距離(30) より短く、殴り合う2体はつねに同じクラスタにいる——「同じ遭遇を、200tick前から一緒にいた組（仲間）かそうでない組（よそ者）かで分ける」形にした。`cmd/experiment` に `fightCompanion` / `fightStranger` / `fightRatio`。理由と現状の値は `HISTORY.md` の同日の項）
-- [ ] 集団間の距離分布
+- [x] 集団間の距離分布（2026-08-31。`engine.World.ClusterGaps(linkDist)`。各集団から最も近い別の集団までの最短距離。`cmd/experiment` に `gap` / `gapP10` / `gapRel`。相対値は「構造なしの配置＝1」に較正済み。現状の値は `HISTORY.md` の同日の項）
 - [ ] 種族ごとの個体数（段階11 以降に効く。今は human だけ）
 - [ ] `cmd/experiment` の出力に上記を追加する（`Spacing()` と同じく O(n²) なので、頻度を落として測る）
 - [ ] **完了条件**: 現状の世界を 50000tick 回して上記を測り、**数値を `HISTORY.md` に残す**。ここでは目標値を書き込まない（決定事項#17。段階11 より前は集団が形成されなくて当然なので、今の測定値は「集団が無い世界のベースライン」として残す）

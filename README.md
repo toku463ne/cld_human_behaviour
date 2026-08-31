@@ -136,6 +136,8 @@ go run ./cmd/experiment -variants baseline,nogate -csv out.csv  # 推移をCSV�
 | `clumping` | 同じ個体数を一様にばらまいた場合と比べて、どれだけ集まっているか。**相対値**で、1が一様という意味ではない（視界の円が世界の端で切れるぶん低めに出る）。条件間で比べる |
 | `neighbours` / `nearest` | 平均的な個体の視界内にいる他個体数／最近傍までの距離 |
 | `clusters` / `clusterSize` | 集団の数（2体以上の連結成分）と、その平均サイズ。連結の距離は 30（`engine.DefaultClusterLinkDist`）で固定。**距離が違う測定値どうしは比べられません** |
+| `gap` / `gapP10` | **集団間の距離分布** — 各集団から最も近い別の集団までの距離（メンバー間の最短距離）の平均と下位1割。**連結距離30より短い値は原理的に出ません**（30以内なら同じ集団になるので）。`gapP10` が30に張り付いているなら、近い集団どうしは接触寸前 |
+| `gapRel` | 上の平均を、同じ数の集団を無作為にばらまいた場合の期待値で割ったもの。**1が「構造なし」**（実測で0.98。`TestClusterGapsRelativeOfARandomLayout`）。1未満＝偶然より寄り集まっている、1超＝互いを避けている |
 | `halfLife` | **membership half-life** — 同じクラスタにいた2体の組のうち半分が離れるまでのtick数。「集団」と「たまたま近くにいる塊」を区別する唯一の指標。片方が死んだ組は**離れたとは数えません**（在籍時間ではなく寿命を測ってしまうため） |
 | `together` / `censored` | 500tick後もまだ一緒にいる組の割合／半減が窓（2000tick）の中で起きなかった実行の割合。`censored` が0でないなら `halfLife` は窓の端に張り付いた**下限値**なので、`together` のほうを比べます |
 | `fightCompanion` / `fightStranger` | 遭遇100回あたりの戦闘数（%）。**遭遇＝`CombatRadius` 以内にいる組**で、`fightCompanion` は200tick前から同じクラスタにいた組、`fightStranger` はそうでない組 |

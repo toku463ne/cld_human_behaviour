@@ -33,9 +33,9 @@
 - [x] クラスタ検出（素朴な実装でよい）→ クラスタ数・サイズ分布 — `World.Clusters(linkDist)`、連結距離 30 固定、`cmd/experiment` に `clusters` / `clusterSize` / `grouped` / `largestShare`
 - [x] membership half-life（同じ顔ぶれが一緒に居続ける時間） — `engine.MembershipTracker`、組の共在生存曲線として測る、`cmd/experiment` に `halfLife` / `together` / `censored`
 - [x] 集団内戦闘率 ÷ 集団間戦闘率 — `engine.FightTracker`。書かれたとおりには測れないので「仲間（200tick前から同じクラスタ）÷ よそ者」の遭遇あたり戦闘率に置き換えた
-- [ ] 集団間の距離分布
+- [x] 集団間の距離分布 — `World.ClusterGaps(linkDist)`、`cmd/experiment` に `gap` / `gapP10` / `gapRel`
 - [ ] 種族ごとの個体数（段階11 以降に効く）
-- [ ] `cmd/experiment` の出力に上記を追加（O(n²) なので頻度は間引く。**クラスタの4指標・half-life の3指標・戦闘率の3指標は追加済み**、残り2項目が未着手）
+- [ ] `cmd/experiment` の出力に上記を追加（O(n²) なので頻度は間引く。**クラスタの4指標・half-life の3指標・戦闘率の3指標・距離の3指標は追加済み**、残るは種族ごとの個体数のみ）
 - [ ] **完了条件**: 現状を 50000tick 回して測り、「集団が無い世界のベースライン」として `HISTORY.md` に記録する（**目標値はまだ書かない**＝段階11 の完了条件へ）
 
 ### 2. 段階7a：空間グリッド（挙動を変えない高速化）

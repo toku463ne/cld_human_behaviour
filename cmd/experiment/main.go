@@ -112,6 +112,7 @@ var metricNames = []string{
 	"pop", "gen", "births", "deaths", "starved", "killed", "killShare", "aged", "agedShare", "fights",
 	"clumping", "neighbours", "nearest",
 	"clusters", "clusterSize", "grouped", "largestShare",
+	"gap", "gapP10", "gapRel",
 	"halfLife", "together", "censored",
 	"fightCompanion", "fightStranger", "fightRatio",
 	"power", "rationality", "intelligence",
@@ -135,6 +136,11 @@ type sample struct {
 	// linkage chains, so a share near 1 means the population has merged into
 	// one blob rather than formed groups.
 	clusters, clusterSize, grouped, largestShare float64
+
+	// How far the groups keep from each other: the mean gap to the nearest
+	// other group, the close approach end of that distribution, and the mean
+	// again with the population density divided out.
+	gap, gapP10, gapRel float64
 }
 
 // togetherLag is the lag the "together" metric reads the survival curve at.
@@ -178,6 +184,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		s := w.Stats()
 		sp := w.Spacing()
 		cl := w.Clusters(engine.DefaultClusterLinkDist)
+		gaps := w.ClusterGaps(engine.DefaultClusterLinkDist)
 		series = append(series, sample{
 			tick: s.Tick, pop: s.Population,
 			power: s.AvgPower, rat: s.AvgRationality, intel: s.AvgIntelligence,
@@ -185,6 +192,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			clumping: sp.Clumping, neighbours: sp.AvgNeighbours, nearest: sp.AvgNearestDist,
 			clusters: float64(cl.Groups), clusterSize: cl.AvgGroupSize,
 			grouped: cl.GroupedShare, largestShare: cl.LargestShare,
+			gap: gaps.Mean, gapP10: gaps.P10, gapRel: gaps.Relative,
 		})
 	}
 	record()
@@ -229,6 +237,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"clusterSize":  tail.clusterSize,
 		"grouped":      tail.grouped,
 		"largestShare": tail.largestShare,
+		"gap":          tail.gap,
+		"gapP10":       tail.gapP10,
+		"gapRel":       tail.gapRel,
 		"halfLife":     halfLife,
 		"together":     mem.At(togetherLag),
 		"censored":     boolToFloat(mem.Censored),
@@ -271,6 +282,9 @@ func tailAverage(series []sample) sample {
 		out.clusterSize += s.clusterSize
 		out.grouped += s.grouped
 		out.largestShare += s.largestShare
+		out.gap += s.gap
+		out.gapP10 += s.gapP10
+		out.gapRel += s.gapRel
 		n++
 	}
 	if n == 0 {
@@ -287,6 +301,9 @@ func tailAverage(series []sample) sample {
 	out.clusterSize /= d
 	out.grouped /= d
 	out.largestShare /= d
+	out.gap /= d
+	out.gapP10 /= d
+	out.gapRel /= d
 	return out
 }
 
@@ -432,7 +449,7 @@ func writeCSV(path string, runs []run) error {
 
 	w := csv.NewWriter(f)
 	defer w.Flush()
-	if err := w.Write([]string{"variant", "seed", "tick", "pop", "power", "rationality", "intelligence", "foods", "births", "deaths", "fights", "clumping", "neighbours", "nearest", "clusters", "clusterSize", "grouped", "largestShare"}); err != nil {
+	if err := w.Write([]string{"variant", "seed", "tick", "pop", "power", "rationality", "intelligence", "foods", "births", "deaths", "fights", "clumping", "neighbours", "nearest", "clusters", "clusterSize", "grouped", "largestShare", "gap", "gapP10", "gapRel"}); err != nil {
 		return err
 	}
 	for _, r := range runs {
@@ -450,6 +467,9 @@ func writeCSV(path string, runs []run) error {
 				strconv.FormatFloat(s.clusterSize, 'f', 2, 64),
 				strconv.FormatFloat(s.grouped, 'f', 3, 64),
 				strconv.FormatFloat(s.largestShare, 'f', 3, 64),
+				strconv.FormatFloat(s.gap, 'f', 2, 64),
+				strconv.FormatFloat(s.gapP10, 'f', 2, 64),
+				strconv.FormatFloat(s.gapRel, 'f', 3, 64),
 			}
 			if err := w.Write(row); err != nil {
 				return err

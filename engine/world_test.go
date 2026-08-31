@@ -1724,3 +1724,138 @@ func TestFightRatesSkipAgentsWithNoHistory(t *testing.T) {
 			got.CompanionMeetings+got.StrangerMeetings)
 	}
 }
+
+// --- distance between groups ------------------------------------------------
+
+// Three groups in a row: the middle one is close to both of its neighbours, the
+// outer two are close only to the middle. Every gap is the distance to the
+// nearest agent of another group, not between centres.
+func TestClusterGapsMeasureTheNearestOtherGroup(t *testing.T) {
+	w := NewWorld(testConfig())
+	// Groups at x = 40, 140 and 340, each two agents ten apart.
+	for _, x := range []float64{40, 140, 340} {
+		w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Power: 50})
+		w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Power: 50})
+	}
+
+	got := w.ClusterGaps(20)
+	if len(got.Gaps) != 3 {
+		t.Fatalf("gaps %v, want one per group", got.Gaps)
+	}
+	// Nearest edges: 40s to 140s is 90, 140s to 340s is 190.
+	want := []float64{90, 90, 190}
+	for i, g := range got.Gaps {
+		approx(t, g, want[i], 1e-9, "gap")
+	}
+	approx(t, got.Median, 90, 1e-9, "median gap")
+	approx(t, got.Mean, (90+90+190)/3.0, 1e-9, "mean gap")
+}
+
+// A lone agent is not a group: it neither has a gap of its own nor makes
+// anybody else's smaller.
+func TestClusterGapsIgnoreSingletons(t *testing.T) {
+	w := NewWorld(testConfig())
+	for _, x := range []float64{40, 340} {
+		w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Power: 50})
+		w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Power: 50})
+	}
+	w.addAgent(Agent{X: 190, Y: 100, Vitality: 100, Power: 50}) // wanderer in between
+
+	got := w.ClusterGaps(20)
+	if len(got.Gaps) != 2 {
+		t.Fatalf("gaps %v, want one per group and none for the loner", got.Gaps)
+	}
+	// 50 to 340 rather than 50 to the wanderer at 190.
+	for _, g := range got.Gaps {
+		approx(t, g, 290, 1e-9, "gap across the wanderer")
+	}
+}
+
+// Single linkage puts anybody closer than the linking distance in the same
+// group, so no gap can be shorter than it. The measure is bounded below, and
+// the tests that read the low end have to know it.
+func TestClusterGapsAreNeverShorterThanTheLinkDistance(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Seed = 3
+	w := NewWorld(cfg)
+	for i := 0; i < 4000; i++ {
+		w.Step()
+	}
+
+	got := w.ClusterGaps(DefaultClusterLinkDist)
+	if len(got.Gaps) < 2 {
+		t.Fatalf("expected several groups, got %v", got.Gaps)
+	}
+	if got.Gaps[0] <= DefaultClusterLinkDist {
+		t.Fatalf("shortest gap %.2f is not above the linking distance %v",
+			got.Gaps[0], float64(DefaultClusterLinkDist))
+	}
+}
+
+// Fewer than two groups means there is nothing to measure a distance between.
+func TestClusterGapsOfASingleGroup(t *testing.T) {
+	w := NewWorld(testConfig())
+	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Power: 50})
+
+	got := w.ClusterGaps(20)
+	if len(got.Gaps) != 0 || got.Mean != 0 || got.Relative != 0 {
+		t.Fatalf("one group should give no gaps, got %+v", got)
+	}
+}
+
+// Spreading the same groups over the same world can only push them apart.
+func TestClusterGapsGrowWhenGroupsSpreadOut(t *testing.T) {
+	build := func(spacing float64) ClusterGaps {
+		w := NewWorld(testConfig())
+		for i := 0; i < 5; i++ {
+			x := 30 + float64(i)*spacing
+			w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Power: 50})
+			w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Power: 50})
+		}
+		return w.ClusterGaps(20)
+	}
+
+	tight, loose := build(60), build(90)
+	if !(loose.Mean > tight.Mean && loose.P10 > tight.P10) {
+		t.Fatalf("spreading out should raise the gaps: mean %.1f -> %.1f, p10 %.1f -> %.1f",
+			tight.Mean, loose.Mean, tight.P10, loose.P10)
+	}
+}
+
+// Relative divides out the density, and its reference is the nearest neighbour
+// distance of that many points while a gap is measured between the edges of two
+// patches of agents. At the size the groups actually come out, the patches are
+// small next to the spacing and the two coincide: a layout with no structure
+// reads at 1. That is what makes a number from a real run readable on its own,
+// so it is worth pinning down. It would stop holding if the groups grew large
+// next to the gaps between them.
+func TestClusterGapsRelativeOfARandomLayout(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	var rel float64
+	const trials = 40
+	for range trials {
+		w := NewWorld(testConfig())
+		w.cfg.Width, w.cfg.Height = 800, 600
+		// The shape the default world reports: 26 groups of four, plus loners.
+		for g := 0; g < 26; g++ {
+			cx, cy := rng.Float64()*760+20, rng.Float64()*560+20
+			for k := 0; k < 4; k++ {
+				w.addAgent(Agent{X: cx + rng.Float64()*16 - 8, Y: cy + rng.Float64()*16 - 8,
+					Vitality: 100, Power: 50})
+			}
+		}
+		for i := 0; i < 33; i++ {
+			w.addAgent(Agent{X: rng.Float64()*760 + 20, Y: rng.Float64()*560 + 20,
+				Vitality: 100, Power: 50})
+		}
+		rel += w.ClusterGaps(DefaultClusterLinkDist).Relative
+	}
+	rel /= trials
+
+	t.Logf("relative gap of a structureless layout: %.3f", rel)
+	if rel < 0.9 || rel > 1.1 {
+		t.Fatalf("relative gap of a structureless layout = %.3f, want about 1: "+
+			"the scale is only readable on its own if no structure means no signal", rel)
+	}
+}

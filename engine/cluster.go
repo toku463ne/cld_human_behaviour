@@ -1,6 +1,9 @@
 package engine
 
-import "sort"
+import (
+	"math"
+	"sort"
+)
 
 // This file holds the group structure of the population: how many clumps of
 // agents there are and how big they are. It is the first of the "should be"
@@ -157,4 +160,115 @@ func (w *World) Clusters(linkDist float64) Clustering {
 		c.AvgGroupSize = float64(grouped) / float64(c.Groups)
 	}
 	return c
+}
+
+// ClusterGaps is how far the groups keep from each other.
+//
+// It is the distance part of stage 6.5's last layout question: whether nodes of
+// different groups either fight or stay away from each other. The fighting half
+// is in fights.go; this is the staying away half.
+//
+// Singletons take no part, neither as a group nor as something to be far from.
+// A lone agent is not a group, and counting one would turn "how far apart are
+// the groups" into "how empty is the world between them".
+type ClusterGaps struct {
+	LinkDist float64
+
+	// Gaps holds, for each group, the distance to the nearest agent of any
+	// other group, in ascending order: the distribution in full. Every entry
+	// is greater than LinkDist, because two agents any closer than that would
+	// be one group by definition. The interesting end is the low one, where
+	// groups are approaching each other.
+	Gaps []float64
+
+	Mean, Median, P10 float64
+
+	// Relative is Mean divided by the nearest neighbour distance the same
+	// number of groups would have if they were scattered at random over the
+	// world, which takes out the fact that a crowded world has everything
+	// closer to everything else.
+	//
+	// Unlike Spacing.Clumping this one does read against 1: a layout with no
+	// structure comes out at 0.98 (TestClusterGapsRelativeOfARandomLayout), so
+	// below 1 means the groups really are sitting closer together than chance
+	// and above 1 means they are keeping apart. The reference treats a group
+	// as a point while a gap is measured edge to edge, which is harmless while
+	// the groups are small next to the gaps between them and would stop being
+	// so if they grew.
+	Relative float64
+}
+
+// ClusterGaps measures how far each group is from the nearest other one. Like
+// Clusters it is O(n^2) and meant to be sampled rather than run every tick.
+func (w *World) ClusterGaps(linkDist float64) ClusterGaps {
+	out := ClusterGaps{LinkDist: linkDist}
+	c := w.Clusters(linkDist)
+	if len(c.Sizes) < 2 {
+		return out
+	}
+
+	nearest := make([]float64, len(c.Sizes))
+	for i := range nearest {
+		nearest[i] = math.Inf(1)
+	}
+	inGroup := func(label int) bool { return c.Sizes[label] > 1 }
+
+	for i := range w.agents {
+		if !inGroup(c.Labels[i]) {
+			continue
+		}
+		for j := i + 1; j < len(w.agents); j++ {
+			if c.Labels[i] == c.Labels[j] || !inGroup(c.Labels[j]) {
+				continue
+			}
+			d2 := dist2(w.agents[i].X, w.agents[i].Y, w.agents[j].X, w.agents[j].Y)
+			if d2 < nearest[c.Labels[i]] {
+				nearest[c.Labels[i]] = d2
+			}
+			if d2 < nearest[c.Labels[j]] {
+				nearest[c.Labels[j]] = d2
+			}
+		}
+	}
+
+	for label, d2 := range nearest {
+		if !inGroup(label) || math.IsInf(d2, 1) {
+			continue
+		}
+		out.Gaps = append(out.Gaps, math.Sqrt(d2))
+	}
+	if len(out.Gaps) == 0 {
+		return out
+	}
+	sort.Float64s(out.Gaps)
+
+	var sum float64
+	for _, g := range out.Gaps {
+		sum += g
+	}
+	out.Mean = sum / float64(len(out.Gaps))
+	out.Median = quantile(out.Gaps, 0.5)
+	out.P10 = quantile(out.Gaps, 0.1)
+
+	// What the mean would be if this many groups were scattered evenly: the
+	// expected nearest neighbour distance of k random points in an area is
+	// half the square root of the area per point.
+	if area := w.cfg.Width * w.cfg.Height; area > 0 {
+		if expected := 0.5 * math.Sqrt(area/float64(len(out.Gaps))); expected > 0 {
+			out.Relative = out.Mean / expected
+		}
+	}
+	return out
+}
+
+// quantile reads a fraction of the way into an ascending slice, interpolating
+// between the two entries it falls between.
+func quantile(sorted []float64, q float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	pos := q * float64(len(sorted)-1)
+	lo := int(math.Floor(pos))
+	hi := int(math.Ceil(pos))
+	return sorted[lo] + (sorted[hi]-sorted[lo])*(pos-float64(lo))
 }
