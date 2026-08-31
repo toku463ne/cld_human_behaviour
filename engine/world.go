@@ -73,6 +73,13 @@ type World struct {
 	index     map[int]int
 	foodIndex map[int]int
 
+	// grid answers "who is near here" without walking the whole world, and
+	// gridStale says it has not caught up with the world yet. It is built on
+	// demand rather than kept up to date, so a tick that moves everybody pays
+	// for one rebuild instead of a few hundred updates; see grid.go.
+	grid      *spatialGrid
+	gridStale bool
+
 	// newborns buffers the children of this tick. They are appended after the
 	// agent loop, because appending during it could move the backing array
 	// while it is being walked through pointers.
@@ -721,10 +728,14 @@ func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 	a.VX, a.VY = dx/d, dy/d
 	a.Vitality -= moveCostAt(&w.cfg, effort)
 	a.effortSpent = math.Max(a.effortSpent, effort)
+	w.invalidateIndex()
 }
 
 func (w *World) keepInBounds(a *Agent) {
 	m := w.cfg.BoundaryMargin
+	if a.X < m || a.X > w.cfg.Width-m || a.Y < m || a.Y > w.cfg.Height-m {
+		w.invalidateIndex()
+	}
 	if a.X < m {
 		a.X, a.VX = m, math.Abs(a.VX)
 	}
@@ -792,6 +803,7 @@ func (w *World) addAgent(a Agent) int {
 	}
 	w.index[a.ID] = len(w.agents)
 	w.agents = append(w.agents, a)
+	w.invalidateIndex()
 	return a.ID
 }
 
@@ -833,6 +845,9 @@ func (w *World) removeDead() {
 	for i := range w.agents {
 		w.index[w.agents[i].ID] = i
 	}
+	// Compacting moved everybody who was behind a corpse, so every index the
+	// grid holds past that point is now somebody else.
+	w.invalidateIndex()
 }
 
 // --- food ------------------------------------------------------------------
@@ -866,6 +881,7 @@ func (w *World) addFood(x, y float64) int {
 	w.nextFoodID++
 	w.foodIndex[f.ID] = len(w.foods)
 	w.foods = append(w.foods, f)
+	w.invalidateIndex()
 	return f.ID
 }
 
@@ -881,6 +897,8 @@ func (w *World) removeFoodByID(id int) {
 	w.foodIndex[w.foods[i].ID] = i
 	w.foods = w.foods[:last]
 	delete(w.foodIndex, id)
+	// The last item was swapped into the hole, so two indices changed meaning.
+	w.invalidateIndex()
 }
 
 // --- small helpers ---------------------------------------------------------
