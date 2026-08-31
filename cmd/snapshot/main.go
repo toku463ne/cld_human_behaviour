@@ -1,19 +1,23 @@
-// Command snapshot draws one moment of a run to a PNG, with the population
-// coloured by cluster.
+// Command snapshot draws a record image of a run to a PNG.
 //
 // It exists to leave a visual record that can be filed next to a commit: the
 // numbers cmd/experiment prints say how many clusters there are, but not what
-// a world with that many clusters looks like, and a screenshot of cmd/devview
-// cannot show where one cluster ends and the next begins. Nothing here is part
-// of the simulation: clustering is read only analysis, and no agent carries a
-// cluster id.
+// a world with that many clusters looks like, and they give a half-life
+// without the shape of the curve it was read off. Nothing here is part of the
+// simulation: every measurement it draws is read only analysis.
 //
-// The run is deterministic, so the same flags always produce the same image.
-// The caption strip records what they were, together with the commit the image
-// was taken at, so a picture that has been moved out of the repository still
-// says where it came from.
+// Two things can be drawn.
+//
+//	-mode world  one moment of one run, the population coloured by cluster
+//	-mode curve  the membership survival curve, averaged over several seeds
+//
+// A run is deterministic, so the same flags always produce the same image. The
+// caption strip records what they were, together with the commit the image was
+// taken at, so a picture that has been moved out of the repository still says
+// where it came from.
 //
 //	go run ./cmd/snapshot -seed 1 -ticks 50000 -out docs/images/clusters.png
+//	go run ./cmd/snapshot -mode curve -seeds 8 -out docs/images/membership.png
 package main
 
 import (
@@ -62,26 +66,43 @@ var (
 )
 
 func main() {
-	seed := flag.Int64("seed", 1, "seed of the run")
+	mode := flag.String("mode", "world", "what to draw: world or curve")
+	seed := flag.Int64("seed", 1, "seed of the run (world mode)")
+	seeds := flag.Int("seeds", 8, "how many seeds to average over (curve mode)")
 	ticks := flag.Int("ticks", 50000, "ticks to run before drawing")
 	link := flag.Float64("link", engine.DefaultClusterLinkDist, "cluster linking distance")
-	scale := flag.Int("scale", 2, "output pixels per world unit")
+	scale := flag.Int("scale", 2, "output pixels per world unit (world mode)")
 	commit := flag.String("commit", "", "commit to stamp on the image (default: the current HEAD)")
 	out := flag.String("out", "snapshot.png", "file to write")
 	flag.Parse()
-
-	cfg := engine.DefaultConfig()
-	cfg.Seed = *seed
-	w := engine.NewWorld(cfg)
-	for i := 0; i < *ticks; i++ {
-		w.Step()
-	}
 
 	stamp := *commit
 	if stamp == "" {
 		stamp = headCommit()
 	}
-	img := render(w, cfg, *link, *scale, stamp)
+
+	var img *image.RGBA
+	var note string
+	switch *mode {
+	case "world":
+		cfg := engine.DefaultConfig()
+		cfg.Seed = *seed
+		w := engine.NewWorld(cfg)
+		for i := 0; i < *ticks; i++ {
+			w.Step()
+		}
+		img = render(w, cfg, *link, *scale, stamp)
+		c := w.Clusters(*link)
+		note = fmt.Sprintf("seed %d, tick %d, link %.0f, pop %d, clusters %d, largest %.0f%%",
+			*seed, w.Tick(), *link, w.Stats().Population, c.Groups, c.LargestShare*100)
+	case "curve":
+		curves := measureCurves(*seeds, *ticks, *link)
+		img = renderCurve(curves, *seeds, *ticks, *link, stamp)
+		note = fmt.Sprintf("seeds 1-%d, %d ticks, link %.0f, half-life %.1f",
+			*seeds, *ticks, *link, curves.halfLife)
+	default:
+		fail(fmt.Errorf("unknown mode %q: want world or curve", *mode))
+	}
 
 	if dir := filepath.Dir(*out); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -96,10 +117,7 @@ func main() {
 	if err := png.Encode(f, img); err != nil {
 		fail(err)
 	}
-
-	c := w.Clusters(*link)
-	fmt.Printf("%s: seed %d, tick %d, link %.0f, pop %d, clusters %d, largest %.0f%%\n",
-		*out, *seed, w.Tick(), *link, w.Stats().Population, c.Groups, c.LargestShare*100)
+	fmt.Printf("%s: %s\n", *out, note)
 }
 
 func fail(err error) {
