@@ -111,6 +111,7 @@ func variantByName(name string) (variant, bool) {
 var metricNames = []string{
 	"pop", "gen", "births", "deaths", "starved", "killed", "killShare", "aged", "agedShare", "fights",
 	"clumping", "neighbours", "nearest",
+	"clusters", "clusterSize", "grouped", "largestShare",
 	"power", "rationality", "intelligence",
 	"dPower", "dRationality", "dIntelligence",
 	"extinct",
@@ -125,6 +126,13 @@ type sample struct {
 
 	// How the population is laid out at this moment.
 	clumping, neighbours, nearest float64
+
+	// How it is grouped: the number of clusters of two or more, their mean
+	// size, the share of the population inside one, and the share inside the
+	// biggest single one. The last is the check on the other three: single
+	// linkage chains, so a share near 1 means the population has merged into
+	// one blob rather than formed groups.
+	clusters, clusterSize, grouped, largestShare float64
 }
 
 type run struct {
@@ -151,11 +159,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	record := func() {
 		s := w.Stats()
 		sp := w.Spacing()
+		cl := w.Clusters(engine.DefaultClusterLinkDist)
 		series = append(series, sample{
 			tick: s.Tick, pop: s.Population,
 			power: s.AvgPower, rat: s.AvgRationality, intel: s.AvgIntelligence,
 			foods: s.FoodItems, births: s.Births, deaths: s.Deaths, fights: s.Fights,
 			clumping: sp.Clumping, neighbours: sp.AvgNeighbours, nearest: sp.AvgNearestDist,
+			clusters: float64(cl.Groups), clusterSize: cl.AvgGroupSize,
+			grouped: cl.GroupedShare, largestShare: cl.LargestShare,
 		})
 	}
 	record()
@@ -183,6 +194,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"clumping":      tail.clumping,
 		"neighbours":    tail.neighbours,
 		"nearest":       tail.nearest,
+		"clusters":      tail.clusters,
+		"clusterSize":   tail.clusterSize,
+		"grouped":       tail.grouped,
+		"largestShare":  tail.largestShare,
 		"power":         tail.power,
 		"rationality":   tail.rat,
 		"intelligence":  tail.intel,
@@ -213,6 +228,10 @@ func tailAverage(series []sample) sample {
 		out.clumping += s.clumping
 		out.neighbours += s.neighbours
 		out.nearest += s.nearest
+		out.clusters += s.clusters
+		out.clusterSize += s.clusterSize
+		out.grouped += s.grouped
+		out.largestShare += s.largestShare
 		n++
 	}
 	if n == 0 {
@@ -225,6 +244,10 @@ func tailAverage(series []sample) sample {
 	out.clumping /= d
 	out.neighbours /= d
 	out.nearest /= d
+	out.clusters /= d
+	out.clusterSize /= d
+	out.grouped /= d
+	out.largestShare /= d
 	return out
 }
 
@@ -370,7 +393,7 @@ func writeCSV(path string, runs []run) error {
 
 	w := csv.NewWriter(f)
 	defer w.Flush()
-	if err := w.Write([]string{"variant", "seed", "tick", "pop", "power", "rationality", "intelligence", "foods", "births", "deaths", "fights", "clumping", "neighbours", "nearest"}); err != nil {
+	if err := w.Write([]string{"variant", "seed", "tick", "pop", "power", "rationality", "intelligence", "foods", "births", "deaths", "fights", "clumping", "neighbours", "nearest", "clusters", "clusterSize", "grouped", "largestShare"}); err != nil {
 		return err
 	}
 	for _, r := range runs {
@@ -384,6 +407,10 @@ func writeCSV(path string, runs []run) error {
 				strconv.FormatFloat(s.clumping, 'f', 3, 64),
 				strconv.FormatFloat(s.neighbours, 'f', 2, 64),
 				strconv.FormatFloat(s.nearest, 'f', 2, 64),
+				strconv.FormatFloat(s.clusters, 'f', 0, 64),
+				strconv.FormatFloat(s.clusterSize, 'f', 2, 64),
+				strconv.FormatFloat(s.grouped, 'f', 3, 64),
+				strconv.FormatFloat(s.largestShare, 'f', 3, 64),
 			}
 			if err := w.Write(row); err != nil {
 				return err

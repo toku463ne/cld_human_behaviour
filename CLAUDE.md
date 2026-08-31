@@ -186,6 +186,8 @@ Goモジュール名は `github.com/toku463ne/cld_human_behaviour`。現時点�
 - 再判断トリガーは `Trigger` として名前が付く（spawned / target lost / goal reached / attacked / vitality drop / idle / food in sight / bond ended / controller set）。`AIController` 以外のコントローラ（将来の人間操作）でも、トリガーと最終行動だけは `engine` 側が記録する。
 - テスト: `engine/world_test.go`（ルールごとの単体テストと、8000tick回す統合テスト）と `engine/decision_test.go`（シナリオテスト）。後者は状況を手で組み立てて `Decide()` を1回呼び、選ばれる行動をassertする（格上に守られた食料／格下との食料争い／逃げ場のない被攻撃／満腹で消耗している／餓死寸前で求愛を検討すらしない、など）。効用の内訳やそもそも候補に挙がったかまでトレース経由で確認しているものもある。
 - ベンチマーク: `engine/bench_test.go` に `BenchmarkEngineStep` / `BenchmarkEngineStepCrowded` / `BenchmarkDecide`。
+- `engine.World.Clusters(linkDist)`: 集団の構造（単連結の連結成分。クラスタ数・サイズ分布・最大成分の割合・個体ごとの所属ラベル `Labels`）。読み取り専用の解析で、ノードは集団IDを持たない。連結距離は `engine.DefaultClusterLinkDist = 30` 固定（`Config` に入れない＝世界のルールではなく測る側の目盛りだから。距離が違う測定値どうしは比べられない）。`Spacing()` と同じく O(n²) なので間引いて測る。
 - `engine.Spacing()`: 個体の散らばり具合（視界内の他個体数・最近傍距離・一様分布と比べた集まり具合）。`Stats()` と別なのは O(n^2) だから。協力を入れる前後で「群れているか」を測るために用意した。
 - `cmd/experiment`: ルール変更をA/Bで測るヘッドレスのランナー。条件（`Config` を書き換える関数）× シード × tick数を並列で回し、条件ごとの平均±標準誤差と、**同じシードどうしの差分**を出す。選択圧に触れる変更のときはこれを前後で回す。方針は「ルール変更の測定」の節、使い方は `README.md`。
+- `cmd/snapshot`: 1回分の実行の1瞬間を、クラスタごとに色分けしたPNGに描くヘッドレスの開発用ツール。数値では分からない「その集団がどんな形か」を記録に残すためのもの。決定的で、画像の下帯に条件と**コミット**を焼き込む（画像がリポジトリの外に出ても出所が分かるように）。出力は `docs/images/`。使い方は `README.md`。
 - `cmd/devview`: ebitenで `engine` を直接描画する開発用ツール。全体を眺めるモードと、1ノードを追うモード（クリックで選択＝追跡、一時停止・1tick送り・低速再生、右パネルに意思決定トレースと他者への強さ推定）を持つ。**起動方法・キー操作・画面とパネルの読み方は `README.md`**（ここには書かない）。

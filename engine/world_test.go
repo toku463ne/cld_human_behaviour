@@ -2,6 +2,9 @@ package engine
 
 import (
 	"math"
+	"math/rand"
+	"slices"
+	"sort"
 	"testing"
 )
 
@@ -1264,4 +1267,190 @@ func TestClumpingDoesNotRiseWithPopulationAlone(t *testing.T) {
 	if math.Abs(large-small)/small > 0.35 {
 		t.Fatalf("clumping moved from %.2f to %.2f on population alone", small, large)
 	}
+}
+
+// --- clustering -------------------------------------------------------------
+
+func clusteredWorld(t *testing.T, linkDist float64, place func(i int) (float64, float64), n int) Clustering {
+	t.Helper()
+	w := NewWorld(testConfig())
+	for i := 0; i < n; i++ {
+		x, y := place(i)
+		w.addAgent(Agent{X: x, Y: y, Vitality: 100, Power: 50})
+	}
+	return w.Clusters(linkDist)
+}
+
+// Three groups of four, each group far enough from the others that no pair
+// across two of them is within the linking distance.
+func TestClustersFindsSeparatedGroups(t *testing.T) {
+	c := clusteredWorld(t, 20, func(i int) (float64, float64) {
+		group := i / 4
+		return 40 + float64(group)*150 + float64(i%4)*5, 40 + float64(i%4)*5
+	}, 12)
+
+	if c.Groups != 3 {
+		t.Fatalf("groups = %d, want 3 (sizes %v)", c.Groups, c.Sizes)
+	}
+	if c.Singletons != 0 {
+		t.Fatalf("singletons = %d, want 0", c.Singletons)
+	}
+	if c.Largest != 4 || c.AvgGroupSize != 4 {
+		t.Fatalf("largest %d, avg %.1f, want 4 and 4", c.Largest, c.AvgGroupSize)
+	}
+	if c.GroupedShare != 1 {
+		t.Fatalf("grouped share = %.2f, want 1", c.GroupedShare)
+	}
+	if got := sum(c.Sizes); got != 12 {
+		t.Fatalf("sizes %v sum to %d, want the population 12", c.Sizes, got)
+	}
+}
+
+// An agent nobody is close to is a singleton, not a group of one.
+func TestClustersCountsLonersSeparately(t *testing.T) {
+	c := clusteredWorld(t, 20, func(i int) (float64, float64) {
+		if i < 3 {
+			return 40 + float64(i)*5, 40
+		}
+		return 40 + float64(i)*90, 300 // spread far apart from each other too
+	}, 6)
+
+	if c.Groups != 1 || c.Singletons != 3 {
+		t.Fatalf("groups %d, singletons %d, want 1 and 3 (sizes %v)", c.Groups, c.Singletons, c.Sizes)
+	}
+	if c.Largest != 3 {
+		t.Fatalf("largest = %d, want 3", c.Largest)
+	}
+	if c.GroupedShare != 0.5 {
+		t.Fatalf("grouped share = %.2f, want 0.5", c.GroupedShare)
+	}
+}
+
+// Linking is transitive: a chain of agents each within the linking distance of
+// the next is one cluster, even though its ends are far apart.
+func TestClustersLinkTransitively(t *testing.T) {
+	c := clusteredWorld(t, 20, func(i int) (float64, float64) {
+		return 20 + float64(i)*15, 200
+	}, 10)
+
+	if c.Groups != 1 || c.Largest != 10 {
+		t.Fatalf("a chain should be one cluster of 10, got %d groups, largest %d", c.Groups, c.Largest)
+	}
+	if c.LargestShare != 1 {
+		t.Fatalf("largest share = %.2f, want 1", c.LargestShare)
+	}
+}
+
+// The linking distance is the ruler, so widening it can only merge clusters,
+// never split them.
+func TestClustersMergeAsLinkDistanceGrows(t *testing.T) {
+	place := func(i int) (float64, float64) {
+		return 30 + float64(i%6)*60, 30 + float64(i/6)*60
+	}
+	tight := clusteredWorld(t, 20, place, 36)
+	loose := clusteredWorld(t, 70, place, 36)
+
+	if tight.Largest != 1 || tight.Singletons != 36 {
+		t.Fatalf("at 20 the grid should be all singletons, got largest %d, singletons %d",
+			tight.Largest, tight.Singletons)
+	}
+	if loose.Largest != 36 {
+		t.Fatalf("at 70 the grid should be one cluster, got largest %d (sizes %v)",
+			loose.Largest, loose.Sizes)
+	}
+}
+
+func TestClustersOfAnEmptyWorld(t *testing.T) {
+	c := clusteredWorld(t, 20, func(i int) (float64, float64) { return 0, 0 }, 0)
+	if c.Groups != 0 || c.Singletons != 0 || c.Largest != 0 || len(c.Sizes) != 0 {
+		t.Fatalf("an empty world should have no clusters, got %+v", c)
+	}
+}
+
+// Cross check of the union-find against the obvious quadratic labelling, on
+// random layouts at a distance where clusters actually form.
+func TestClustersMatchBruteForceLabelling(t *testing.T) {
+	const linkDist = 40.0
+	rng := rand.New(rand.NewSource(7))
+
+	for trial := 0; trial < 20; trial++ {
+		w := NewWorld(testConfig())
+		n := 3 + rng.Intn(40)
+		xs := make([]float64, n)
+		ys := make([]float64, n)
+		for i := 0; i < n; i++ {
+			xs[i], ys[i] = rng.Float64()*400, rng.Float64()*400
+			w.addAgent(Agent{X: xs[i], Y: ys[i], Vitality: 100, Power: 50})
+		}
+
+		// Label by repeatedly spreading each agent's label to everybody within
+		// range of it, until nothing changes.
+		label := make([]int, n)
+		for i := range label {
+			label[i] = i
+		}
+		for changed := true; changed; {
+			changed = false
+			for i := 0; i < n; i++ {
+				for j := 0; j < n; j++ {
+					if i == j || label[i] == label[j] {
+						continue
+					}
+					if dist2(xs[i], ys[i], xs[j], ys[j]) <= linkDist*linkDist {
+						lo := min(label[i], label[j])
+						label[i], label[j] = lo, lo
+						changed = true
+					}
+				}
+			}
+		}
+		counts := map[int]int{}
+		for _, l := range label {
+			counts[l]++
+		}
+		want := make([]int, 0, len(counts))
+		for _, c := range counts {
+			want = append(want, c)
+		}
+		sort.Sort(sort.Reverse(sort.IntSlice(want)))
+
+		got := w.Clusters(linkDist)
+		if !slices.Equal(got.Sizes, want) {
+			t.Fatalf("trial %d (n=%d): sizes %v, brute force says %v", trial, n, got.Sizes, want)
+		}
+
+		// The labels must agree with the brute force labelling too: two agents
+		// share a label exactly when they share a brute force label.
+		if len(got.Labels) != n {
+			t.Fatalf("trial %d: %d labels for %d agents", trial, len(got.Labels), n)
+		}
+		for i := 0; i < n; i++ {
+			for j := i + 1; j < n; j++ {
+				if (got.Labels[i] == got.Labels[j]) != (label[i] == label[j]) {
+					t.Fatalf("trial %d: agents %d and %d labelled %d/%d, brute force says %d/%d",
+						trial, i, j, got.Labels[i], got.Labels[j], label[i], label[j])
+				}
+			}
+		}
+		// A label is an index into Sizes, and the component it points at is the
+		// one the agent is actually in.
+		seen := make([]int, len(got.Sizes))
+		for _, l := range got.Labels {
+			if l < 0 || l >= len(got.Sizes) {
+				t.Fatalf("trial %d: label %d out of range for %d clusters", trial, l, len(got.Sizes))
+			}
+			seen[l]++
+		}
+		if !slices.Equal(seen, got.Sizes) {
+			t.Fatalf("trial %d: labels count %v, sizes say %v", trial, seen, got.Sizes)
+		}
+	}
+}
+
+func sum(xs []int) int {
+	total := 0
+	for _, x := range xs {
+		total += x
+	}
+	return total
 }
