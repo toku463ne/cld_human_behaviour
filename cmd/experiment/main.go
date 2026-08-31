@@ -113,6 +113,7 @@ var metricNames = []string{
 	"clumping", "neighbours", "nearest",
 	"clusters", "clusterSize", "grouped", "largestShare",
 	"halfLife", "together", "censored",
+	"fightCompanion", "fightStranger", "fightRatio",
 	"power", "rationality", "intelligence",
 	"dPower", "dRationality", "dIntelligence",
 	"extinct",
@@ -168,6 +169,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	// what the run is being asked about.
 	member := engine.NewMembershipTracker(
 		engine.DefaultClusterLinkDist, engine.DefaultMembershipStep, engine.DefaultMembershipLags)
+	fights := engine.NewFightTracker(
+		engine.DefaultClusterLinkDist, engine.DefaultMembershipStep, engine.DefaultCompanionLag)
 	watchFrom := ticks - max(ticks/5, 1)
 
 	var series []sample
@@ -192,12 +195,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		}
 		if i >= watchFrom && w.Tick()%engine.DefaultMembershipStep == 0 {
 			member.Observe(w)
+			fights.Observe(w)
 		}
 	}
 
 	end := w.Stats()
 	tail := tailAverage(series)
 	mem := member.Result()
+	fr := fights.Result()
 
 	// A censored half-life is a lower bound, not a zero: report the edge of the
 	// window and let the censored metric say how often that happened.
@@ -207,33 +212,38 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	}
 
 	r := run{variant: v.name, seed: seed, metrics: map[string]float64{
-		"pop":           float64(end.Population),
-		"gen":           float64(end.MaxGeneration),
-		"births":        float64(end.Births),
-		"deaths":        float64(end.Deaths),
-		"starved":       float64(end.Deaths - end.Kills - end.AgingDeaths),
-		"killed":        float64(end.Kills),
-		"killShare":     share(end.Kills, end.Deaths),
-		"aged":          float64(end.AgingDeaths),
-		"agedShare":     share(end.AgingDeaths, end.Deaths),
-		"fights":        float64(end.Fights),
-		"clumping":      tail.clumping,
-		"neighbours":    tail.neighbours,
-		"nearest":       tail.nearest,
-		"clusters":      tail.clusters,
-		"clusterSize":   tail.clusterSize,
-		"grouped":       tail.grouped,
-		"largestShare":  tail.largestShare,
-		"halfLife":      halfLife,
-		"together":      mem.At(togetherLag),
-		"censored":      boolToFloat(mem.Censored),
-		"power":         tail.power,
-		"rationality":   tail.rat,
-		"intelligence":  tail.intel,
-		"dPower":        tail.power - start.AvgPower,
-		"dRationality":  tail.rat - start.AvgRationality,
-		"dIntelligence": tail.intel - start.AvgIntelligence,
-		"extinct":       boolToFloat(end.Population == 0),
+		"pop":          float64(end.Population),
+		"gen":          float64(end.MaxGeneration),
+		"births":       float64(end.Births),
+		"deaths":       float64(end.Deaths),
+		"starved":      float64(end.Deaths - end.Kills - end.AgingDeaths),
+		"killed":       float64(end.Kills),
+		"killShare":    share(end.Kills, end.Deaths),
+		"aged":         float64(end.AgingDeaths),
+		"agedShare":    share(end.AgingDeaths, end.Deaths),
+		"fights":       float64(end.Fights),
+		"clumping":     tail.clumping,
+		"neighbours":   tail.neighbours,
+		"nearest":      tail.nearest,
+		"clusters":     tail.clusters,
+		"clusterSize":  tail.clusterSize,
+		"grouped":      tail.grouped,
+		"largestShare": tail.largestShare,
+		"halfLife":     halfLife,
+		"together":     mem.At(togetherLag),
+		"censored":     boolToFloat(mem.Censored),
+		// As percentages: the rates themselves are a percent or two, and the
+		// summary prints two decimals, which would round them into each other.
+		"fightCompanion": fr.Companion * 100,
+		"fightStranger":  fr.Stranger * 100,
+		"fightRatio":     fr.Ratio,
+		"power":          tail.power,
+		"rationality":    tail.rat,
+		"intelligence":   tail.intel,
+		"dPower":         tail.power - start.AvgPower,
+		"dRationality":   tail.rat - start.AvgRationality,
+		"dIntelligence":  tail.intel - start.AvgIntelligence,
+		"extinct":        boolToFloat(end.Population == 0),
 	}}
 	if keepSeries {
 		r.series = series

@@ -1608,3 +1608,119 @@ func TestMembershipAtInterpolates(t *testing.T) {
 	approx(t, m.At(15), 0.375, 1e-9, "At(15)")
 	approx(t, m.At(1000), 0.25, 1e-9, "At past the end of the curve")
 }
+
+// --- fight rates by companionship -------------------------------------------
+
+// A pair that has been together since before the lag is a companion pair, and
+// one that has just arrived is a stranger pair, even though both meetings look
+// identical at the moment they are counted.
+func TestFightRatesSplitCompanionsFromStrangers(t *testing.T) {
+	w := NewWorld(testConfig())
+	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Power: 50})
+	c := w.addAgent(Agent{X: 300, Y: 300, Vitality: 100, Power: 50})
+
+	f := NewFightTracker(30, 10, 20)
+	for tick := 0; tick <= 20; tick += 10 {
+		w.tick = tick
+		f.Observe(w)
+	}
+
+	// The stranger walks into the pair and starts hitting one of them; the two
+	// companions are not fighting each other.
+	w.agentByID(c).X, w.agentByID(c).Y = 108, 100
+	w.agentByID(c).Action = Action{Kind: ActAttack, TargetID: a}
+	w.tick = 30
+	f.Observe(w)
+
+	got := f.Result()
+	// The pair met as companions three times over, and the newcomer makes two
+	// stranger meetings at the last reading, one of which is a fight.
+	if got.CompanionFights != 0 {
+		t.Fatalf("companion fights = %d, want 0", got.CompanionFights)
+	}
+	if got.StrangerMeetings != 2 || got.StrangerFights != 1 {
+		t.Fatalf("stranger meetings %d, fights %d, want 2 and 1",
+			got.StrangerMeetings, got.StrangerFights)
+	}
+	approx(t, got.Stranger, 0.5, 1e-9, "stranger fight rate")
+	approx(t, got.Companion, 0, 1e-9, "companion fight rate")
+	if got.Ratio != 0 {
+		t.Fatalf("ratio = %v, want 0 when companions never fight", got.Ratio)
+	}
+}
+
+// Both rates are per meeting, so companions being near each other far more
+// often does not by itself make them look violent.
+func TestFightRatesAreCountedPerMeeting(t *testing.T) {
+	w := NewWorld(testConfig())
+	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
+	b := w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Power: 50})
+
+	f := NewFightTracker(30, 10, 20)
+	for tick := 0; tick <= 20; tick += 10 {
+		w.tick = tick
+		f.Observe(w)
+	}
+	// The companions meet four more times and fight in one of them.
+	for i, tick := range []int{30, 40, 50, 60} {
+		if i == 0 {
+			w.agentByID(a).Action = Action{Kind: ActAttack, TargetID: b}
+		} else {
+			w.agentByID(a).Action = Action{Kind: ActRest}
+		}
+		w.tick = tick
+		f.Observe(w)
+	}
+
+	got := f.Result()
+	if got.CompanionMeetings != 5 || got.CompanionFights != 1 {
+		t.Fatalf("companion meetings %d, fights %d, want 5 and 1",
+			got.CompanionMeetings, got.CompanionFights)
+	}
+	approx(t, got.Companion, 0.2, 1e-9, "companion fight rate")
+}
+
+// Agents out of reach of each other are not meeting at all, whatever their
+// clusters say, and an attack action aimed at somebody else is not a fight
+// between these two.
+func TestFightRatesIgnoreWhatIsOutOfReach(t *testing.T) {
+	w := NewWorld(testConfig())
+	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 125, Y: 100, Vitality: 100, Power: 50}) // linked, but out of reach
+
+	f := NewFightTracker(30, 10, 20)
+	for tick := 0; tick <= 30; tick += 10 {
+		w.agentByID(a).Action = Action{Kind: ActAttack, TargetID: 999}
+		w.tick = tick
+		f.Observe(w)
+	}
+
+	got := f.Result()
+	if got.CompanionMeetings != 0 || got.StrangerMeetings != 0 {
+		t.Fatalf("meetings companion %d, stranger %d, want none: they are %v apart, CombatRadius is %v",
+			got.CompanionMeetings, got.StrangerMeetings, 25.0, w.cfg.CombatRadius)
+	}
+}
+
+// An agent that was not around a lag ago has no history to be judged by, so its
+// meetings are skipped rather than guessed at.
+func TestFightRatesSkipAgentsWithNoHistory(t *testing.T) {
+	w := NewWorld(testConfig())
+	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
+
+	f := NewFightTracker(30, 10, 20)
+	for tick := 0; tick <= 20; tick += 10 {
+		w.tick = tick
+		f.Observe(w)
+	}
+	w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Power: 50}) // born just now
+	w.tick = 30
+	f.Observe(w)
+
+	got := f.Result()
+	if got.CompanionMeetings+got.StrangerMeetings != 0 {
+		t.Fatalf("meetings = %d, want 0: the newcomer has no history",
+			got.CompanionMeetings+got.StrangerMeetings)
+	}
+}

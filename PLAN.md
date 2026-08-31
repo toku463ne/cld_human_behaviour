@@ -177,7 +177,7 @@
 
 - [x] クラスタ検出（グリッド上の単連結でよい。段階7a のグリッドが入るまでは素朴な実装で構わない）→ **クラスタ数・サイズ分布**（2026-08-31。`engine.World.Clusters(linkDist)` と `Clustering`。連結距離は `engine.DefaultClusterLinkDist = 30` に固定＝**距離が違う測定値どうしは比べられない**ため。`cmd/experiment` に `clusters` / `clusterSize` / `grouped` / `largestShare` を追加。値の決め方と現状のベースラインは `HISTORY.md` の同日の項）
 - [x] **membership half-life**（同じ顔ぶれが一緒に居続ける時間）。「集団」と「たまたま近くにいる塊」を区別する唯一の指標（2026-08-31。`engine.MembershipTracker`。**組（ペア）の共在生存曲線**として測る＝クラスタは合体・分裂するので「同じクラスタ、のちほど」は定義できないため。片方が死んだ組は離れたと数えない。`cmd/experiment` に `halfLife` / `together` / `censored`。現状のベースラインと曲線の形は `HISTORY.md` の同日の項）
-- [ ] **集団内戦闘率 ÷ 集団間戦闘率**
+- [x] **集団内戦闘率 ÷ 集団間戦闘率**（2026-08-31。`engine.FightTracker`。**書かれたとおりには測れない**ことが実測で分かったので——打撃の届く `CombatRadius`(15) が連結距離(30) より短く、殴り合う2体はつねに同じクラスタにいる——「同じ遭遇を、200tick前から一緒にいた組（仲間）かそうでない組（よそ者）かで分ける」形にした。`cmd/experiment` に `fightCompanion` / `fightStranger` / `fightRatio`。理由と現状の値は `HISTORY.md` の同日の項）
 - [ ] 集団間の距離分布
 - [ ] 種族ごとの個体数（段階11 以降に効く。今は human だけ）
 - [ ] `cmd/experiment` の出力に上記を追加する（`Spacing()` と同じく O(n²) なので、頻度を落として測る）
