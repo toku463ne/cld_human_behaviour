@@ -117,9 +117,20 @@ func (w *World) perceive(a *Agent) *Perception {
 		AttackerID:   a.attackerID,
 	}
 
-	r2 := w.cfg.PerceptionRadius * w.cfg.PerceptionRadius
+	r := w.cfg.PerceptionRadius
+	r2 := r * r
 
-	for i := range w.foods {
+	// The index narrows the world down to the cells the circle of sight
+	// touches; the circle itself is still tested below, exactly as it was when
+	// this walked every agent and every item. The candidates arrive in
+	// ascending index order, which is the order those loops used, so the
+	// perception buffers are filled identically and the random draws below
+	// happen in the same sequence.
+	g := w.spatialIndex()
+	w.nearFoods = g.appendFoodsNear(w.nearFoods[:0], a.X, a.Y, r)
+	w.nearAgents = g.appendAgentsNear(w.nearAgents[:0], a.X, a.Y, r)
+
+	for _, i := range w.nearFoods {
 		f := &w.foods[i]
 		d2 := dist2(a.X, a.Y, f.X, f.Y)
 		if d2 > r2 {
@@ -134,7 +145,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		})
 	}
 
-	for i := range w.agents {
+	for _, i := range w.nearAgents {
 		o := &w.agents[i]
 		if !o.Alive || o.ID == a.ID {
 			continue
@@ -144,7 +155,11 @@ func (w *World) perceive(a *Agent) *Perception {
 			continue
 		}
 
-		// Whoever else is around is also a rival for every item in sight.
+		// Whoever else is around is also a rival for every item in sight. This
+		// rides on the scan above rather than asking the index per item: a
+		// rival is only one if the observer can see it, so the set to search is
+		// the one already in hand, and querying around each item instead would
+		// turn up agents outside the observer's sight and change the answer.
 		for j := range p.Foods {
 			f := &p.Foods[j]
 			if d := dist2(o.X, o.Y, f.X, f.Y); d < f.RivalDist*f.RivalDist {

@@ -80,6 +80,11 @@ type World struct {
 	grid      *spatialGrid
 	gridStale bool
 
+	// nearAgents and nearFoods are the candidate lists the index hands back,
+	// reused between queries so that perceiving somebody allocates nothing.
+	nearAgents []int
+	nearFoods  []int
+
 	// newborns buffers the children of this tick. They are appended after the
 	// agent loop, because appending during it could move the backing array
 	// while it is being walked through pointers.

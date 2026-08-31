@@ -2,7 +2,7 @@ package engine
 
 import (
 	"math"
-	"slices"
+	"math/bits"
 )
 
 // This file holds the spatial index: a uniform grid of cells that says who and
@@ -46,6 +46,16 @@ type spatialGrid struct {
 
 	agents [][]int
 	foods  [][]int
+
+	// agentMark and foodMark are bitsets of "this index is a candidate",
+	// which is how a query puts its answer back into ascending order without
+	// comparing anything. See appendNear.
+	agentMark []uint64
+	foodMark  []uint64
+
+	// How many of each the buckets hold, so that a query covering the whole
+	// grid can hand back everything without going through them.
+	nAgents, nFoods int
 }
 
 func newSpatialGrid(width, height, cell float64) *spatialGrid {
@@ -106,6 +116,18 @@ func (g *spatialGrid) rebuild(agents []Agent, foods []Food) {
 		c := g.cellIndex(foods[i].X, foods[i].Y)
 		g.foods[c] = append(g.foods[c], i)
 	}
+	g.nAgents, g.nFoods = len(agents), len(foods)
+	g.agentMark = fitMark(g.agentMark, len(agents))
+	g.foodMark = fitMark(g.foodMark, len(foods))
+}
+
+// fitMark grows a bitset to hold n bits. It never shrinks, and every query
+// leaves it clear, so it is only ever cleared once.
+func fitMark(mark []uint64, n int) []uint64 {
+	for len(mark) < (n+63)/64 {
+		mark = append(mark, 0)
+	}
+	return mark
 }
 
 // appendAgentsNear appends the indices of every agent in the cells the circle
@@ -119,29 +141,71 @@ func (g *spatialGrid) rebuild(agents []Agent, foods []Food) {
 // is the order the linear scan used, and the only one that leaves a run
 // unchanged.
 func (g *spatialGrid) appendAgentsNear(dst []int, x, y, radius float64) []int {
-	return g.appendNear(g.agents, dst, x, y, radius)
+	return g.appendNear(g.agents, g.agentMark, g.nAgents, dst, x, y, radius)
 }
 
 // appendFoodsNear is appendAgentsNear for food.
 func (g *spatialGrid) appendFoodsNear(dst []int, x, y, radius float64) []int {
-	return g.appendNear(g.foods, dst, x, y, radius)
+	return g.appendNear(g.foods, g.foodMark, g.nFoods, dst, x, y, radius)
 }
 
-func (g *spatialGrid) appendNear(buckets [][]int, dst []int, x, y, radius float64) []int {
+// appendNear collects the candidates into a bitset and then reads the bitset
+// out, which puts them in ascending order for the price of one bit each.
+//
+// Sorting them instead is the obvious thing to write, and it is what the first
+// version did. It costs a good part of what the index saves: measured over the
+// whole tick at populations of 173/364/732/1459/2966, sorting came to
+// 120.9/250.8/550.7/1235.0/2986.0 us against 113.4/215.3/458.7/1105.4/2679.0
+// for the bitset, which is the difference between the index paying off from
+// about 700 agents and from about 350. The indices are small and distinct,
+// which is exactly when a bitset beats a comparison sort.
+func (g *spatialGrid) appendNear(buckets [][]int, mark []uint64, n int, dst []int, x, y, radius float64) []int {
 	if radius < 0 {
 		radius = 0
 	}
 	c0, c1 := g.column(x-radius), g.column(x+radius)
 	r0, r1 := g.row(y-radius), g.row(y+radius)
-	start := len(dst)
+
+	// A question that reaches every cell is not narrowing anything down, which
+	// happens whenever the world is small next to the range of sight. Handing
+	// back everybody is the same answer for less work: the buckets hold every
+	// index exactly once, so this is what the loop below would have built.
+	if c0 == 0 && r0 == 0 && c1 == g.cols-1 && r1 == g.rows-1 {
+		for i := 0; i < n; i++ {
+			dst = append(dst, i)
+		}
+		return dst
+	}
+
+	lo, hi := len(mark), -1
 	for r := r0; r <= r1; r++ {
 		base := r * g.cols
 		for c := c0; c <= c1; c++ {
-			dst = append(dst, buckets[base+c]...)
+			for _, i := range buckets[base+c] {
+				word := i >> 6
+				mark[word] |= 1 << uint(i&63)
+				if word < lo {
+					lo = word
+				}
+				if word > hi {
+					hi = word
+				}
+			}
 		}
 	}
-	// Cells are visited row by row, which is not the order the slices are in.
-	slices.Sort(dst[start:])
+	// Reading the bits out in order, and clearing them on the way, leaves the
+	// bitset ready for the next query without a separate pass over it.
+	for word := lo; word <= hi; word++ {
+		m := mark[word]
+		if m == 0 {
+			continue
+		}
+		mark[word] = 0
+		for m != 0 {
+			dst = append(dst, word<<6+bits.TrailingZeros64(m))
+			m &= m - 1 // clear the lowest set bit
+		}
+	}
 	return dst
 }
 
@@ -163,10 +227,12 @@ func clampInt(v, lo, hi int) int {
 // gridCellSize is the cell the world indexes at: the widest radius anybody
 // asks about, so that every query fits inside a three by three block of cells.
 //
-// Smaller cells would hand back fewer candidates per query (the block around a
-// circle of radius r shrinks from 9r^2 towards 4r^2) at the price of visiting
-// more of them. Which way that trade lands is a question for the measurement in
-// the next item, once there is a caller to measure.
+// Smaller cells hand back fewer candidates per query (the block around a circle
+// of radius r shrinks from 9r^2 towards 4r^2) at the price of visiting more of
+// them. Measured, that trade does not pay here: halving the cell was slightly
+// slower at every population tried, both in the default world and at nine times
+// its size, because the cells being walked grow as the square while the
+// candidates saved do not.
 func gridCellSize(cfg *Config) float64 { return cfg.PerceptionRadius }
 
 // invalidateIndex says the grid no longer matches the world. Everything that

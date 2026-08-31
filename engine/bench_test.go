@@ -69,3 +69,27 @@ func BenchmarkDecide(b *testing.B) {
 		w.ai.Decide(w.perceive(a))
 	}
 }
+
+// BenchmarkEngineStepLarge is the same world nine times over: the same density
+// of agents and food, spread across nine times the area. It is here because the
+// spatial index is meant to pay off as the population grows, and the default
+// benchmark is too small to show whether it does.
+func BenchmarkEngineStepLarge(b *testing.B) {
+	cfg := DefaultConfig()
+	cfg.Seed = 99
+	cfg.Width, cfg.Height = 2400, 1800
+	cfg.InitialPopulation = 1200
+	cfg.MaxPopulation = 2400
+	cfg.InitialFoodItems = 800
+	cfg.MaxFoodItems = 1600
+	cfg.FoodSpawnRate = 1.8
+	w := NewWorld(cfg)
+	for i := 0; i < 500; i++ {
+		w.Step()
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		w.Step()
+	}
+}
