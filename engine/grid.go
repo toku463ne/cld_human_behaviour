@@ -153,12 +153,18 @@ func (g *spatialGrid) appendFoodsNear(dst []int, x, y, radius float64) []int {
 // out, which puts them in ascending order for the price of one bit each.
 //
 // Sorting them instead is the obvious thing to write, and it is what the first
-// version did. It costs a good part of what the index saves: measured over the
-// whole tick at populations of 173/364/732/1459/2966, sorting came to
-// 120.9/250.8/550.7/1235.0/2986.0 us against 113.4/215.3/458.7/1105.4/2679.0
-// for the bitset, which is the difference between the index paying off from
-// about 700 agents and from about 350. The indices are small and distinct,
-// which is exactly when a bitset beats a comparison sort.
+// version did. It costs a good part of what the index saves. Microseconds per
+// tick at populations of 173/364/732/1459/2966 of the same density, best of
+// three runs:
+//
+//	plain scan  101.5  208.6  483.5  1227.8  3656.3
+//	bitset      105.3  221.4  435.0  1148.0  2555.2
+//	sorted      117.4  256.6  528.4  1252.3  2948.0
+//
+// Sorted, the index does not overtake the scan it replaced until a couple of
+// thousand agents; with the bitset it does so at five or six hundred. The
+// indices are small and distinct, which is exactly when a bitset beats a
+// comparison sort.
 func (g *spatialGrid) appendNear(buckets [][]int, mark []uint64, n int, dst []int, x, y, radius float64) []int {
 	if radius < 0 {
 		radius = 0

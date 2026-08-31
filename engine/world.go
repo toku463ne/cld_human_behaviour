@@ -85,6 +85,12 @@ type World struct {
 	nearAgents []int
 	nearFoods  []int
 
+	// nearScratch is a third candidate list, for the two queries that happen
+	// outside perceive: the food check that decides whether to think again,
+	// and the onlookers of a fight. Neither overlaps with perceive or with the
+	// other, so one buffer does for both.
+	nearScratch []int
+
 	// newborns buffers the children of this tick. They are appended after the
 	// agent loop, because appending during it could move the backing array
 	// while it is being walked through pointers.
@@ -503,9 +509,14 @@ func (w *World) exchangeReadings(x, y *Agent) {
 	w.observeStrength(x, y, w.cfg.CombatObsVariance)
 	w.observeStrength(y, x, w.cfg.CombatObsVariance)
 
-	r2 := w.cfg.PerceptionRadius * w.cfg.PerceptionRadius
+	r := w.cfg.PerceptionRadius
+	r2 := r * r
 	spectated := w.cfg.CombatObsVariance * w.cfg.SpectateObsFactor
-	for i := range w.agents {
+	// This runs after everybody has moved, so it is the second and last time
+	// in a tick that the index is rebuilt. Nothing in the blows that follow
+	// moves anybody, so the rest of the fights this tick reuse it.
+	w.nearScratch = w.spatialIndex().appendAgentsNear(w.nearScratch[:0], x.X, x.Y, r)
+	for _, i := range w.nearScratch {
 		o := &w.agents[i]
 		if !o.Alive || o.ID == x.ID || o.ID == y.ID {
 			continue
@@ -679,15 +690,16 @@ func (w *World) willCommit(a *Agent, candidateFitness float64) bool {
 
 // --- neighbourhood queries -------------------------------------------------
 //
-// Plain linear scans, which are enough for the few hundred agents this runs
-// with. If the population grows, only these bodies need a spatial index.
-
 // nearestFoodInSight returns the index of the closest food item within
 // perception range, or -1.
+//
+// Ties go to the last item examined, as they did when this walked the whole
+// list, which is why the candidates have to arrive in the order they sit in.
 func (w *World) nearestFoodInSight(a *Agent) int {
-	r2 := w.cfg.PerceptionRadius * w.cfg.PerceptionRadius
-	best, bestDist := -1, r2
-	for i := range w.foods {
+	r := w.cfg.PerceptionRadius
+	best, bestDist := -1, r*r
+	w.nearScratch = w.spatialIndex().appendFoodsNear(w.nearScratch[:0], a.X, a.Y, r)
+	for _, i := range w.nearScratch {
 		f := &w.foods[i]
 		if d := dist2(a.X, a.Y, f.X, f.Y); d <= bestDist {
 			bestDist, best = d, i
