@@ -1454,3 +1454,157 @@ func sum(xs []int) int {
 	}
 	return total
 }
+
+// --- membership half-life ---------------------------------------------------
+
+// place puts the agents where the test wants them and moves the clock on, so
+// that a tracker can be fed a sequence of situations without stepping the world
+// and letting the rules move anybody.
+func placeAt(w *World, tick int, xs ...float64) {
+	w.tick = tick
+	for i := range w.agents {
+		w.agents[i].X = xs[i*2]
+		w.agents[i].Y = xs[i*2+1]
+	}
+}
+
+// Two pairs that never move stay together forever, which the tracker has to
+// report as censored rather than as a half-life of zero.
+func TestMembershipOfAWorldThatNeverMovesIsCensored(t *testing.T) {
+	w := NewWorld(testConfig())
+	for i := 0; i < 4; i++ {
+		w.addAgent(Agent{X: 100 + float64(i/2)*200, Y: 100 + float64(i%2)*10, Vitality: 100, Power: 50})
+	}
+
+	m := NewMembershipTracker(30, 10, 5)
+	for tick := 0; tick <= 100; tick += 10 {
+		w.tick = tick
+		m.Observe(w)
+	}
+
+	got := m.Result()
+	if !got.Censored {
+		t.Fatalf("half-life = %.1f, want censored: nobody moved", got.HalfLife)
+	}
+	for k, s := range got.Survival {
+		if s != 1 {
+			t.Fatalf("survival at lag %d = %.2f, want 1", k*got.Step, s)
+		}
+	}
+	if got.Pairs == 0 {
+		t.Fatal("no pair observations were counted")
+	}
+}
+
+// A pair that parts between two observations has a half-life inside the first
+// step, and the curve is flat at zero after it.
+func TestMembershipOfAPairThatParts(t *testing.T) {
+	w := NewWorld(testConfig())
+	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Power: 50})
+
+	m := NewMembershipTracker(30, 10, 5)
+	m.Observe(w)
+	for tick := 10; tick <= 50; tick += 10 {
+		placeAt(w, tick, 100, 100, 300, 300)
+		m.Observe(w)
+	}
+
+	got := m.Result()
+	if got.Censored {
+		t.Fatal("the pair parted, so the half-life is not censored")
+	}
+	// Survival is 1 at lag 0 and 0 at lag 10, so the half is crossed halfway.
+	approx(t, got.HalfLife, 5, 1e-9, "half-life of a pair that parts at once")
+	if got.Survival[1] != 0 {
+		t.Fatalf("survival at lag 10 = %.2f, want 0", got.Survival[1])
+	}
+}
+
+// Half the pairs parting puts the half-life at the step where they parted.
+func TestMembershipHalfLifeSitsWhereHalfThePairsPart(t *testing.T) {
+	w := NewWorld(testConfig())
+	// Four pairs, each far from the others.
+	for i := 0; i < 8; i++ {
+		w.addAgent(Agent{X: 60 + float64(i/2)*90, Y: 60 + float64(i%2)*10, Vitality: 100, Power: 50})
+	}
+
+	m := NewMembershipTracker(30, 10, 4)
+	m.Observe(w)
+
+	// At the second reading two of the four pairs have split up.
+	placeAt(w, 10,
+		60, 60, 60, 70, // together
+		150, 60, 150, 70, // together
+		240, 60, 240, 300, // parted
+		330, 60, 330, 300, // parted
+	)
+	m.Observe(w)
+
+	got := m.Result()
+	approx(t, got.Survival[1], 0.5, 1e-9, "survival at lag 10")
+	// Survival goes 1 -> 0.5 across the first step, so it reaches a half at
+	// the end of that step.
+	approx(t, got.HalfLife, 10, 1e-9, "half-life")
+	if got.Pairs != 4 {
+		t.Fatalf("pair observations = %d, want 4", got.Pairs)
+	}
+}
+
+// A pair broken up by a death is not a pair that drifted apart. Counting it as
+// one would measure how long agents live instead of how long they stay
+// together.
+func TestMembershipIgnoresPairsBrokenByDeath(t *testing.T) {
+	w := NewWorld(testConfig())
+	for i := 0; i < 4; i++ {
+		w.addAgent(Agent{X: 100 + float64(i/2)*200, Y: 100 + float64(i%2)*10, Vitality: 100, Power: 50})
+	}
+
+	m := NewMembershipTracker(30, 10, 4)
+	m.Observe(w)
+
+	w.kill(&w.agents[3]) // one half of the second pair
+	w.removeDead()
+	w.tick = 10
+	m.Observe(w)
+
+	got := m.Result()
+	if got.Pairs != 1 {
+		t.Fatalf("pair observations = %d, want 1: the pair a death broke up should not count", got.Pairs)
+	}
+	approx(t, got.Survival[1], 1, 1e-9, "survival at lag 10")
+	if !got.Censored {
+		t.Fatalf("half-life = %.1f, want censored: the surviving pair never parted", got.HalfLife)
+	}
+}
+
+// Every observation starts a cohort of its own, so a run of readings measures
+// the shortest lag many times over instead of once.
+func TestMembershipPoolsEveryCohort(t *testing.T) {
+	w := NewWorld(testConfig())
+	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Power: 50})
+
+	m := NewMembershipTracker(30, 10, 3)
+	for tick := 0; tick <= 40; tick += 10 {
+		w.tick = tick
+		m.Observe(w)
+	}
+
+	// Five readings ten ticks apart: four pairs of readings are one step
+	// apart, three are two steps apart, two are three steps apart.
+	got := m.Result()
+	if got.Pairs != 4+3+2 {
+		t.Fatalf("pair observations = %d, want 9", got.Pairs)
+	}
+}
+
+// At interpolates between the readings, and is defined past the end of them.
+func TestMembershipAtInterpolates(t *testing.T) {
+	m := Membership{Step: 10, Survival: []float64{1, 0.5, 0.25}}
+	approx(t, m.At(0), 1, 1e-9, "At(0)")
+	approx(t, m.At(5), 0.75, 1e-9, "At(5)")
+	approx(t, m.At(10), 0.5, 1e-9, "At(10)")
+	approx(t, m.At(15), 0.375, 1e-9, "At(15)")
+	approx(t, m.At(1000), 0.25, 1e-9, "At past the end of the curve")
+}

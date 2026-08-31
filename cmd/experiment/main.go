@@ -112,6 +112,7 @@ var metricNames = []string{
 	"pop", "gen", "births", "deaths", "starved", "killed", "killShare", "aged", "agedShare", "fights",
 	"clumping", "neighbours", "nearest",
 	"clusters", "clusterSize", "grouped", "largestShare",
+	"halfLife", "together", "censored",
 	"power", "rationality", "intelligence",
 	"dPower", "dRationality", "dIntelligence",
 	"extinct",
@@ -135,6 +136,12 @@ type sample struct {
 	clusters, clusterSize, grouped, largestShare float64
 }
 
+// togetherLag is the lag the "together" metric reads the survival curve at.
+// The half-life is the headline figure, but it is undefined when the curve
+// never falls to a half inside the window; survival at a fixed lag always is,
+// so it is the one to compare when an arm turns out to be censored.
+const togetherLag = 500
+
 type run struct {
 	variant string
 	seed    int64
@@ -154,6 +161,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 
 	w := engine.NewWorld(cfg)
 	start := w.Stats()
+
+	// The membership tracker watches only the final fifth, for the same reason
+	// the abilities are averaged over it: the early ticks are the population
+	// finding its size, and how long agents stay together during that is not
+	// what the run is being asked about.
+	member := engine.NewMembershipTracker(
+		engine.DefaultClusterLinkDist, engine.DefaultMembershipStep, engine.DefaultMembershipLags)
+	watchFrom := ticks - max(ticks/5, 1)
 
 	var series []sample
 	record := func() {
@@ -175,10 +190,21 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		if (i+1)%interval == 0 {
 			record()
 		}
+		if i >= watchFrom && w.Tick()%engine.DefaultMembershipStep == 0 {
+			member.Observe(w)
+		}
 	}
 
 	end := w.Stats()
 	tail := tailAverage(series)
+	mem := member.Result()
+
+	// A censored half-life is a lower bound, not a zero: report the edge of the
+	// window and let the censored metric say how often that happened.
+	halfLife := mem.HalfLife
+	if mem.Censored {
+		halfLife = float64(engine.DefaultMembershipStep * engine.DefaultMembershipLags)
+	}
 
 	r := run{variant: v.name, seed: seed, metrics: map[string]float64{
 		"pop":           float64(end.Population),
@@ -198,6 +224,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"clusterSize":   tail.clusterSize,
 		"grouped":       tail.grouped,
 		"largestShare":  tail.largestShare,
+		"halfLife":      halfLife,
+		"together":      mem.At(togetherLag),
+		"censored":      boolToFloat(mem.Censored),
 		"power":         tail.power,
 		"rationality":   tail.rat,
 		"intelligence":  tail.intel,

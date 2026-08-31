@@ -136,6 +136,8 @@ go run ./cmd/experiment -variants baseline,nogate -csv out.csv  # 推移をCSV�
 | `clumping` | 同じ個体数を一様にばらまいた場合と比べて、どれだけ集まっているか。**相対値**で、1が一様という意味ではない（視界の円が世界の端で切れるぶん低めに出る）。条件間で比べる |
 | `neighbours` / `nearest` | 平均的な個体の視界内にいる他個体数／最近傍までの距離 |
 | `clusters` / `clusterSize` | 集団の数（2体以上の連結成分）と、その平均サイズ。連結の距離は 30（`engine.DefaultClusterLinkDist`）で固定。**距離が違う測定値どうしは比べられません** |
+| `halfLife` | **membership half-life** — 同じクラスタにいた2体の組のうち半分が離れるまでのtick数。「集団」と「たまたま近くにいる塊」を区別する唯一の指標。片方が死んだ組は**離れたとは数えません**（在籍時間ではなく寿命を測ってしまうため） |
+| `together` / `censored` | 500tick後もまだ一緒にいる組の割合／半減が窓（2000tick）の中で起きなかった実行の割合。`censored` が0でないなら `halfLife` は窓の端に張り付いた**下限値**なので、`together` のほうを比べます |
 | `grouped` / `largestShare` | 2体以上の集団に属する個体の割合／最大の集団に属する割合。`largestShare` は他の3つの信頼性チェックで、1に近いなら世界が1つの塊につながっただけ（単連結は数珠つなぎになる）で、集団数は何も意味しません |
 | `starved` / `killed` / `aged` | 死因の内訳。合計が `deaths`。`aged` は寿命消費（過小・過度な食事が背景で寿命を削る、`CLAUDE.md` 参照）が0まで達したケースで、既定値ではほぼ発生しない（`brittlelifespan` 条件で確認できる） |
 | `extinct` | 絶滅した回数の割合。0でないなら他の数字は読む価値がない |

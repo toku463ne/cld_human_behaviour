@@ -31,11 +31,11 @@
 > 目的: 「あるべき状態」の目標値を憶測でなく実測から決める。読み取り専用なので安い。以降の全段階の効果測定に使い回す
 
 - [x] クラスタ検出（素朴な実装でよい）→ クラスタ数・サイズ分布 — `World.Clusters(linkDist)`、連結距離 30 固定、`cmd/experiment` に `clusters` / `clusterSize` / `grouped` / `largestShare`
-- [ ] membership half-life（同じ顔ぶれが一緒に居続ける時間）
+- [x] membership half-life（同じ顔ぶれが一緒に居続ける時間） — `engine.MembershipTracker`、組の共在生存曲線として測る、`cmd/experiment` に `halfLife` / `together` / `censored`
 - [ ] 集団内戦闘率 ÷ 集団間戦闘率
 - [ ] 集団間の距離分布
 - [ ] 種族ごとの個体数（段階11 以降に効く）
-- [ ] `cmd/experiment` の出力に上記を追加（O(n²) なので頻度は間引く。**クラスタの4指標は追加済み**、残り4項目が未着手）
+- [ ] `cmd/experiment` の出力に上記を追加（O(n²) なので頻度は間引く。**クラスタの4指標と half-life の3指標は追加済み**、残り3項目が未着手）
 - [ ] **完了条件**: 現状を 50000tick 回して測り、「集団が無い世界のベースライン」として `HISTORY.md` に記録する（**目標値はまだ書かない**＝段階11 の完了条件へ）
 
 ### 2. 段階7a：空間グリッド（挙動を変えない高速化）
