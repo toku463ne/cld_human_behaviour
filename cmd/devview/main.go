@@ -86,6 +86,7 @@ var (
 	colorSelected   = color.RGBA{0x11, 0x11, 0x11, 0xff}
 	colorTarget     = color.RGBA{0x11, 0x11, 0x11, 0x60}
 	colorHungerBar  = color.RGBA{0xc9, 0x8a, 0x20, 0xff}
+	colorTail       = color.RGBA{0x44, 0x44, 0x77, 0xb0}
 )
 
 // panelMode is what the right hand panel shows about the selected node.
@@ -216,11 +217,21 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		}
 	}
 
+	cfg := g.world.Config()
 	for i := range agents {
 		a := &agents[i]
-		// Radius shows vitality, ring width shows power, ring colour shows
-		// what the agent is currently doing, and the notch below it is hunger.
-		radius := float32(minRadius + a.Vitality/100*(maxRadius-minRadius))
+		// The circle is the body: how wide it is, is what the agent spent on
+		// being big, and how much of it is filled in is how much vitality it
+		// has left in there. Drawing the radius from the vitality itself, as
+		// this used to, made a large agent that had been hurt look exactly
+		// like a small one in good health - which is the whole difference the
+		// budget is supposed to create.
+		capacity := a.MaxVitality(&cfg)
+		radius := float32(minRadius + capacity/150*(maxRadius-minRadius))
+		filled := radius
+		if capacity > 0 {
+			filled = radius * float32(clamp01(a.Vitality/capacity))
+		}
 		ringWidth := float32(minRingSize + a.Attack()/100*(maxRingSize-minRingSize))
 
 		fill := colorMale
@@ -229,7 +240,20 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		}
 
 		x, y := float32(a.X), float32(a.Y)
-		vector.DrawFilledCircle(screen, x, y, radius, fill, true)
+
+		// A tail behind it, as long as the agent is quick. Speed is otherwise
+		// invisible: two agents standing still look the same however much one
+		// of them spent on being fast.
+		if speed := a.MaxSpeed(&cfg); speed > 0 {
+			tail := float32(speed / cfg.MaxSpeed * 13)
+			vx, vy := float32(a.VX), float32(a.VY)
+			if l := float32(math.Hypot(float64(vx), float64(vy))); l > 1e-6 {
+				vx, vy = vx/l, vy/l
+				vector.StrokeLine(screen, x-vx*tail, y-vy*tail, x, y, 1.5, colorTail, true)
+			}
+		}
+
+		vector.DrawFilledCircle(screen, x, y, filled, fill, true)
 		vector.StrokeCircle(screen, x, y, radius, ringWidth, stateColor(a.State), true)
 
 		if hunger := float32(a.Hunger / 100); hunger > 0.01 {
@@ -240,6 +264,37 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			g.markTarget(screen, a)
 		}
 	}
+}
+
+// geneShort is what each gene is called in the panel, short enough that all
+// nine fit on two lines.
+var geneShort = [engine.NumGenes]string{"atk", "def", "vit", "spd", "eva", "mem", "rat", "int", "look"}
+
+// geneLine prints a run of genes as "name value (share of budget)". The share
+// is the figure to compare between agents: the raw value moves whenever the
+// budget does.
+func geneLine(a *engine.Agent, from, to int) string {
+	budget := a.Budget()
+	var b strings.Builder
+	for g := from; g < to && g < engine.NumGenes; g++ {
+		v := a.Gene(engine.Gene(g))
+		share := 0.0
+		if budget > 0 {
+			share = v / budget * 100
+		}
+		fmt.Fprintf(&b, "%s %3.0f(%2.0f%%) ", geneShort[g], v, share)
+	}
+	return b.String()
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }
 
 // markTarget rings whatever the selected node is currently acting on, so that
@@ -288,7 +343,7 @@ func (g *game) overlay() string {
 		s.Tick, s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, s.MaxGeneration, state)
 	fmt.Fprintf(&b, "avg power %.1f  rationality %.1f  intelligence %.1f  vitality %.1f  hunger %.1f\n",
 		s.AvgPower, s.AvgRationality, s.AvgIntelligence, s.AvgVitality, s.AvgHunger)
-	b.WriteString("radius = vitality, ring width = power, bar = hunger; blue male / pink female\n")
+	b.WriteString("circle = body (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
 	b.WriteString("space pause   right/n one tick   -/= slower/faster   click a node   esc clear\n")
 	b.WriteString("tab decisions/beliefs   [ ] older/newer decision\n")
@@ -341,8 +396,11 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 	a, alive := g.world.AgentByID(g.selected)
 	if alive {
 		t.line("#%d %s  gen %d  age %d", a.ID, a.Sex, a.Generation, a.Age)
-		t.line("vit %5.1f  hun %5.1f   pow %.0f  rat %.0f  int %.0f",
-			a.Vitality, a.Hunger, a.Attack(), a.Rationality(), a.Intelligence())
+		cfg := g.world.Config()
+		t.line("vit %5.1f/%.0f  hun %5.1f   %s   budget %.0f",
+			a.Vitality, a.MaxVitality(&cfg), a.Hunger, a.Species, a.Budget())
+		t.line("genes %s", geneLine(&a, 0, 5))
+		t.line("      %s", geneLine(&a, 5, engine.NumGenes))
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
 	} else {
