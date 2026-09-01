@@ -1,6 +1,9 @@
 package engine
 
-import "strconv"
+import (
+	"slices"
+	"strconv"
+)
 
 // Ability values are always kept inside this range.
 const (
@@ -163,6 +166,11 @@ type Agent struct {
 	attackerID     int
 	lastAttackTick int
 
+	// hitBy remembers everybody who has landed a blow recently and when, so
+	// that a carcass can be left to the ones who brought it down rather than
+	// to whoever happens to be standing nearby. Allocated on the first blow.
+	hitBy map[int]int
+
 	// effortSpent is the effort actually used this tick, which is what stops an
 	// agent from recovering while it is exerting itself.
 	effortSpent float64
@@ -217,6 +225,30 @@ func (a *Agent) pruneRejected(tick int) {
 	}
 }
 
+// noteHit records a blow for the purpose of who has a claim on the carcass.
+func (a *Agent) noteHit(from, tick int) {
+	if a.hitBy == nil {
+		a.hitBy = make(map[int]int, 4)
+	}
+	a.hitBy[from] = tick
+}
+
+// recentAttackers is everybody who has hit this agent within the last window
+// ticks, in ascending order of ID so that a carcass is deterministic.
+func (a *Agent) recentAttackers(tick, window int) []int {
+	if len(a.hitBy) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(a.hitBy))
+	for id, at := range a.hitBy {
+		if tick-at <= window {
+			out = append(out, id)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // CanReproduce reports whether the agent is well enough off to spend time on
 // priority 2. Staying alive comes first: a hungry or battered agent does not
 // court, however attractive the candidate next to it.
@@ -230,4 +262,17 @@ func (a *Agent) CanReproduce(cfg *Config) bool {
 type Food struct {
 	ID   int
 	X, Y float64
+
+	// What it is, and for meat, whose kind it came from: nobody eats its own
+	// dead. See food.go.
+	Kind FoodKind
+	From Species
+
+	// Claim is who brought the carcass down, and ClaimUntil is when it stops
+	// mattering. An empty claim is anybody's.
+	Claim      []int
+	ClaimUntil int
+
+	// SpoilAt is when meat is gone, 0 for anything that does not spoil.
+	SpoilAt int
 }

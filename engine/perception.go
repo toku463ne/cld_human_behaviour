@@ -152,6 +152,11 @@ func (w *World) perceive(a *Agent) *Perception {
 		if d2 > r2 {
 			continue
 		}
+		// What this agent cannot eat is not food to it: a carcass of its own
+		// kind, or somebody else's kill while the claim on it still stands.
+		if !w.canEat(a, f) {
+			continue
+		}
 		p.Foods = append(p.Foods, FoodView{
 			ID:        f.ID,
 			X:         f.X,

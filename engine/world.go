@@ -233,6 +233,7 @@ func (w *World) Stats() Stats {
 // early in the slice would fight a world that has already moved.
 func (w *World) Step() {
 	w.tick++
+	w.clearSpoiled()
 	w.spawnFoodOfTick()
 
 	for i := range w.agents {
@@ -501,6 +502,7 @@ func (w *World) resolveAttacks() {
 		w.fights++
 
 		damage := damagePerTick(&w.cfg, from.Attack(), at.effort)
+		to.noteHit(from.ID, w.tick)
 		to.Vitality -= damage
 
 		// The one taking the hits remembers exactly what they cost.
@@ -730,6 +732,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 func (w *World) kill(a *Agent) {
 	a.Alive = false
 	w.deaths++
+	w.dropMeat(a)
 	if a.lastAttackTick >= w.tick-1 {
 		w.kills++
 	}
@@ -742,6 +745,11 @@ func (w *World) kill(a *Agent) {
 }
 
 func (w *World) eat(a *Agent, foodID int) {
+	f := w.foodByID(foodID)
+	if f == nil || !w.canEat(a, f) {
+		a.requestDecision(TriggerTargetLost)
+		return
+	}
 	a.Hunger = math.Max(0, a.Hunger-w.cfg.FoodNutrition)
 	w.removeFoodByID(foodID)
 }
@@ -791,6 +799,9 @@ func (w *World) nearestFoodInSight(a *Agent) int {
 	w.nearScratch = w.spatialIndex().appendFoodsNear(w.nearScratch[:0], a.X, a.Y, r)
 	for _, i := range w.nearScratch {
 		f := &w.foods[i]
+		if !w.canEat(a, f) {
+			continue
+		}
 		if d := dist2(a.X, a.Y, f.X, f.Y); d <= bestDist {
 			bestDist, best = d, i
 		}

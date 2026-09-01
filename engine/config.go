@@ -78,6 +78,22 @@ type Config struct {
 	CombatRadius     float64 // how close an agent must be to land a blow
 	BoundaryMargin   float64
 
+	// --- what is left when somebody dies ---
+	//
+	// A carcass is food. How much of it there is scales with how much the dead
+	// creature was made of, so bringing down something large is worth more
+	// than bringing down something small - which is the only reason a group
+	// would ever be better than an individual at it.
+	MeatPerBudget   float64 // budget per item of meat a carcass leaves
+	MeatClaimTicks  int     // how long the carcass belongs to those who killed it
+	HuntCreditTicks int     // how recently a blow must have landed to count as taking part
+
+	// MeatSpoilTicks is how long a carcass lasts before it is gone. Without
+	// it, meat nobody can eat piles up until it fills the world's allowance
+	// for food and crowds the plants out - which is what happened the first
+	// time carcasses went in, and cost a fifth of the population.
+	MeatSpoilTicks int
+
 	// --- combat ---
 	//
 	// Damage is continuous: every tick both sides lose vitality in proportion
@@ -286,6 +302,11 @@ func DefaultConfig() Config {
 		GrabRadius:       11,
 		CombatRadius:     15,
 		BoundaryMargin:   8,
+
+		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more
+		MeatClaimTicks:  400,
+		MeatSpoilTicks:  900,
+		HuntCreditTicks: 200,
 
 		AttackDamage:  1.15,
 		AttackCost:    0.30,
