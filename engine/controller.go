@@ -361,8 +361,8 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		// agent can only eat so much before it is full, and the rest feeds
 		// whoever else took part. That is the arithmetic that makes a big
 		// animal worth taking on together and not alone.
-		if o.Prey && o.Meat >= 1 && s.Hunger > 0 {
-			bite := math.Min(o.Meat, 1) * mealValue(cfg, s, c.incoming(p))
+		if o.Prey && o.Meat >= 1 && s.Hunger > 0 && cfg.PreyValue > 0 {
+			bite := math.Min(o.Meat, 1) * cfg.PreyValue * mealValue(cfg, s, c.incoming(p))
 			pKill := clamp(exchange*mine/math.Max(o.Vitality, 1e-9), 0, 1) * pWin
 			stake = Goal{Value: stake.Value + bite, Chance: math.Max(stake.Chance, pKill)}
 		}

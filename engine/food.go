@@ -104,6 +104,14 @@ func (w *World) dropMeat(a *Agent) {
 		}
 	}
 	claim = kept
+
+	// A kill that leaves a carcass somebody can eat is a hunt, and how many
+	// took part in it is the figure stage 11 turns on: pack hunting, if it
+	// appears at all, appears here as a party size above one.
+	if len(claim) > 0 {
+		w.hunts++
+		w.huntParty += len(claim)
+	}
 	for i := 0; i < items; i++ {
 		if w.countKind(FoodMeat) >= w.cfg.MaxMeatItems {
 			return // as much meat as the world will hold is already lying about

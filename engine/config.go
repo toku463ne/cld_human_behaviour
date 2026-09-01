@@ -101,6 +101,14 @@ type Config struct {
 	// that lives on plants starved - a predator killing its prey by taking up
 	// the room its food grows in.
 
+	// PreyValue is how much of a meal a carcass is worth to the one that
+	// brings it down, as a multiplier on the ordinary value of a meal. Zero
+	// takes the reason to hunt out of the utility formula while leaving
+	// carcasses, claims and everything else in place, which is the control
+	// the pack hunting question needs: whatever happens at zero is what
+	// agents do to each other anyway.
+	PreyValue float64
+
 	// --- combat ---
 	//
 	// Damage is continuous: every tick both sides lose vitality in proportion
@@ -337,6 +345,7 @@ func DefaultConfig() Config {
 		CombatRadius:     15,
 		BoundaryMargin:   8,
 
+		PreyValue:       1,
 		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more
 		MeatClaimTicks:  400,
 		MeatSpoilTicks:  900,

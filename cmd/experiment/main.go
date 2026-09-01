@@ -156,6 +156,20 @@ var variants = []variant{
 		about: "AttackDamage cut to 0.72, so a typical blow lands as it did before the budget",
 		apply: func(c *engine.Config) { c.AttackDamage = 0.72 },
 	},
+	// The control for the pack hunting question: carcasses, claims and
+	// enemies all stay, but killing something is no longer worth a meal.
+	// Whatever party size turns up here is what agents do to each other
+	// anyway, and only the difference is hunting.
+	{
+		name:  "noprey",
+		about: "a carcass is worth nothing to whoever brings it down",
+		apply: func(c *engine.Config) { c.PreyValue = 0 },
+	},
+	{
+		name:  "noenemies",
+		about: "the world without a second species at all",
+		apply: func(c *engine.Config) { c.InitialEnemies, c.EnemySpawnTicks = 0, 0 },
+	},
 	{
 		name:  "nomutation",
 		about: "no new variation at all: selection works on what the founders had",
@@ -210,6 +224,7 @@ var metricNames = []string{
 	"shAttack", "shDefence", "shVitality", "shSpeed", "shEvasion",
 	"shMemory", "shRationality", "shIntelligence", "shLooks",
 	"geniusYears", "greatGeniusYears",
+	"hunts", "packSize",
 	"extinct",
 }
 
@@ -389,6 +404,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// How often an exceptional birth happened, in years of the world's own
 		// clock. The rate is per birth, so this is the figure that says what
 		// that comes to at the birth rate the world actually ran at.
+		// Kills that fed somebody, and how many had a share of each. A party
+		// size above one is pack hunting; it is the thing stage 11 was built
+		// to find out about, and nothing in the rules asks for it.
+		"hunts":            float64(end.Hunts),
+		"packSize":         share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		"geniusYears":      years(ticks, end.Geniuses, cfg.TicksPerYear),
 		"greatGeniusYears": years(ticks, end.GreatGeniuses, cfg.TicksPerYear),
 		"extinct":          boolToFloat(end.Population == 0),

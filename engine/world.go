@@ -28,12 +28,15 @@ const (
 
 // Stats is an aggregated view of the world, cheap enough to compute per frame.
 type Stats struct {
-	Tick          int
-	Population    int
-	Males         int
-	Females       int
-	FoodItems     int
-	Births        int
+	Tick       int
+	Population int
+	Males      int
+	Females    int
+	FoodItems  int
+	Births     int
+	Hunts      int // kills that fed somebody: a carcass with a claim on it
+	HuntParty  int // how many took part, summed over those kills
+
 	Geniuses      int // births that drew an exceptional budget
 	GreatGeniuses int // ... and the rarer, larger kind. Not counted in Geniuses
 	Deaths        int
@@ -118,6 +121,8 @@ type World struct {
 	foodAccum float64
 
 	births        int
+	hunts         int // kills whose carcass went to somebody that eats it
+	huntParty     int // and how many had a share, summed over those kills
 	geniuses      int
 	greatGeniuses int
 	deaths        int
@@ -196,6 +201,8 @@ func (w *World) Stats() Stats {
 		Population:    len(w.agents),
 		FoodItems:     len(w.foods),
 		Births:        w.births,
+		Hunts:         w.hunts,
+		HuntParty:     w.huntParty,
 		Geniuses:      w.geniuses,
 		GreatGeniuses: w.greatGeniuses,
 		Deaths:        w.deaths,
