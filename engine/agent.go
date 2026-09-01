@@ -92,15 +92,18 @@ type Agent struct {
 	// Species is what kind of node this is; see the type. Always human today.
 	Species Species
 
-	// Abilities, with their roles kept apart: power is how much damage a unit
-	// of effort buys, rationality is how accurately the agent reads the world,
+	// Genome is everything this agent inherited, addressed by Gene; see
+	// genome.go. The roles are kept apart: attack is how much damage a unit of
+	// effort buys, rationality is how accurately the agent reads the world,
 	// and intelligence is how good a move it can pick once it has read it.
 	//
-	// When ageing arrives these become "inherited talent x age factor"; for now
-	// the age factor is always 1.
-	Power        float64
-	Rationality  float64
-	Intelligence float64
+	// Read it through Gene or the named accessors rather than by index. It is
+	// a slice, so a copy of an Agent shares it: never write to a genome
+	// through a copy of an agent, only through the one the world holds.
+	//
+	// When ageing arrives the expressed value becomes "inherited talent x age
+	// factor"; for now the age factor is always 1.
+	Genome []float64
 
 	// The three state axes. Food is not stored: it lies in the world and
 	// eating it lowers hunger.

@@ -87,8 +87,7 @@ func TestGridPutsEveryoneInTheCellTheyStandIn(t *testing.T) {
 	want := map[int][]int{
 		g.cellIndex(10, 10):   {0},
 		g.cellIndex(250, 10):  {1},
-		g.cellIndex(250, 350): {2},
-	}
+		g.cellIndex(250, 350): {2}}
 	for cell, ids := range want {
 		if !slices.Equal(g.agents[cell], ids) {
 			t.Fatalf("cell %d holds agents %v, want %v", cell, g.agents[cell], ids)
@@ -199,13 +198,12 @@ func TestEverythingThatMovesTheWorldInvalidatesTheIndex(t *testing.T) {
 		{"a birth", func(w *World) { w.addAgent(Agent{X: 50, Y: 50, Vitality: 100}) }},
 		{"a death", func(w *World) { w.kill(&w.agents[0]); w.removeDead() }},
 		{"food appearing", func(w *World) { w.addFood(60, 60) }},
-		{"food being eaten", func(w *World) { w.removeFoodByID(w.foods[0].ID) }},
-	}
+		{"food being eaten", func(w *World) { w.removeFoodByID(w.foods[0].ID) }}}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			w := NewWorld(testConfig())
-			w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
-			w.addAgent(Agent{X: 140, Y: 100, Vitality: 100, Power: 50})
+			w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+			w.addAgent(Agent{X: 140, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 			w.addFood(120, 120)
 			w.spatialIndex() // up to date
 

@@ -221,7 +221,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// Radius shows vitality, ring width shows power, ring colour shows
 		// what the agent is currently doing, and the notch below it is hunger.
 		radius := float32(minRadius + a.Vitality/100*(maxRadius-minRadius))
-		ringWidth := float32(minRingSize + a.Power/100*(maxRingSize-minRingSize))
+		ringWidth := float32(minRingSize + a.Attack()/100*(maxRingSize-minRingSize))
 
 		fill := colorMale
 		if a.Sex == engine.Female {
@@ -342,7 +342,7 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 	if alive {
 		t.line("#%d %s  gen %d  age %d", a.ID, a.Sex, a.Generation, a.Age)
 		t.line("vit %5.1f  hun %5.1f   pow %.0f  rat %.0f  int %.0f",
-			a.Vitality, a.Hunger, a.Power, a.Rationality, a.Intelligence)
+			a.Vitality, a.Hunger, a.Attack(), a.Rationality(), a.Intelligence())
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
 	} else {
@@ -479,7 +479,7 @@ func (g *game) drawBeliefs(t *textBox) {
 		op := opinions[id]
 		truth := "gone"
 		if other, ok := g.world.AgentByID(id); ok {
-			truth = fmt.Sprintf("%.0f", other.Power)
+			truth = fmt.Sprintf("%.0f", other.Attack())
 		}
 		t.line("  #%-4d strength %5.1f +/- %5.1f  risk %5.1f  seen %2d [%s]",
 			id, op.Strength, math.Sqrt(op.Variance), op.Risk, op.Samples, truth)

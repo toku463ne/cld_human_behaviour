@@ -13,7 +13,7 @@ type SelfView struct {
 	Vitality float64
 	Hunger   float64
 
-	Power        float64
+	Attack       float64
 	Rationality  float64
 	Intelligence float64
 
@@ -110,9 +110,9 @@ func (w *World) perceive(a *Agent) *Perception {
 		Sex:          a.Sex,
 		Vitality:     a.Vitality,
 		Hunger:       a.Hunger,
-		Power:        a.Power,
-		Rationality:  a.Rationality,
-		Intelligence: a.Intelligence,
+		Attack:       a.Attack(),
+		Rationality:  a.Rationality(),
+		Intelligence: a.Intelligence(),
 		CanReproduce: a.CanReproduce(&w.cfg),
 		AttackerID:   a.attackerID,
 	}
@@ -201,7 +201,7 @@ func (w *World) perceive(a *Agent) *Perception {
 // else. Reading the world correctly is an ability of its own: the higher the
 // rationality, the smaller the error.
 func (w *World) judgementError(observer *Agent, scale float64) float64 {
-	std := (MaxAbility - observer.Rationality) / MaxAbility * scale
+	std := (MaxAbility - observer.Rationality()) / MaxAbility * scale
 	if std <= 0 {
 		return 0
 	}

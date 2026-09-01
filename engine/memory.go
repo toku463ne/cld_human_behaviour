@@ -83,8 +83,8 @@ func (w *World) observeStrength(observer *Agent, target *Agent, obsVariance floa
 	}
 	op := w.opinionOf(observer, target.ID)
 
-	noiseStd := (MaxAbility - observer.Rationality) / MaxAbility * w.cfg.JudgementNoise
-	reading := target.Power + w.rng.NormFloat64()*noiseStd
+	noiseStd := (MaxAbility - observer.Rationality()) / MaxAbility * w.cfg.JudgementNoise
+	reading := target.Attack() + w.rng.NormFloat64()*noiseStd
 	variance := obsVariance + noiseStd*noiseStd
 
 	k := op.Variance / (op.Variance + variance)

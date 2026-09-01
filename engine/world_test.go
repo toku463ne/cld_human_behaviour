@@ -350,8 +350,8 @@ func TestEffortTradesVitalityForSpeed(t *testing.T) {
 func brawl(t *testing.T, cfg Config, aPower, bPower float64, aAct, bAct Action) (*World, *Agent, *Agent) {
 	t.Helper()
 	w := NewWorld(cfg)
-	ida := w.addAgent(Agent{X: 100, Y: 100, Power: aPower, Vitality: 90, Hunger: 0})
-	idb := w.addAgent(Agent{X: 105, Y: 100, Power: bPower, Vitality: 90, Hunger: 0})
+	ida := w.addAgent(Agent{X: 100, Y: 100, Genome: genomeOf(aPower, 0, 0), Vitality: 90, Hunger: 0})
+	idb := w.addAgent(Agent{X: 105, Y: 100, Genome: genomeOf(bPower, 0, 0), Vitality: 90, Hunger: 0})
 	aAct.TargetID, bAct.TargetID = idb, ida
 	w.SetController(ida, fixedController{aAct})
 	w.SetController(idb, fixedController{bAct})
@@ -405,8 +405,8 @@ func TestTradingBlowsCostsBothSides(t *testing.T) {
 func TestFightingCanKill(t *testing.T) {
 	cfg := quietConfig()
 	w := NewWorld(cfg)
-	killer := w.addAgent(Agent{X: 100, Y: 100, Power: 100, Vitality: 90, Hunger: 0})
-	victim := w.addAgent(Agent{X: 105, Y: 100, Power: 10, Vitality: 1, Hunger: 0})
+	killer := w.addAgent(Agent{X: 100, Y: 100, Genome: genomeOf(100, 0, 0), Vitality: 90, Hunger: 0})
+	victim := w.addAgent(Agent{X: 105, Y: 100, Genome: genomeOf(10, 0, 0), Vitality: 1, Hunger: 0})
 	w.SetController(killer, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
 	w.SetController(victim, fixedController{Action{Kind: ActRest}})
 
@@ -426,8 +426,8 @@ func TestBlowsLandSimultaneously(t *testing.T) {
 	w := NewWorld(cfg)
 	// Both would die from the other's blow. Neither may be spared by ordering.
 	lethal := cfg.AttackDamage / 2
-	x := w.addAgent(Agent{X: 100, Y: 100, Power: 50, Vitality: lethal, Hunger: 0})
-	y := w.addAgent(Agent{X: 105, Y: 100, Power: 50, Vitality: lethal, Hunger: 0})
+	x := w.addAgent(Agent{X: 100, Y: 100, Genome: genomeOf(50, 0, 0), Vitality: lethal, Hunger: 0})
+	y := w.addAgent(Agent{X: 105, Y: 100, Genome: genomeOf(50, 0, 0), Vitality: lethal, Hunger: 0})
 	w.SetController(x, fixedController{Action{Kind: ActAttack, TargetID: y, Effort: 1}})
 	w.SetController(y, fixedController{Action{Kind: ActAttack, TargetID: x, Effort: 1}})
 
@@ -444,8 +444,8 @@ func TestRiskMemoryRecordsWhatAFightCost(t *testing.T) {
 	cfg := quietConfig()
 	cfg.RiskDecayPerTick = 0 // forgetting is tested separately
 	w := NewWorld(cfg)
-	bully := w.addAgent(Agent{X: 100, Y: 100, Power: 60, Vitality: 90, Hunger: 0})
-	victim := w.addAgent(Agent{X: 105, Y: 100, Power: 50, Vitality: 90, Hunger: 0})
+	bully := w.addAgent(Agent{X: 100, Y: 100, Genome: genomeOf(60, 0, 0), Vitality: 90, Hunger: 0})
+	victim := w.addAgent(Agent{X: 105, Y: 100, Genome: genomeOf(50, 0, 0), Vitality: 90, Hunger: 0})
 	w.SetController(bully, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
 	w.SetController(victim, fixedController{Action{Kind: ActRest}})
 
@@ -490,8 +490,8 @@ func TestStrengthEstimateConvergesOnTheTruth(t *testing.T) {
 	w := NewWorld(testConfig())
 	// Rationality 100 removes the reading error, leaving only the noise of the
 	// observation itself.
-	observer := &Agent{ID: 1, Rationality: 100}
-	target := &Agent{ID: 2, Power: 80}
+	observer := &Agent{ID: 1, Genome: genomeOf(0, 100, 0)}
+	target := &Agent{ID: 2, Genome: genomeOf(80, 0, 0)}
 
 	start := w.opinionOf(observer, target.ID)
 	startVariance := start.Variance
@@ -518,12 +518,12 @@ func TestStrengthEstimateConvergesOnTheTruth(t *testing.T) {
 // Reading the world accurately is rationality's job.
 func TestRationalityMakesEstimatesAccurate(t *testing.T) {
 	w := NewWorld(testConfig())
-	target := &Agent{ID: 9, Power: 70}
+	target := &Agent{ID: 9, Genome: genomeOf(70, 0, 0)}
 
 	spread := func(rationality float64) float64 {
 		total := 0.0
 		for i := 0; i < 400; i++ {
-			observer := &Agent{ID: 1, Rationality: rationality}
+			observer := &Agent{ID: 1, Genome: genomeOf(0, rationality, 0)}
 			w.observeStrength(observer, target, w.cfg.CombatObsVariance)
 			total += math.Abs(w.opinionOf(observer, target.ID).Strength - 70)
 		}
@@ -540,10 +540,10 @@ func TestRationalityMakesEstimatesAccurate(t *testing.T) {
 func TestSpectatorsLearnFromOtherPeoplesFights(t *testing.T) {
 	cfg := quietConfig()
 	w := NewWorld(cfg)
-	x := w.addAgent(Agent{X: 100, Y: 100, Power: 90, Rationality: 100, Vitality: 90, Hunger: 0})
-	y := w.addAgent(Agent{X: 105, Y: 100, Power: 20, Rationality: 100, Vitality: 90, Hunger: 0})
-	watcher := w.addAgent(Agent{X: 150, Y: 100, Power: 50, Rationality: 100, Vitality: 90, Hunger: 0})
-	stranger := w.addAgent(Agent{X: 380, Y: 380, Power: 50, Rationality: 100, Vitality: 90, Hunger: 0})
+	x := w.addAgent(Agent{X: 100, Y: 100, Genome: genomeOf(90, 100, 0), Vitality: 90, Hunger: 0})
+	y := w.addAgent(Agent{X: 105, Y: 100, Genome: genomeOf(20, 100, 0), Vitality: 90, Hunger: 0})
+	watcher := w.addAgent(Agent{X: 150, Y: 100, Genome: genomeOf(50, 100, 0), Vitality: 90, Hunger: 0})
+	stranger := w.addAgent(Agent{X: 380, Y: 380, Genome: genomeOf(50, 100, 0), Vitality: 90, Hunger: 0})
 
 	w.SetController(x, fixedController{Action{Kind: ActAttack, TargetID: y, Effort: 0.2}})
 	w.SetController(y, fixedController{Action{Kind: ActAttack, TargetID: x, Effort: 0.2}})
@@ -619,7 +619,7 @@ func TestBeingAttackedTriggersADecision(t *testing.T) {
 	cfg.TriggerVitalityDrop = 1000
 	w := NewWorld(cfg)
 	victim := w.addAgent(Agent{X: 100, Y: 100, Vitality: 90, Hunger: 0})
-	bully := w.addAgent(Agent{X: 105, Y: 100, Power: 50, Vitality: 90, Hunger: 0})
+	bully := w.addAgent(Agent{X: 105, Y: 100, Genome: genomeOf(50, 0, 0), Vitality: 90, Hunger: 0})
 	spy := &spyController{}
 	w.SetController(victim, spy)
 	w.SetController(bully, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
@@ -643,12 +643,10 @@ func TestSurvivalTakesPriorityOverMating(t *testing.T) {
 		w := NewWorld(cfg)
 		id := w.addAgent(Agent{
 			X: 200, Y: 200, Sex: Male, Vitality: 95, Hunger: hunger,
-			Power: 50, Rationality: 100, Intelligence: 100,
-		})
+			Genome: genomeOf(50, 100, 100)})
 		w.addAgent(Agent{
 			X: 210, Y: 200, Sex: Female, Vitality: 100, Hunger: 0,
-			Power: 90, Rationality: 90, Intelligence: 90,
-		})
+			Genome: genomeOf(90, 90, 90)})
 		w.addFood(230, 200)
 		mustAgent(t, w, id).reproReady = true
 		return aiChoice(w, id).Kind
@@ -671,12 +669,10 @@ func TestFleeingEmergesFromTheComparison(t *testing.T) {
 		w := NewWorld(cfg)
 		victim := w.addAgent(Agent{
 			X: 200, Y: 200, Sex: Male, Vitality: victimVitality, Hunger: 0,
-			Power: 20, Rationality: 100, Intelligence: 100,
-		})
+			Genome: genomeOf(20, 100, 100)})
 		attacker := w.addAgent(Agent{
 			X: 208, Y: 200, Sex: Male, Vitality: 100, Hunger: 0,
-			Power: attackerPower, Rationality: 100, Intelligence: 100,
-		})
+			Genome: genomeOf(attackerPower, 100, 100)})
 		w.SetController(attacker, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
 		w.SetController(victim, fixedController{Action{Kind: ActRest}})
 		w.Step() // take a hit, so the victim knows it is under attack
@@ -698,9 +694,8 @@ func TestHopelessFightsAreNotPicked(t *testing.T) {
 	w := NewWorld(cfg)
 	weak := w.addAgent(Agent{
 		X: 200, Y: 200, Vitality: 60, Hunger: 50,
-		Power: 5, Rationality: 100, Intelligence: 100,
-	})
-	giant := w.addAgent(Agent{X: 206, Y: 200, Vitality: 100, Hunger: 0, Power: 100})
+		Genome: genomeOf(5, 100, 100)})
+	giant := w.addAgent(Agent{X: 206, Y: 200, Vitality: 100, Hunger: 0, Genome: genomeOf(100, 0, 0)})
 	w.addFood(210, 200)
 
 	// Make the weak agent certain about how strong the giant is.
@@ -725,11 +720,9 @@ func TestPreemptionFadesWhenFoodIsPlentiful(t *testing.T) {
 			Cfg:  &cfg,
 			Self: SelfView{
 				ID: 1, X: 200, Y: 200, Vitality: 100, Hunger: 20,
-				Power: 80, Rationality: 100, Intelligence: 100,
-				FoodScarcity: scarcity,
-			},
-			Rand: w.rng,
-		}
+				Attack: 80, Rationality: 100, Intelligence: 100,
+				FoodScarcity: scarcity},
+			Rand: w.rng}
 		victim := AgentView{ID: 2, Dist: 10, Vitality: 40, EstStrength: 20}
 
 		c := &AIController{}
@@ -762,9 +755,8 @@ func TestIntelligenceGatesTheStrategiesAvailable(t *testing.T) {
 		w := NewWorld(cfg)
 		id := w.addAgent(Agent{
 			X: 200, Y: 200, Sex: Male, Vitality: 100, Hunger: 0,
-			Power: 50, Rationality: 100, Intelligence: intelligence,
-		})
-		w.addAgent(Agent{X: 210, Y: 200, Sex: Female, Vitality: 100, Hunger: 0, Power: 50})
+			Genome: genomeOf(50, 100, intelligence)})
+		w.addAgent(Agent{X: 210, Y: 200, Sex: Female, Vitality: 100, Hunger: 0, Genome: genomeOf(50, 0, 0)})
 		mustAgent(t, w, id).reproReady = true
 
 		c := &AIController{}
@@ -803,8 +795,7 @@ func TestIntelligenceMakesTheChoiceReliable(t *testing.T) {
 		p := &Perception{
 			Cfg:  &cfg,
 			Self: SelfView{Intelligence: intelligence},
-			Rand: w.rng,
-		}
+			Rand: w.rng}
 		count := 0
 		for i := 0; i < 2000; i++ {
 			c.opts = c.opts[:0]
@@ -858,10 +849,10 @@ func TestControllerDrivesTheAgent(t *testing.T) {
 func TestPerceptionHidesTrueStrength(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	id := w.addAgent(Agent{X: 200, Y: 200, Vitality: 90, Hunger: 0, Rationality: 100})
+	id := w.addAgent(Agent{X: 200, Y: 200, Vitality: 90, Hunger: 0, Genome: genomeOf(0, 100, 0)})
 	spy := &spyController{}
 	w.SetController(id, spy)
-	w.addAgent(Agent{X: 220, Y: 200, Vitality: 90, Hunger: 0, Power: 97})
+	w.addAgent(Agent{X: 220, Y: 200, Vitality: 90, Hunger: 0, Genome: genomeOf(97, 0, 0)})
 
 	w.Step()
 
@@ -872,8 +863,8 @@ func TestPerceptionHidesTrueStrength(t *testing.T) {
 		t.Fatalf("a stranger's strength came through as %v, want the prior %v and not the true 97",
 			spy.others[0].EstStrength, cfg.PriorStrength)
 	}
-	if spy.self.Power != 0 {
-		t.Fatalf("self power = %v, want the agent's own value", spy.self.Power)
+	if spy.self.Attack != 0 {
+		t.Fatalf("self power = %v, want the agent's own value", spy.self.Attack)
 	}
 }
 
@@ -885,13 +876,11 @@ func pairAboutToGiveBirth(t *testing.T, cfg Config) (*World, int, int) {
 	t.Helper()
 	w := NewWorld(cfg)
 	male := w.addAgent(Agent{
-		X: 100, Y: 100, Sex: Male, Power: 40, Rationality: 60, Intelligence: 30,
-		Vitality: 90, Hunger: 0, PairTimer: 1, State: StatePaired, Generation: 2,
-	})
+		X: 100, Y: 100, Sex: Male, Genome: genomeOf(40, 60, 30),
+		Vitality: 90, Hunger: 0, PairTimer: 1, State: StatePaired, Generation: 2})
 	female := w.addAgent(Agent{
-		X: 110, Y: 100, Sex: Female, Power: 60, Rationality: 80, Intelligence: 50,
-		Vitality: 90, Hunger: 0, PairTimer: 1, State: StatePaired, Generation: 5,
-	})
+		X: 110, Y: 100, Sex: Female, Genome: genomeOf(60, 80, 50),
+		Vitality: 90, Hunger: 0, PairTimer: 1, State: StatePaired, Generation: 5})
 	w.agentByID(male).PartnerID = female
 	w.agentByID(female).PartnerID = male
 	return w, male, female
@@ -948,9 +937,9 @@ func TestChildTakesEachAbilityFromOneParentOrTheOther(t *testing.T) {
 	child := findChild(t, w, male, female)
 	// Whole values, not the average of the two: 50 would be the old answer for
 	// power, and it is exactly what must not appear.
-	oneOf(t, child.Power, 40, 60, "child power")
-	oneOf(t, child.Rationality, 60, 80, "child rationality")
-	oneOf(t, child.Intelligence, 30, 50, "child intelligence")
+	oneOf(t, child.Attack(), 40, 60, "child power")
+	oneOf(t, child.Rationality(), 60, 80, "child rationality")
+	oneOf(t, child.Intelligence(), 30, 50, "child intelligence")
 	approx(t, child.Vitality, cfg.ChildVitality, 1e-9, "child vitality")
 	if child.Generation != 6 { // max(2, 5) + 1
 		t.Fatalf("child generation = %d, want 6", child.Generation)
@@ -981,8 +970,8 @@ func TestChildDrawsEachAbilityIndependently(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationStd = 0
 	w := NewWorld(cfg)
-	pa := &Agent{Power: 10, Rationality: 10, Intelligence: 10, Vitality: 90}
-	pb := &Agent{Power: 90, Rationality: 90, Intelligence: 90, Vitality: 90}
+	pa := &Agent{Genome: genomeOf(10, 10, 10), Vitality: 90}
+	pb := &Agent{Genome: genomeOf(90, 90, 90), Vitality: 90}
 
 	seen := map[[3]bool]int{}
 	for i := 0; i < 400; i++ {
@@ -991,7 +980,7 @@ func TestChildDrawsEachAbilityIndependently(t *testing.T) {
 	}
 	for i := range w.newborns {
 		c := &w.newborns[i]
-		seen[[3]bool{c.Power > 50, c.Rationality > 50, c.Intelligence > 50}]++
+		seen[[3]bool{c.Attack() > 50, c.Rationality() > 50, c.Intelligence() > 50}]++
 	}
 	// All eight combinations of three coins, none of them rare.
 	if len(seen) != 8 {
@@ -1015,7 +1004,7 @@ func TestParticulateInheritanceKeepsTheSpread(t *testing.T) {
 	const n = 60
 	pop := make([]Agent, 0, n)
 	for i := 0; i < n; i++ {
-		pop = append(pop, Agent{Power: 25 + float64(i)*50/float64(n-1), Vitality: 90})
+		pop = append(pop, Agent{Genome: genomeOf(25+float64(i)*50/float64(n-1), 0, 0), Vitality: 90})
 	}
 	before := spread(pop)
 
@@ -1042,12 +1031,12 @@ func TestParticulateInheritanceKeepsTheSpread(t *testing.T) {
 func spread(pop []Agent) float64 {
 	var sum float64
 	for i := range pop {
-		sum += pop[i].Power
+		sum += pop[i].Attack()
 	}
 	mean := sum / float64(len(pop))
 	var sq float64
 	for i := range pop {
-		sq += (pop[i].Power - mean) * (pop[i].Power - mean)
+		sq += (pop[i].Attack() - mean) * (pop[i].Attack() - mean)
 	}
 	return math.Sqrt(sq / float64(len(pop)))
 }
@@ -1057,8 +1046,8 @@ func TestMutationVariesChildAbility(t *testing.T) {
 	cfg.MutationRate = 1 // every gene, so fifty births is enough to see it
 	cfg.MutationStd = 4
 	w := NewWorld(cfg)
-	pa := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
-	pb := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
+	pa := &Agent{Genome: genomeOf(50, 50, 50), Vitality: 90}
+	pb := &Agent{Genome: genomeOf(50, 50, 50), Vitality: 90}
 
 	for i := 0; i < 50; i++ {
 		pa.Vitality, pb.Vitality = 90, 90
@@ -1069,7 +1058,7 @@ func TestMutationVariesChildAbility(t *testing.T) {
 	}
 	varied := false
 	for i := range w.newborns {
-		if w.newborns[i].Power != 50 {
+		if w.newborns[i].Attack() != 50 {
 			varied = true
 		}
 	}
@@ -1085,8 +1074,8 @@ func TestMutationIsRareAndLarge(t *testing.T) {
 	cfg.MutationRate = 0.01
 	cfg.MutationStd = 40
 	w := NewWorld(cfg)
-	pa := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
-	pb := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
+	pa := &Agent{Genome: genomeOf(50, 50, 50), Vitality: 90}
+	pb := &Agent{Genome: genomeOf(50, 50, 50), Vitality: 90}
 
 	// Emptied every time, because the world stops accepting newborns once it
 	// is full and twenty thousand births are needed to count a 1% event.
@@ -1098,7 +1087,7 @@ func TestMutationIsRareAndLarge(t *testing.T) {
 		w.tryBirth(pa, pb)
 		for j := range w.newborns {
 			total++
-			if d := math.Abs(w.newborns[j].Power - 50); d > 1e-9 {
+			if d := math.Abs(w.newborns[j].Attack() - 50); d > 1e-9 {
 				moved++
 				if d > 10 {
 					far++
@@ -1124,8 +1113,8 @@ func TestMutationRateZeroLeavesTheParentsValuesUntouched(t *testing.T) {
 	cfg.MutationRate = 0
 	cfg.MutationStd = 40 // would be obvious if it were applied
 	w := NewWorld(cfg)
-	pa := &Agent{Power: 20, Rationality: 20, Intelligence: 20, Vitality: 90}
-	pb := &Agent{Power: 80, Rationality: 80, Intelligence: 80, Vitality: 90}
+	pa := &Agent{Genome: genomeOf(20, 20, 20), Vitality: 90}
+	pb := &Agent{Genome: genomeOf(80, 80, 80), Vitality: 90}
 
 	for i := 0; i < 200; i++ {
 		pa.Vitality, pb.Vitality = 90, 90
@@ -1133,9 +1122,9 @@ func TestMutationRateZeroLeavesTheParentsValuesUntouched(t *testing.T) {
 	}
 	for i := range w.newborns {
 		c := &w.newborns[i]
-		oneOf(t, c.Power, 20, 80, "child power")
-		oneOf(t, c.Rationality, 20, 80, "child rationality")
-		oneOf(t, c.Intelligence, 20, 80, "child intelligence")
+		oneOf(t, c.Attack(), 20, 80, "child power")
+		oneOf(t, c.Rationality(), 20, 80, "child rationality")
+		oneOf(t, c.Intelligence(), 20, 80, "child intelligence")
 	}
 }
 
@@ -1144,8 +1133,8 @@ func TestChildAbilityStaysInRange(t *testing.T) {
 	cfg.MutationRate = 1
 	cfg.MutationStd = 50 // extreme, so the bounds are actually hit
 	w := NewWorld(cfg)
-	pa := &Agent{Power: MaxAbility, Rationality: MinAbility, Intelligence: MaxAbility, Vitality: 90}
-	pb := &Agent{Power: MaxAbility, Rationality: MinAbility, Intelligence: MaxAbility, Vitality: 90}
+	pa := &Agent{Genome: genomeOf(MaxAbility, MinAbility, MaxAbility), Vitality: 90}
+	pb := &Agent{Genome: genomeOf(MaxAbility, MinAbility, MaxAbility), Vitality: 90}
 
 	for i := 0; i < 300; i++ {
 		pa.Vitality, pb.Vitality = 90, 90
@@ -1153,7 +1142,7 @@ func TestChildAbilityStaysInRange(t *testing.T) {
 	}
 	for i := range w.newborns {
 		c := &w.newborns[i]
-		for _, v := range []float64{c.Power, c.Rationality, c.Intelligence} {
+		for _, v := range []float64{c.Attack(), c.Rationality(), c.Intelligence()} {
 			if v < MinAbility || v > MaxAbility {
 				t.Fatalf("child ability %v is out of range", v)
 			}
@@ -1190,7 +1179,7 @@ func TestPopulationCapStopsBirths(t *testing.T) {
 
 func TestPatienceGrowsWithRationality(t *testing.T) {
 	w := NewWorld(testConfig())
-	if w.patienceTicks(&Agent{Rationality: 90}) <= w.patienceTicks(&Agent{Rationality: 10}) {
+	if w.patienceTicks(&Agent{Genome: genomeOf(0, 10, 0)}) <= w.patienceTicks(&Agent{}) {
 		t.Fatal("the rational agent did not compare candidates for longer")
 	}
 }
@@ -1202,9 +1191,8 @@ func courting(t *testing.T, cfg Config) (*World, int, int) {
 	w := NewWorld(cfg)
 	make := func(x float64, sex Sex) int {
 		return w.addAgent(Agent{
-			X: x, Y: 200, Sex: sex, Power: 40, Rationality: 100, Intelligence: 100,
-			Vitality: cfg.ReproVitality + 5, Hunger: 0,
-		})
+			X: x, Y: 200, Sex: sex, Genome: genomeOf(40, 100, 100),
+			Vitality: cfg.ReproVitality + 5, Hunger: 0})
 	}
 	male, female := make(200, Male), make(205, Female)
 	if f := fitness(mustAgent(t, w, male)); f >= cfg.CommitFitness {
@@ -1248,12 +1236,10 @@ func TestPartnerDeathReleasesSurvivor(t *testing.T) {
 	w := NewWorld(cfg)
 	survivor := w.addAgent(Agent{
 		X: 100, Y: 100, Sex: Male, Vitality: 90, Hunger: 0,
-		State: StatePaired, PairTimer: 100,
-	})
+		State: StatePaired, PairTimer: 100})
 	dying := w.addAgent(Agent{
 		X: 110, Y: 100, Sex: Female, Vitality: cfg.StarveRate / 2, Hunger: cfg.MaxHunger,
-		State: StatePaired, PairTimer: 100,
-	})
+		State: StatePaired, PairTimer: 100})
 	w.agentByID(survivor).PartnerID = dying
 	w.agentByID(dying).PartnerID = survivor
 
@@ -1372,7 +1358,7 @@ func TestClumpingSeparatesAHuddleFromASpread(t *testing.T) {
 		w := NewWorld(testConfig())
 		for i := 0; i < n; i++ {
 			x, y := place(i)
-			w.addAgent(Agent{X: x, Y: y, Vitality: 100, Power: 50})
+			w.addAgent(Agent{X: x, Y: y, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 		}
 		return w.Spacing()
 	}
@@ -1408,7 +1394,7 @@ func TestClumpingDoesNotRiseWithPopulationAlone(t *testing.T) {
 		for i := 0; i < n; i++ {
 			// The same lattice either way; the larger population just fills
 			// more of it.
-			w.addAgent(Agent{X: 20 + float64(i%16)*24, Y: 20 + float64(i/16)*24, Vitality: 100, Power: 50})
+			w.addAgent(Agent{X: 20 + float64(i%16)*24, Y: 20 + float64(i/16)*24, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 		}
 		return w.Spacing().Clumping
 	}
@@ -1426,7 +1412,7 @@ func clusteredWorld(t *testing.T, linkDist float64, place func(i int) (float64, 
 	w := NewWorld(testConfig())
 	for i := 0; i < n; i++ {
 		x, y := place(i)
-		w.addAgent(Agent{X: x, Y: y, Vitality: 100, Power: 50})
+		w.addAgent(Agent{X: x, Y: y, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 	}
 	return w.Clusters(linkDist)
 }
@@ -1530,7 +1516,7 @@ func TestClustersMatchBruteForceLabelling(t *testing.T) {
 		ys := make([]float64, n)
 		for i := 0; i < n; i++ {
 			xs[i], ys[i] = rng.Float64()*400, rng.Float64()*400
-			w.addAgent(Agent{X: xs[i], Y: ys[i], Vitality: 100, Power: 50})
+			w.addAgent(Agent{X: xs[i], Y: ys[i], Vitality: 100, Genome: genomeOf(50, 0, 0)})
 		}
 
 		// Label by repeatedly spreading each agent's label to everybody within
@@ -1623,7 +1609,7 @@ func placeAt(w *World, tick int, xs ...float64) {
 func TestMembershipOfAWorldThatNeverMovesIsCensored(t *testing.T) {
 	w := NewWorld(testConfig())
 	for i := 0; i < 4; i++ {
-		w.addAgent(Agent{X: 100 + float64(i/2)*200, Y: 100 + float64(i%2)*10, Vitality: 100, Power: 50})
+		w.addAgent(Agent{X: 100 + float64(i/2)*200, Y: 100 + float64(i%2)*10, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 	}
 
 	m := NewMembershipTracker(30, 10, 5)
@@ -1650,8 +1636,8 @@ func TestMembershipOfAWorldThatNeverMovesIsCensored(t *testing.T) {
 // step, and the curve is flat at zero after it.
 func TestMembershipOfAPairThatParts(t *testing.T) {
 	w := NewWorld(testConfig())
-	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
-	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 
 	m := NewMembershipTracker(30, 10, 5)
 	m.Observe(w)
@@ -1676,7 +1662,7 @@ func TestMembershipHalfLifeSitsWhereHalfThePairsPart(t *testing.T) {
 	w := NewWorld(testConfig())
 	// Four pairs, each far from the others.
 	for i := 0; i < 8; i++ {
-		w.addAgent(Agent{X: 60 + float64(i/2)*90, Y: 60 + float64(i%2)*10, Vitality: 100, Power: 50})
+		w.addAgent(Agent{X: 60 + float64(i/2)*90, Y: 60 + float64(i%2)*10, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 	}
 
 	m := NewMembershipTracker(30, 10, 4)
@@ -1707,7 +1693,7 @@ func TestMembershipHalfLifeSitsWhereHalfThePairsPart(t *testing.T) {
 func TestMembershipIgnoresPairsBrokenByDeath(t *testing.T) {
 	w := NewWorld(testConfig())
 	for i := 0; i < 4; i++ {
-		w.addAgent(Agent{X: 100 + float64(i/2)*200, Y: 100 + float64(i%2)*10, Vitality: 100, Power: 50})
+		w.addAgent(Agent{X: 100 + float64(i/2)*200, Y: 100 + float64(i%2)*10, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 	}
 
 	m := NewMembershipTracker(30, 10, 4)
@@ -1732,8 +1718,8 @@ func TestMembershipIgnoresPairsBrokenByDeath(t *testing.T) {
 // the shortest lag many times over instead of once.
 func TestMembershipPoolsEveryCohort(t *testing.T) {
 	w := NewWorld(testConfig())
-	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
-	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 
 	m := NewMembershipTracker(30, 10, 3)
 	for tick := 0; tick <= 40; tick += 10 {
@@ -1766,9 +1752,9 @@ func TestMembershipAtInterpolates(t *testing.T) {
 // identical at the moment they are counted.
 func TestFightRatesSplitCompanionsFromStrangers(t *testing.T) {
 	w := NewWorld(testConfig())
-	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
-	w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Power: 50})
-	c := w.addAgent(Agent{X: 300, Y: 300, Vitality: 100, Power: 50})
+	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+	w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+	c := w.addAgent(Agent{X: 300, Y: 300, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 
 	f := NewFightTracker(30, 10, 20)
 	for tick := 0; tick <= 20; tick += 10 {
@@ -1804,8 +1790,8 @@ func TestFightRatesSplitCompanionsFromStrangers(t *testing.T) {
 // often does not by itself make them look violent.
 func TestFightRatesAreCountedPerMeeting(t *testing.T) {
 	w := NewWorld(testConfig())
-	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
-	b := w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Power: 50})
+	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+	b := w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 
 	f := NewFightTracker(30, 10, 20)
 	for tick := 0; tick <= 20; tick += 10 {
@@ -1836,8 +1822,8 @@ func TestFightRatesAreCountedPerMeeting(t *testing.T) {
 // between these two.
 func TestFightRatesIgnoreWhatIsOutOfReach(t *testing.T) {
 	w := NewWorld(testConfig())
-	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
-	w.addAgent(Agent{X: 125, Y: 100, Vitality: 100, Power: 50}) // linked, but out of reach
+	a := w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+	w.addAgent(Agent{X: 125, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)}) // linked, but out of reach
 
 	f := NewFightTracker(30, 10, 20)
 	for tick := 0; tick <= 30; tick += 10 {
@@ -1857,14 +1843,14 @@ func TestFightRatesIgnoreWhatIsOutOfReach(t *testing.T) {
 // meetings are skipped rather than guessed at.
 func TestFightRatesSkipAgentsWithNoHistory(t *testing.T) {
 	w := NewWorld(testConfig())
-	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 
 	f := NewFightTracker(30, 10, 20)
 	for tick := 0; tick <= 20; tick += 10 {
 		w.tick = tick
 		f.Observe(w)
 	}
-	w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Power: 50}) // born just now
+	w.addAgent(Agent{X: 105, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)}) // born just now
 	w.tick = 30
 	f.Observe(w)
 
@@ -1884,8 +1870,8 @@ func TestClusterGapsMeasureTheNearestOtherGroup(t *testing.T) {
 	w := NewWorld(testConfig())
 	// Groups at x = 40, 140 and 340, each two agents ten apart.
 	for _, x := range []float64{40, 140, 340} {
-		w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Power: 50})
-		w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Power: 50})
+		w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+		w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 	}
 
 	got := w.ClusterGaps(20)
@@ -1906,10 +1892,10 @@ func TestClusterGapsMeasureTheNearestOtherGroup(t *testing.T) {
 func TestClusterGapsIgnoreSingletons(t *testing.T) {
 	w := NewWorld(testConfig())
 	for _, x := range []float64{40, 340} {
-		w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Power: 50})
-		w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Power: 50})
+		w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+		w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 	}
-	w.addAgent(Agent{X: 190, Y: 100, Vitality: 100, Power: 50}) // wanderer in between
+	w.addAgent(Agent{X: 190, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)}) // wanderer in between
 
 	got := w.ClusterGaps(20)
 	if len(got.Gaps) != 2 {
@@ -1945,8 +1931,8 @@ func TestClusterGapsAreNeverShorterThanTheLinkDistance(t *testing.T) {
 // Fewer than two groups means there is nothing to measure a distance between.
 func TestClusterGapsOfASingleGroup(t *testing.T) {
 	w := NewWorld(testConfig())
-	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Power: 50})
-	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Power: 50})
+	w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+	w.addAgent(Agent{X: 110, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 
 	got := w.ClusterGaps(20)
 	if len(got.Gaps) != 0 || got.Mean != 0 || got.Relative != 0 {
@@ -1960,8 +1946,8 @@ func TestClusterGapsGrowWhenGroupsSpreadOut(t *testing.T) {
 		w := NewWorld(testConfig())
 		for i := 0; i < 5; i++ {
 			x := 30 + float64(i)*spacing
-			w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Power: 50})
-			w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Power: 50})
+			w.addAgent(Agent{X: x, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+			w.addAgent(Agent{X: x + 10, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 		}
 		return w.ClusterGaps(20)
 	}
@@ -1992,12 +1978,12 @@ func TestClusterGapsRelativeOfARandomLayout(t *testing.T) {
 			cx, cy := rng.Float64()*760+20, rng.Float64()*560+20
 			for k := 0; k < 4; k++ {
 				w.addAgent(Agent{X: cx + rng.Float64()*16 - 8, Y: cy + rng.Float64()*16 - 8,
-					Vitality: 100, Power: 50})
+					Vitality: 100, Genome: genomeOf(50, 0, 0)})
 			}
 		}
 		for i := 0; i < 33; i++ {
 			w.addAgent(Agent{X: rng.Float64()*760 + 20, Y: rng.Float64()*560 + 20,
-				Vitality: 100, Power: 50})
+				Vitality: 100, Genome: genomeOf(50, 0, 0)})
 		}
 		rel += w.ClusterGaps(DefaultClusterLinkDist).Relative
 	}

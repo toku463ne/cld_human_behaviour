@@ -385,16 +385,16 @@ func abilitySpread(w *engine.World) (power, rationality, intelligence float64) {
 	}
 	var mp, mr, mi float64
 	for i := range agents {
-		mp += agents[i].Power
-		mr += agents[i].Rationality
-		mi += agents[i].Intelligence
+		mp += agents[i].Attack()
+		mr += agents[i].Rationality()
+		mi += agents[i].Intelligence()
 	}
 	mp, mr, mi = mp/n, mr/n, mi/n
 	var sp, sr, si float64
 	for i := range agents {
-		sp += (agents[i].Power - mp) * (agents[i].Power - mp)
-		sr += (agents[i].Rationality - mr) * (agents[i].Rationality - mr)
-		si += (agents[i].Intelligence - mi) * (agents[i].Intelligence - mi)
+		sp += (agents[i].Attack() - mp) * (agents[i].Attack() - mp)
+		sr += (agents[i].Rationality() - mr) * (agents[i].Rationality() - mr)
+		si += (agents[i].Intelligence() - mi) * (agents[i].Intelligence() - mi)
 	}
 	return math.Sqrt(sp / n), math.Sqrt(sr / n), math.Sqrt(si / n)
 }

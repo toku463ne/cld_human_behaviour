@@ -303,7 +303,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 	cfg := p.Cfg
 	s := &p.Self
 
-	myScore := s.Power * s.Vitality
+	myScore := s.Attack * s.Vitality
 	theirScore := o.EstStrength * o.Vitality
 	pWin := myScore / (myScore + theirScore + 1e-9)
 
@@ -313,7 +313,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		// What the exchange is expected to cost, assuming the other side hits
 		// back with a fair share of its own effort.
 		const retaliation = 0.7
-		mine := damagePerTick(cfg, s.Power, effort)
+		mine := damagePerTick(cfg, s.Attack, effort)
 		theirs := damagePerTick(cfg, o.EstStrength, retaliation)
 
 		// Either they go down, or one side breaks off first. A weakened

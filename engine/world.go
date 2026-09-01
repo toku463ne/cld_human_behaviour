@@ -203,9 +203,9 @@ func (w *World) Stats() Stats {
 		} else {
 			s.Males++
 		}
-		sumPower += a.Power
-		sumRationality += a.Rationality
-		sumIntelligence += a.Intelligence
+		sumPower += a.Attack()
+		sumRationality += a.Rationality()
+		sumIntelligence += a.Intelligence()
 		sumVitality += a.Vitality
 		sumHunger += a.Hunger
 	}
@@ -487,7 +487,7 @@ func (w *World) resolveAttacks() {
 		}
 		w.fights++
 
-		damage := damagePerTick(&w.cfg, from.Power, at.effort)
+		damage := damagePerTick(&w.cfg, from.Attack(), at.effort)
 		to.Vitality -= damage
 
 		// The one taking the hits remembers exactly what they cost.
@@ -655,17 +655,17 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	// Drawn into variables rather than inline, so that the order the random
 	// source is consumed in is on the page instead of in the argument
 	// evaluation order.
-	power := w.inheritGene(pa.Power, pb.Power)
-	rationality := w.inheritGene(pa.Rationality, pb.Rationality)
-	intelligence := w.inheritGene(pa.Intelligence, pb.Intelligence)
+	genome := genomeOf(
+		w.inheritGene(pa.Attack(), pb.Attack()),
+		w.inheritGene(pa.Rationality(), pb.Rationality()),
+		w.inheritGene(pa.Intelligence(), pb.Intelligence()),
+	)
 
 	child := w.newAgent(
 		(pa.X+pb.X)/2+w.randRange(-8, 8),
 		(pa.Y+pb.Y)/2+w.randRange(-8, 8),
 		w.randomSex(),
-		power,
-		rationality,
-		intelligence,
+		genome,
 		max(pa.Generation, pb.Generation)+1,
 	)
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
@@ -701,9 +701,9 @@ func (w *World) eat(a *Agent, foodID int) {
 // fitness is how good a mate an agent is: what it can pass on, and the shape it
 // is in to raise a child.
 func fitness(a *Agent) float64 {
-	return a.Power*fitnessPowerWeight +
-		a.Rationality*fitnessRationalityWeight +
-		a.Intelligence*fitnessIntelligenceWeight +
+	return a.Attack()*fitnessPowerWeight +
+		a.Rationality()*fitnessRationalityWeight +
+		a.Intelligence()*fitnessIntelligenceWeight +
 		a.Vitality*fitnessVitalityWeight
 }
 
@@ -714,7 +714,7 @@ func (w *World) perceivedFitness(observer, target *Agent) float64 {
 // patienceTicks is how long an agent keeps comparing candidates before it is
 // willing to settle. A rational agent can afford to wait and compare longer.
 func (w *World) patienceTicks(a *Agent) int {
-	return int(w.cfg.PatienceBase + a.Rationality*w.cfg.PatienceRationality)
+	return int(w.cfg.PatienceBase + a.Rationality()*w.cfg.PatienceRationality)
 }
 
 // willCommit reports whether an agent accepts the candidate in front of it:
@@ -808,20 +808,21 @@ func (w *World) keepInBounds(a *Agent) {
 // --- population bookkeeping ------------------------------------------------
 
 // newAgent builds an agent without inserting it into the world.
-func (w *World) newAgent(x, y float64, sex Sex, power, rationality, intelligence float64, generation int) Agent {
+func (w *World) newAgent(x, y float64, sex Sex, genome []float64, generation int) Agent {
+	for i := range genome {
+		genome[i] = clamp(genome[i], MinAbility, MaxAbility)
+	}
 	return Agent{
 		X: x, Y: y,
-		VX:           w.randRange(-0.3, 0.3),
-		VY:           w.randRange(-0.3, 0.3),
-		Sex:          sex,
-		Power:        clamp(power, MinAbility, MaxAbility),
-		Rationality:  clamp(rationality, MinAbility, MaxAbility),
-		Intelligence: clamp(intelligence, MinAbility, MaxAbility),
-		Vitality:     w.cfg.ChildVitality,
-		Hunger:       w.cfg.ChildHunger,
-		Generation:   generation,
-		Alive:        true,
-		Lifespan:     w.cfg.MaxLifespan,
+		VX:         w.randRange(-0.3, 0.3),
+		VY:         w.randRange(-0.3, 0.3),
+		Sex:        sex,
+		Genome:     genome,
+		Vitality:   w.cfg.ChildVitality,
+		Hunger:     w.cfg.ChildHunger,
+		Generation: generation,
+		Alive:      true,
+		Lifespan:   w.cfg.MaxLifespan,
 	}
 }
 
@@ -830,9 +831,7 @@ func (w *World) randomAgent() Agent {
 		w.randRange(20, w.cfg.Width-20),
 		w.randRange(20, w.cfg.Height-20),
 		w.randomSex(),
-		w.randRange(25, 75),
-		w.randRange(25, 75),
-		w.randRange(25, 75),
+		genomeOf(w.randRange(25, 75), w.randRange(25, 75), w.randRange(25, 75)),
 		0,
 	)
 	a.Vitality = w.randRange(w.cfg.MaxVitality*0.6, w.cfg.MaxVitality)
@@ -856,6 +855,9 @@ func (w *World) addAgent(a Agent) int {
 	if a.Lifespan <= 0 {
 		a.Lifespan = w.cfg.MaxLifespan
 	}
+	// Every agent owns its genome: a literal built by a test may not have one
+	// at all, and two agents must never end up sharing a backing array.
+	a.Genome = cloneGenome(a.Genome)
 	w.index[a.ID] = len(w.agents)
 	w.agents = append(w.agents, a)
 	w.invalidateIndex()

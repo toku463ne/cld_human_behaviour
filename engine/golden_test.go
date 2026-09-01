@@ -30,8 +30,7 @@ var goldenRuns = []struct {
 }{
 	{seed: 1, pop: 120, births: 92, deaths: 32, kills: 23, aging: 0, fights: 5437, gen: 4, power: 48.664501, vitality: 76.145316, hunger: 34.416250},
 	{seed: 2, pop: 138, births: 109, deaths: 31, kills: 20, aging: 0, fights: 4760, gen: 5, power: 52.716122, vitality: 76.287009, hunger: 38.628622},
-	{seed: 3, pop: 126, births: 88, deaths: 22, kills: 17, aging: 0, fights: 5766, gen: 5, power: 52.794216, vitality: 75.427192, hunger: 36.241270},
-}
+	{seed: 3, pop: 126, births: 88, deaths: 22, kills: 17, aging: 0, fights: 5766, gen: 5, power: 52.794216, vitality: 75.427192, hunger: 36.241270}}
 
 const goldenTicks = 5000
 
