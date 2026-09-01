@@ -216,3 +216,83 @@ func TestNobodyCourtsAnotherSpecies(t *testing.T) {
 		}
 	}
 }
+
+// Guarding turns part of a blow aside and costs the guard some of its own
+// swing; dodging removes the blow altogether. Both are paid for whether or not
+// they are the channel that matters this tick.
+func TestGuardingAndDodgingChangeWhatABlowDoes(t *testing.T) {
+	cfg := quietConfig()
+	cfg.EvasionCap = 0 // dodging is chance, and this test is about the certain part
+
+	hit := func(defender Stance, defenceGene float64) float64 {
+		w := NewWorld(cfg)
+		g := filledGenome(midAbility)
+		g[GeneDefence] = defenceGene
+		att := w.addAgent(Agent{X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
+		def := w.addAgent(Agent{X: 105, Y: 100, Genome: g, Vitality: 90})
+		w.SetController(att, fixedController{Action{Kind: ActAttack, TargetID: def, Effort: 1, Stance: StanceAggressive}})
+		w.SetController(def, fixedController{Action{Kind: ActAttack, TargetID: att, Effort: 1, Stance: defender}})
+		w.Step()
+		return 90 - mustAgent(t, w, def).Vitality
+	}
+
+	open := hit(StanceAggressive, midAbility)
+	guarded := hit(StanceGuarded, midAbility)
+	if guarded >= open {
+		t.Fatalf("guarding cost %.3f and standing open cost %.3f: the guard does nothing", guarded, open)
+	}
+	if better := hit(StanceGuarded, MaxAbility); better >= guarded {
+		t.Fatalf("a better defence gene did not help: %.3f against %.3f", better, guarded)
+	}
+
+	// And the guard's own blow lands for less, so it is a trade rather than a
+	// free improvement.
+	w := NewWorld(cfg)
+	att := w.addAgent(Agent{X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
+	def := w.addAgent(Agent{X: 105, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
+	w.SetController(att, fixedController{Action{Kind: ActAttack, TargetID: def, Effort: 1, Stance: StanceGuarded}})
+	w.SetController(def, fixedController{Action{Kind: ActRest}})
+	w.Step()
+	guardedBlow := 90 - mustAgent(t, w, def).Vitality
+	if guardedBlow >= damagePerTick(&cfg, midAbility, 1) {
+		t.Fatalf("a guarded swing landed for %.3f, as hard as an open one", guardedBlow)
+	}
+}
+
+// Dodging is all or nothing, and it leans on being quick as well as on the
+// gene.
+func TestDodgingMissesBlowsEntirely(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	g := filledGenome(midAbility)
+	g[GeneEvasion] = MaxAbility
+	att := w.addAgent(Agent{X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 1e6})
+	def := w.addAgent(Agent{X: 105, Y: 100, Genome: g, Vitality: 1e6})
+	w.SetController(att, fixedController{Action{Kind: ActAttack, TargetID: def, Effort: 1, Stance: StanceAggressive}})
+	// Standing its ground in an evasive stance, so that the blows keep coming
+	// and the share that miss can be counted.
+	w.SetController(def, fixedController{Action{Kind: ActAttack, TargetID: att, Effort: 1, Stance: StanceEvasive}})
+
+	for i := 0; i < 400; i++ {
+		w.Step()
+	}
+	thrown := w.Stats().Fights / 2 // both sides are throwing
+	dodged := float64(w.Stats().Evaded) / float64(thrown)
+	want := cfg.EvasionCap * stanceMix[StanceEvasive].Evasion
+	if dodged < want*0.6 || dodged > want*1.4 {
+		t.Fatalf("dodged %.2f of the blows, want about %.2f", dodged, want)
+	}
+
+	// Somebody who is not dodging never does.
+	w2 := NewWorld(cfg)
+	a2 := w2.addAgent(Agent{X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 1e6})
+	d2 := w2.addAgent(Agent{X: 105, Y: 100, Genome: g, Vitality: 1e6})
+	w2.SetController(a2, fixedController{Action{Kind: ActAttack, TargetID: d2, Effort: 1}})
+	w2.SetController(d2, fixedController{Action{Kind: ActRest}})
+	for i := 0; i < 200; i++ {
+		w2.Step()
+	}
+	if w2.Stats().Evaded != 0 {
+		t.Fatalf("an agent that was resting dodged %d blows", w2.Stats().Evaded)
+	}
+}

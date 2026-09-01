@@ -46,6 +46,11 @@ type Action struct {
 	TargetID int     // food item for ActEat, agent for ActAttack/ActFlee/ActObserve/ActCourt
 	DX, DY   float64 // unit direction, only used by ActMove
 	Effort   float64 // 0..1
+
+	// Stance is how the effort is split between hitting, guarding and getting
+	// out of the way. It only means anything for the fighting actions; see
+	// stance.go.
+	Stance Stance
 }
 
 // Controller decides what an agent does. The engine calls Decide only when

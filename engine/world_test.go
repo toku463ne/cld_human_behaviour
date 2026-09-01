@@ -418,7 +418,9 @@ func TestAttackingCostsLessThanBeingAttacked(t *testing.T) {
 	if attackerLoss >= victimLoss {
 		t.Fatalf("attacker lost %v and the victim %v, want the attacker to come off better", attackerLoss, victimLoss)
 	}
-	approx(t, attackerLoss, cfg.AttackCost, 1e-9, "cost of throwing a punch")
+	// A punch costs the whole stance, not only the swing: an aggressive one
+	// keeps a little guard up and pays for that too.
+	approx(t, attackerLoss, stanceCost(&cfg, StanceAggressive), 1e-9, "cost of throwing a punch")
 }
 
 // Trading blows costs both sides both halves of the exchange, so a slugging
@@ -427,7 +429,10 @@ func TestTradingBlowsCostsBothSides(t *testing.T) {
 	cfg := quietConfig()
 	_, x, y := brawl(t, cfg, 50, 50, Action{Kind: ActAttack, Effort: 1}, Action{Kind: ActAttack, Effort: 1})
 
-	want := damagePerTick(&cfg, 50, 1) + cfg.AttackCost
+	// Each side pays for its stance and takes what the other's guard did not
+	// turn aside.
+	guard := 1 - cfg.DefenceCap*(midAbility/MaxAbility)*stanceMix[StanceAggressive].Defence
+	want := damagePerTick(&cfg, 50, stanceMix[StanceAggressive].Attack)*guard + stanceCost(&cfg, StanceAggressive)
 	approx(t, 90-x.Vitality, want, 1e-9, "cost to one side of a mutual fight")
 	approx(t, 90-y.Vitality, want, 1e-9, "cost to the other side of a mutual fight")
 

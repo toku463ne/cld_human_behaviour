@@ -323,12 +323,24 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 
 	maxDepth := strategyDepth(cfg, s.Intelligence)
 
-	for _, effort := range effortLevels {
+	// Three ready mixes rather than two levels of one number: how hard to
+	// swing is now inseparable from how much guard to keep up.
+	for stance := Stance(0); int(stance) < NumStances; stance++ {
+		m := stanceMix[stance]
+		const effort = 1.0
+
 		// What the exchange is expected to cost, assuming the other side hits
 		// back with a fair share of its own effort.
+		//
+		// What the other side's guard would turn aside is not in here: how
+		// well somebody defends is a hidden parameter like everything else
+		// about them, so an agent finds out by being surprised. What it does
+		// know is its own guard, which is what the incoming blow is reduced
+		// by below.
 		const retaliation = 0.7
-		mine := damagePerTick(cfg, s.Attack, effort)
-		theirs := damagePerTick(cfg, o.EstStrength, retaliation)
+		mine := damagePerTick(cfg, s.Attack, effort*m.Attack)
+		theirs := damagePerTick(cfg, o.EstStrength, retaliation) *
+			(1 - s.Defence*m.Defence) * (1 - s.Evasion*m.Evasion)
 
 		// Either they go down, or one side breaks off first. A weakened
 		// target is cheap to finish, which is what makes hitting somebody who
@@ -337,7 +349,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		travel := o.Dist / speedAt(s.MaxSpeed, effort)
 		ticks := exchange + travel
 
-		cost := exchange*(theirs+cfg.AttackCost*effort) + travel*moveCostAt(cfg, effort)
+		cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCostAt(cfg, effort)
 
 		drain := projectedDrain(cfg, s.HungerRate, s.Hunger+s.HungerRate*ticks)
 		now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incoming(p))
@@ -378,7 +390,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 			}
 		}
 
-		c.add(Action{Kind: ActAttack, TargetID: o.ID, Effort: effort}, Utility{
+		c.add(Action{Kind: ActAttack, TargetID: o.ID, Effort: effort, Stance: stance}, Utility{
 			Life:         Goal{Value: lifeTerm, Chance: 1},
 			Stake:        stake,
 			Rival:        competition,
@@ -411,7 +423,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	pEscape := clamp(s.Vitality/(s.Vitality+o.Vitality+1e-9), 0.15, 0.9)
 	fled := pressure(cfg, s.MaxVitality, s.Vitality-cost, drain)
 
-	c.add(Action{Kind: ActFlee, TargetID: o.ID, Effort: cfg.FleeEffort}, Utility{
+	c.add(Action{Kind: ActFlee, TargetID: o.ID, Effort: cfg.FleeEffort, Stance: StanceEvasive}, Utility{
 		Life:         Goal{Value: (staying - fled) * cfg.LifeValue, Chance: pEscape},
 		Vitality:     cost,
 		Ticks:        fleeExposureTicks,

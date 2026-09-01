@@ -34,6 +34,7 @@ type Stats struct {
 	Females    int
 	FoodItems  int
 	Births     int
+	Evaded     int // blows dodged entirely
 	Hunts      int // kills that fed somebody: a carcass with a claim on it
 	HuntParty  int // how many took part, summed over those kills
 
@@ -121,6 +122,7 @@ type World struct {
 	foodAccum float64
 
 	births        int
+	evaded        int // blows that missed because the target got out of the way
 	hunts         int // kills whose carcass went to somebody that eats it
 	huntParty     int // and how many had a share, summed over those kills
 	geniuses      int
@@ -201,6 +203,7 @@ func (w *World) Stats() Stats {
 		Population:    len(w.agents),
 		FoodItems:     len(w.foods),
 		Births:        w.births,
+		Evaded:        w.evaded,
 		Hunts:         w.hunts,
 		HuntParty:     w.huntParty,
 		Geniuses:      w.geniuses,
@@ -406,7 +409,9 @@ func (w *World) perform(a *Agent) {
 			return
 		}
 		w.attacks = append(w.attacks, attack{fromID: a.ID, toID: o.ID, effort: a.Action.Effort})
-		a.Vitality -= w.cfg.AttackCost * a.Action.Effort
+		// Every channel this stance is using costs something, whether or not
+		// it is the one that lands the blow.
+		a.Vitality -= stanceCost(&w.cfg, a.Action.Stance) * a.Action.Effort
 		a.effortSpent = math.Max(a.effortSpent, a.Action.Effort)
 
 	case ActFlee:
@@ -512,8 +517,18 @@ func (w *World) resolveAttacks() {
 		}
 		w.fights++
 
-		damage := damagePerTick(&w.cfg, from.Attack(), at.effort)
+		// Only the part of the effort that went into the blow lands, so an
+		// attacker that is also guarding hits for less.
+		damage := damagePerTick(&w.cfg, from.Attack(), at.effort*from.mix().Attack)
+
+		// The one being hit is meanwhile doing whatever it chose: turning the
+		// blow aside, not being there, or neither if it was eating.
 		to.noteHit(from.ID, w.tick)
+		if chance := to.evasion(&w.cfg); chance > 0 && w.rng.Float64() < chance {
+			w.evaded++
+			continue
+		}
+		damage *= 1 - to.defence(&w.cfg)
 		to.Vitality -= damage
 
 		// The one taking the hits remembers exactly what they cost.

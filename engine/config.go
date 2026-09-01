@@ -118,7 +118,19 @@ type Config struct {
 	// use of vitality there is, and a slugging match expensive for both.
 	AttackDamage float64 // vitality the target loses per tick, at effort 1 from a mid-power agent
 	AttackCost   float64 // vitality the attacker spends per tick, at effort 1
-	FleeEffort   float64 // effort an agent puts into running away
+
+	// What guarding and dodging can do at most, for an agent that spent its
+	// whole range on the gene and is using the channel fully, and what each
+	// costs to use for a tick.
+	//
+	// These decide the asymmetry the whole world balances on: the attacker's
+	// advantage is what makes hitting somebody worth doing, and a defence that
+	// is too good removes it entirely. Change them and look at the population.
+	DefenceCap  float64 // fraction of an incoming blow turned aside
+	DefenceCost float64
+	EvasionCap  float64 // chance of a blow missing altogether
+	EvasionCost float64
+	FleeEffort  float64 // effort an agent puts into running away
 
 	// SkirmishTicks is how long an agent expects a fight to last before one
 	// side gives up. Fights are only settled by a death when neither side
@@ -353,6 +365,10 @@ func DefaultConfig() Config {
 
 		AttackDamage:  1.15,
 		AttackCost:    0.30,
+		DefenceCap:    0.55,
+		DefenceCost:   0.12,
+		EvasionCap:    0.45,
+		EvasionCost:   0.20,
 		FleeEffort:    0.95,
 		SkirmishTicks: 30,
 
@@ -400,7 +416,7 @@ func DefaultConfig() Config {
 		InitialEnemies:      10,
 		EnemyBudgetMean:     520, // over the human 360, so a carcass feeds several
 		EnemyBudgetStd:      90,
-		EnemySpawnTicks:     500,
+		EnemySpawnTicks:     400,
 		MaxEnemies:          12,
 		BudgetInheritSpread: 30,
 		BudgetHeritability:  1,

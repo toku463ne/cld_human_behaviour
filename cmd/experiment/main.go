@@ -160,6 +160,29 @@ var variants = []variant{
 	// enemies all stay, but killing something is no longer worth a meal.
 	// Whatever party size turns up here is what agents do to each other
 	// anyway, and only the difference is hunting.
+	// The channels of stage 8. Without them a fight is decided by who pours
+	// more into hitting, which is what made attack the only gene worth
+	// buying; these arms take the two answers to that away again.
+	{
+		name:  "fewerenemies",
+		about: "enemies arrive every 500 ticks instead of 400: what the world was before the channels",
+		apply: func(c *engine.Config) { c.EnemySpawnTicks = 500 },
+	},
+	{
+		name:  "noguard",
+		about: "guarding turns nothing aside",
+		apply: func(c *engine.Config) { c.DefenceCap = 0 },
+	},
+	{
+		name:  "nododge",
+		about: "no blow ever misses",
+		apply: func(c *engine.Config) { c.EvasionCap = 0 },
+	},
+	{
+		name:  "nochannels",
+		about: "neither guarding nor dodging does anything: the world as stage 7c left it",
+		apply: func(c *engine.Config) { c.DefenceCap, c.EvasionCap = 0, 0 },
+	},
 	{
 		name:  "noprey",
 		about: "a carcass is worth nothing to whoever brings it down",
@@ -224,7 +247,7 @@ var metricNames = []string{
 	"shAttack", "shDefence", "shVitality", "shSpeed", "shEvasion",
 	"shMemory", "shRationality", "shIntelligence", "shLooks",
 	"geniusYears", "greatGeniusYears",
-	"hunts", "packSize",
+	"hunts", "packSize", "evadedShare",
 	"extinct",
 }
 
@@ -408,6 +431,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// size above one is pack hunting; it is the thing stage 11 was built
 		// to find out about, and nothing in the rules asks for it.
 		"hunts":            float64(end.Hunts),
+		"evadedShare":      share(end.Evaded, end.Fights),
 		"packSize":         share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		"geniusYears":      years(ticks, end.Geniuses, cfg.TicksPerYear),
 		"greatGeniusYears": years(ticks, end.GreatGeniuses, cfg.TicksPerYear),

@@ -31,6 +31,13 @@ type SelfView struct {
 	// long they have.
 	HungerRate float64
 
+	// Defence and Evasion are what this agent's own guard and footwork are
+	// worth at full use: the fraction of a blow it can turn aside and the
+	// chance of one missing entirely. It knows its own; what somebody else
+	// can do stays hidden, as every other ability does.
+	Defence float64
+	Evasion float64
+
 	// CanReproduce is false while the agent still has to look after itself.
 	CanReproduce bool
 
@@ -142,6 +149,8 @@ func (w *World) perceive(a *Agent) *Perception {
 		MaxVitality:  a.MaxVitality(&w.cfg),
 		MaxSpeed:     a.MaxSpeed(&w.cfg),
 		HungerRate:   a.HungerRate(&w.cfg),
+		Defence:      w.cfg.DefenceCap * a.Gene(GeneDefence) / MaxAbility,
+		Evasion:      w.cfg.EvasionCap * a.Gene(GeneEvasion) / MaxAbility * clamp(a.MaxSpeed(&w.cfg)/w.cfg.MaxSpeed, 0, 2),
 		CanReproduce: a.CanReproduce(&w.cfg),
 		AttackerID:   a.attackerID,
 	}
