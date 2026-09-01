@@ -554,7 +554,7 @@ func (w *World) metabolise() {
 			continue
 		}
 
-		a.Hunger = math.Min(w.cfg.MaxHunger, a.Hunger+w.cfg.HungerRate)
+		a.Hunger = math.Min(w.cfg.MaxHunger, a.Hunger+a.HungerRate(&w.cfg))
 
 		if drain := hungerDrain(&w.cfg, a.Hunger); drain > 0 {
 			a.Vitality -= drain

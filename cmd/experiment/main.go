@@ -118,6 +118,29 @@ var variants = []variant{
 	// How much of a body there is to go round. The starting point of 360 lets
 	// an agent hold the ceiling in attack and still have a working body, which
 	// is what makes attack the only purchase worth making.
+	// What a big body costs to run. Without it the budget ratchets upwards
+	// for ever, because every gene is worth more than it costs; these arms are
+	// how the price was set.
+	{
+		name:  "noupkeep",
+		about: "a large body costs no more to run than a small one",
+		apply: func(c *engine.Config) { c.BudgetUpkeep = 0 },
+	},
+	{
+		name:  "halfupkeep",
+		about: "half the upkeep for being made of more than average",
+		apply: func(c *engine.Config) { c.BudgetUpkeep = 0.5 },
+	},
+	{
+		name:  "pullback",
+		about: "budget inherited at 0.9, the last tenth pulled back towards the average",
+		apply: func(c *engine.Config) { c.BudgetHeritability = 0.9 },
+	},
+	{
+		name:  "pullback95",
+		about: "budget inherited at 0.95",
+		apply: func(c *engine.Config) { c.BudgetHeritability = 0.95 },
+	},
 	{
 		name:  "leanbudget",
 		about: "GeneBudgetMean 270 instead of 360: thirty a gene rather than forty",

@@ -105,6 +105,18 @@ func (a *Agent) MaxSpeed(cfg *Config) float64 {
 	return cfg.MaxSpeed * a.Gene(GeneSpeed) / midAbility
 }
 
+// HungerRate is how fast this agent gets hungry: the world's rate, plus
+// whatever it costs to run a body made of more than the average one. It is the
+// price of the budget, and the only thing stopping the budget from climbing
+// for ever.
+func (a *Agent) HungerRate(cfg *Config) float64 {
+	if cfg.GeneBudgetMean <= 0 {
+		return cfg.HungerRate
+	}
+	over := a.Budget()/cfg.GeneBudgetMean - 1
+	return cfg.HungerRate * math.Max(0, 1+cfg.BudgetUpkeep*over)
+}
+
 // Budget is what this agent's genome adds up to: the total it has to spend
 // across everything it could be.
 func (a *Agent) Budget() float64 {

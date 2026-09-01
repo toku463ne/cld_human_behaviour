@@ -24,6 +24,12 @@ type SelfView struct {
 	MaxVitality float64
 	MaxSpeed    float64
 
+	// HungerRate is what this body costs to run: bigger agents get hungry
+	// faster. The controller plans with its own rate rather than the world's,
+	// or the agents the budget is pricing would be the ones misjudging how
+	// long they have.
+	HungerRate float64
+
 	// CanReproduce is false while the agent still has to look after itself.
 	CanReproduce bool
 
@@ -122,6 +128,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		Intelligence: a.Intelligence(),
 		MaxVitality:  a.MaxVitality(&w.cfg),
 		MaxSpeed:     a.MaxSpeed(&w.cfg),
+		HungerRate:   a.HungerRate(&w.cfg),
 		CanReproduce: a.CanReproduce(&w.cfg),
 		AttackerID:   a.attackerID,
 	}

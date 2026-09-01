@@ -130,7 +130,7 @@ func pressure(cfg *Config, maxVitality, vitality, drain float64) float64 {
 // than it heals recovers nothing, however well fed it is. Leaving that out
 // would let "sit still and get better" look like an answer to being attacked,
 // and nothing would ever run away.
-func recoverable(cfg *Config, maxVitality, vitality, hunger, incoming float64) float64 {
+func recoverable(cfg *Config, maxVitality, hungerRate, vitality, hunger, incoming float64) float64 {
 	if hunger >= cfg.SatiatedHunger {
 		return 0
 	}
@@ -138,7 +138,7 @@ func recoverable(cfg *Config, maxVitality, vitality, hunger, incoming float64) f
 	if net <= 0 {
 		return 0
 	}
-	ticks := (cfg.SatiatedHunger - hunger) / cfg.HungerRate
+	ticks := (cfg.SatiatedHunger - hunger) / hungerRate
 	return math.Max(0, math.Min(maxVitality-vitality, net*ticks))
 }
 
@@ -157,8 +157,8 @@ func hungerDrain(cfg *Config, hunger float64) float64 {
 
 // projectedDrain is the drain an agent expects to be living with over the
 // horizon, since hunger keeps climbing while it makes up its mind.
-func projectedDrain(cfg *Config, hunger float64) float64 {
-	return hungerDrain(cfg, hunger+cfg.HungerRate*cfg.PlanHorizon*0.5)
+func projectedDrain(cfg *Config, hungerRate, hunger float64) float64 {
+	return hungerDrain(cfg, hunger+hungerRate*cfg.PlanHorizon*0.5)
 }
 
 // speedAt is how fast an agent of the given top speed moves at this effort.
@@ -192,12 +192,12 @@ func (c *AIController) add(a Action, u Utility) {
 func (c *AIController) addRest(p *Perception) {
 	cfg := p.Cfg
 	s := &p.Self
-	drain := projectedDrain(cfg, s.Hunger)
+	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := c.incoming(p)
 	now := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
 	// Whatever is hitting the agent goes on hitting it while it sits there.
 	after := pressure(cfg, s.MaxVitality,
-		s.Vitality+recoverable(cfg, s.MaxVitality, s.Vitality, s.Hunger, incoming), drain+incoming)
+		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming), drain+incoming)
 	c.add(Action{Kind: ActRest}, Utility{
 		Life: Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
 	})
@@ -232,7 +232,7 @@ func (c *AIController) addExplore(p *Perception) {
 func (c *AIController) addFood(p *Perception) {
 	cfg := p.Cfg
 	s := &p.Self
-	drain := projectedDrain(cfg, s.Hunger)
+	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := c.incoming(p)
 	now := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
 
@@ -251,10 +251,10 @@ func (c *AIController) addFood(p *Perception) {
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCostAt(cfg, effort) * ticks
-			hungerAfter := math.Max(0, s.Hunger+cfg.HungerRate*ticks-cfg.FoodNutrition)
+			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition)
 			vitAfter := s.Vitality - cost
-			vitAfter += recoverable(cfg, s.MaxVitality, vitAfter, hungerAfter, incoming)
-			after := pressure(cfg, s.MaxVitality, vitAfter, projectedDrain(cfg, hungerAfter)+incoming)
+			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming)
+			after := pressure(cfg, s.MaxVitality, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
 
 			meal := (now - after) * cfg.LifeValue
 			c.add(Action{Kind: ActEat, TargetID: f.ID, Effort: effort}, Utility{
@@ -329,8 +329,8 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 
 		cost := exchange*(theirs+cfg.AttackCost*effort) + travel*moveCostAt(cfg, effort)
 
-		drain := projectedDrain(cfg, s.Hunger+cfg.HungerRate*ticks)
-		now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.Hunger)+c.incoming(p))
+		drain := projectedDrain(cfg, s.HungerRate, s.Hunger+s.HungerRate*ticks)
+		now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incoming(p))
 		after := pressure(cfg, s.MaxVitality, s.Vitality-cost, drain)
 		lifeTerm := (now - after) * cfg.LifeValue
 
@@ -373,7 +373,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	cfg := p.Cfg
 	s := &p.Self
 
-	drain := projectedDrain(cfg, s.Hunger)
+	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := damagePerTick(cfg, o.EstStrength, 1)
 	staying := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
 

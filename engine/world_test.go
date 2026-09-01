@@ -122,12 +122,46 @@ func TestDifferentSeedsGiveDifferentRuns(t *testing.T) {
 func TestHungerRisesOnItsOwn(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: 10})
+	// A body of exactly the average budget, which is the one HungerRate is
+	// quoted for.
+	id := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: 10,
+		Genome: filledGenome(cfg.GeneBudgetMean / float64(NumGenes))})
 	w.SetController(id, fixedController{Action{Kind: ActRest}})
 
 	w.Step()
 
 	approx(t, mustAgent(t, w, id).Hunger, 10+cfg.HungerRate, 1e-9, "hunger after one tick")
+}
+
+// A body made of more costs more to run. It is the only price the budget pays,
+// and without it the budget climbs for ever.
+func TestABiggerBodyGetsHungryFaster(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	small := w.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: 10,
+		Genome: filledGenome(cfg.GeneBudgetMean / float64(NumGenes))})
+	big := w.addAgent(Agent{X: 300, Y: 300, Vitality: 80, Hunger: 10,
+		Genome: filledGenome(2 * cfg.GeneBudgetMean / float64(NumGenes))})
+	for _, id := range []int{small, big} {
+		w.SetController(id, fixedController{Action{Kind: ActRest}})
+	}
+
+	w.Step()
+
+	gainSmall := mustAgent(t, w, small).Hunger - 10
+	gainBig := mustAgent(t, w, big).Hunger - 10
+	approx(t, gainSmall, cfg.HungerRate, 1e-9, "hunger of an average body")
+	// Twice the budget at an upkeep of 1 is twice the rate.
+	approx(t, gainBig, cfg.HungerRate*(1+cfg.BudgetUpkeep), 1e-9, "hunger of a body twice the size")
+
+	off := testConfig()
+	off.BudgetUpkeep = 0
+	w2 := NewWorld(off)
+	id := w2.addAgent(Agent{X: 100, Y: 100, Vitality: 80, Hunger: 10,
+		Genome: filledGenome(2 * off.GeneBudgetMean / float64(NumGenes))})
+	w2.SetController(id, fixedController{Action{Kind: ActRest}})
+	w2.Step()
+	approx(t, mustAgent(t, w2, id).Hunger-10, off.HungerRate, 1e-9, "hunger with the upkeep switched off")
 }
 
 func TestHighHungerDrainsVitality(t *testing.T) {

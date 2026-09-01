@@ -142,10 +142,16 @@ func TestOutmatchedAgentRacesForFoodRatherThanFightingForIt(t *testing.T) {
 // rival off a meal the agent badly needs is worth the vitality, and that is the
 // only thing that changed.
 func TestContestedMealIsWorthAFightAgainstAWeakerRival(t *testing.T) {
-	w := NewWorld(testConfig())
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	// An ordinary budget, spent mostly on fighting: a genome that simply adds
+	// up to more than everybody else's would be testing the upkeep of a large
+	// body rather than the contest.
+	strong := genomeOf(95, 100, 100)
+	fitBudget(strong, cfg.GeneBudgetMean)
 	subject := w.addAgent(Agent{
 		X: 200, Y: 200, Sex: Male, Vitality: 40, Hunger: 92,
-		Genome: genomeOf(95, 100, 100)})
+		Genome: strong})
 	w.addFood(222, 200)
 	rival := w.addAgent(Agent{X: 226, Y: 200, Sex: Male, Vitality: 25, Hunger: 0, Genome: genomeOf(8, 0, 0)})
 	convinceOf(t, w, subject, rival)

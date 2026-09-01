@@ -27,7 +27,18 @@ type Config struct {
 	// guarantees every agent has a way back up instead of only decaying.
 	MaxVitality float64
 	MaxHunger   float64
-	HungerRate  float64 // hunger gained per tick
+	HungerRate  float64 // hunger gained per tick by an agent of the average budget
+
+	// What being made of more costs to run. Hunger climbs faster in
+	// proportion to how far the agent's budget is above the average one, so
+	// twice the budget at BudgetUpkeep 1 means hunger arriving twice as fast.
+	//
+	// Without a price of some kind the budget ratchets upwards: every gene is
+	// worth more than it costs, so the individuals who inherit a larger total
+	// out-breed the rest and pass the larger total on. Measured over 50000
+	// ticks with no upkeep, the mean budget went from 360 to 588 and was still
+	// climbing, which is the budget quietly ceasing to be a constraint.
+	BudgetUpkeep float64
 
 	FoodNutrition  float64 // hunger removed by eating one item
 	StarveHunger   float64 // above this hunger, vitality starts to drain
@@ -248,9 +259,10 @@ func DefaultConfig() Config {
 		// competing, which is what the rest of the rules are about.
 		FoodSpawnRate: 0.20,
 
-		MaxVitality: 100,
-		MaxHunger:   100,
-		HungerRate:  0.05,
+		MaxVitality:  100,
+		MaxHunger:    100,
+		HungerRate:   0.05,
+		BudgetUpkeep: 1,
 
 		FoodNutrition:  34,
 		StarveHunger:   60,
