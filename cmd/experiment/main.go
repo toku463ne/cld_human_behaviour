@@ -117,16 +117,18 @@ var metricNames = []string{
 	"fightCompanion", "fightStranger", "fightRatio",
 	"species", "rareShare", "rareTrough", "rareSwing",
 	"power", "rationality", "intelligence",
+	"sdPower", "sdRationality", "sdIntelligence",
 	"dPower", "dRationality", "dIntelligence",
 	"extinct",
 }
 
 type sample struct {
-	tick                   int
-	pop                    int
-	power, rat, intel      float64
-	foods                  int
-	births, deaths, fights int
+	tick                    int
+	pop                     int
+	power, rat, intel       float64
+	sdPower, sdRat, sdIntel float64
+	foods                   int
+	births, deaths, fights  int
 
 	// How the population is laid out at this moment.
 	clumping, neighbours, nearest float64
@@ -191,9 +193,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		sp := w.Spacing()
 		cl := w.Clusters(engine.DefaultClusterLinkDist)
 		gaps := w.ClusterGaps(engine.DefaultClusterLinkDist)
+		sdP, sdR, sdI := abilitySpread(w)
 		series = append(series, sample{
 			tick: s.Tick, pop: s.Population,
 			power: s.AvgPower, rat: s.AvgRationality, intel: s.AvgIntelligence,
+			sdPower: sdP, sdRat: sdR, sdIntel: sdI,
 			foods: s.FoodItems, births: s.Births, deaths: s.Deaths, fights: s.Fights,
 			clumping: sp.Clumping, neighbours: sp.AvgNeighbours, nearest: sp.AvgNearestDist,
 			clusters: float64(cl.Groups), clusterSize: cl.AvgGroupSize,
@@ -270,6 +274,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"power":          tail.power,
 		"rationality":    tail.rat,
 		"intelligence":   tail.intel,
+		"sdPower":        tail.sdPower,
+		"sdRationality":  tail.sdRat,
+		"sdIntelligence": tail.sdIntel,
 		"dPower":         tail.power - start.AvgPower,
 		"dRationality":   tail.rat - start.AvgRationality,
 		"dIntelligence":  tail.intel - start.AvgIntelligence,
@@ -294,6 +301,9 @@ func tailAverage(series []sample) sample {
 		out.power += s.power
 		out.rat += s.rat
 		out.intel += s.intel
+		out.sdPower += s.sdPower
+		out.sdRat += s.sdRat
+		out.sdIntel += s.sdIntel
 		out.clumping += s.clumping
 		out.neighbours += s.neighbours
 		out.nearest += s.nearest
@@ -313,6 +323,9 @@ func tailAverage(series []sample) sample {
 	out.power /= d
 	out.rat /= d
 	out.intel /= d
+	out.sdPower /= d
+	out.sdRat /= d
+	out.sdIntel /= d
 	out.clumping /= d
 	out.neighbours /= d
 	out.nearest /= d
@@ -324,6 +337,36 @@ func tailAverage(series []sample) sample {
 	out.gapP10 /= d
 	out.gapRel /= d
 	return out
+}
+
+// abilitySpread is the standard deviation of each ability across the living
+// population: how much variation there is for selection to work on.
+//
+// It is the figure the inheritance rule decides. Blending inheritance (a child
+// is the average of its parents) halves the variance every generation, so the
+// spread settles wherever mutation alone can hold it; drawing each gene from
+// one parent or the other keeps it. The mean says which way selection is
+// pushing, and this says how much it has left to push.
+func abilitySpread(w *engine.World) (power, rationality, intelligence float64) {
+	agents := w.Agents()
+	n := float64(len(agents))
+	if n < 2 {
+		return 0, 0, 0
+	}
+	var mp, mr, mi float64
+	for i := range agents {
+		mp += agents[i].Power
+		mr += agents[i].Rationality
+		mi += agents[i].Intelligence
+	}
+	mp, mr, mi = mp/n, mr/n, mi/n
+	var sp, sr, si float64
+	for i := range agents {
+		sp += (agents[i].Power - mp) * (agents[i].Power - mp)
+		sr += (agents[i].Rationality - mr) * (agents[i].Rationality - mr)
+		si += (agents[i].Intelligence - mi) * (agents[i].Intelligence - mi)
+	}
+	return math.Sqrt(sp / n), math.Sqrt(sr / n), math.Sqrt(si / n)
 }
 
 // share is what fraction of the deaths were killings. It is the headline

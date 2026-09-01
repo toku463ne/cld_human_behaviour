@@ -132,6 +132,7 @@ go run ./cmd/experiment -variants baseline,nogate -csv out.csv  # 推移をCSV�
 | 指標 | 意味 |
 | --- | --- |
 | `dPower` / `dRationality` / `dIntelligence` | 平均能力が開始時からどれだけ動いたか＝**その能力への選択圧**。能力値は最後の1tickではなく末尾2割の平均で読む |
+| `sdPower` / `sdRationality` / `sdIntelligence` | 生きている個体の能力の**標準偏差＝選択圧が働く余地**。継承則が決める値で、平均（上の行）が「どちらへ押されているか」を言うのに対し、これは「まだどれだけ押せるか」を言う |
 | `killShare` | 死因に占める「殺された」の割合。食料供給を振ってもほとんど動かないので、争いの多さを見るのに使いやすい |
 | `clumping` | 同じ個体数を一様にばらまいた場合と比べて、どれだけ集まっているか。**相対値**で、1が一様という意味ではない（視界の円が世界の端で切れるぶん低めに出る）。条件間で比べる |
 | `neighbours` / `nearest` | 平均的な個体の視界内にいる他個体数／最近傍までの距離 |
@@ -162,13 +163,16 @@ go run ./cmd/snapshot -seed 1 -ticks 50000 -out docs/images/clusters-<commit>.pn
 
 # membership の生存曲線（複数シードの平均）
 go run ./cmd/snapshot -mode curve -seeds 8 -out docs/images/membership-<commit>.png
+
+# 能力の分布（開始時の分布と重ねる。継承則を変えたときの比較用）
+go run ./cmd/snapshot -mode genes -seeds 8 -ticks 20000 -out docs/images/genes-<commit>.png
 ```
 
 | オプション | 既定値 | 意味 |
 | --- | --- | --- |
-| `-mode` | `world` | `world`＝世界の1瞬間、`curve`＝membership の生存曲線 |
+| `-mode` | `world` | `world`＝世界の1瞬間、`curve`＝membership の生存曲線、`genes`＝能力の分布（灰＝開始時／青＝終了時） |
 | `-seed` | 1 | 実行のシード（`world`） |
-| `-seeds` | 8 | 平均するシード数（`curve`。1〜この数を使う） |
+| `-seeds` | 8 | まとめるシード数（`curve` / `genes`。1〜この数を使う） |
 | `-ticks` | 50000 | 描く前に進めるtick数 |
 | `-link` | 30 | クラスタの連結距離（`engine.DefaultClusterLinkDist`） |
 | `-scale` | 2 | 世界の1単位あたりの出力ピクセル数（`world`） |

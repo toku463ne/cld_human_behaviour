@@ -10,6 +10,8 @@
 //
 //	-mode world  one moment of one run, the population coloured by cluster
 //	-mode curve  the membership survival curve, averaged over several seeds
+//	-mode genes  the ability distribution at the end of a run against the one
+//	             the founders started with, pooled over several seeds
 //
 // A run is deterministic, so the same flags always produce the same image. The
 // caption strip records what they were, together with the commit the image was
@@ -66,9 +68,9 @@ var (
 )
 
 func main() {
-	mode := flag.String("mode", "world", "what to draw: world or curve")
+	mode := flag.String("mode", "world", "what to draw: world, curve or genes")
 	seed := flag.Int64("seed", 1, "seed of the run (world mode)")
-	seeds := flag.Int("seeds", 8, "how many seeds to average over (curve mode)")
+	seeds := flag.Int("seeds", 8, "how many seeds to average over (curve and genes modes)")
 	ticks := flag.Int("ticks", 50000, "ticks to run before drawing")
 	link := flag.Float64("link", engine.DefaultClusterLinkDist, "cluster linking distance")
 	scale := flag.Int("scale", 2, "output pixels per world unit (world mode)")
@@ -95,13 +97,18 @@ func main() {
 		c := w.Clusters(*link)
 		note = fmt.Sprintf("seed %d, tick %d, link %.0f, pop %d, clusters %d, largest %.0f%%",
 			*seed, w.Tick(), *link, w.Stats().Population, c.Groups, c.LargestShare*100)
+	case "genes":
+		g := measureGenes(*seeds, *ticks)
+		img = renderGenes(g, *seeds, *ticks, stamp)
+		note = fmt.Sprintf("seeds 1-%d, %d ticks, %d agents, sd %.1f/%.1f/%.1f",
+			*seeds, *ticks, g.pop, g.sdEnd[0], g.sdEnd[1], g.sdEnd[2])
 	case "curve":
 		curves := measureCurves(*seeds, *ticks, *link)
 		img = renderCurve(curves, *seeds, *ticks, *link, stamp)
 		note = fmt.Sprintf("seeds 1-%d, %d ticks, link %.0f, half-life %.1f",
 			*seeds, *ticks, *link, curves.halfLife)
 	default:
-		fail(fmt.Errorf("unknown mode %q: want world or curve", *mode))
+		fail(fmt.Errorf("unknown mode %q: want world, curve or genes", *mode))
 	}
 
 	if dir := filepath.Dir(*out); dir != "." {
