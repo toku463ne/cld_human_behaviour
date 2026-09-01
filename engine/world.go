@@ -608,8 +608,30 @@ func (w *World) releaseFromBond(a *Agent, cooldown int) {
 	a.requestDecision(TriggerBondEnded)
 }
 
-// tryBirth produces a child whose abilities are the average of its parents plus
-// a mutation. Over the generations this is what makes the population evolve.
+// inheritGene draws one ability for a child: the value of one parent or the
+// other, chosen by a coin, plus a mutation.
+//
+// The coin is thrown separately for every gene, so a child can take its power
+// from one parent and its wits from the other. There are no linkage groups and
+// no chromosome tied to sex; a gene is inherited on its own.
+//
+// This is particulate inheritance, and the reason for it is that the obvious
+// alternative does not work. Averaging the parents halves the variance of every
+// ability each generation, so within a few generations the only variation left
+// is whatever mutation has just put in, and selection has almost nothing to
+// choose between. Taking one parent's value whole keeps the variation in the
+// population instead of averaging it away.
+func (w *World) inheritGene(pa, pb float64) float64 {
+	gene := pa
+	if w.rng.Intn(2) == 1 {
+		gene = pb
+	}
+	return gene + w.rng.NormFloat64()*w.cfg.MutationStd
+}
+
+// tryBirth produces a child that takes each ability from one parent or the
+// other, plus a mutation. Over the generations this is what makes the
+// population evolve.
 func (w *World) tryBirth(pa, pb *Agent) {
 	if len(w.agents)+len(w.newborns) >= w.cfg.MaxPopulation {
 		return
@@ -621,13 +643,20 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	pa.Vitality -= share
 	pb.Vitality -= share
 
+	// Drawn into variables rather than inline, so that the order the random
+	// source is consumed in is on the page instead of in the argument
+	// evaluation order.
+	power := w.inheritGene(pa.Power, pb.Power)
+	rationality := w.inheritGene(pa.Rationality, pb.Rationality)
+	intelligence := w.inheritGene(pa.Intelligence, pb.Intelligence)
+
 	child := w.newAgent(
 		(pa.X+pb.X)/2+w.randRange(-8, 8),
 		(pa.Y+pb.Y)/2+w.randRange(-8, 8),
 		w.randomSex(),
-		(pa.Power+pb.Power)/2+w.rng.NormFloat64()*w.cfg.MutationStd,
-		(pa.Rationality+pb.Rationality)/2+w.rng.NormFloat64()*w.cfg.MutationStd,
-		(pa.Intelligence+pb.Intelligence)/2+w.rng.NormFloat64()*w.cfg.MutationStd,
+		power,
+		rationality,
+		intelligence,
 		max(pa.Generation, pb.Generation)+1,
 	)
 	child.ParentIDs = [2]int{pa.ID, pb.ID}

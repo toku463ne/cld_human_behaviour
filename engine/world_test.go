@@ -935,7 +935,7 @@ func TestBirthRecordsLineageBothWays(t *testing.T) {
 
 // --- inheritance and mutation ----------------------------------------------
 
-func TestChildInheritsParentsAverage(t *testing.T) {
+func TestChildTakesEachAbilityFromOneParentOrTheOther(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationStd = 0 // isolate inheritance from mutation
 	w, male, female := pairAboutToGiveBirth(t, cfg)
@@ -946,9 +946,11 @@ func TestChildInheritsParentsAverage(t *testing.T) {
 		t.Fatalf("births = %d, want 1", got)
 	}
 	child := findChild(t, w, male, female)
-	approx(t, child.Power, 50, 1e-9, "child power")             // (40 + 60) / 2
-	approx(t, child.Rationality, 70, 1e-9, "child rationality") // (60 + 80) / 2
-	approx(t, child.Intelligence, 40, 1e-9, "child intelligence")
+	// Whole values, not the average of the two: 50 would be the old answer for
+	// power, and it is exactly what must not appear.
+	oneOf(t, child.Power, 40, 60, "child power")
+	oneOf(t, child.Rationality, 60, 80, "child rationality")
+	oneOf(t, child.Intelligence, 30, 50, "child intelligence")
 	approx(t, child.Vitality, cfg.ChildVitality, 1e-9, "child vitality")
 	if child.Generation != 6 { // max(2, 5) + 1
 		t.Fatalf("child generation = %d, want 6", child.Generation)
@@ -963,6 +965,91 @@ func TestChildInheritsParentsAverage(t *testing.T) {
 			t.Fatalf("parent %d was not released from the bond with a rest: %+v", id, p)
 		}
 	}
+}
+
+func oneOf(t *testing.T, got, a, b float64, what string) {
+	t.Helper()
+	if math.Abs(got-a) > 1e-9 && math.Abs(got-b) > 1e-9 {
+		t.Fatalf("%s = %v, want %v or %v", what, got, a, b)
+	}
+}
+
+// Each gene is thrown for on its own: a child can have its father's power and
+// its mother's wits. Genes travelling together would show up here as children
+// that are only ever one parent or the other, all the way across.
+func TestChildDrawsEachAbilityIndependently(t *testing.T) {
+	cfg := testConfig()
+	cfg.MutationStd = 0
+	w := NewWorld(cfg)
+	pa := &Agent{Power: 10, Rationality: 10, Intelligence: 10, Vitality: 90}
+	pb := &Agent{Power: 90, Rationality: 90, Intelligence: 90, Vitality: 90}
+
+	seen := map[[3]bool]int{}
+	for i := 0; i < 400; i++ {
+		pa.Vitality, pb.Vitality = 90, 90
+		w.tryBirth(pa, pb)
+	}
+	for i := range w.newborns {
+		c := &w.newborns[i]
+		seen[[3]bool{c.Power > 50, c.Rationality > 50, c.Intelligence > 50}]++
+	}
+	// All eight combinations of three coins, none of them rare.
+	if len(seen) != 8 {
+		t.Fatalf("saw %d of the 8 combinations of parents: %v", len(seen), seen)
+	}
+	for combo, n := range seen {
+		if n < 400/8/3 {
+			t.Fatalf("combination %v turned up only %d times in 400 births: the genes are not independent", combo, n)
+		}
+	}
+}
+
+// The point of the whole change. Under blending, the spread of an ability
+// halves every generation and is gone within a handful of them; drawing whole
+// values keeps it, and all that eats away at it is drift.
+func TestParticulateInheritanceKeepsTheSpread(t *testing.T) {
+	cfg := testConfig()
+	cfg.MutationStd = 0 // no new variation: whatever survives came from the start
+	w := NewWorld(cfg)
+
+	const n = 60
+	pop := make([]Agent, 0, n)
+	for i := 0; i < n; i++ {
+		pop = append(pop, Agent{Power: 25 + float64(i)*50/float64(n-1), Vitality: 90})
+	}
+	before := spread(pop)
+
+	// Twenty generations of pairing at random, with nobody selected for.
+	for gen := 0; gen < 20; gen++ {
+		w.newborns = w.newborns[:0]
+		for len(w.newborns) < n {
+			pa := &pop[w.rng.Intn(n)]
+			pb := &pop[w.rng.Intn(n)]
+			pa.Vitality, pb.Vitality = 90, 90
+			w.tryBirth(pa, pb)
+		}
+		pop = append(pop[:0], w.newborns[:n]...)
+	}
+	after := spread(pop)
+
+	// Blending would leave 2^-20 of it. Drift in a population of 60 costs a
+	// few percent a generation, so more than half is the honest bar.
+	if after < before*0.5 {
+		t.Fatalf("spread fell from %.2f to %.2f over 20 generations: inheritance is losing variation", before, after)
+	}
+}
+
+func spread(pop []Agent) float64 {
+	var sum float64
+	for i := range pop {
+		sum += pop[i].Power
+	}
+	mean := sum / float64(len(pop))
+	var sq float64
+	for i := range pop {
+		sq += (pop[i].Power - mean) * (pop[i].Power - mean)
+	}
+	return math.Sqrt(sq / float64(len(pop)))
 }
 
 func TestMutationVariesChildAbility(t *testing.T) {
@@ -986,7 +1073,7 @@ func TestMutationVariesChildAbility(t *testing.T) {
 		}
 	}
 	if !varied {
-		t.Fatal("no child differed from the parents' average, mutation is not applied")
+		t.Fatal("no child differed from its parents, mutation is not applied")
 	}
 }
 

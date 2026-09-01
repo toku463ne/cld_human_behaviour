@@ -5,8 +5,11 @@ import (
 	"testing"
 )
 
-// The world's own fingerprint, recorded before the spatial index was wired into
-// anything and asserted ever since.
+// The world's own fingerprint, first recorded before the spatial index was
+// wired into anything and rewritten whenever a rule deliberately changes.
+//
+// Rewritten on 2026-09-01, when inheritance stopped being the average of the
+// parents (stage 7b).
 //
 // Stage 7a is a change of how the neighbours are found, not of what happens,
 // and its completion condition is that the same seed gives the same run. That
@@ -24,9 +27,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 117, births: 88, deaths: 31, kills: 27, aging: 0, fights: 5937, gen: 5, power: 48.115764, vitality: 74.201601, hunger: 38.225641},
-	{seed: 2, pop: 136, births: 111, deaths: 35, kills: 25, aging: 0, fights: 5035, gen: 5, power: 53.451186, vitality: 76.154740, hunger: 38.356151},
-	{seed: 3, pop: 124, births: 87, deaths: 23, kills: 19, aging: 0, fights: 3960, gen: 5, power: 48.348019, vitality: 75.022038, hunger: 33.914516},
+	{seed: 1, pop: 117, births: 89, deaths: 32, kills: 29, aging: 0, fights: 5200, gen: 6, power: 46.302565, vitality: 70.162332, hunger: 41.579683},
+	{seed: 2, pop: 140, births: 117, deaths: 37, kills: 26, aging: 0, fights: 4871, gen: 5, power: 57.105068, vitality: 73.176874, hunger: 38.259343},
+	{seed: 3, pop: 118, births: 84, deaths: 26, kills: 20, aging: 0, fights: 4631, gen: 4, power: 49.777323, vitality: 77.958921, hunger: 36.978248},
 }
 
 const goldenTicks = 5000
