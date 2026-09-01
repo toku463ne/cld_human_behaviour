@@ -221,7 +221,9 @@ func (a *Agent) pruneRejected(tick int) {
 // priority 2. Staying alive comes first: a hungry or battered agent does not
 // court, however attractive the candidate next to it.
 func (a *Agent) CanReproduce(cfg *Config) bool {
-	return a.Hunger < cfg.ReproHunger && a.Vitality >= cfg.ReproVitality && a.CooldownTimer <= 0
+	return a.Hunger < cfg.ReproHunger &&
+		a.Vitality >= cfg.ReproVitalityShare*a.MaxVitality(cfg) &&
+		a.CooldownTimer <= 0
 }
 
 // Food is one edible item lying in the world.

@@ -721,6 +721,7 @@ func TestPreemptionFadesWhenFoodIsPlentiful(t *testing.T) {
 			Self: SelfView{
 				ID: 1, X: 200, Y: 200, Vitality: 100, Hunger: 20,
 				Attack: 80, Rationality: 100, Intelligence: 100,
+				MaxVitality: cfg.MaxVitality, MaxSpeed: cfg.MaxSpeed,
 				FoodScarcity: scarcity},
 			Rand: w.rng}
 		victim := AgentView{ID: 2, Dist: 10, Vitality: 40, EstStrength: 20}
@@ -942,7 +943,7 @@ func TestChildTakesEachAbilityFromOneParentOrTheOther(t *testing.T) {
 	oneOf(t, child.Attack()/scale, 40, 60, "child power")
 	oneOf(t, child.Rationality()/scale, 60, 80, "child rationality")
 	oneOf(t, child.Intelligence()/scale, 30, 50, "child intelligence")
-	approx(t, child.Vitality, cfg.ChildVitality, 1e-9, "child vitality")
+	approx(t, child.Vitality, cfg.ChildVitalityShare*child.MaxVitality(&cfg), 1e-9, "child vitality")
 	if child.Generation != 6 { // max(2, 5) + 1
 		t.Fatalf("child generation = %d, want 6", child.Generation)
 	}
@@ -1059,10 +1060,14 @@ func TestParticulateInheritanceKeepsTheSpread(t *testing.T) {
 	cfg.BudgetInheritSpread = 0 // and no wandering budget on top of it
 	w := NewWorld(cfg)
 
+	// Whole genomes rather than one varying gene: fitting a child onto the
+	// budget it inherited scales every gene together, so a population that
+	// differs in one gene alone would be measuring the scaling rather than the
+	// inheritance.
 	const n = 60
 	pop := make([]Agent, 0, n)
 	for i := 0; i < n; i++ {
-		pop = append(pop, Agent{Genome: genomeOf(25+float64(i)*50/float64(n-1), 0, 0), Vitality: 90})
+		pop = append(pop, Agent{Genome: w.drawGenome(), Vitality: 90})
 	}
 	before := spread(pop)
 
@@ -1086,15 +1091,20 @@ func TestParticulateInheritanceKeepsTheSpread(t *testing.T) {
 	}
 }
 
+// spread is how varied the population is in what it spends on attack, as a
+// share of the budget. The share is the figure to watch now that the budget is
+// inherited separately: the raw value moves when the budget does.
 func spread(pop []Agent) float64 {
+	share := func(a *Agent) float64 { return a.Attack() / a.Budget() }
 	var sum float64
 	for i := range pop {
-		sum += pop[i].Attack()
+		sum += share(&pop[i])
 	}
 	mean := sum / float64(len(pop))
 	var sq float64
 	for i := range pop {
-		sq += (pop[i].Attack() - mean) * (pop[i].Attack() - mean)
+		d := share(&pop[i]) - mean
+		sq += d * d
 	}
 	return math.Sqrt(sq / float64(len(pop)))
 }
@@ -1264,7 +1274,7 @@ func courting(t *testing.T, cfg Config) (*World, int, int) {
 	make := func(x float64, sex Sex) int {
 		return w.addAgent(Agent{
 			X: x, Y: 200, Sex: sex, Genome: genomeOf(40, 100, 100),
-			Vitality: cfg.ReproVitality + 5, Hunger: 0})
+			Vitality: cfg.ReproVitalityShare*cfg.MaxVitality + 5, Hunger: 0})
 	}
 	male, female := make(200, Male), make(205, Female)
 	if f := fitness(mustAgent(t, w, male)); f >= cfg.CommitFitness {

@@ -70,7 +70,7 @@
 
 | 名前 | 既定値 | 効く先 | 意味 |
 | --- | --- | --- | --- |
-| `MaxVitality` | 100 | 身体 | 体力の上限 |
+| `MaxVitality` | 100 | 身体 | **基準となる**体力の上限。実際の上限は `MaxVitality × 体力遺伝子 / 50.5`（遺伝子が真ん中なら基準どおり） |
 | `MaxHunger` | 100 | 身体 | 空腹度の上限 |
 | `HungerRate` | 0.05 | 身体 | 1tickあたりの空腹上昇 |
 | `FoodNutrition` | 34 | 身体 | 食料1個で下がる空腹度 |
@@ -78,7 +78,7 @@
 | `StarveRate` | 0.16 | 身体 | 空腹度が最大のときの体力減少（`StarveHunger`〜`MaxHunger` で線形に立ち上がる） |
 | `SatiatedHunger` | 40 | 身体 | これを下回ると回復する |
 | `RegenRate` | 0.09 | 身体 | 満腹時の体力回復。`× (1 − 今tickのeffort)` |
-| `MaxSpeed` | 1.7 | 身体 | effort 1 のときの速度。実速度は `MaxSpeed × √effort` |
+| `MaxSpeed` | 1.7 | 身体 | **基準となる** effort 1 のときの速度。実速度は `MaxSpeed × 移動速度遺伝子 / 50.5 × √effort` |
 | `MoveCost` | 0.035 | 身体 | effort 1 での1tickの移動コスト。`MoveCost × effort`（線形） |
 | `PerceptionRadius` | 130 | 身体 | 視界。ここに入った食料・他個体が知覚に載る |
 | `GrabRadius` | 11 | 身体 | 食べる・求愛が成立する距離 |
@@ -153,11 +153,11 @@
 | 名前 | 既定値 | 効く先 | 意味 |
 | --- | --- | --- | --- |
 | `ReproHunger` | 35 | 判断 | 空腹度がこれ未満でないと求愛しない |
-| `ReproVitality` | 70 | 判断 | 体力がこれ以上でないと求愛しない |
+| `ReproVitalityShare` | 0.70 | 判断 | **自分の体力上限に対する割合**がこれ以上でないと求愛しない。絶対値にすると、体力遺伝子が低い個体は「どれだけ満たしても一生求愛できない」崖になる |
 | `PairBondDuration` | 150 | 世界 | ペア成立から出産までのtick |
 | `MatingCooldown` | 140 | 世界 | ペア解消後、次に求愛できるまでのtick |
 | `BirthVitalityCost` | 40 | 世界 | 出産で両親が折半して払う体力 |
-| `ChildVitality` | 58 | 世界 | 子の初期体力 |
+| `ChildVitalityShare` | 0.58 | 世界 | 子の初期体力（**その子の体力上限に対する割合**） |
 | `ChildHunger` | 18 | 世界 | 子の初期空腹度 |
 | `GeneBudgetMean` | 360 | 遺伝 | **初期個体だけ**が引く予算（遺伝子9本の合計）の平均。1本あたり平均40 |
 | `GeneBudgetStd` | 30 | 遺伝 | 同じく予算の標準偏差。初期個体はおよそ 270〜450 に収まる |

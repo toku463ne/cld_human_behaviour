@@ -108,7 +108,7 @@ func (c *AIController) Decide(p *Perception) Action {
 // whatever the drain, an agent with nothing left in the tank does not survive
 // the next thing that happens to it. Leaving the second one out would make
 // spending vitality look free to anybody who is not currently hungry.
-func pressure(cfg *Config, vitality, drain float64) float64 {
+func pressure(cfg *Config, maxVitality, vitality, drain float64) float64 {
 	if vitality <= 0 {
 		return 1
 	}
@@ -118,7 +118,7 @@ func pressure(cfg *Config, vitality, drain float64) float64 {
 			pDrain = 1 - ticksLeft/cfg.PlanHorizon
 		}
 	}
-	pWorn := cfg.ShockRisk * (1 - clamp(vitality/cfg.MaxVitality, 0, 1))
+	pWorn := cfg.ShockRisk * (1 - clamp(vitality/maxVitality, 0, 1))
 	return clamp(1-(1-pDrain)*(1-pWorn), 0, 1)
 }
 
@@ -130,7 +130,7 @@ func pressure(cfg *Config, vitality, drain float64) float64 {
 // than it heals recovers nothing, however well fed it is. Leaving that out
 // would let "sit still and get better" look like an answer to being attacked,
 // and nothing would ever run away.
-func recoverable(cfg *Config, vitality, hunger, incoming float64) float64 {
+func recoverable(cfg *Config, maxVitality, vitality, hunger, incoming float64) float64 {
 	if hunger >= cfg.SatiatedHunger {
 		return 0
 	}
@@ -139,7 +139,7 @@ func recoverable(cfg *Config, vitality, hunger, incoming float64) float64 {
 		return 0
 	}
 	ticks := (cfg.SatiatedHunger - hunger) / cfg.HungerRate
-	return math.Max(0, math.Min(cfg.MaxVitality-vitality, net*ticks))
+	return math.Max(0, math.Min(maxVitality-vitality, net*ticks))
 }
 
 // hungerDrain is the vitality lost per tick at a given hunger level. It is
@@ -161,8 +161,11 @@ func projectedDrain(cfg *Config, hunger float64) float64 {
 	return hungerDrain(cfg, hunger+cfg.HungerRate*cfg.PlanHorizon*0.5)
 }
 
-func speedAt(cfg *Config, effort float64) float64 {
-	return cfg.MaxSpeed * math.Sqrt(effort)
+// speedAt is how fast an agent of the given top speed moves at this effort.
+// Speed grows with the square root of the effort while the cost grows with the
+// effort itself, so hurrying is expensive per unit of distance.
+func speedAt(maxSpeed, effort float64) float64 {
+	return maxSpeed * math.Sqrt(effort)
 }
 
 func moveCostAt(cfg *Config, effort float64) float64 {
@@ -191,9 +194,10 @@ func (c *AIController) addRest(p *Perception) {
 	s := &p.Self
 	drain := projectedDrain(cfg, s.Hunger)
 	incoming := c.incoming(p)
-	now := pressure(cfg, s.Vitality, drain+incoming)
+	now := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
 	// Whatever is hitting the agent goes on hitting it while it sits there.
-	after := pressure(cfg, s.Vitality+recoverable(cfg, s.Vitality, s.Hunger, incoming), drain+incoming)
+	after := pressure(cfg, s.MaxVitality,
+		s.Vitality+recoverable(cfg, s.MaxVitality, s.Vitality, s.Hunger, incoming), drain+incoming)
 	c.add(Action{Kind: ActRest}, Utility{
 		Life: Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
 	})
@@ -230,7 +234,7 @@ func (c *AIController) addFood(p *Perception) {
 	s := &p.Self
 	drain := projectedDrain(cfg, s.Hunger)
 	incoming := c.incoming(p)
-	now := pressure(cfg, s.Vitality, drain+incoming)
+	now := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
 
 	for i := range p.Foods {
 		if i >= maxFoodOptions {
@@ -245,12 +249,12 @@ func (c *AIController) addFood(p *Perception) {
 		}
 
 		for _, effort := range effortLevels {
-			ticks := f.Dist/speedAt(cfg, effort) + 1
+			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCostAt(cfg, effort) * ticks
 			hungerAfter := math.Max(0, s.Hunger+cfg.HungerRate*ticks-cfg.FoodNutrition)
 			vitAfter := s.Vitality - cost
-			vitAfter += recoverable(cfg, vitAfter, hungerAfter, incoming)
-			after := pressure(cfg, vitAfter, projectedDrain(cfg, hungerAfter)+incoming)
+			vitAfter += recoverable(cfg, s.MaxVitality, vitAfter, hungerAfter, incoming)
+			after := pressure(cfg, s.MaxVitality, vitAfter, projectedDrain(cfg, hungerAfter)+incoming)
 
 			meal := (now - after) * cfg.LifeValue
 			c.add(Action{Kind: ActEat, TargetID: f.ID, Effort: effort}, Utility{
@@ -320,14 +324,14 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		// target is cheap to finish, which is what makes hitting somebody who
 		// is already hurt the best value there is.
 		exchange := math.Min(o.Vitality/math.Max(mine, 1e-9), cfg.SkirmishTicks)
-		travel := o.Dist / speedAt(cfg, effort)
+		travel := o.Dist / speedAt(s.MaxSpeed, effort)
 		ticks := exchange + travel
 
 		cost := exchange*(theirs+cfg.AttackCost*effort) + travel*moveCostAt(cfg, effort)
 
 		drain := projectedDrain(cfg, s.Hunger+cfg.HungerRate*ticks)
-		now := pressure(cfg, s.Vitality, projectedDrain(cfg, s.Hunger)+c.incoming(p))
-		after := pressure(cfg, s.Vitality-cost, drain)
+		now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.Hunger)+c.incoming(p))
+		after := pressure(cfg, s.MaxVitality, s.Vitality-cost, drain)
 		lifeTerm := (now - after) * cfg.LifeValue
 
 		// The meal in front of them. Driving this one off wins the race for
@@ -371,7 +375,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 
 	drain := projectedDrain(cfg, s.Hunger)
 	incoming := damagePerTick(cfg, o.EstStrength, 1)
-	staying := pressure(cfg, s.Vitality, drain+incoming)
+	staying := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
 
 	// Breaking away is not free: for a while the agent is still in reach and
 	// is the one not hitting back, which is the cheapest thing there is to
@@ -380,7 +384,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	// is about to kill the agent, and loses whenever it is not.
 	cost := moveCostAt(cfg, cfg.FleeEffort)*fleeExposureTicks + incoming*fleeExposureTicks*0.4
 	pEscape := clamp(s.Vitality/(s.Vitality+o.Vitality+1e-9), 0.15, 0.9)
-	fled := pressure(cfg, s.Vitality-cost, drain)
+	fled := pressure(cfg, s.MaxVitality, s.Vitality-cost, drain)
 
 	c.add(Action{Kind: ActFlee, TargetID: o.ID, Effort: cfg.FleeEffort}, Utility{
 		Life:         Goal{Value: (staying - fled) * cfg.LifeValue, Chance: pEscape},
@@ -398,7 +402,7 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	const pAccept = 0.6
 
 	effort := 0.6
-	ticks := o.Dist/speedAt(cfg, effort) + 1
+	ticks := o.Dist/speedAt(p.Self.MaxSpeed, effort) + 1
 	cost := moveCostAt(cfg, effort) * ticks
 
 	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, Utility{

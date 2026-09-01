@@ -17,6 +17,13 @@ type SelfView struct {
 	Rationality  float64
 	Intelligence float64
 
+	// What this agent's body can hold and how fast it can move it: the
+	// world's reference figures scaled by its own genes. The controller needs
+	// them because "half full" and "how long to get there" are questions
+	// about this body, not about an average one.
+	MaxVitality float64
+	MaxSpeed    float64
+
 	// CanReproduce is false while the agent still has to look after itself.
 	CanReproduce bool
 
@@ -113,6 +120,8 @@ func (w *World) perceive(a *Agent) *Perception {
 		Attack:       a.Attack(),
 		Rationality:  a.Rationality(),
 		Intelligence: a.Intelligence(),
+		MaxVitality:  a.MaxVitality(&w.cfg),
+		MaxSpeed:     a.MaxSpeed(&w.cfg),
 		CanReproduce: a.CanReproduce(&w.cfg),
 		AttackerID:   a.attackerID,
 	}

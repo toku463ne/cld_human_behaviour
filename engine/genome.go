@@ -90,6 +90,21 @@ func (a *Agent) Attack() float64       { return a.Gene(GeneAttack) }
 func (a *Agent) Rationality() float64  { return a.Gene(GeneRationality) }
 func (a *Agent) Intelligence() float64 { return a.Gene(GeneIntelligence) }
 
+// MaxVitality and MaxSpeed are the world's reference figures scaled by what
+// this agent spent on being big and on being quick. A gene at the middle of
+// the range buys exactly the reference, so an average agent is the agent the
+// rest of the parameters were tuned around.
+//
+// They are the two places the budget bites hardest: a body that holds more
+// vitality is a body that is slower, unless its budget stretches to both.
+func (a *Agent) MaxVitality(cfg *Config) float64 {
+	return cfg.MaxVitality * a.Gene(GeneVitality) / midAbility
+}
+
+func (a *Agent) MaxSpeed(cfg *Config) float64 {
+	return cfg.MaxSpeed * a.Gene(GeneSpeed) / midAbility
+}
+
 // Budget is what this agent's genome adds up to: the total it has to spend
 // across everything it could be.
 func (a *Agent) Budget() float64 {
@@ -103,13 +118,14 @@ func (a *Agent) Budget() float64 {
 // newGenome returns a genome of the standard length with every gene at zero.
 func newGenome() []float64 { return make([]float64, NumGenes) }
 
-// genomeOf builds a genome from the three abilities that have rules today,
-// leaving the rest at the least a gene may hold. It is what the world used to
-// hold as three fields.
+// genomeOf builds a genome from the three abilities the older rules were
+// written around, leaving every other gene at the middle of its range. It is
+// what the world used to hold as three fields, and what a test that is not
+// asking about the other genes wants: average in everything it did not name.
 func genomeOf(attack, rationality, intelligence float64) []float64 {
 	g := newGenome()
 	for i := range g {
-		g[i] = MinAbility
+		g[i] = midAbility
 	}
 	g[GeneAttack] = attack
 	g[GeneRationality] = rationality

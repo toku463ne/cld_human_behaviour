@@ -548,7 +548,7 @@ func (w *World) metabolise() {
 		} else if a.Hunger <= w.cfg.SatiatedHunger {
 			a.Vitality += w.cfg.RegenRate * (1 - clamp(a.effortSpent, 0, 1))
 		}
-		a.Vitality = math.Min(a.Vitality, w.cfg.MaxVitality)
+		a.Vitality = math.Min(a.Vitality, a.MaxVitality(&w.cfg))
 
 		w.spendLifespan(a)
 		if !a.Alive {
@@ -802,7 +802,7 @@ func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 		return
 	}
 	effort = clamp(effort, 0, 1)
-	speed := speedAt(&w.cfg, effort)
+	speed := speedAt(a.MaxSpeed(&w.cfg), effort)
 	a.X += dx / d * speed
 	a.Y += dy / d * speed
 	a.VX, a.VY = dx/d, dy/d
@@ -837,18 +837,20 @@ func (w *World) newAgent(x, y float64, sex Sex, genome []float64, generation int
 	for i := range genome {
 		genome[i] = clamp(genome[i], MinAbility, MaxAbility)
 	}
-	return Agent{
+	a := Agent{
 		X: x, Y: y,
 		VX:         w.randRange(-0.3, 0.3),
 		VY:         w.randRange(-0.3, 0.3),
 		Sex:        sex,
 		Genome:     genome,
-		Vitality:   w.cfg.ChildVitality,
+		Vitality:   0, // filled in below, once the genome says how big it is
 		Hunger:     w.cfg.ChildHunger,
 		Generation: generation,
 		Alive:      true,
 		Lifespan:   w.cfg.MaxLifespan,
 	}
+	a.Vitality = w.cfg.ChildVitalityShare * a.MaxVitality(&w.cfg)
+	return a
 }
 
 func (w *World) randomAgent() Agent {
@@ -859,7 +861,7 @@ func (w *World) randomAgent() Agent {
 		w.drawGenome(),
 		0,
 	)
-	a.Vitality = w.randRange(w.cfg.MaxVitality*0.6, w.cfg.MaxVitality)
+	a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))
 	a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
 	// Founders are spread across a range of remaining lifespan too, the same
 	// way they are already spread across vitality and hunger, so the first
@@ -875,14 +877,23 @@ func (w *World) addAgent(a Agent) int {
 	a.Alive = true
 	a.requestDecision(TriggerSpawned)
 	if a.Vitality <= 0 {
-		a.Vitality = w.cfg.MaxVitality
+		a.Vitality = a.MaxVitality(&w.cfg)
 	}
 	if a.Lifespan <= 0 {
 		a.Lifespan = w.cfg.MaxLifespan
 	}
 	// Every agent owns its genome: a literal built by a test may not have one
 	// at all, and two agents must never end up sharing a backing array.
+	// An agent arriving without a genome at all - a test literal, mostly - is
+	// an average one rather than a creature with nothing in it, which with a
+	// vitality gene of zero would be a body unable to hold any vitality.
+	bare := len(a.Genome) == 0
 	a.Genome = cloneGenome(a.Genome)
+	if bare {
+		for i := range a.Genome {
+			a.Genome[i] = midAbility
+		}
+	}
 	w.index[a.ID] = len(w.agents)
 	w.agents = append(w.agents, a)
 	w.invalidateIndex()

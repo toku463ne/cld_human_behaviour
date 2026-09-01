@@ -140,13 +140,19 @@ type Config struct {
 	ChoiceNoise         float64 // spread of the error a mindless agent makes scoring an option
 
 	// --- reproduction ---
-	ReproHunger       float64 // an agent only courts below this hunger
-	ReproVitality     float64 // ... and above this vitality
-	PairBondDuration  int     // ticks a pair stays together before the child is born
-	MatingCooldown    int     // ticks of rest after a bond ends
-	BirthVitalityCost float64 // vitality the parents share to produce a child
-	ChildVitality     float64
-	ChildHunger       float64
+	//
+	// The two vitality figures are shares of the agent's own capacity, not
+	// absolute amounts. Once the vitality gene decides how much a body can
+	// hold, an absolute threshold would be a cliff rather than a cost: an
+	// agent whose capacity fell below it could never court at all, however
+	// well fed, and the gene would stop being a trade and start being a gate.
+	ReproHunger        float64 // an agent only courts below this hunger
+	ReproVitalityShare float64 // ... and above this share of its own capacity
+	PairBondDuration   int     // ticks a pair stays together before the child is born
+	MatingCooldown     int     // ticks of rest after a bond ends
+	BirthVitalityCost  float64 // vitality the parents share to produce a child
+	ChildVitalityShare float64 // vitality a newborn starts with, as a share of its capacity
+	ChildHunger        float64
 	// The budget an agent is made of, and how a founder splits it.
 	//
 	// Everything heritable is paid for out of one total, so being better at
@@ -284,11 +290,11 @@ func DefaultConfig() Config {
 		ChoiceNoise:         20,
 
 		ReproHunger:         35,
-		ReproVitality:       70,
+		ReproVitalityShare:  0.70,
 		PairBondDuration:    150,
 		MatingCooldown:      140,
 		BirthVitalityCost:   40,
-		ChildVitality:       58,
+		ChildVitalityShare:  0.58,
 		ChildHunger:         18,
 		GeneBudgetMean:      360, // nine genes, so a mean of 40 each
 		GeneBudgetStd:       30,

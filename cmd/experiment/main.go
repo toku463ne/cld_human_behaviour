@@ -112,6 +112,27 @@ var variants = []variant{
 		about: "budget inherited with a quarter of the usual wobble",
 		apply: func(c *engine.Config) { c.BudgetInheritSpread = 7.5 },
 	},
+	// The budget pushes attack to the ceiling, which doubles the damage a
+	// typical blow does compared with the world these constants were tuned
+	// in. These arms ask what that is worth undoing.
+	// How much of a body there is to go round. The starting point of 360 lets
+	// an agent hold the ceiling in attack and still have a working body, which
+	// is what makes attack the only purchase worth making.
+	{
+		name:  "leanbudget",
+		about: "GeneBudgetMean 270 instead of 360: thirty a gene rather than forty",
+		apply: func(c *engine.Config) { c.GeneBudgetMean = 270 },
+	},
+	{
+		name:  "fatbudget",
+		about: "GeneBudgetMean 450",
+		apply: func(c *engine.Config) { c.GeneBudgetMean = 450 },
+	},
+	{
+		name:  "softblows",
+		about: "AttackDamage cut to 0.72, so a typical blow lands as it did before the budget",
+		apply: func(c *engine.Config) { c.AttackDamage = 0.72 },
+	},
 	{
 		name:  "nomutation",
 		about: "no new variation at all: selection works on what the founders had",
