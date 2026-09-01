@@ -203,6 +203,16 @@ func (c *AIController) addRest(p *Perception) {
 	})
 }
 
+// mealValue is what one item of food is worth to this agent right now, in the
+// same units the food options are scored in: how much less likely it makes
+// dying inside the planning horizon.
+func mealValue(cfg *Config, s *SelfView, incoming float64) float64 {
+	now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
+	fed := math.Max(0, s.Hunger-cfg.FoodNutrition)
+	after := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, fed)+incoming)
+	return (now - after) * cfg.LifeValue
+}
+
 // addExplore scores wandering off to look for something to eat. It is worth
 // something in proportion to how hungry the agent is and nothing else:
 // wandering does not mend a wound and it does not shake off an attacker, so
@@ -289,7 +299,7 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 			if o.AttackingMe {
 				c.addFlee(p, o)
 			}
-			if s.CanReproduce && o.Sex != s.Sex && !o.Paired && !o.Rejected {
+			if s.CanReproduce && o.Species == s.Species && o.Sex != s.Sex && !o.Paired && !o.Rejected {
 				c.addCourt(p, o)
 			}
 		}
@@ -340,6 +350,21 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		stake := Goal{}
 		if c.bestFoodRival == o.ID {
 			stake = Goal{Value: c.bestFoodGap, Chance: pWin}
+		}
+
+		// And the meal it would itself become. A creature of a kind this one
+		// eats is worth killing for the carcass, which is what makes hunting
+		// something other than a fight - and what makes a large animal worth
+		// more than a small one to whoever brings it down.
+		//
+		// It goes in as one meal rather than the whole carcass on purpose: an
+		// agent can only eat so much before it is full, and the rest feeds
+		// whoever else took part. That is the arithmetic that makes a big
+		// animal worth taking on together and not alone.
+		if o.Prey && o.Meat >= 1 && s.Hunger > 0 {
+			bite := math.Min(o.Meat, 1) * mealValue(cfg, s, c.incoming(p))
+			pKill := clamp(exchange*mine/math.Max(o.Vitality, 1e-9), 0, 1) * pWin
+			stake = Goal{Value: stake.Value + bite, Chance: math.Max(stake.Chance, pKill)}
 		}
 
 		// Removing somebody who will be eating the same food later on. Only an

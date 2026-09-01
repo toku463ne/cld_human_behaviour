@@ -16,6 +16,7 @@ func testConfig() Config {
 	cfg.Seed = 12345
 	cfg.Width, cfg.Height = 400, 400
 	cfg.InitialPopulation = 0
+	cfg.InitialEnemies = 0
 	cfg.InitialFoodItems = 0
 	cfg.FoodSpawnRate = 0
 	return cfg
@@ -1514,8 +1515,21 @@ func TestDefaultWorldSustainsItself(t *testing.T) {
 		if s.Population > cfg.MaxPopulation {
 			t.Fatalf("population %d exceeded the cap %d at tick %d", s.Population, cfg.MaxPopulation, s.Tick)
 		}
-		if len(w.Foods()) > cfg.MaxFoodItems {
-			t.Fatalf("food items %d exceeded the cap %d at tick %d", len(w.Foods()), cfg.MaxFoodItems, s.Tick)
+		// The two kinds have separate allowances: plants grow up to one, and
+		// carcasses pile up to the other.
+		plants, meat := 0, 0
+		for _, f := range w.Foods() {
+			if f.Kind == FoodMeat {
+				meat++
+			} else {
+				plants++
+			}
+		}
+		if plants > cfg.MaxFoodItems {
+			t.Fatalf("plants %d exceeded the cap %d at tick %d", plants, cfg.MaxFoodItems, s.Tick)
+		}
+		if meat > cfg.MaxMeatItems {
+			t.Fatalf("meat %d exceeded the cap %d at tick %d", meat, cfg.MaxMeatItems, s.Tick)
 		}
 	}
 

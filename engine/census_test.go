@@ -178,7 +178,7 @@ func TestCensusRarestIsTheSmallestPopulation(t *testing.T) {
 }
 
 func TestCensusOfAWorldWithNobodyInIt(t *testing.T) {
-	w := NewWorld(testConfig())
+	w := NewWorld(testConfig()) // no founders of either species
 	c := NewCensusTracker(1000)
 	c.Observe(w)
 
@@ -201,9 +201,9 @@ func TestCensusWithNoReadings(t *testing.T) {
 	}
 }
 
-// The default world holds one species, so its census is the human population's
-// own swing: the baseline the two species world of stage 11 is compared with.
-func TestCensusOfTheDefaultWorldIsOneSpecies(t *testing.T) {
+// The default world holds humans and enemies, and the census is what says
+// whether both are still there. Criterion A is asked of this table.
+func TestCensusOfTheDefaultWorldHoldsBothSpecies(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Seed = 7
 	w := NewWorld(cfg)
@@ -216,15 +216,19 @@ func TestCensusOfTheDefaultWorldIsOneSpecies(t *testing.T) {
 	}
 
 	got := c.Result()
-	if len(got.Species) != 1 || got.Species[0].Species != SpeciesHuman {
-		t.Fatalf("species = %v, want humans alone", got.Species)
+	if len(got.Species) != 2 {
+		t.Fatalf("species = %v, want humans and enemies", got.Species)
 	}
-	h := got.Species[0]
-	if h.Extinct || h.Min == 0 {
-		t.Fatalf("the default world died out: min %d over the window", h.Min)
+	for _, e := range got.Species {
+		if e.Extinct || e.Min == 0 {
+			t.Fatalf("%v died out inside %d ticks: min %d over the window", e.Species, 4000, e.Min)
+		}
+		if e.Mean <= 0 || e.Trough <= 0 || e.Trough > 1 {
+			t.Fatalf("%v: mean %.1f trough %.2f, want a positive mean and a trough in (0, 1]",
+				e.Species, e.Mean, e.Trough)
+		}
 	}
-	approx(t, h.Share, 1, 1e-9, "share of the only species")
-	if h.Mean <= 0 || h.Trough <= 0 || h.Trough > 1 {
-		t.Fatalf("mean %.1f trough %.2f: want a positive mean and a trough in (0, 1]", h.Mean, h.Trough)
+	if h := speciesEntry(t, got, SpeciesHuman); h.Share < 0.5 {
+		t.Fatalf("humans are %.2f of the population: the enemies have taken over", h.Share)
 	}
 }

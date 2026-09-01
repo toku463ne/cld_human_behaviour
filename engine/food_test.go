@@ -127,3 +127,92 @@ func TestUneatenMeatSpoils(t *testing.T) {
 		t.Fatalf("food left after the meat spoiled: %v", w.Foods())
 	}
 }
+
+// An enemy is the same creature run by the same rules: what differs is the
+// range its budget comes from and what it can digest.
+func TestAnEnemyIsANodeWithADifferentBudgetAndDiet(t *testing.T) {
+	cfg := testConfig()
+	cfg.InitialPopulation = 200
+	cfg.InitialEnemies = 200
+	w := NewWorld(cfg)
+
+	var human, enemy []float64
+	for _, a := range w.Agents() {
+		if a.Species == SpeciesEnemy {
+			enemy = append(enemy, a.Budget())
+		} else {
+			human = append(human, a.Budget())
+		}
+	}
+	if len(human) != 200 || len(enemy) != 200 {
+		t.Fatalf("founded %d humans and %d enemies, want 200 of each", len(human), len(enemy))
+	}
+	mean := func(xs []float64) float64 {
+		var s float64
+		for _, x := range xs {
+			s += x
+		}
+		return s / float64(len(xs))
+	}
+	if mean(enemy) <= mean(human) {
+		t.Fatalf("enemies average %.0f of budget against the humans' %.0f: they are not the larger kind",
+			mean(enemy), mean(human))
+	}
+	if !eatsPlants(SpeciesHuman) || eatsPlants(SpeciesEnemy) {
+		t.Fatal("the diets are the wrong way round: enemies must have to hunt")
+	}
+}
+
+// Prey is worth killing for what it leaves. Nothing says "hunt"; the carcass
+// simply turns up in the same stake term as a contested meal.
+func TestPreyIsWorthKillingForTheCarcass(t *testing.T) {
+	cfg := testConfig()
+	cfg.MaxPopulation = 100
+	w := NewWorld(cfg)
+	hunter := w.addAgent(Agent{X: 200, Y: 200, Vitality: 90, Hunger: 80,
+		Genome: filledGenome(60), Species: SpeciesEnemy})
+	prey := w.addAgent(Agent{X: 215, Y: 200, Vitality: 30, Genome: filledGenome(40)})
+
+	p := w.perceive(mustAgent(t, w, hunter))
+	var view *AgentView
+	for i := range p.Others {
+		if p.Others[i].ID == prey {
+			view = &p.Others[i]
+		}
+	}
+	if view == nil {
+		t.Fatal("the hunter cannot see the prey")
+	}
+	if !view.Prey || view.Meat <= 0 {
+		t.Fatalf("prey %v meat %.1f: a creature of another kind is not being seen as food", view.Prey, view.Meat)
+	}
+
+	// The same situation between two of a kind is not a hunt.
+	sibling := w.addAgent(Agent{X: 185, Y: 200, Vitality: 30,
+		Genome: filledGenome(40), Species: SpeciesEnemy})
+	p = w.perceive(mustAgent(t, w, hunter))
+	for i := range p.Others {
+		if p.Others[i].ID == sibling && p.Others[i].Prey {
+			t.Fatal("an enemy sees its own kind as food")
+		}
+	}
+}
+
+// Courting stops at the species boundary, on both sides of the decision.
+func TestNobodyCourtsAnotherSpecies(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	man := w.addAgent(Agent{X: 200, Y: 200, Sex: Male, Hunger: 0,
+		Genome: genomeOf(40, 100, 100)})
+	w.agentByID(man).Vitality = w.agentByID(man).MaxVitality(&cfg)
+	she := w.addAgent(Agent{X: 205, Y: 200, Sex: Female, Hunger: 0,
+		Genome: genomeOf(40, 100, 100), Species: SpeciesEnemy})
+	w.agentByID(she).Vitality = w.agentByID(she).MaxVitality(&cfg)
+
+	for i := 0; i < 400; i++ {
+		w.Step()
+		if mustAgent(t, w, man).PartnerID != 0 || mustAgent(t, w, she).PartnerID != 0 {
+			t.Fatal("a pair formed across the species boundary")
+		}
+	}
+}

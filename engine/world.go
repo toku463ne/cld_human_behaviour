@@ -142,7 +142,10 @@ func NewWorld(cfg Config) *World {
 		nextFoodID:  1,
 	}
 	for i := 0; i < cfg.InitialPopulation; i++ {
-		w.addAgent(w.randomAgent())
+		w.addAgent(w.randomAgent(SpeciesHuman))
+	}
+	for i := 0; i < cfg.InitialEnemies; i++ {
+		w.addAgent(w.randomAgent(SpeciesEnemy))
 	}
 	for i := 0; i < cfg.InitialFoodItems; i++ {
 		w.spawnFood()
@@ -235,6 +238,7 @@ func (w *World) Step() {
 	w.tick++
 	w.clearSpoiled()
 	w.spawnFoodOfTick()
+	w.spawnEnemyOfTick()
 
 	for i := range w.agents {
 		a := &w.agents[i]
@@ -435,7 +439,7 @@ func (w *World) perform(a *Agent) {
 // pair only forms when both agree.
 func (w *World) court(a *Agent) {
 	o := w.agentByID(a.Action.TargetID)
-	if o == nil || !o.Alive || o.PartnerID != 0 || o.Sex == a.Sex {
+	if o == nil || !o.Alive || o.PartnerID != 0 || o.Sex == a.Sex || o.Species != a.Species {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}
@@ -720,6 +724,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 		genome,
 		max(pa.Generation, pb.Generation)+1,
 	)
+	child.Species = pa.Species
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
 
 	if child.Generation > w.maxGeneration {
@@ -818,7 +823,8 @@ func (w *World) strikingCandidateInSight(a *Agent) bool {
 	w.nearScratch = w.spatialIndex().appendAgentsNear(w.nearScratch[:0], a.X, a.Y, r)
 	for _, i := range w.nearScratch {
 		o := &w.agents[i]
-		if !o.Alive || o.ID == a.ID || o.Sex == a.Sex || o.PartnerID != 0 || a.isRejected(o.ID) {
+		if !o.Alive || o.ID == a.ID || o.Species != a.Species || o.Sex == a.Sex ||
+			o.PartnerID != 0 || a.isRejected(o.ID) {
 			continue
 		}
 		if dist2(a.X, a.Y, o.X, o.Y) > r*r {
@@ -913,14 +919,15 @@ func (w *World) newAgent(x, y float64, sex Sex, genome []float64, generation int
 	return a
 }
 
-func (w *World) randomAgent() Agent {
+func (w *World) randomAgent(species Species) Agent {
 	a := w.newAgent(
 		w.randRange(20, w.cfg.Width-20),
 		w.randRange(20, w.cfg.Height-20),
 		w.randomSex(),
-		w.drawGenome(),
+		w.drawGenomeFor(species),
 		0,
 	)
+	a.Species = species
 	a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))
 	a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
 	// Founders are spread across a range of remaining lifespan too, the same
@@ -1015,6 +1022,25 @@ func (w *World) spawnFoodOfTick() {
 	}
 }
 
+// spawnEnemyOfTick lets one enemy in from outside the map now and then. See
+// Config.EnemySpawnTicks for why the world does this rather than leaving the
+// predators entirely to their own breeding.
+func (w *World) spawnEnemyOfTick() {
+	if w.cfg.EnemySpawnTicks <= 0 || w.tick%w.cfg.EnemySpawnTicks != 0 {
+		return
+	}
+	n := 0
+	for i := range w.agents {
+		if w.agents[i].Species == SpeciesEnemy {
+			n++
+		}
+	}
+	if n >= w.cfg.MaxEnemies {
+		return
+	}
+	w.addAgent(w.randomAgent(SpeciesEnemy))
+}
+
 func (w *World) spawnFood() {
 	// Checked before drawing the position so that a full world does not consume
 	// randomness and shift the rest of the run.
@@ -1024,13 +1050,29 @@ func (w *World) spawnFood() {
 	w.addFood(w.randRange(10, w.cfg.Width-10), w.randRange(10, w.cfg.Height-10))
 }
 
-// addFood puts a food item at the given position and returns its ID, or 0 when
-// the world already holds as many items as it may.
+// addFood grows a plant at the given position and returns its ID, or 0 when
+// the world already holds as many plants as it may.
 func (w *World) addFood(x, y float64) int {
-	if len(w.foods) >= w.cfg.MaxFoodItems {
+	if w.countKind(FoodPlant) >= w.cfg.MaxFoodItems {
 		return 0
 	}
-	f := Food{ID: w.nextFoodID, X: x, Y: y}
+	return w.putFood(Food{X: x, Y: y, Kind: FoodPlant})
+}
+
+// countKind is how many items of one kind are lying about. The two kinds have
+// separate allowances, so this is asked before either is added.
+func (w *World) countKind(kind FoodKind) int {
+	n := 0
+	for i := range w.foods {
+		if w.foods[i].Kind == kind {
+			n++
+		}
+	}
+	return n
+}
+
+func (w *World) putFood(f Food) int {
+	f.ID = w.nextFoodID
 	w.nextFoodID++
 	w.foodIndex[f.ID] = len(w.foods)
 	w.foods = append(w.foods, f)

@@ -16,7 +16,8 @@ type Config struct {
 	InitialPopulation int
 	InitialFoodItems  int
 	MaxPopulation     int
-	MaxFoodItems      int
+	MaxFoodItems      int // plants only; carcasses are capped separately
+	MaxMeatItems      int
 	FoodSpawnRate     float64 // expected number of food items spawned per tick
 
 	// --- state model: vitality, hunger and food ---
@@ -93,6 +94,12 @@ type Config struct {
 	// for food and crowds the plants out - which is what happened the first
 	// time carcasses went in, and cost a fifth of the population.
 	MeatSpoilTicks int
+
+	// Carcasses are counted against MaxMeatItems rather than against the
+	// world's allowance for plants. Sharing one allowance meant a spell of
+	// heavy dying filled it with meat, no plant could grow, and the species
+	// that lives on plants starved - a predator killing its prey by taking up
+	// the room its food grows in.
 
 	// --- combat ---
 	//
@@ -194,6 +201,32 @@ type Config struct {
 	GeneBudgetStd  float64
 	GeneInitAlpha  float64
 
+	// What an enemy is made of. It is the same kind of creature run by the
+	// same rules; the difference between the species is the range its budget
+	// is drawn from, which is what PLAN.md means by expressing a species as a
+	// range of parameters rather than as a second sort of thing.
+	//
+	// A larger budget makes an enemy harder to bring down and worth more when
+	// it is: the carcass scales with the budget. That is the whole of what
+	// makes hunting one worth doing together.
+	InitialEnemies  int
+	EnemyBudgetMean float64
+	EnemyBudgetStd  float64
+
+	// Enemies also arrive from outside the map, at one per EnemySpawnTicks
+	// while there are fewer than MaxEnemies of them.
+	//
+	// They are the same creature as any other and they do breed, but a
+	// predator population left entirely to itself in a world this small
+	// overshoots its prey and starves: measured, forty enemies took the
+	// humans from 60 to 17 and were themselves gone by tick 4500. The arrival
+	// rate is the same device the food spawn already is - the world's edge
+	// standing in for the rest of the world - and it is what keeps the arena
+	// there to be measured. Setting it to zero leaves the predators entirely
+	// on their own.
+	EnemySpawnTicks int
+	MaxEnemies      int
+
 	// What a child's budget is made of. It comes from one parent or the
 	// other, never the average of the two: averaging halves the variance of
 	// the budget every generation, which is the thing blending inheritance was
@@ -269,6 +302,7 @@ func DefaultConfig() Config {
 		InitialFoodItems:  70,
 		MaxPopulation:     240,
 		MaxFoodItems:      110,
+		MaxMeatItems:      140,
 		// Food is deliberately the thing in short supply. One agent eats an
 		// item roughly every FoodNutrition/HungerRate ticks, so this rate feeds
 		// a population of about two hundred and no more: past that, agents are
@@ -354,6 +388,11 @@ func DefaultConfig() Config {
 		GeneBudgetMean:      360, // nine genes, so a mean of 40 each
 		GeneBudgetStd:       30,
 		GeneInitAlpha:       0.8,
+		InitialEnemies:      10,
+		EnemyBudgetMean:     520, // over the human 360, so a carcass feeds several
+		EnemyBudgetStd:      90,
+		EnemySpawnTicks:     500,
+		MaxEnemies:          12,
 		BudgetInheritSpread: 30,
 		BudgetHeritability:  1,
 		GeniusRate:          0.017,

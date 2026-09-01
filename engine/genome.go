@@ -163,9 +163,19 @@ func cloneGenome(src []float64) []float64 {
 // keeping them apart is what lets the experiment runner ask about one without
 // the other, and what makes "share of the budget" the figure to compare
 // between agents instead of the raw gene.
-func (w *World) drawGenome() []float64 {
-	budget := w.cfg.GeneBudgetMean + w.rng.NormFloat64()*w.cfg.GeneBudgetStd
+func (w *World) drawGenome() []float64 { return w.drawGenomeFor(SpeciesHuman) }
+
+// drawGenomeFor draws a founder of the given species. The species decides only
+// the range the budget comes from; the allocation is drawn the same way for
+// everybody, and every rule downstream reads the same genes.
+func (w *World) drawGenomeFor(species Species) []float64 {
+	mean, std := w.cfg.GeneBudgetMean, w.cfg.GeneBudgetStd
+	if species == SpeciesEnemy {
+		mean, std = w.cfg.EnemyBudgetMean, w.cfg.EnemyBudgetStd
+	}
+	budget := mean + w.rng.NormFloat64()*std
 	g := w.dirichlet(NumGenes, w.cfg.GeneInitAlpha)
+
 	for i := range g {
 		g[i] *= budget
 	}

@@ -41,11 +41,21 @@ func (s Sex) String() string {
 // will have to say so.
 type Species uint8
 
-const SpeciesHuman Species = 0
+const (
+	SpeciesHuman Species = 0
+
+	// SpeciesEnemy is the other kind of creature: bigger, living on meat, and
+	// run by exactly the same rules. It is not a special case in the engine -
+	// only the range its budget is drawn from and what it can digest differ.
+	SpeciesEnemy Species = 1
+)
 
 func (s Species) String() string {
-	if s == SpeciesHuman {
+	switch s {
+	case SpeciesHuman:
 		return "human"
+	case SpeciesEnemy:
+		return "enemy"
 	}
 	return "species " + strconv.Itoa(int(s))
 }

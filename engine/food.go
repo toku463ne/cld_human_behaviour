@@ -43,6 +43,9 @@ func (k FoodKind) String() string {
 func eatsPlants(s Species) bool { return s == SpeciesHuman }
 func eatsMeat(s Species) bool   { return true }
 
+// A species that lives on meat alone has to hunt. That is what makes the
+// enemy a reason for anything rather than scenery.
+
 // canEat says whether this agent may take this item, at this moment.
 func (w *World) canEat(a *Agent, f *Food) bool {
 	switch f.Kind {
@@ -89,18 +92,28 @@ func (w *World) dropMeat(a *Agent) {
 	if items <= 0 {
 		return
 	}
+	// Only those who could actually eat it hold a claim. A human that killed
+	// another human has no use for the carcass, and letting it hold one would
+	// mean the meat sat there spoiling while something that could eat it
+	// waited - a rule about sharing a kill turning into a rule about spite.
 	claim := a.recentAttackers(w.tick, w.cfg.HuntCreditTicks)
-	for i := 0; i < items; i++ {
-		id := w.addFood(a.X+w.randRange(-6, 6), a.Y+w.randRange(-6, 6))
-		if id == 0 {
-			return // the world is as full of food as it may be
+	kept := claim[:0]
+	for _, id := range claim {
+		if killer := w.agentByID(id); killer != nil && eatsMeat(killer.Species) && killer.Species != a.Species {
+			kept = append(kept, id)
 		}
-		f := w.foodByID(id)
-		f.Kind = FoodMeat
-		f.From = a.Species
-		f.Claim = claim
-		f.ClaimUntil = w.tick + w.cfg.MeatClaimTicks
-		f.SpoilAt = w.tick + w.cfg.MeatSpoilTicks
+	}
+	claim = kept
+	for i := 0; i < items; i++ {
+		if w.countKind(FoodMeat) >= w.cfg.MaxMeatItems {
+			return // as much meat as the world will hold is already lying about
+		}
+		w.putFood(Food{
+			X: a.X + w.randRange(-6, 6), Y: a.Y + w.randRange(-6, 6),
+			Kind: FoodMeat, From: a.Species,
+			Claim: claim, ClaimUntil: w.tick + w.cfg.MeatClaimTicks,
+			SpoilAt: w.tick + w.cfg.MeatSpoilTicks,
+		})
 	}
 }
 
@@ -115,4 +128,12 @@ func (w *World) clearSpoiled() {
 		}
 		i++
 	}
+}
+
+// meatFrom is how many items of meat this agent's carcass would leave.
+func (w *World) meatFrom(a *Agent) float64 {
+	if w.cfg.MeatPerBudget <= 0 {
+		return 0
+	}
+	return a.Budget() / w.cfg.MeatPerBudget
 }

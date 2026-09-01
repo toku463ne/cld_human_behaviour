@@ -10,6 +10,7 @@ type SelfView struct {
 	ID       int
 	X, Y     float64
 	Sex      Sex
+	Species  Species
 	Vitality float64
 	Hunger   float64
 
@@ -69,6 +70,17 @@ type AgentView struct {
 	Sex      Sex
 	Vitality float64 // visible from the body's condition
 
+	// Species is what kind of creature this is. Unlike an ability it is not
+	// hidden: what something is is written on the outside of it.
+	Species Species
+
+	// Prey says this one is worth killing for what is left of it: a creature
+	// of a kind this agent eats, and Meat is roughly how many mouthfuls its
+	// carcass would leave. Both are what the observer can judge by looking -
+	// a big animal is visibly a big animal - not what the world knows.
+	Prey bool
+	Meat float64
+
 	Paired      bool
 	Seeking     bool // looks like it is after a mate
 	AttackingMe bool
@@ -121,6 +133,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		X:            a.X,
 		Y:            a.Y,
 		Sex:          a.Sex,
+		Species:      a.Species,
 		Vitality:     a.Vitality,
 		Hunger:       a.Hunger,
 		Attack:       a.Attack(),
@@ -197,6 +210,9 @@ func (w *World) perceive(a *Agent) *Perception {
 			Y:           o.Y,
 			Dist:        math.Sqrt(d2),
 			Sex:         o.Sex,
+			Species:     o.Species,
+			Prey:        o.Species != a.Species && eatsMeat(a.Species),
+			Meat:        w.meatFrom(o),
 			Vitality:    o.Vitality,
 			Paired:      o.PartnerID != 0,
 			Seeking:     o.State == StateSeekMate,

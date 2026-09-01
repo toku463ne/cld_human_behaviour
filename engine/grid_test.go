@@ -114,7 +114,7 @@ func TestGridQueryMatchesABruteForceScan(t *testing.T) {
 	cfg.InitialFoodItems = 80
 	w := NewWorld(cfg)
 	for i := 0; i < 120; i++ {
-		w.addAgent(w.randomAgent())
+		w.addAgent(w.randomAgent(SpeciesHuman))
 	}
 	for i := 0; i < 80; i++ {
 		w.addFood(w.randRange(0, cfg.Width), w.randRange(0, cfg.Height))
