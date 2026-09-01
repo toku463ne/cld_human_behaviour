@@ -147,6 +147,20 @@ type Config struct {
 	BirthVitalityCost float64 // vitality the parents share to produce a child
 	ChildVitality     float64
 	ChildHunger       float64
+	// The budget an agent is made of, and how a founder splits it.
+	//
+	// Everything heritable is paid for out of one total, so being better at
+	// one thing costs being worse at another. Only founders draw a budget;
+	// after that it is inherited.
+	//
+	// GeneInitAlpha is the Dirichlet concentration the founders' split is
+	// drawn with: below 1 the split is lopsided, which is what puts genuinely
+	// different kinds of individual into the first generation rather than nine
+	// near-equal shares of the same shape.
+	GeneBudgetMean float64
+	GeneBudgetStd  float64
+	GeneInitAlpha  float64
+
 	// Mutation is rare and large rather than constant and small: a gene is
 	// copied from the parent unchanged most of the time, and now and then it
 	// jumps. MutationRate is the chance per gene, MutationStd the spread of
@@ -264,6 +278,9 @@ func DefaultConfig() Config {
 		BirthVitalityCost:   40,
 		ChildVitality:       58,
 		ChildHunger:         18,
+		GeneBudgetMean:      360, // nine genes, so a mean of 40 each
+		GeneBudgetStd:       30,
+		GeneInitAlpha:       0.8,
 		MutationRate:        0.02,
 		MutationStd:         40,
 		PatienceBase:        25,

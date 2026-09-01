@@ -10,7 +10,8 @@ import (
 //
 // Rewritten on 2026-09-01, when inheritance stopped being the average of the
 // parents, and again the same day when mutation became rare and large instead
-// of a nudge on every birth (both stage 7b).
+// of a nudge on every birth (both stage 7b), and again when the genes started
+// being paid for out of a budget (stage 7c).
 //
 // Stage 7a is a change of how the neighbours are found, not of what happens,
 // and its completion condition is that the same seed gives the same run. That
@@ -28,9 +29,10 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 120, births: 92, deaths: 32, kills: 23, aging: 0, fights: 5437, gen: 4, power: 48.664501, vitality: 76.145316, hunger: 34.416250},
-	{seed: 2, pop: 138, births: 109, deaths: 31, kills: 20, aging: 0, fights: 4760, gen: 5, power: 52.716122, vitality: 76.287009, hunger: 38.628622},
-	{seed: 3, pop: 126, births: 88, deaths: 22, kills: 17, aging: 0, fights: 5766, gen: 5, power: 52.794216, vitality: 75.427192, hunger: 36.241270}}
+	{seed: 1, pop: 116, births: 105, deaths: 49, kills: 47, aging: 0, fights: 9768, gen: 5, power: 54.880531, vitality: 71.319857, hunger: 34.095573},
+	{seed: 2, pop: 110, births: 89, deaths: 39, kills: 37, aging: 0, fights: 8313, gen: 7, power: 52.030322, vitality: 75.420631, hunger: 28.833769},
+	{seed: 3, pop: 106, births: 79, deaths: 33, kills: 33, aging: 0, fights: 9629, gen: 5, power: 48.719322, vitality: 74.362540, hunger: 31.048930},
+}
 
 const goldenTicks = 5000
 

@@ -655,11 +655,13 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	// Drawn into variables rather than inline, so that the order the random
 	// source is consumed in is on the page instead of in the argument
 	// evaluation order.
-	genome := genomeOf(
-		w.inheritGene(pa.Attack(), pb.Attack()),
-		w.inheritGene(pa.Rationality(), pb.Rationality()),
-		w.inheritGene(pa.Intelligence(), pb.Intelligence()),
-	)
+	// Every gene, not just the ones with rules today: a gene nobody reads is
+	// still paid for out of the budget, and it still has to reach the
+	// generation that gives it a job.
+	genome := make([]float64, max(len(pa.Genome), len(pb.Genome)))
+	for i := range genome {
+		genome[i] = w.inheritGene(pa.Gene(Gene(i)), pb.Gene(Gene(i)))
+	}
 
 	child := w.newAgent(
 		(pa.X+pb.X)/2+w.randRange(-8, 8),
@@ -831,7 +833,7 @@ func (w *World) randomAgent() Agent {
 		w.randRange(20, w.cfg.Width-20),
 		w.randRange(20, w.cfg.Height-20),
 		w.randomSex(),
-		genomeOf(w.randRange(25, 75), w.randRange(25, 75), w.randRange(25, 75)),
+		w.drawGenome(),
 		0,
 	)
 	a.Vitality = w.randRange(w.cfg.MaxVitality*0.6, w.cfg.MaxVitality)
