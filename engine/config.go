@@ -165,6 +165,14 @@ type Config struct {
 	PatienceRationality float64 // extra patience per point of rationality
 	CommitFitness       float64 // a candidate this good is worth committing to at once
 	MateRejectDuration  int     // ticks a passed over candidate is left aside
+
+	// LamarckRate is how much of what a parent learned in its lifetime is
+	// passed to its child, on top of what it inherits. It is here and unused:
+	// there is nothing learned to pass on until stage 12 gives agents their
+	// own values for the assumptions in the utility formula. The slot is set
+	// aside now so that the inheritance code has one place for it, rather than
+	// being rearranged later to make room.
+	LamarckRate float64
 }
 
 // DefaultConfig returns the parameters the simulation runs with. The numbers
