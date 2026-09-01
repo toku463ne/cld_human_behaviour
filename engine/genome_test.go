@@ -195,3 +195,76 @@ func TestChildInheritsGenesThatNothingReadsYet(t *testing.T) {
 		}
 	}
 }
+
+// A genius is rare, and it is a step to a level rather than a windfall
+// proportional to what its parents had.
+func TestGeniusBirthsAreRareAndLarge(t *testing.T) {
+	cfg := testConfig()
+	cfg.MutationRate = 0
+	cfg.BudgetInheritSpread = 0
+	w := NewWorld(cfg)
+	pa := &Agent{Vitality: 90, Genome: filledGenome(20)}
+	pb := &Agent{Vitality: 90, Genome: filledGenome(20)}
+	ordinary := pa.Budget()
+
+	const births = 20000
+	counts := map[float64]int{}
+	for i := 0; i < births; i++ {
+		pa.Vitality, pb.Vitality = 90, 90
+		w.newborns = w.newborns[:0]
+		w.tryBirth(pa, pb)
+		for j := range w.newborns {
+			counts[math.Round(w.newborns[j].Budget())]++
+		}
+	}
+
+	genius := counts[math.Round(cfg.GeniusBudget)]
+	great := counts[math.Round(cfg.GreatGeniusBudget)]
+	plain := counts[math.Round(ordinary)]
+	if plain+genius+great != births {
+		t.Fatalf("births came out at budgets other than the three expected: %v", counts)
+	}
+	rate := float64(genius) / births
+	if rate < cfg.GeniusRate*0.7 || rate > cfg.GeniusRate*1.3 {
+		t.Errorf("genius rate %.4f, want about %.4f", rate, cfg.GeniusRate)
+	}
+	greatRate := float64(great) / births
+	if greatRate < cfg.GreatGeniusRate*0.4 || greatRate > cfg.GreatGeniusRate*1.8 {
+		t.Errorf("great genius rate %.5f, want about %.5f", greatRate, cfg.GreatGeniusRate)
+	}
+	if got, want := w.Stats().Geniuses, genius; got != want {
+		t.Errorf("Stats counted %d geniuses, want %d", got, want)
+	}
+	if got, want := w.Stats().GreatGeniuses, great; got != want {
+		t.Errorf("Stats counted %d great geniuses, want %d", got, want)
+	}
+}
+
+// The windfall is inherited like any other budget: a genius's children start
+// from what it had, not from what its grandparents had.
+func TestAGeniusPassesItsBudgetOn(t *testing.T) {
+	cfg := testConfig()
+	cfg.MutationRate = 0
+	cfg.BudgetInheritSpread = 0
+	cfg.GeniusRate, cfg.GreatGeniusRate = 0, 0
+	w := NewWorld(cfg)
+
+	genius := &Agent{Vitality: 90, Genome: filledGenome(cfg.GeniusBudget / float64(NumGenes))}
+	plain := &Agent{Vitality: 90, Genome: filledGenome(20)}
+	for i := 0; i < 200; i++ {
+		genius.Vitality, plain.Vitality = 90, 90
+		w.tryBirth(genius, plain)
+	}
+	rich := 0
+	for i := range w.newborns {
+		if math.Abs(w.newborns[i].Budget()-cfg.GeniusBudget) < 1e-6 {
+			rich++
+		}
+	}
+	if rich == 0 {
+		t.Fatal("no child of a genius inherited its budget")
+	}
+	if rich == len(w.newborns) {
+		t.Fatal("every child inherited the genius budget: the coin between the parents is not being thrown")
+	}
+}

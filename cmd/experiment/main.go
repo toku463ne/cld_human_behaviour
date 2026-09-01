@@ -183,6 +183,10 @@ var metricNames = []string{
 	"power", "rationality", "intelligence",
 	"sdPower", "sdRationality", "sdIntelligence",
 	"dPower", "dRationality", "dIntelligence",
+	"budget", "sdBudget", "dBudget",
+	"shAttack", "shDefence", "shVitality", "shSpeed", "shEvasion",
+	"shMemory", "shRationality", "shIntelligence", "shLooks",
+	"geniusYears", "greatGeniusYears",
 	"extinct",
 }
 
@@ -208,6 +212,16 @@ type sample struct {
 	// other group, the close approach end of that distribution, and the mean
 	// again with the population density divided out.
 	gap, gapP10, gapRel float64
+
+	// What the population is made of: the mean budget, how varied it is, and
+	// how the average agent splits it between the genes.
+	//
+	// The shares are what to compare between arms. A raw gene moves when the
+	// budget moves, so a rise in attack could be a population that fights more
+	// or one that is simply bigger; the share only moves when the trade
+	// between the genes moves.
+	budget, sdBudget float64
+	shares           [engine.NumGenes]float64
 }
 
 // togetherLag is the lag the "together" metric reads the survival curve at.
@@ -258,7 +272,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		cl := w.Clusters(engine.DefaultClusterLinkDist)
 		gaps := w.ClusterGaps(engine.DefaultClusterLinkDist)
 		sdP, sdR, sdI := abilitySpread(w)
+		budget, sdBudget, shares := budgetSplit(w)
 		series = append(series, sample{
+			budget: budget, sdBudget: sdBudget, shares: shares,
 			tick: s.Tick, pop: s.Population,
 			power: s.AvgPower, rat: s.AvgRationality, intel: s.AvgIntelligence,
 			sdPower: sdP, sdRat: sdR, sdIntel: sdI,
@@ -344,8 +360,19 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"dPower":         tail.power - start.AvgPower,
 		"dRationality":   tail.rat - start.AvgRationality,
 		"dIntelligence":  tail.intel - start.AvgIntelligence,
-		"extinct":        boolToFloat(end.Population == 0),
+		"budget":         tail.budget,
+		"sdBudget":       tail.sdBudget,
+		"dBudget":        tail.budget - cfg.GeneBudgetMean,
+		// How often an exceptional birth happened, in years of the world's own
+		// clock. The rate is per birth, so this is the figure that says what
+		// that comes to at the birth rate the world actually ran at.
+		"geniusYears":      years(ticks, end.Geniuses, cfg.TicksPerYear),
+		"greatGeniusYears": years(ticks, end.GreatGeniuses, cfg.TicksPerYear),
+		"extinct":          boolToFloat(end.Population == 0),
 	}}
+	for g := 0; g < engine.NumGenes; g++ {
+		r.metrics[shareMetric[g]] = tail.shares[g]
+	}
 	if keepSeries {
 		r.series = series
 	}
@@ -368,6 +395,11 @@ func tailAverage(series []sample) sample {
 		out.sdPower += s.sdPower
 		out.sdRat += s.sdRat
 		out.sdIntel += s.sdIntel
+		out.budget += s.budget
+		out.sdBudget += s.sdBudget
+		for g := range out.shares {
+			out.shares[g] += s.shares[g]
+		}
 		out.clumping += s.clumping
 		out.neighbours += s.neighbours
 		out.nearest += s.nearest
@@ -390,6 +422,11 @@ func tailAverage(series []sample) sample {
 	out.sdPower /= d
 	out.sdRat /= d
 	out.sdIntel /= d
+	out.budget /= d
+	out.sdBudget /= d
+	for g := range out.shares {
+		out.shares[g] /= d
+	}
 	out.clumping /= d
 	out.neighbours /= d
 	out.nearest /= d
@@ -433,6 +470,34 @@ func abilitySpread(w *engine.World) (power, rationality, intelligence float64) {
 	return math.Sqrt(sp / n), math.Sqrt(sr / n), math.Sqrt(si / n)
 }
 
+// budgetSplit is what the population is made of: the mean budget, its spread,
+// and the mean share of it each gene takes.
+func budgetSplit(w *engine.World) (mean, sd float64, shares [engine.NumGenes]float64) {
+	agents := w.Agents()
+	if len(agents) == 0 {
+		return 0, 0, shares
+	}
+	n := float64(len(agents))
+	var sum, sq float64
+	for i := range agents {
+		b := agents[i].Budget()
+		sum += b
+		sq += b * b
+		if b <= 0 {
+			continue
+		}
+		for g := 0; g < engine.NumGenes; g++ {
+			shares[g] += agents[i].Gene(engine.Gene(g)) / b
+		}
+	}
+	mean = sum / n
+	sd = math.Sqrt(math.Max(0, sq/n-mean*mean))
+	for g := range shares {
+		shares[g] /= n
+	}
+	return mean, sd, shares
+}
+
 // share is what fraction of the deaths were killings. It is the headline
 // figure for the cooperation work: the point of that work is to get it down
 // without simply feeding everybody, which is why it sits next to starved.
@@ -441,6 +506,25 @@ func share(part, whole int) float64 {
 		return 0
 	}
 	return float64(part) / float64(whole)
+}
+
+// shareMetric names the per gene share metrics in the order the genes are in.
+var shareMetric = []string{
+	"shAttack", "shDefence", "shVitality", "shSpeed", "shEvasion",
+	"shMemory", "shRationality", "shIntelligence", "shLooks",
+}
+
+// years is how long, in years of the world's clock, between one of these
+// events and the next. Zero events is reported as the length of the run, which
+// is a lower bound rather than an answer.
+func years(ticks, events, ticksPerYear int) float64 {
+	if ticksPerYear <= 0 {
+		return 0
+	}
+	if events <= 0 {
+		return float64(ticks) / float64(ticksPerYear)
+	}
+	return float64(ticks) / float64(events) / float64(ticksPerYear)
 }
 
 func boolToFloat(b bool) float64 {

@@ -179,6 +179,28 @@ type Config struct {
 	BudgetInheritSpread float64
 	BudgetHeritability  float64
 
+	// Rare births that get far more to be made of than their parents did.
+	//
+	// The rates are per birth rather than per tick, so "once in ten years" is
+	// only true at the birth rate the world happens to be running at: at the
+	// measured rate of roughly 60 births per 5000 ticks, 0.017 is one genius
+	// in ten years and 0.0017 one great genius in a century.
+	//
+	// The budget of an exceptional birth replaces the inherited one rather
+	// than multiplying it, so a genius is a step to a level rather than a
+	// windfall proportional to its parents. Being inherited from there, the
+	// windfall does not vanish with the individual: its children start from
+	// the budget it had, less whatever the ordinary wobble takes.
+	GeniusRate        float64
+	GeniusBudget      float64
+	GreatGeniusRate   float64
+	GreatGeniusBudget float64
+
+	// TicksPerYear is the unit the rates above are quoted in. Nothing in the
+	// rules reads it; it is what turns a measured interval into "once in so
+	// many years", and stage 7d fixes its value against the length of a life.
+	TicksPerYear int
+
 	// Mutation is rare and large rather than constant and small: a gene is
 	// copied from the parent unchanged most of the time, and now and then it
 	// jumps. MutationRate is the chance per gene, MutationStd the spread of
@@ -301,6 +323,11 @@ func DefaultConfig() Config {
 		GeneInitAlpha:       0.8,
 		BudgetInheritSpread: 30,
 		BudgetHeritability:  1,
+		GeniusRate:          0.017,
+		GeniusBudget:        495, // 55 a gene against the usual 40
+		GreatGeniusRate:     0.0017,
+		GreatGeniusBudget:   630, // 70 a gene, short of the 900 that would max everything
+		TicksPerYear:        500,
 		MutationRate:        0.02,
 		MutationStd:         40,
 		PatienceBase:        25,

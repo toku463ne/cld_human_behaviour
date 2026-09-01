@@ -34,6 +34,8 @@ type Stats struct {
 	Females       int
 	FoodItems     int
 	Births        int
+	Geniuses      int // births that drew an exceptional budget
+	GreatGeniuses int // ... and the rarer, larger kind. Not counted in Geniuses
 	Deaths        int
 	Kills         int
 	AgingDeaths   int // subset of Deaths caused by Lifespan reaching zero
@@ -116,6 +118,8 @@ type World struct {
 	foodAccum float64
 
 	births        int
+	geniuses      int
+	greatGeniuses int
 	deaths        int
 	kills         int
 	agingDeaths   int
@@ -189,6 +193,8 @@ func (w *World) Stats() Stats {
 		Population:    len(w.agents),
 		FoodItems:     len(w.foods),
 		Births:        w.births,
+		Geniuses:      w.geniuses,
+		GreatGeniuses: w.greatGeniuses,
 		Deaths:        w.deaths,
 		Kills:         w.kills,
 		AgingDeaths:   w.agingDeaths,
@@ -664,6 +670,18 @@ func (w *World) inheritBudget(pa, pb *Agent) float64 {
 	}
 	h := clamp(w.cfg.BudgetHeritability, 0, 1)
 	budget := h*from.Budget() + (1-h)*w.cfg.GeneBudgetMean
+
+	// Now and then somebody is born with far more to be made of than either
+	// parent had. The roll is taken every birth so that the random source is
+	// consumed the same way whether or not it lands.
+	switch roll := w.rng.Float64(); {
+	case roll < w.cfg.GreatGeniusRate:
+		budget = w.cfg.GreatGeniusBudget
+		w.greatGeniuses++
+	case roll < w.cfg.GreatGeniusRate+w.cfg.GeniusRate:
+		budget = w.cfg.GeniusBudget
+		w.geniuses++
+	}
 	return budget + w.rng.NormFloat64()*w.cfg.BudgetInheritSpread
 }
 
