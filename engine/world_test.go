@@ -935,11 +935,13 @@ func TestChildTakesEachAbilityFromOneParentOrTheOther(t *testing.T) {
 		t.Fatalf("births = %d, want 1", got)
 	}
 	child := findChild(t, w, male, female)
-	// Whole values, not the average of the two: 50 would be the old answer for
-	// power, and it is exactly what must not appear.
-	oneOf(t, child.Attack(), 40, 60, "child power")
-	oneOf(t, child.Rationality(), 60, 80, "child rationality")
-	oneOf(t, child.Intelligence(), 30, 50, "child intelligence")
+	// One parent's value or the other's for each gene, all scaled by the one
+	// factor that fits them onto the budget the child inherited. The average
+	// of the two - 50 for power - is what must never appear.
+	scale := pickedFromOneParent(t, child, mustAgent(t, w, male), mustAgent(t, w, female))
+	oneOf(t, child.Attack()/scale, 40, 60, "child power")
+	oneOf(t, child.Rationality()/scale, 60, 80, "child rationality")
+	oneOf(t, child.Intelligence()/scale, 30, 50, "child intelligence")
 	approx(t, child.Vitality, cfg.ChildVitality, 1e-9, "child vitality")
 	if child.Generation != 6 { // max(2, 5) + 1
 		t.Fatalf("child generation = %d, want 6", child.Generation)
@@ -956,6 +958,55 @@ func TestChildTakesEachAbilityFromOneParentOrTheOther(t *testing.T) {
 	}
 }
 
+// pickedFromOneParent checks that every gene of the child is one parent's
+// value or the other's after a single common scaling, and returns that scale.
+//
+// The scaling is what fits the inherited genes onto the budget the child
+// inherited separately: what passes down gene by gene is the shape of the
+// parent, and what passes down as a budget is the size.
+func pickedFromOneParent(t *testing.T, child, pa, pb *Agent) float64 {
+	t.Helper()
+	free := func(v float64) bool { return v > MinAbility+1e-9 && v < MaxAbility-1e-9 }
+	fits := func(scale float64) bool {
+		for i := range child.Genome {
+			if !free(child.Genome[i]) {
+				continue // pinned at a bound: the scale cannot be read off it
+			}
+			a, b := pa.Gene(Gene(i)), pb.Gene(Gene(i))
+			if math.Abs(child.Genome[i]-scale*a) > 1e-6 && math.Abs(child.Genome[i]-scale*b) > 1e-6 {
+				return false
+			}
+		}
+		return true
+	}
+	for i := range child.Genome {
+		if !free(child.Genome[i]) {
+			continue
+		}
+		for _, candidate := range []float64{pa.Gene(Gene(i)), pb.Gene(Gene(i))} {
+			if candidate <= 0 {
+				continue
+			}
+			if scale := child.Genome[i] / candidate; fits(scale) {
+				return scale
+			}
+		}
+	}
+	t.Fatalf("child genome %v is not a per gene pick from %v and %v at any one scale",
+		child.Genome, pa.Genome, pb.Genome)
+	return 0
+}
+
+// filledGenome is a genome with every gene at the same value, which is what a
+// test wants when it is asking about inheritance rather than about abilities.
+func filledGenome(v float64) []float64 {
+	g := newGenome()
+	for i := range g {
+		g[i] = v
+	}
+	return g
+}
+
 func oneOf(t *testing.T, got, a, b float64, what string) {
 	t.Helper()
 	if math.Abs(got-a) > 1e-9 && math.Abs(got-b) > 1e-9 {
@@ -970,8 +1021,10 @@ func TestChildDrawsEachAbilityIndependently(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationStd = 0
 	w := NewWorld(cfg)
-	pa := &Agent{Genome: genomeOf(10, 10, 10), Vitality: 90}
-	pb := &Agent{Genome: genomeOf(90, 90, 90), Vitality: 90}
+	// Values close enough together that fitting a child onto its inherited
+	// budget never pushes a gene onto a bound, so the pick stays readable.
+	pa := &Agent{Genome: filledGenome(30), Vitality: 90}
+	pb := &Agent{Genome: filledGenome(50), Vitality: 90}
 
 	seen := map[[3]bool]int{}
 	for i := 0; i < 400; i++ {
@@ -980,7 +1033,11 @@ func TestChildDrawsEachAbilityIndependently(t *testing.T) {
 	}
 	for i := range w.newborns {
 		c := &w.newborns[i]
-		seen[[3]bool{c.Attack() > 50, c.Rationality() > 50, c.Intelligence() > 50}]++
+		// The genome is scaled onto the inherited budget, so which parent a
+		// gene came from is read against the scaled candidates.
+		scale := pickedFromOneParent(t, c, pa, pb)
+		from := func(g Gene) bool { return math.Abs(c.Gene(g)-scale*50) < 1e-6 }
+		seen[[3]bool{from(GeneAttack), from(GeneRationality), from(GeneIntelligence)}]++
 	}
 	// All eight combinations of three coins, none of them rare.
 	if len(seen) != 8 {
@@ -998,7 +1055,8 @@ func TestChildDrawsEachAbilityIndependently(t *testing.T) {
 // values keeps it, and all that eats away at it is drift.
 func TestParticulateInheritanceKeepsTheSpread(t *testing.T) {
 	cfg := testConfig()
-	cfg.MutationStd = 0 // no new variation: whatever survives came from the start
+	cfg.MutationStd = 0         // no new variation: whatever survives came from the start
+	cfg.BudgetInheritSpread = 0 // and no wandering budget on top of it
 	w := NewWorld(cfg)
 
 	const n = 60
@@ -1073,36 +1131,47 @@ func TestMutationIsRareAndLarge(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationRate = 0.01
 	cfg.MutationStd = 40
+	cfg.BudgetInheritSpread = 0 // so that only mutation moves a gene
 	w := NewWorld(cfg)
-	pa := &Agent{Genome: genomeOf(50, 50, 50), Vitality: 90}
-	pb := &Agent{Genome: genomeOf(50, 50, 50), Vitality: 90}
+	pa := &Agent{Genome: filledGenome(50), Vitality: 90}
+	pb := &Agent{Genome: filledGenome(50), Vitality: 90}
 
 	// Emptied every time, because the world stops accepting newborns once it
 	// is full and twenty thousand births are needed to count a 1% event.
+	//
+	// The count is per child rather than per gene: a mutation is fitted back
+	// onto the inherited budget, so the gene that jumped goes up and every
+	// other gene comes down a little to pay for it. What "1% per gene" shows
+	// up as is a child whose genome is not its parents', which for nine genes
+	// is about 1 - 0.99^9 = 8.6% of children.
 	const births = 20000
-	moved, far, total := 0, 0, 0
+	touched, jumped, total := 0, 0, 0
 	for i := 0; i < births; i++ {
 		pa.Vitality, pb.Vitality = 90, 90
 		w.newborns = w.newborns[:0]
 		w.tryBirth(pa, pb)
 		for j := range w.newborns {
 			total++
-			if d := math.Abs(w.newborns[j].Attack() - 50); d > 1e-9 {
-				moved++
-				if d > 10 {
-					far++
+			biggest := 0.0
+			for _, v := range w.newborns[j].Genome {
+				biggest = math.Max(biggest, math.Abs(v-50))
+			}
+			if biggest > 1e-9 {
+				touched++
+				if biggest > 10 {
+					jumped++
 				}
 			}
 		}
 	}
-	rate := float64(moved) / float64(total)
-	if rate < 0.005 || rate > 0.02 {
-		t.Fatalf("%.3f%% of children mutated, want about 1%%", rate*100)
+	rate := float64(touched) / float64(total)
+	if rate < 0.05 || rate > 0.13 {
+		t.Fatalf("%.1f%% of children carry a mutation, want about 8.6%%", rate*100)
 	}
 	// A jump of std 40 clears ten points about four times in five, so most of
 	// the mutations that happen are big ones rather than a nudge.
-	if float64(far)/float64(moved) < 0.6 {
-		t.Fatalf("only %d of %d mutations moved more than 10 points: these are not jumps", far, moved)
+	if float64(jumped)/float64(touched) < 0.6 {
+		t.Fatalf("only %d of %d mutations moved more than 10 points: these are not jumps", jumped, touched)
 	}
 }
 
@@ -1113,18 +1182,21 @@ func TestMutationRateZeroLeavesTheParentsValuesUntouched(t *testing.T) {
 	cfg.MutationRate = 0
 	cfg.MutationStd = 40 // would be obvious if it were applied
 	w := NewWorld(cfg)
-	pa := &Agent{Genome: genomeOf(20, 20, 20), Vitality: 90}
-	pb := &Agent{Genome: genomeOf(80, 80, 80), Vitality: 90}
+	pa := &Agent{Genome: filledGenome(30), Vitality: 90}
+	pb := &Agent{Genome: filledGenome(50), Vitality: 90}
 
+	cfg.BudgetInheritSpread = 0
+	w = NewWorld(cfg)
 	for i := 0; i < 200; i++ {
 		pa.Vitality, pb.Vitality = 90, 90
 		w.tryBirth(pa, pb)
 	}
 	for i := range w.newborns {
 		c := &w.newborns[i]
-		oneOf(t, c.Attack(), 20, 80, "child power")
-		oneOf(t, c.Rationality(), 20, 80, "child rationality")
-		oneOf(t, c.Intelligence(), 20, 80, "child intelligence")
+		scale := pickedFromOneParent(t, c, pa, pb)
+		oneOf(t, c.Attack()/scale, 30, 50, "child power")
+		oneOf(t, c.Rationality()/scale, 30, 50, "child rationality")
+		oneOf(t, c.Intelligence()/scale, 30, 50, "child intelligence")
 	}
 }
 

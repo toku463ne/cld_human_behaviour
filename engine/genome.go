@@ -104,9 +104,13 @@ func (a *Agent) Budget() float64 {
 func newGenome() []float64 { return make([]float64, NumGenes) }
 
 // genomeOf builds a genome from the three abilities that have rules today,
-// leaving the rest at zero. It is what the world used to hold as three fields.
+// leaving the rest at the least a gene may hold. It is what the world used to
+// hold as three fields.
 func genomeOf(attack, rationality, intelligence float64) []float64 {
 	g := newGenome()
+	for i := range g {
+		g[i] = MinAbility
+	}
 	g[GeneAttack] = attack
 	g[GeneRationality] = rationality
 	g[GeneIntelligence] = intelligence

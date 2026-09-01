@@ -638,6 +638,28 @@ func (w *World) inheritGene(pa, pb float64) float64 {
 	return gene + w.rng.NormFloat64()*w.cfg.MutationStd
 }
 
+// inheritBudget decides how much a child gets to be made of.
+//
+// It comes from one parent or the other, chosen by a coin, and never from the
+// average of the two: an average halves the variance of the budget every
+// generation, which is exactly what blending inheritance was dropped for.
+// BudgetHeritability mixes that in against the population mean, so that a
+// world where the budget is not inherited at all can be run from the same
+// binary.
+//
+// The genome is then scaled onto the result, so what a child inherits gene by
+// gene is the shape of its parents and what it inherits here is the size. A
+// mutation moves the split rather than adding to the total.
+func (w *World) inheritBudget(pa, pb *Agent) float64 {
+	from := pa
+	if w.rng.Intn(2) == 1 {
+		from = pb
+	}
+	h := clamp(w.cfg.BudgetHeritability, 0, 1)
+	budget := h*from.Budget() + (1-h)*w.cfg.GeneBudgetMean
+	return budget + w.rng.NormFloat64()*w.cfg.BudgetInheritSpread
+}
+
 // tryBirth produces a child that takes each ability from one parent or the
 // other, plus a mutation. Over the generations this is what makes the
 // population evolve.
@@ -662,6 +684,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	for i := range genome {
 		genome[i] = w.inheritGene(pa.Gene(Gene(i)), pb.Gene(Gene(i)))
 	}
+	fitBudget(genome, w.inheritBudget(pa, pb))
 
 	child := w.newAgent(
 		(pa.X+pb.X)/2+w.randRange(-8, 8),

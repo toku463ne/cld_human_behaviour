@@ -161,6 +161,18 @@ type Config struct {
 	GeneBudgetStd  float64
 	GeneInitAlpha  float64
 
+	// What a child's budget is made of. It comes from one parent or the
+	// other, never the average of the two: averaging halves the variance of
+	// the budget every generation, which is the thing blending inheritance was
+	// dropped for.
+	//
+	// BudgetHeritability is how much of the parent's budget carries over,
+	// against the population mean: 1 inherits it, 0 draws afresh at every
+	// birth (which is what the world did before budgets were inherited), and
+	// the values between are regression towards the mean.
+	BudgetInheritSpread float64
+	BudgetHeritability  float64
+
 	// Mutation is rare and large rather than constant and small: a gene is
 	// copied from the parent unchanged most of the time, and now and then it
 	// jumps. MutationRate is the chance per gene, MutationStd the spread of
@@ -281,6 +293,8 @@ func DefaultConfig() Config {
 		GeneBudgetMean:      360, // nine genes, so a mean of 40 each
 		GeneBudgetStd:       30,
 		GeneInitAlpha:       0.8,
+		BudgetInheritSpread: 30,
+		BudgetHeritability:  1,
 		MutationRate:        0.02,
 		MutationStd:         40,
 		PatienceBase:        25,

@@ -99,6 +99,19 @@ var variants = []variant{
 		about: "mutation five times as often (5%) at std 18: smaller jumps, less of them clipped",
 		apply: func(c *engine.Config) { c.MutationRate, c.MutationStd = 0.05, 18 },
 	},
+	// The budget arms. Heritability 0 draws a fresh budget at every birth,
+	// which is how the world worked before budgets were inherited, and is the
+	// control for whether the average budget drifts upwards once it can.
+	{
+		name:  "nobudgetinherit",
+		about: "budget drawn afresh every birth instead of inherited from a parent",
+		apply: func(c *engine.Config) { c.BudgetHeritability = 0 },
+	},
+	{
+		name:  "narrowbudget",
+		about: "budget inherited with a quarter of the usual wobble",
+		apply: func(c *engine.Config) { c.BudgetInheritSpread = 7.5 },
+	},
 	{
 		name:  "nomutation",
 		about: "no new variation at all: selection works on what the founders had",

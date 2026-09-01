@@ -173,12 +173,10 @@ func TestFoundersSpendTheirBudgetDifferently(t *testing.T) {
 func TestChildInheritsGenesThatNothingReadsYet(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationRate = 0
+	cfg.BudgetInheritSpread = 0
 	w := NewWorld(cfg)
-	pa := &Agent{Vitality: 90, Genome: newGenome()}
-	pb := &Agent{Vitality: 90, Genome: newGenome()}
-	for i := range pa.Genome {
-		pa.Genome[i], pb.Genome[i] = 20, 80
-	}
+	pa := &Agent{Vitality: 90, Genome: filledGenome(30)}
+	pb := &Agent{Vitality: 90, Genome: filledGenome(50)}
 
 	for i := 0; i < 100; i++ {
 		pa.Vitality, pb.Vitality = 90, 90
@@ -189,8 +187,11 @@ func TestChildInheritsGenesThatNothingReadsYet(t *testing.T) {
 		if len(c.Genome) != NumGenes {
 			t.Fatalf("child has %d genes, want %d", len(c.Genome), NumGenes)
 		}
+		// Scaled onto the inherited budget, so it is the share that came from
+		// one parent or the other.
+		scale := pickedFromOneParent(t, c, pa, pb)
 		for g := range c.Genome {
-			oneOf(t, c.Genome[g], 20, 80, Gene(g).String())
+			oneOf(t, c.Genome[g]/scale, 30, 50, Gene(g).String())
 		}
 	}
 }
