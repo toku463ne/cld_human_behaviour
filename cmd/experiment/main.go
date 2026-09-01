@@ -74,6 +74,36 @@ var variants = []variant{
 		about: "food spawning at 0.12: the same question from the other side",
 		apply: func(c *engine.Config) { c.FoodSpawnRate = 0.12 },
 	},
+	// The shape of mutation, at the same variance injected per birth
+	// (MutationRate x MutationStd^2 = 16 either way). Rare and large is the
+	// default because it leaves a parent's number intact most of the time,
+	// which is what taking a whole value from one parent is for; this arm is
+	// the constant nudge it replaced.
+	{
+		name:  "jitter",
+		about: "mutation on every gene at std 4 instead of 1% of them at std 40",
+		apply: func(c *engine.Config) { c.MutationRate, c.MutationStd = 1, 4 },
+	},
+	// The calibration arms. The default was set by measuring these: matching
+	// the nominal variance injected per birth (rate x std^2 = 16, which is
+	// 1% at std 40) left the standing spread about 15% short of the jitter
+	// world, because a large jump from anywhere near the middle of the range
+	// is clipped at 1 or 100.
+	{
+		name:  "jump1",
+		about: "mutation at 1% instead of 2%: the calibration by nominal variance, which came out short",
+		apply: func(c *engine.Config) { c.MutationRate = 0.01 },
+	},
+	{
+		name:  "jump5",
+		about: "mutation five times as often (5%) at std 18: smaller jumps, less of them clipped",
+		apply: func(c *engine.Config) { c.MutationRate, c.MutationStd = 0.05, 18 },
+	},
+	{
+		name:  "nomutation",
+		about: "no new variation at all: selection works on what the founders had",
+		apply: func(c *engine.Config) { c.MutationRate = 0 },
+	},
 	// Lifespan consumption (chronic starving/overfeeding wearing down
 	// Lifespan in the background) is brand new and its defaults are an
 	// untuned starting point: at the default MaxLifespan/rates it almost

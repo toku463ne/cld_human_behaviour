@@ -609,7 +609,7 @@ func (w *World) releaseFromBond(a *Agent, cooldown int) {
 }
 
 // inheritGene draws one ability for a child: the value of one parent or the
-// other, chosen by a coin, plus a mutation.
+// other, chosen by a coin, and now and then a mutation on top.
 //
 // The coin is thrown separately for every gene, so a child can take its power
 // from one parent and its wits from the other. There are no linkage groups and
@@ -625,6 +625,15 @@ func (w *World) inheritGene(pa, pb float64) float64 {
 	gene := pa
 	if w.rng.Intn(2) == 1 {
 		gene = pb
+	}
+	// Mutation is rare and large. Adding a little to every gene of every child
+	// would undo what taking a parent's value whole is for: the value would
+	// drift a bit at every birth and no parent's number would survive intact.
+	// The two shapes can be set to inject the same variance per birth
+	// (MutationRate x MutationStd^2), so the choice between them is about how
+	// that variance arrives, not how much of it there is.
+	if w.cfg.MutationRate <= 0 || w.rng.Float64() >= w.cfg.MutationRate {
+		return gene
 	}
 	return gene + w.rng.NormFloat64()*w.cfg.MutationStd
 }

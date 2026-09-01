@@ -1054,6 +1054,7 @@ func spread(pop []Agent) float64 {
 
 func TestMutationVariesChildAbility(t *testing.T) {
 	cfg := testConfig()
+	cfg.MutationRate = 1 // every gene, so fifty births is enough to see it
 	cfg.MutationStd = 4
 	w := NewWorld(cfg)
 	pa := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
@@ -1077,8 +1078,70 @@ func TestMutationVariesChildAbility(t *testing.T) {
 	}
 }
 
+// Mutation is rare and large: most children carry their parent's number
+// untouched, and the ones that do not have moved a long way.
+func TestMutationIsRareAndLarge(t *testing.T) {
+	cfg := testConfig()
+	cfg.MutationRate = 0.01
+	cfg.MutationStd = 40
+	w := NewWorld(cfg)
+	pa := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
+	pb := &Agent{Power: 50, Rationality: 50, Intelligence: 50, Vitality: 90}
+
+	// Emptied every time, because the world stops accepting newborns once it
+	// is full and twenty thousand births are needed to count a 1% event.
+	const births = 20000
+	moved, far, total := 0, 0, 0
+	for i := 0; i < births; i++ {
+		pa.Vitality, pb.Vitality = 90, 90
+		w.newborns = w.newborns[:0]
+		w.tryBirth(pa, pb)
+		for j := range w.newborns {
+			total++
+			if d := math.Abs(w.newborns[j].Power - 50); d > 1e-9 {
+				moved++
+				if d > 10 {
+					far++
+				}
+			}
+		}
+	}
+	rate := float64(moved) / float64(total)
+	if rate < 0.005 || rate > 0.02 {
+		t.Fatalf("%.3f%% of children mutated, want about 1%%", rate*100)
+	}
+	// A jump of std 40 clears ten points about four times in five, so most of
+	// the mutations that happen are big ones rather than a nudge.
+	if float64(far)/float64(moved) < 0.6 {
+		t.Fatalf("only %d of %d mutations moved more than 10 points: these are not jumps", far, moved)
+	}
+}
+
+// Rate zero stops new variation without stopping inheritance: children still
+// take one parent's value or the other's, just never anything new.
+func TestMutationRateZeroLeavesTheParentsValuesUntouched(t *testing.T) {
+	cfg := testConfig()
+	cfg.MutationRate = 0
+	cfg.MutationStd = 40 // would be obvious if it were applied
+	w := NewWorld(cfg)
+	pa := &Agent{Power: 20, Rationality: 20, Intelligence: 20, Vitality: 90}
+	pb := &Agent{Power: 80, Rationality: 80, Intelligence: 80, Vitality: 90}
+
+	for i := 0; i < 200; i++ {
+		pa.Vitality, pb.Vitality = 90, 90
+		w.tryBirth(pa, pb)
+	}
+	for i := range w.newborns {
+		c := &w.newborns[i]
+		oneOf(t, c.Power, 20, 80, "child power")
+		oneOf(t, c.Rationality, 20, 80, "child rationality")
+		oneOf(t, c.Intelligence, 20, 80, "child intelligence")
+	}
+}
+
 func TestChildAbilityStaysInRange(t *testing.T) {
 	cfg := testConfig()
+	cfg.MutationRate = 1
 	cfg.MutationStd = 50 // extreme, so the bounds are actually hit
 	w := NewWorld(cfg)
 	pa := &Agent{Power: MaxAbility, Rationality: MinAbility, Intelligence: MaxAbility, Vitality: 90}

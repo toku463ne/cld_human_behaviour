@@ -140,14 +140,27 @@ type Config struct {
 	ChoiceNoise         float64 // spread of the error a mindless agent makes scoring an option
 
 	// --- reproduction ---
-	ReproHunger         float64 // an agent only courts below this hunger
-	ReproVitality       float64 // ... and above this vitality
-	PairBondDuration    int     // ticks a pair stays together before the child is born
-	MatingCooldown      int     // ticks of rest after a bond ends
-	BirthVitalityCost   float64 // vitality the parents share to produce a child
-	ChildVitality       float64
-	ChildHunger         float64
-	MutationStd         float64 // spread of the mutation added to a child's ability
+	ReproHunger       float64 // an agent only courts below this hunger
+	ReproVitality     float64 // ... and above this vitality
+	PairBondDuration  int     // ticks a pair stays together before the child is born
+	MatingCooldown    int     // ticks of rest after a bond ends
+	BirthVitalityCost float64 // vitality the parents share to produce a child
+	ChildVitality     float64
+	ChildHunger       float64
+	// Mutation is rare and large rather than constant and small: a gene is
+	// copied from the parent unchanged most of the time, and now and then it
+	// jumps. MutationRate is the chance per gene, MutationStd the spread of
+	// the jump when it happens. Setting MutationRate to 0 stops new variation
+	// without stopping selection on the variation already there.
+	//
+	// The pair is calibrated to keep about as much variation standing in the
+	// population as a nudge on every birth used to. Matching the nominal
+	// variance (rate x std^2) was not enough: at 1% and std 40 the spread came
+	// out about 15% short, because a large jump from anywhere near the middle
+	// of the range is clipped at 1 or 100 and part of it is thrown away. 2%
+	// restores it, and still copies 98 genes in 100 unchanged.
+	MutationRate        float64
+	MutationStd         float64
 	PatienceBase        float64 // ticks of comparison before committing to a mate
 	PatienceRationality float64 // extra patience per point of rationality
 	CommitFitness       float64 // a candidate this good is worth committing to at once
@@ -243,7 +256,8 @@ func DefaultConfig() Config {
 		BirthVitalityCost:   40,
 		ChildVitality:       58,
 		ChildHunger:         18,
-		MutationStd:         4,
+		MutationRate:        0.02,
+		MutationStd:         40,
 		PatienceBase:        25,
 		PatienceRationality: 0.5,
 		CommitFitness:       78,
