@@ -25,6 +25,7 @@ const (
 	TriggerVitalityDrop                 // it has lost a noticeable amount of vitality
 	TriggerIdle                         // nothing has happened for a while
 	TriggerFoodInSight                  // food turned up while it had nothing better to do
+	TriggerMateInSight                  // so did somebody worth going after
 	TriggerBondEnded                    // its pair broke up
 	TriggerControllerSet                // a different controller took it over
 	TriggerRequested                    // asked for without a stated reason
@@ -44,6 +45,8 @@ func (t Trigger) String() string {
 		return "vitality drop"
 	case TriggerIdle:
 		return "idle"
+	case TriggerMateInSight:
+		return "mate in sight"
 	case TriggerFoodInSight:
 		return "food in sight"
 	case TriggerBondEnded:

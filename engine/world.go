@@ -5,13 +5,13 @@ import (
 	"math/rand"
 )
 
-// Weights of what makes an agent a good mate: ability, plus the condition it is
-// in. They add up to 1, so fitness shares the 0..100 scale of an ability.
 const (
-	fitnessPowerWeight        = 0.35
-	fitnessRationalityWeight  = 0.15
-	fitnessIntelligenceWeight = 0.15
-	fitnessVitalityWeight     = 0.35
+	// How much of how good a mate somebody looks is the condition they are in
+	// rather than the advertisement itself. The rest is the attractiveness
+	// gene. Condition is in there at all because a dying agent is a poor bet
+	// however fine it looks, and it is only a third of it because otherwise
+	// "attractive" would just mean "recently fed".
+	fitnessConditionWeight = 0.35
 
 	// Speed of an agent that is following its partner rather than chasing a
 	// target of its own.
@@ -299,6 +299,13 @@ func (w *World) decisionTrigger(a *Agent) Trigger {
 	if a.Action.Kind == ActRest || a.Action.Kind == ActMove {
 		if w.nearestFoodInSight(a) >= 0 {
 			return TriggerFoodInSight
+		}
+		// So did somebody worth crossing the world for. This adds no action:
+		// courting is scored by the same utility comparison as everything
+		// else. It only stops an agent walking past a candidate because it
+		// happened not to be thinking at that moment.
+		if a.CanReproduce(&w.cfg) && w.strikingCandidateInSight(a) {
+			return TriggerMateInSight
 		}
 	}
 	return TriggerNone
@@ -725,15 +732,17 @@ func (w *World) eat(a *Agent, foodID int) {
 
 // fitness is how good a mate an agent is: what it can pass on, and the shape it
 // is in to raise a child.
-func fitness(a *Agent) float64 {
-	return a.Attack()*fitnessPowerWeight +
-		a.Rationality()*fitnessRationalityWeight +
-		a.Intelligence()*fitnessIntelligenceWeight +
-		a.Vitality*fitnessVitalityWeight
+func fitness(a *Agent, cfg *Config) float64 {
+	condition := 0.0
+	if maxV := a.MaxVitality(cfg); maxV > 0 {
+		condition = clamp(a.Vitality/maxV, 0, 1) * MaxAbility
+	}
+	return a.Gene(GeneAttractiveness)*(1-fitnessConditionWeight) +
+		condition*fitnessConditionWeight
 }
 
 func (w *World) perceivedFitness(observer, target *Agent) float64 {
-	return fitness(target) + w.judgementError(observer, w.cfg.JudgementNoise*0.5)
+	return fitness(target, &w.cfg) + w.judgementError(observer, w.cfg.JudgementNoise*0.5)
 }
 
 // patienceTicks is how long an agent keeps comparing candidates before it is
@@ -769,6 +778,28 @@ func (w *World) nearestFoodInSight(a *Agent) int {
 		}
 	}
 	return best
+}
+
+// strikingCandidateInSight reports whether somebody this agent would settle
+// for at once has come into view: the same bar the patience rule uses, so an
+// agent is only interrupted for a candidate it would not have compared against
+// others anyway.
+func (w *World) strikingCandidateInSight(a *Agent) bool {
+	r := w.cfg.PerceptionRadius
+	w.nearScratch = w.spatialIndex().appendAgentsNear(w.nearScratch[:0], a.X, a.Y, r)
+	for _, i := range w.nearScratch {
+		o := &w.agents[i]
+		if !o.Alive || o.ID == a.ID || o.Sex == a.Sex || o.PartnerID != 0 || a.isRejected(o.ID) {
+			continue
+		}
+		if dist2(a.X, a.Y, o.X, o.Y) > r*r {
+			continue
+		}
+		if w.perceivedFitness(a, o) >= w.cfg.CommitFitness {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *World) agentByID(id int) *Agent {

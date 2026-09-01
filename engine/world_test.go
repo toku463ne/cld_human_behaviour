@@ -1272,15 +1272,87 @@ func courting(t *testing.T, cfg Config) (*World, int, int) {
 	t.Helper()
 	w := NewWorld(cfg)
 	make := func(x float64, sex Sex) int {
+		// Attractive enough to be worth courting, short of the bar that makes
+		// a candidate an instant catch: the point of the scenario is the
+		// comparison, so both sides have to want to start it.
+		g := genomeOf(40, 100, 100)
+		g[GeneAttractiveness] = 70
 		return w.addAgent(Agent{
-			X: x, Y: 200, Sex: sex, Genome: genomeOf(40, 100, 100),
+			X: x, Y: 200, Sex: sex, Genome: g,
 			Vitality: cfg.ReproVitalityShare*cfg.MaxVitality + 5, Hunger: 0})
 	}
 	male, female := make(200, Male), make(205, Female)
-	if f := fitness(mustAgent(t, w, male)); f >= cfg.CommitFitness {
+	if f := fitness(mustAgent(t, w, male), &cfg); f >= cfg.CommitFitness {
 		t.Fatalf("test setup: fitness %v is an obvious catch, the pair would form instantly", f)
 	}
 	return w, male, female
+}
+
+// What a mate looks like is an advertisement and the condition behind it, and
+// nothing else: two agents identical in everything but the attractiveness gene
+// must not look alike, and two identical in that gene must, however different
+// their fighting or their wits.
+func TestFitnessIsTheAdvertisementNotTheAbility(t *testing.T) {
+	cfg := testConfig()
+	feeble := &Agent{Genome: genomeOf(1, 1, 1), Vitality: 50}
+	mighty := &Agent{Genome: genomeOf(100, 100, 100), Vitality: 50}
+	feeble.Genome[GeneAttractiveness] = 60
+	mighty.Genome[GeneAttractiveness] = 60
+	if a, b := fitness(feeble, &cfg), fitness(mighty, &cfg); math.Abs(a-b) > 1e-9 {
+		t.Fatalf("fitness %v against %v: ability is leaking into how good a mate somebody looks", a, b)
+	}
+
+	plain, showy := &Agent{Genome: genomeOf(50, 50, 50), Vitality: 50}, &Agent{Genome: genomeOf(50, 50, 50), Vitality: 50}
+	plain.Genome[GeneAttractiveness] = 10
+	showy.Genome[GeneAttractiveness] = 90
+	if fitness(showy, &cfg) <= fitness(plain, &cfg) {
+		t.Fatal("the attractiveness gene does nothing")
+	}
+
+	// Condition still counts for something: a dying agent is a poor bet
+	// however fine it looks.
+	dying := &Agent{Genome: cloneGenome(showy.Genome), Vitality: 1}
+	if fitness(dying, &cfg) >= fitness(showy, &cfg) {
+		t.Fatal("condition is not in fitness at all")
+	}
+}
+
+// Somebody worth crossing the world for is a reason to think again. It adds no
+// action: courting is scored by the same comparison as everything else, and
+// this only stops an agent walking past a candidate because it happened not to
+// be thinking at that moment.
+func TestAStrikingCandidateIsAReasonToThinkAgain(t *testing.T) {
+	cfg := testConfig()
+	cfg.TriggerIdleTicks = 100000 // so idling cannot be what fires
+	w := NewWorld(cfg)
+	ready := func(x float64, sex Sex, looks float64) int {
+		g := genomeOf(50, 50, 50)
+		g[GeneAttractiveness] = looks
+		id := w.addAgent(Agent{X: x, Y: 200, Sex: sex, Genome: g, Hunger: 0})
+		a := w.agentByID(id)
+		a.Vitality = a.MaxVitality(&cfg)
+		a.Action = Action{Kind: ActRest}
+		a.lastDecisionTick = w.tick
+		a.vitalityAtDecision = a.Vitality
+		a.needsDecision = false // it has just decided; only a new event may interrupt
+		a.pendingTrigger = TriggerNone
+		return id
+	}
+	watcher := ready(200, Male, 50)
+	ready(240, Female, 100)
+
+	if got := w.decisionTrigger(mustAgent(t, w, watcher)); got != TriggerMateInSight {
+		t.Fatalf("trigger = %v, want mate in sight", got)
+	}
+
+	// Somebody ordinary is not an interruption.
+	w2 := NewWorld(cfg)
+	w = w2
+	watcher = ready(200, Male, 50)
+	ready(240, Female, 20)
+	if got := w.decisionTrigger(mustAgent(t, w, watcher)); got == TriggerMateInSight {
+		t.Fatal("an ordinary candidate should not interrupt")
+	}
 }
 
 func TestPairNeedsBothSidesToAgreeAndTakesTime(t *testing.T) {

@@ -182,7 +182,7 @@
 | --- | --- | --- | --- |
 | `MinAbility = 1` / `MaxAbility = 100` | `agent.go:5` | 能力の範囲 | しなくてよい（スケールの定義） |
 | `midAbility = 50.5` | `agent.go:10` | ダメージ計算の基準パワー | しなくてよい |
-| `fitnessPowerWeight = 0.35` 他4つ | `world.go:11` | 魅力の内訳（パワー35% / 理性15% / 知能15% / 体力35%） | **移す価値が高い**。何を魅力とみなすかは性選択の向きを直接決める |
+| `fitnessConditionWeight = 0.35` | `world.go` | 「良い相手に見えるか」のうち体調が占める割合。残り65%は**魅力遺伝子**そのもの。実能力（攻撃力・理性・頭の良さ）はもう一切入らない | 中。性選択の向きを決めるが、遺伝子化して意味が単純になった |
 | `pairFollowEffort = 0.35` | `world.go:18` | ペアが相手を追う effort | 低 |
 | `spectateInterval = 20` | `world.go:23` | 観戦による推定更新の間隔 | 中 |
 | `observeTicks = 10` | `world.go:26` | 観察が完了するまでのtick | 中 |

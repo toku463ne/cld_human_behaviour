@@ -193,7 +193,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			EstStrength: clamp(op.Strength+blur, MinAbility, MaxAbility),
 			Uncertainty: op.Variance,
 			Risk:        w.decayedRisk(op),
-			Fitness:     fitness(o) + w.judgementError(a, w.cfg.JudgementNoise*0.5),
+			Fitness:     fitness(o, &w.cfg) + w.judgementError(a, w.cfg.JudgementNoise*0.5),
 		})
 	}
 
