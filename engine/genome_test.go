@@ -175,8 +175,8 @@ func TestChildInheritsGenesThatNothingReadsYet(t *testing.T) {
 	cfg.MutationRate = 0
 	cfg.BudgetInheritSpread = 0
 	w := NewWorld(cfg)
-	pa := &Agent{Vitality: 90, Genome: filledGenome(30)}
-	pb := &Agent{Vitality: 90, Genome: filledGenome(50)}
+	pa := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(30)}
+	pb := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(50)}
 
 	for i := 0; i < 100; i++ {
 		pa.Vitality, pb.Vitality = 90, 90
@@ -203,8 +203,8 @@ func TestGeniusBirthsAreRareAndLarge(t *testing.T) {
 	cfg.MutationRate = 0
 	cfg.BudgetInheritSpread = 0
 	w := NewWorld(cfg)
-	pa := &Agent{Vitality: 90, Genome: filledGenome(20)}
-	pb := &Agent{Vitality: 90, Genome: filledGenome(20)}
+	pa := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(20)}
+	pb := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(20)}
 	ordinary := pa.Budget()
 
 	const births = 20000
@@ -249,8 +249,8 @@ func TestAGeniusPassesItsBudgetOn(t *testing.T) {
 	cfg.GeniusRate, cfg.GreatGeniusRate = 0, 0
 	w := NewWorld(cfg)
 
-	genius := &Agent{Vitality: 90, Genome: filledGenome(cfg.GeniusBudget / float64(NumGenes))}
-	plain := &Agent{Vitality: 90, Genome: filledGenome(20)}
+	genius := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(cfg.GeniusBudget / float64(NumGenes))}
+	plain := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(20)}
 	for i := 0; i < 200; i++ {
 		genius.Vitality, plain.Vitality = 90, 90
 		w.tryBirth(genius, plain)

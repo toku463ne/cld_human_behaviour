@@ -11,7 +11,7 @@ func populate(w *World, tick int, counts ...int) {
 	w.index = make(map[int]int, 8)
 	for s, n := range counts {
 		for i := 0; i < n; i++ {
-			w.addAgent(Agent{X: 10, Y: 10, Vitality: 100, Genome: genomeOf(50, 0, 0), Species: Species(s)})
+			w.addAgent(Agent{Maturity: 1, X: 10, Y: 10, Vitality: 100, Genome: genomeOf(50, 0, 0), Species: Species(s)})
 		}
 	}
 }

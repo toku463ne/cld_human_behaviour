@@ -8,9 +8,9 @@ import "testing"
 func TestACarcassScalesWithTheSizeOfWhatDied(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	small := w.agentByID(w.addAgent(Agent{X: 100, Y: 100, Vitality: 10,
+	small := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 10,
 		Genome: filledGenome(20), Species: Species(1)}))
-	big := w.agentByID(w.addAgent(Agent{X: 300, Y: 300, Vitality: 10,
+	big := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 300, Y: 300, Vitality: 10,
 		Genome: filledGenome(80), Species: Species(1)}))
 
 	before := len(w.Foods())
@@ -39,10 +39,10 @@ func TestACarcassScalesWithTheSizeOfWhatDied(t *testing.T) {
 func TestACarcassBelongsToWhoeverBroughtItDown(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	prey := w.agentByID(w.addAgent(Agent{X: 100, Y: 100, Vitality: 10, Species: Species(1)}))
-	hunter := w.agentByID(w.addAgent(Agent{X: 105, Y: 100, Vitality: 90}))
-	idler := w.agentByID(w.addAgent(Agent{X: 110, Y: 100, Vitality: 90}))
-	cannibal := w.agentByID(w.addAgent(Agent{X: 115, Y: 100, Vitality: 90, Species: Species(1)}))
+	prey := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 10, Species: Species(1)}))
+	hunter := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Vitality: 90}))
+	idler := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 110, Y: 100, Vitality: 90}))
+	cannibal := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 115, Y: 100, Vitality: 90, Species: Species(1)}))
 
 	prey.noteHit(hunter.ID, w.tick)
 	w.kill(prey)
@@ -73,7 +73,7 @@ func TestACarcassBelongsToWhoeverBroughtItDown(t *testing.T) {
 func TestOnlyRecentBlowsCountAsTakingPart(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	prey := w.agentByID(w.addAgent(Agent{X: 100, Y: 100, Vitality: 10, Species: Species(1)}))
+	prey := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 10, Species: Species(1)}))
 
 	prey.noteHit(7, 0)
 	w.tick = cfg.HuntCreditTicks + 10
@@ -90,7 +90,7 @@ func TestOnlyRecentBlowsCountAsTakingPart(t *testing.T) {
 func TestInedibleFoodIsInvisible(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	a := w.agentByID(w.addAgent(Agent{X: 100, Y: 100, Vitality: 90, Hunger: 50}))
+	a := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90, Hunger: 50}))
 	id := w.addFood(105, 100)
 	f := w.foodByID(id)
 	f.Kind, f.From = FoodMeat, SpeciesHuman // its own kind
@@ -113,7 +113,7 @@ func TestInedibleFoodIsInvisible(t *testing.T) {
 func TestUneatenMeatSpoils(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	dead := w.agentByID(w.addAgent(Agent{X: 100, Y: 100, Vitality: 10, Species: Species(1)}))
+	dead := w.agentByID(w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 10, Species: Species(1)}))
 	w.kill(dead)
 	if len(w.Foods()) == 0 {
 		t.Fatal("no carcass to spoil")
@@ -169,9 +169,9 @@ func TestPreyIsWorthKillingForTheCarcass(t *testing.T) {
 	cfg := testConfig()
 	cfg.MaxPopulation = 100
 	w := NewWorld(cfg)
-	hunter := w.addAgent(Agent{X: 200, Y: 200, Vitality: 90, Hunger: 80,
+	hunter := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 90, Hunger: 80,
 		Genome: filledGenome(60), Species: SpeciesEnemy})
-	prey := w.addAgent(Agent{X: 215, Y: 200, Vitality: 30, Genome: filledGenome(40)})
+	prey := w.addAgent(Agent{Maturity: 1, X: 215, Y: 200, Vitality: 30, Genome: filledGenome(40)})
 
 	p := w.perceive(mustAgent(t, w, hunter))
 	var view *AgentView
@@ -188,7 +188,7 @@ func TestPreyIsWorthKillingForTheCarcass(t *testing.T) {
 	}
 
 	// The same situation between two of a kind is not a hunt.
-	sibling := w.addAgent(Agent{X: 185, Y: 200, Vitality: 30,
+	sibling := w.addAgent(Agent{Maturity: 1, X: 185, Y: 200, Vitality: 30,
 		Genome: filledGenome(40), Species: SpeciesEnemy})
 	p = w.perceive(mustAgent(t, w, hunter))
 	for i := range p.Others {
@@ -202,10 +202,10 @@ func TestPreyIsWorthKillingForTheCarcass(t *testing.T) {
 func TestNobodyCourtsAnotherSpecies(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	man := w.addAgent(Agent{X: 200, Y: 200, Sex: Male, Hunger: 0,
+	man := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Hunger: 0,
 		Genome: genomeOf(40, 100, 100)})
 	w.agentByID(man).Vitality = w.agentByID(man).MaxVitality(&cfg)
-	she := w.addAgent(Agent{X: 205, Y: 200, Sex: Female, Hunger: 0,
+	she := w.addAgent(Agent{Maturity: 1, X: 205, Y: 200, Sex: Female, Hunger: 0,
 		Genome: genomeOf(40, 100, 100), Species: SpeciesEnemy})
 	w.agentByID(she).Vitality = w.agentByID(she).MaxVitality(&cfg)
 
@@ -228,8 +228,8 @@ func TestGuardingAndDodgingChangeWhatABlowDoes(t *testing.T) {
 		w := NewWorld(cfg)
 		g := filledGenome(midAbility)
 		g[GeneDefence] = defenceGene
-		att := w.addAgent(Agent{X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
-		def := w.addAgent(Agent{X: 105, Y: 100, Genome: g, Vitality: 90})
+		att := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
+		def := w.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Genome: g, Vitality: 90})
 		w.SetController(att, fixedController{Action{Kind: ActAttack, TargetID: def, Effort: 1, Stance: StanceAggressive}})
 		w.SetController(def, fixedController{Action{Kind: ActAttack, TargetID: att, Effort: 1, Stance: defender}})
 		w.Step()
@@ -248,8 +248,8 @@ func TestGuardingAndDodgingChangeWhatABlowDoes(t *testing.T) {
 	// And the guard's own blow lands for less, so it is a trade rather than a
 	// free improvement.
 	w := NewWorld(cfg)
-	att := w.addAgent(Agent{X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
-	def := w.addAgent(Agent{X: 105, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
+	att := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
+	def := w.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Genome: filledGenome(midAbility), Vitality: 90})
 	w.SetController(att, fixedController{Action{Kind: ActAttack, TargetID: def, Effort: 1, Stance: StanceGuarded}})
 	w.SetController(def, fixedController{Action{Kind: ActRest}})
 	w.Step()
@@ -266,8 +266,8 @@ func TestDodgingMissesBlowsEntirely(t *testing.T) {
 	w := NewWorld(cfg)
 	g := filledGenome(midAbility)
 	g[GeneEvasion] = MaxAbility
-	att := w.addAgent(Agent{X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 1e6})
-	def := w.addAgent(Agent{X: 105, Y: 100, Genome: g, Vitality: 1e6})
+	att := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 1e6})
+	def := w.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Genome: g, Vitality: 1e6})
 	w.SetController(att, fixedController{Action{Kind: ActAttack, TargetID: def, Effort: 1, Stance: StanceAggressive}})
 	// Standing its ground in an evasive stance, so that the blows keep coming
 	// and the share that miss can be counted.
@@ -285,8 +285,8 @@ func TestDodgingMissesBlowsEntirely(t *testing.T) {
 
 	// Somebody who is not dodging never does.
 	w2 := NewWorld(cfg)
-	a2 := w2.addAgent(Agent{X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 1e6})
-	d2 := w2.addAgent(Agent{X: 105, Y: 100, Genome: g, Vitality: 1e6})
+	a2 := w2.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Genome: filledGenome(midAbility), Vitality: 1e6})
+	d2 := w2.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Genome: g, Vitality: 1e6})
 	w2.SetController(a2, fixedController{Action{Kind: ActAttack, TargetID: d2, Effort: 1}})
 	w2.SetController(d2, fixedController{Action{Kind: ActRest}})
 	for i := 0; i < 200; i++ {

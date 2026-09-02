@@ -127,6 +127,14 @@ type Agent struct {
 	Generation int
 	Alive      bool
 
+	// Maturity is how far through growing up this agent is, 0 at birth and 1
+	// when it is done. Food moves it, not time: see World.metabolise. It is
+	// the young end of AgeFactor, and it is why a child is weak.
+	//
+	// Agents the world puts into it fully grown - the founders, and the
+	// enemies that walk in from off the map - start at 1.
+	Maturity float64
+
 	// Lifespan is a background wear budget, spent only by World.metabolise
 	// (chronic starving or overeating). It is deliberately absent from
 	// Perception and from the utility formula: an agent has no way to know
@@ -139,6 +147,17 @@ type Agent struct {
 	// of their own descendants when the agent they were playing dies.
 	ParentIDs [2]int
 	ChildIDs  []int
+
+	// GuardianID is the parent this one is still keeping close to, and
+	// RearingTimer how much longer for. Nothing is fed and nothing is given:
+	// the child simply does not wander off, and what it gets out of it is
+	// whatever its parent does to the rivals standing around them.
+	GuardianID   int
+	RearingTimer int
+
+	// frailTicks counts how long this agent has been below the vitality it
+	// takes to be alright, which is what the slow lifespan cost is charged on.
+	frailTicks int
 
 	State  State
 	Action Action
@@ -190,9 +209,16 @@ type Agent struct {
 	actionTicks int
 
 	// opinions is what this agent believes about others: how much it has been
-	// hurt by them, and how strong it reckons they are. Allocated lazily,
-	// because a young agent has met nobody.
+	// hurt by them, what they have given it, and how strong it reckons they
+	// are. Allocated lazily, because a young agent has met nobody. There is
+	// only room for so many of them: see MemoryCapacity.
 	opinions map[int]*Opinion
+
+	// memoryUsed is how many records have been taken in during memoryTick,
+	// which is what the bandwidth is counted against. The pair resets itself
+	// when the tick moves on, so no loop has to clear it.
+	memoryTick int
+	memoryUsed int
 
 	// rejected holds candidates recently passed over, mapped to the tick at
 	// which they become interesting again. Also lazily allocated.
@@ -235,6 +261,19 @@ func (a *Agent) pruneRejected(tick int) {
 	}
 }
 
+// isKin reports whether the other agent is this one's parent or its child.
+// One hop only: there is no tree to walk here, and no generational decay to
+// pick a coefficient for.
+func (a *Agent) isKin(otherID int) bool {
+	if otherID == 0 || otherID == a.ID {
+		return false
+	}
+	if a.ParentIDs[0] == otherID || a.ParentIDs[1] == otherID {
+		return true
+	}
+	return slices.Contains(a.ChildIDs, otherID)
+}
+
 // noteHit records a blow for the purpose of who has a claim on the carcass.
 func (a *Agent) noteHit(from, tick int) {
 	if a.hitBy == nil {
@@ -261,9 +300,12 @@ func (a *Agent) recentAttackers(tick, window int) []int {
 
 // CanReproduce reports whether the agent is well enough off to spend time on
 // priority 2. Staying alive comes first: a hungry or battered agent does not
-// court, however attractive the candidate next to it.
+// court, however attractive the candidate next to it. Nor does one that has
+// not finished growing up - childhood is a real span of the world's time, and
+// what it costs is the generations it holds up.
 func (a *Agent) CanReproduce(cfg *Config) bool {
-	return a.Hunger < cfg.ReproHunger &&
+	return a.Maturity >= cfg.ReproMaturity &&
+		a.Hunger < cfg.ReproHunger &&
 		a.Vitality >= cfg.ReproVitalityShare*a.MaxVitality(cfg) &&
 		a.CooldownTimer <= 0
 }

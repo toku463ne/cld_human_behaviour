@@ -24,11 +24,19 @@ import (
 // got there.
 func convinceOf(t *testing.T, w *World, observerID, targetID int) {
 	t.Helper()
+	// The readings are spread over ticks rather than poured in at once,
+	// because an agent can only take so much in per tick (MemoryBandwidth).
+	// The clock is put back afterwards so that the scenario itself starts
+	// where it was: what these tests are about is the decision, not how long
+	// the estimate took to build.
+	at := w.tick
 	for i := 0; i < 200; i++ {
 		w.observeStrength(mustAgent(t, w, observerID), mustAgent(t, w, targetID), 1)
+		w.tick++
 	}
+	w.tick = at
 	op := w.opinionOf(mustAgent(t, w, observerID), targetID)
-	truth := mustAgent(t, w, targetID).Attack()
+	truth := mustAgent(t, w, targetID).Attack(&w.cfg)
 	if math.Abs(op.Strength-truth) > 5 {
 		t.Fatalf("observer still believes %d has strength %.1f, true value is %.1f", targetID, op.Strength, truth)
 	}
@@ -93,13 +101,13 @@ func describe(a Action) string {
 // feed it.
 func TestHungryAgentTakesTheMealItCanWinTheRaceFor(t *testing.T) {
 	w := NewWorld(testConfig())
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 70, Hunger: 75,
 		Genome: genomeOf(50, 100, 100)})
 	// The near meal has somebody standing on top of it; the far one is free.
 	near := w.addFood(230, 200)
 	far := w.addFood(200, 280)
-	w.addAgent(Agent{X: 236, Y: 200, Sex: Male, Vitality: 100, Hunger: 0, Genome: genomeOf(50, 0, 0)})
+	w.addAgent(Agent{Maturity: 1, X: 236, Y: 200, Sex: Male, Vitality: 100, Hunger: 0, Genome: genomeOf(50, 0, 0)})
 
 	got := wantAction(t, w, subject, ActEat, far, "meal in somebody else's lap")
 	if got.TargetID == near {
@@ -114,11 +122,11 @@ func TestHungryAgentTakesTheMealItCanWinTheRaceFor(t *testing.T) {
 // probably loses. Losing that race is what the option is priced at.
 func TestOutmatchedAgentRacesForFoodRatherThanFightingForIt(t *testing.T) {
 	w := NewWorld(testConfig())
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 45, Hunger: 80,
 		Genome: genomeOf(12, 100, 100)})
 	guarded := w.addFood(226, 200)
-	giant := w.addAgent(Agent{X: 232, Y: 200, Sex: Male, Vitality: 100, Hunger: 0, Genome: genomeOf(100, 0, 0)})
+	giant := w.addAgent(Agent{Maturity: 1, X: 232, Y: 200, Sex: Male, Vitality: 100, Hunger: 0, Genome: genomeOf(100, 0, 0)})
 	convinceOf(t, w, subject, giant)
 
 	tr := decideWithTrace(t, w, subject)
@@ -149,11 +157,11 @@ func TestContestedMealIsWorthAFightAgainstAWeakerRival(t *testing.T) {
 	// body rather than the contest.
 	strong := genomeOf(95, 100, 100)
 	fitBudget(strong, cfg.GeneBudgetMean)
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 40, Hunger: 92,
 		Genome: strong})
 	w.addFood(222, 200)
-	rival := w.addAgent(Agent{X: 226, Y: 200, Sex: Male, Vitality: 25, Hunger: 0, Genome: genomeOf(8, 0, 0)})
+	rival := w.addAgent(Agent{Maturity: 1, X: 226, Y: 200, Sex: Male, Vitality: 25, Hunger: 0, Genome: genomeOf(8, 0, 0)})
 	convinceOf(t, w, subject, rival)
 
 	tr := decideWithTrace(t, w, subject)
@@ -171,7 +179,7 @@ func TestContestedMealIsWorthAFightAgainstAWeakerRival(t *testing.T) {
 // option that feeds it, so the only thing worth doing is going to look.
 func TestHungryAgentWithNothingInSightGoesLooking(t *testing.T) {
 	w := NewWorld(testConfig())
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 85,
 		Genome: genomeOf(50, 100, 100)})
 
@@ -187,7 +195,7 @@ func TestHungryAgentWithNothingInSightGoesLooking(t *testing.T) {
 func TestBatteredButFedAgentRests(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 30, Hunger: 5,
 		Genome: genomeOf(50, 100, 100)})
 	// Not fit to reproduce yet, so that priority 2 stays out of the comparison.
@@ -215,10 +223,10 @@ func attackedBy(t *testing.T, w *World, victim, attacker int) {
 // takes the damage out of the picture.
 func TestCorneredAgentRunsFromTheOneKillingIt(t *testing.T) {
 	w := NewWorld(testConfig())
-	victim := w.addAgent(Agent{
+	victim := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 14, Hunger: 20,
 		Genome: genomeOf(15, 100, 100)})
-	bully := w.addAgent(Agent{
+	bully := w.addAgent(Agent{Maturity: 1,
 		X: 208, Y: 200, Sex: Male, Vitality: 100, Hunger: 0,
 		Genome: genomeOf(95, 100, 100)})
 	convinceOf(t, w, victim, bully)
@@ -235,10 +243,10 @@ func TestCorneredAgentRunsFromTheOneKillingIt(t *testing.T) {
 // barely hurt it, because the damage coming in is not what is going to kill it.
 func TestBatteredAgentDoesNotRunFromAFeebleAttacker(t *testing.T) {
 	w := NewWorld(testConfig())
-	victim := w.addAgent(Agent{
+	victim := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 14, Hunger: 20,
 		Genome: genomeOf(60, 100, 100)})
-	weakling := w.addAgent(Agent{
+	weakling := w.addAgent(Agent{Maturity: 1,
 		X: 208, Y: 200, Sex: Male, Vitality: 20, Hunger: 0,
 		Genome: genomeOf(3, 100, 100)})
 	convinceOf(t, w, victim, weakling)
@@ -252,10 +260,10 @@ func TestBatteredAgentDoesNotRunFromAFeebleAttacker(t *testing.T) {
 // who is actually swinging at you.
 func TestBeingHitPromptsTheRethinkAndPutsFleeingOnTheTable(t *testing.T) {
 	w := NewWorld(testConfig())
-	victim := w.addAgent(Agent{
+	victim := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 60, Hunger: 20,
 		Genome: genomeOf(40, 100, 100)})
-	bully := w.addAgent(Agent{
+	bully := w.addAgent(Agent{Maturity: 1,
 		X: 208, Y: 200, Sex: Male, Vitality: 100, Hunger: 0,
 		Genome: genomeOf(90, 100, 100)})
 	w.SetController(bully, fixedController{Action{Kind: ActAttack, TargetID: victim, Effort: 1}})
@@ -297,11 +305,11 @@ func TestBeingHitPromptsTheRethinkAndPutsFleeingOnTheTable(t *testing.T) {
 func TestSettledAgentCourtsTheBestCandidateInSight(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 100, Hunger: 5,
 		Genome: genomeOf(50, 100, 100)})
-	dull := w.addAgent(Agent{X: 215, Y: 200, Sex: Female, Vitality: 40, Hunger: 5, Genome: genomeOf(10, 10, 10)})
-	catch := w.addAgent(Agent{X: 225, Y: 200, Sex: Female, Vitality: 100, Hunger: 5, Genome: genomeOf(95, 95, 95)})
+	dull := w.addAgent(Agent{Maturity: 1, X: 215, Y: 200, Sex: Female, Vitality: 40, Hunger: 5, Genome: genomeOf(10, 10, 10)})
+	catch := w.addAgent(Agent{Maturity: 1, X: 225, Y: 200, Sex: Female, Vitality: 100, Hunger: 5, Genome: genomeOf(95, 95, 95)})
 	mustAgent(t, w, subject).reproReady = true
 
 	got := wantAction(t, w, subject, ActCourt, catch, "settled with two candidates in sight")
@@ -315,10 +323,10 @@ func TestSettledAgentCourtsTheBestCandidateInSight(t *testing.T) {
 // is what the trace shows: courting is never even one of the options.
 func TestStarvingAgentNeverWeighsUpCourting(t *testing.T) {
 	w := NewWorld(testConfig())
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 60, Hunger: 90,
 		Genome: genomeOf(50, 100, 100)})
-	w.addAgent(Agent{X: 170, Y: 200, Sex: Female, Vitality: 100, Hunger: 5, Genome: genomeOf(95, 95, 95)})
+	w.addAgent(Agent{Maturity: 1, X: 170, Y: 200, Sex: Female, Vitality: 100, Hunger: 5, Genome: genomeOf(95, 95, 95)})
 	meal := w.addFood(222, 200)
 	mustAgent(t, w, subject).reproReady = true
 
@@ -339,8 +347,8 @@ func TestStarvingAgentNeverWeighsUpCourting(t *testing.T) {
 // everybody would cost more than deciding does.
 func TestOnlyTrackedAgentsAreTraced(t *testing.T) {
 	w := NewWorld(testConfig())
-	followed := w.addAgent(Agent{X: 200, Y: 200, Vitality: 80, Hunger: 60, Genome: genomeOf(50, 100, 100)})
-	ignored := w.addAgent(Agent{X: 300, Y: 300, Vitality: 80, Hunger: 60, Genome: genomeOf(50, 100, 100)})
+	followed := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 80, Hunger: 60, Genome: genomeOf(50, 100, 100)})
+	ignored := w.addAgent(Agent{Maturity: 1, X: 300, Y: 300, Vitality: 80, Hunger: 60, Genome: genomeOf(50, 100, 100)})
 
 	if !w.TrackDecisions(followed, true) {
 		t.Fatal("could not follow an agent that exists")
@@ -374,11 +382,11 @@ func TestOnlyTrackedAgentsAreTraced(t *testing.T) {
 // it was compared on.
 func TestTraceExplainsTheChosenAction(t *testing.T) {
 	w := NewWorld(testConfig())
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 60, Hunger: 70,
 		Genome: genomeOf(50, 100, 100)})
 	w.addFood(230, 200)
-	w.addAgent(Agent{X: 240, Y: 210, Sex: Female, Vitality: 90, Hunger: 10, Genome: genomeOf(60, 0, 0)})
+	w.addAgent(Agent{Maturity: 1, X: 240, Y: 210, Sex: Female, Vitality: 90, Hunger: 10, Genome: genomeOf(60, 0, 0)})
 	w.TrackDecisions(subject, true)
 	w.Step()
 
@@ -424,7 +432,7 @@ func TestTraceKeepsARollingHistory(t *testing.T) {
 	cfg := testConfig()
 	cfg.FoodSpawnRate = 0.5
 	w := NewWorld(cfg)
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Vitality: 80, Hunger: 50,
 		Genome: genomeOf(50, 100, 100)})
 	w.TrackDecisions(subject, true)
@@ -452,7 +460,7 @@ func TestTraceKeepsARollingHistory(t *testing.T) {
 func TestTraceOutlivesTheAgent(t *testing.T) {
 	cfg := testConfig()
 	w := NewWorld(cfg)
-	doomed := w.addAgent(Agent{
+	doomed := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Vitality: 2, Hunger: cfg.MaxHunger,
 		Genome: genomeOf(50, 100, 100)})
 	w.TrackDecisions(doomed, true)
@@ -474,7 +482,7 @@ func TestTraceOutlivesTheAgent(t *testing.T) {
 // fills in what prompted the decision and what came out of it.
 func TestTraceWorksForAControllerThatDoesNotFillItIn(t *testing.T) {
 	w := NewWorld(testConfig())
-	id := w.addAgent(Agent{X: 200, Y: 200, Vitality: 80, Hunger: 10, Genome: genomeOf(50, 0, 0)})
+	id := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 80, Hunger: 10, Genome: genomeOf(50, 0, 0)})
 	w.TrackDecisions(id, true)
 	w.SetController(id, fixedController{Action{Kind: ActMove, DX: 1, Effort: 0.5}})
 	w.Step()
@@ -517,10 +525,10 @@ func gateScene(t *testing.T, unlock, intelligence float64) DecisionTrace {
 	cfg := testConfig()
 	cfg.StrategyDepthUnlock = unlock
 	w := NewWorld(cfg)
-	subject := w.addAgent(Agent{
+	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 20,
 		Genome: genomeOf(50, 100, intelligence)})
-	w.addAgent(Agent{X: 240, Y: 200, Sex: Female, Vitality: 80, Hunger: 20, Genome: genomeOf(50, 0, 0)})
+	w.addAgent(Agent{Maturity: 1, X: 240, Y: 200, Sex: Female, Vitality: 80, Hunger: 20, Genome: genomeOf(50, 0, 0)})
 	return decideWithTrace(t, w, subject)
 }
 

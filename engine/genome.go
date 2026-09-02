@@ -12,11 +12,9 @@ import "math"
 // wants "the sum of what this agent is" would have to name the fields it knows
 // about, which is exactly what breaks when a gene is added.
 //
-// Not every gene has a job yet. Defence and evasion wait for the channels of
-// stage 8 and memory for the capacity of stage 9; they are here from the start
-// because adding a gene later moves the budget under every measurement taken
-// before it. A gene with no job still costs what is spent on it, which is the
-// honest thing for it to do.
+// Not every gene has a job yet. A gene with no job still costs what is spent
+// on it, which is the honest thing for it to do: adding a gene later would
+// move the budget under every measurement taken before it.
 //
 // The vector is longer than NumGenes when stage 12 adds hint slots to it, so
 // nothing here may assume its length.
@@ -84,11 +82,51 @@ func (a *Agent) Gene(g Gene) float64 {
 	return a.Genome[g]
 }
 
-// The genes that already have a job, named so that the rules read as rules
-// rather than as array indexing.
-func (a *Agent) Attack() float64       { return a.Gene(GeneAttack) }
-func (a *Agent) Rationality() float64  { return a.Gene(GeneRationality) }
-func (a *Agent) Intelligence() float64 { return a.Gene(GeneIntelligence) }
+// AgeFactor is how much of what this agent inherited it can express right now.
+//
+// It is one curve with two ends. The young end is growth: a newborn expresses
+// ChildAbilityShare of its inheritance and works up to all of it as it grows
+// (Maturity, which food buys). The old end is senescence: past
+// SenescenceYears the same curve comes back down, towards but never below
+// SenescenceFloor. Growing up and wearing out are not two mechanisms here,
+// they are the two sides of one question - what can this body do today.
+func (a *Agent) AgeFactor(cfg *Config) float64 {
+	// The common case is an adult in its prime, and this is read several times
+	// per gene per decision, so it gets a way out before any arithmetic: past
+	// the growing and short of the declining, the answer is one.
+	prime := float64(cfg.SenescenceYears) * float64(cfg.TicksPerYear)
+	if a.Maturity >= 1 && (cfg.SenescenceRate <= 0 || prime <= 0 || float64(a.Age) <= prime) {
+		return 1
+	}
+
+	f := cfg.ChildAbilityShare + (1-cfg.ChildAbilityShare)*clamp(a.Maturity, 0, 1)
+	if cfg.SenescenceRate > 0 && prime > 0 {
+		if past := (float64(a.Age) - prime) / float64(cfg.TicksPerYear); past > 0 {
+			f *= math.Max(cfg.SenescenceFloor, 1-past*cfg.SenescenceRate)
+		}
+	}
+	return f
+}
+
+// Ability is what one gene is worth to this agent today: what it inherited,
+// scaled by how much of itself it has grown into and how much of that it has
+// since lost. It is the only place that multiplication happens - everything
+// below and every rule elsewhere goes through here, so there is one answer to
+// "how strong is this one" and not two.
+//
+// Gene is the other reading: the inheritance itself, untouched by age. That is
+// what breeding passes on and what the experiments measure, because selection
+// acts on what is inherited, not on how old the holder happens to be.
+func (a *Agent) Ability(g Gene, cfg *Config) float64 {
+	return a.Gene(g) * a.AgeFactor(cfg)
+}
+
+// The genes that have a job, named so that the rules read as rules rather than
+// as array indexing. All of them are the expressed value, not the inherited
+// one; that is why they need the config.
+func (a *Agent) Attack(cfg *Config) float64       { return a.Ability(GeneAttack, cfg) }
+func (a *Agent) Rationality(cfg *Config) float64  { return a.Ability(GeneRationality, cfg) }
+func (a *Agent) Intelligence(cfg *Config) float64 { return a.Ability(GeneIntelligence, cfg) }
 
 // MaxVitality and MaxSpeed are the world's reference figures scaled by what
 // this agent spent on being big and on being quick. A gene at the middle of
@@ -98,11 +136,46 @@ func (a *Agent) Intelligence() float64 { return a.Gene(GeneIntelligence) }
 // They are the two places the budget bites hardest: a body that holds more
 // vitality is a body that is slower, unless its budget stretches to both.
 func (a *Agent) MaxVitality(cfg *Config) float64 {
-	return cfg.MaxVitality * a.Gene(GeneVitality) / midAbility
+	return cfg.MaxVitality * a.Ability(GeneVitality, cfg) / midAbility
 }
 
 func (a *Agent) MaxSpeed(cfg *Config) float64 {
-	return cfg.MaxSpeed * a.Gene(GeneSpeed) / midAbility
+	return cfg.MaxSpeed * a.Ability(GeneSpeed, cfg) / midAbility
+}
+
+// MemoryCapacity is how many others this agent can hold an opinion about at
+// once, and MemoryBandwidth how many records it can take in during one tick.
+//
+// Both come from the memory gene, and the bandwidth from the capacity rather
+// than from a gene of its own: how much can be held and how fast it arrives
+// are two faces of the same organ, and a second gene would only make the
+// budget pay for the same thing twice.
+//
+// Zero means no limit, which is the world as it was before stage 9 and the
+// control arm to compare against.
+func (a *Agent) MemoryCapacity(cfg *Config) int {
+	if cfg.MemoryCapacity <= 0 {
+		return 0
+	}
+	return max(int(float64(cfg.MemoryCapacity)*a.Ability(GeneMemory, cfg)/midAbility), 1)
+}
+
+func (a *Agent) MemoryBandwidth(cfg *Config) int {
+	capacity := a.MemoryCapacity(cfg)
+	if capacity <= 0 || cfg.MemoryBandwidthShare <= 0 {
+		return 0
+	}
+	return max(int(float64(capacity)*cfg.MemoryBandwidthShare), 1)
+}
+
+// ForgetScale is how fast this agent's memories fade, as a multiple of the
+// world's rate. It is public because it is the one part of a memory a viewer
+// has to be told: why one node has forgotten a face another still knows. An agent with an average memory forgets at exactly the world's
+// rate, which is what keeps the parameter meaning what it meant before the
+// curve became an individual thing; one that spent nothing on memory forgets
+// twice as fast, and one at the ceiling barely forgets at all.
+func (a *Agent) ForgetScale(cfg *Config) float64 {
+	return clamp((MaxAbility-a.Ability(GeneMemory, cfg))/(MaxAbility-midAbility), 0, 2)
 }
 
 // HungerRate is how fast this agent gets hungry: the world's rate, plus
@@ -113,12 +186,18 @@ func (a *Agent) HungerRate(cfg *Config) float64 {
 	if cfg.GeneBudgetMean <= 0 {
 		return cfg.HungerRate
 	}
-	over := a.Budget()/cfg.GeneBudgetMean - 1
+	over := a.Bulk(cfg)/cfg.GeneBudgetMean - 1
 	return cfg.HungerRate * math.Max(0, 1+cfg.BudgetUpkeep*over)
 }
 
+// Bulk is how much body there actually is here today: the budget, scaled the
+// way every other expressed value is. It is what the world charges upkeep on
+// and what a carcass is worth, because both of those are about the body in
+// front of you rather than about what it was born with.
+func (a *Agent) Bulk(cfg *Config) float64 { return a.Budget() * a.AgeFactor(cfg) }
+
 // Budget is what this agent's genome adds up to: the total it has to spend
-// across everything it could be.
+// across everything it could be. Inherited, so untouched by age.
 func (a *Agent) Budget() float64 {
 	var sum float64
 	for _, v := range a.Genome {

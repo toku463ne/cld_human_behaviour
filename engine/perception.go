@@ -99,6 +99,11 @@ type AgentView struct {
 	Uncertainty float64 // variance of that belief
 	Risk        float64 // vitality this one has already cost the observer
 
+	// Affinity is how much good the observer remembers of this one: a partner,
+	// a parent, a child. It is the observer's own record, not a property of
+	// the other, and the other may well not return it.
+	Affinity float64
+
 	// Fitness is how good a mate they look, ability and condition together,
 	// already blurred by the observer's rationality.
 	Fitness float64
@@ -143,9 +148,9 @@ func (w *World) perceive(a *Agent) *Perception {
 		Species:      a.Species,
 		Vitality:     a.Vitality,
 		Hunger:       a.Hunger,
-		Attack:       a.Attack(),
-		Rationality:  a.Rationality(),
-		Intelligence: a.Intelligence(),
+		Attack:       a.Attack(&w.cfg),
+		Rationality:  a.Rationality(&w.cfg),
+		Intelligence: a.Intelligence(&w.cfg),
 		MaxVitality:  a.MaxVitality(&w.cfg),
 		MaxSpeed:     a.MaxSpeed(&w.cfg),
 		HungerRate:   a.HungerRate(&w.cfg),
@@ -211,7 +216,23 @@ func (w *World) perceive(a *Agent) *Perception {
 			}
 		}
 
-		op := w.opinionOf(a, o.ID)
+		// What this agent already knows about the other, if it has room to
+		// know anything. Seeing somebody is how an acquaintance starts, but a
+		// memory that is full of people who matter cannot take a stranger on:
+		// it goes on judging them by the population prior, as it did the first
+		// time. Meeting somebody it does know keeps that record fresh (#22).
+		est, variance, risk, affinity := w.cfg.PriorStrength, w.cfg.PriorVariance, 0.0, 0.0
+		op := a.opinion(o.ID)
+		if op == nil {
+			op = w.recordOpinion(a, o.ID)
+		} else {
+			w.touch(a, op)
+		}
+		if op != nil {
+			est, variance = op.Strength, op.Variance
+			risk, affinity = w.decayedRisk(a, op), w.decayedAffinity(a, op)
+		}
+
 		blur := w.judgementError(a, w.cfg.JudgementNoise)
 		p.Others = append(p.Others, AgentView{
 			ID:          o.ID,
@@ -227,9 +248,10 @@ func (w *World) perceive(a *Agent) *Perception {
 			Seeking:     o.State == StateSeekMate,
 			Rejected:    a.isRejected(o.ID),
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
-			EstStrength: clamp(op.Strength+blur, MinAbility, MaxAbility),
-			Uncertainty: op.Variance,
-			Risk:        w.decayedRisk(op),
+			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
+			Uncertainty: variance,
+			Risk:        risk,
+			Affinity:    affinity,
 			Fitness:     fitness(o, &w.cfg) + w.judgementError(a, w.cfg.JudgementNoise*0.5),
 		})
 	}
@@ -247,7 +269,7 @@ func (w *World) perceive(a *Agent) *Perception {
 // else. Reading the world correctly is an ability of its own: the higher the
 // rationality, the smaller the error.
 func (w *World) judgementError(observer *Agent, scale float64) float64 {
-	std := (MaxAbility - observer.Rationality()) / MaxAbility * scale
+	std := (MaxAbility - observer.Rationality(&w.cfg)) / MaxAbility * scale
 	if std <= 0 {
 		return 0
 	}

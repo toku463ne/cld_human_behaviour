@@ -81,6 +81,13 @@ type AIController struct {
 	bestFood      float64
 	bestFoodGap   float64 // value that winning the race would add
 	bestFoodRival int
+
+	// What the neighbours mean, worked out once in survey and read by
+	// everything after it: the damage currently landing, and how much of the
+	// neighbourhood would be free to land on the agent if it stopped watching
+	// them.
+	incomingDmg float64
+	exposure    float64
 }
 
 func (c *AIController) Decide(p *Perception) Action {
@@ -90,6 +97,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
 	maxDepth := strategyDepth(p.Cfg, p.Self.Intelligence)
 
+	c.survey(p)
 	c.addRest(p)
 	c.addExplore(p)
 	c.addFood(p)
@@ -193,11 +201,21 @@ func (c *AIController) addRest(p *Perception) {
 	cfg := p.Cfg
 	s := &p.Self
 	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
-	incoming := c.incoming(p)
+	incoming := c.incomingDmg
 	now := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
-	// Whatever is hitting the agent goes on hitting it while it sits there.
+
+	// Lying down among strangers is not the same as lying down among your
+	// own. What it costs is worked out the way every other few ticks ahead is
+	// worked out: one trajectory, no branching, today's state carried forward
+	// - here, the share of the surrounding strength that would be free to land
+	// on an agent that has stopped watching for it.
+	exposed := cfg.RestExposureWeight * c.exposure
+
+	// Whatever is hitting the agent goes on hitting it while it sits there,
+	// and so does whatever starts while it is down.
 	after := pressure(cfg, s.MaxVitality,
-		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming), drain+incoming)
+		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed),
+		drain+incoming+exposed)
 	c.add(Action{Kind: ActRest}, Utility{
 		Life: Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
 	})
@@ -243,7 +261,7 @@ func (c *AIController) addFood(p *Perception) {
 	cfg := p.Cfg
 	s := &p.Self
 	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
-	incoming := c.incoming(p)
+	incoming := c.incomingDmg
 	now := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
 
 	for i := range p.Foods {
@@ -352,7 +370,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCostAt(cfg, effort)
 
 		drain := projectedDrain(cfg, s.HungerRate, s.Hunger+s.HungerRate*ticks)
-		now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incoming(p))
+		now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incomingDmg)
 		after := pressure(cfg, s.MaxVitality, s.Vitality-cost, drain)
 		lifeTerm := (now - after) * cfg.LifeValue
 
@@ -374,7 +392,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		// whoever else took part. That is the arithmetic that makes a big
 		// animal worth taking on together and not alone.
 		if o.Prey && o.Meat >= 1 && s.Hunger > 0 && cfg.PreyValue > 0 {
-			bite := math.Min(o.Meat, 1) * cfg.PreyValue * mealValue(cfg, s, c.incoming(p))
+			bite := math.Min(o.Meat, 1) * cfg.PreyValue * mealValue(cfg, s, c.incomingDmg)
 			pKill := clamp(exchange*mine/math.Max(o.Vitality, 1e-9), 0, 1) * pWin
 			stake = Goal{Value: stake.Value + bite, Chance: math.Max(stake.Chance, pKill)}
 		}
@@ -466,17 +484,49 @@ func (c *AIController) addObserve(p *Perception, o *AgentView) {
 	})
 }
 
-// incoming is the damage the agent believes is currently landing on it.
-func (c *AIController) incoming(p *Perception) float64 {
-	if p.Self.AttackerID == 0 {
-		return 0
-	}
+// survey walks the neighbours once and works out the two things the options
+// need to know about them as a group: the damage already landing, and how
+// exposed the agent would be if it stopped paying attention to them.
+//
+// One pass, before anything is scored. Every option used to ask for the
+// incoming damage separately and walk the whole neighbourhood to answer, so
+// the same list was crossed several times a decision; the exposure of resting
+// needs exactly the same walk, and rides on this one rather than adding
+// another.
+func (c *AIController) survey(p *Perception) {
+	cfg := p.Cfg
+	c.incomingDmg, c.exposure = 0, 0
+	attacker := p.Self.AttackerID
+	known := false
+
 	for i := range p.Others {
-		if p.Others[i].ID == p.Self.AttackerID {
-			return damagePerTick(p.Cfg, p.Others[i].EstStrength, 1)
+		o := &p.Others[i]
+		threat := damagePerTick(cfg, o.EstStrength, 1)
+		if o.ID == attacker {
+			c.incomingDmg, known = threat, true
 		}
+		if cfg.RestExposureWeight <= 0 {
+			continue
+		}
+		// How much of that threat is a threat to this agent: what is close
+		// enough to reach it, less whatever it trusts. Somebody it has a bond
+		// with is not somebody it has to keep an eye on.
+		near := 1.0
+		if cfg.PerceptionRadius > 0 {
+			near = clamp(1-o.Dist/cfg.PerceptionRadius, 0, 1)
+		}
+		trust := 0.0
+		if cfg.AffinityTrust > 0 {
+			trust = clamp(o.Affinity/cfg.AffinityTrust, 0, 1)
+		}
+		c.exposure += threat * near * (1 - trust)
 	}
-	return damagePerTick(p.Cfg, p.Cfg.PriorStrength, 1)
+
+	// Being hit by somebody out of sight: it is still being hit, and the
+	// stranger's prior is the only figure there is to put on it.
+	if attacker != 0 && !known {
+		c.incomingDmg = damagePerTick(cfg, cfg.PriorStrength, 1)
+	}
 }
 
 // --- choosing --------------------------------------------------------------

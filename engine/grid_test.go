@@ -75,10 +75,10 @@ func TestGridPutsEveryoneInTheCellTheyStandIn(t *testing.T) {
 	cfg := testConfig()
 	cfg.PerceptionRadius = 100 // a 400x400 world in cells of 100: 4 by 4
 	w := NewWorld(cfg)
-	w.addAgent(Agent{X: 10, Y: 10, Vitality: 100})   // cell (0,0)
-	w.addAgent(Agent{X: 250, Y: 10, Vitality: 100})  // cell (2,0)
-	w.addAgent(Agent{X: 250, Y: 350, Vitality: 100}) // cell (2,3)
-	w.addFood(90, 199)                               // cell (0,1)
+	w.addAgent(Agent{Maturity: 1, X: 10, Y: 10, Vitality: 100})   // cell (0,0)
+	w.addAgent(Agent{Maturity: 1, X: 250, Y: 10, Vitality: 100})  // cell (2,0)
+	w.addAgent(Agent{Maturity: 1, X: 250, Y: 350, Vitality: 100}) // cell (2,3)
+	w.addFood(90, 199)                                            // cell (0,1)
 
 	g := w.spatialIndex()
 	if g.cols != 4 || g.rows != 4 {
@@ -142,7 +142,7 @@ func TestGridQueryReturnsAscendingIndices(t *testing.T) {
 	w := NewWorld(cfg)
 	// Placed back to front, so that cell order and index order disagree.
 	for i := 9; i >= 0; i-- {
-		w.addAgent(Agent{X: 20 + float64(i)*35, Y: 200, Vitality: 100})
+		w.addAgent(Agent{Maturity: 1, X: 20 + float64(i)*35, Y: 200, Vitality: 100})
 	}
 
 	got := w.spatialIndex().appendAgentsNear(nil, 200, 200, cfg.PerceptionRadius)
@@ -160,8 +160,8 @@ func TestGridClampsPointsOutsideTheWorld(t *testing.T) {
 	cfg := testConfig()
 	cfg.PerceptionRadius = 100
 	w := NewWorld(cfg)
-	w.addAgent(Agent{X: -50, Y: -50, Vitality: 100})
-	w.addAgent(Agent{X: cfg.Width + 500, Y: cfg.Height + 500, Vitality: 100})
+	w.addAgent(Agent{Maturity: 1, X: -50, Y: -50, Vitality: 100})
+	w.addAgent(Agent{Maturity: 1, X: cfg.Width + 500, Y: cfg.Height + 500, Vitality: 100})
 
 	g := w.spatialIndex()
 	if !slices.Equal(g.agents[g.cellIndex(0, 0)], []int{0}) {
@@ -195,15 +195,15 @@ func TestEverythingThatMovesTheWorldInvalidatesTheIndex(t *testing.T) {
 			w.grid.rebuild(w.agents, w.foods) // the write above is not the engine's
 			w.keepInBounds(&w.agents[0])
 		}},
-		{"a birth", func(w *World) { w.addAgent(Agent{X: 50, Y: 50, Vitality: 100}) }},
+		{"a birth", func(w *World) { w.addAgent(Agent{Maturity: 1, X: 50, Y: 50, Vitality: 100}) }},
 		{"a death", func(w *World) { w.kill(&w.agents[0]); w.removeDead() }},
 		{"food appearing", func(w *World) { w.addFood(60, 60) }},
 		{"food being eaten", func(w *World) { w.removeFoodByID(w.foods[0].ID) }}}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			w := NewWorld(testConfig())
-			w.addAgent(Agent{X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
-			w.addAgent(Agent{X: 140, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+			w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
+			w.addAgent(Agent{Maturity: 1, X: 140, Y: 100, Vitality: 100, Genome: genomeOf(50, 0, 0)})
 			w.addFood(120, 120)
 			w.spatialIndex() // up to date
 
@@ -249,8 +249,8 @@ func TestGridSurvivesAbsurdCellSizes(t *testing.T) {
 	cfg := testConfig()
 	cfg.PerceptionRadius = 0
 	w := NewWorld(cfg)
-	w.addAgent(Agent{X: 10, Y: 10, Vitality: 100})
-	w.addAgent(Agent{X: 390, Y: 390, Vitality: 100})
+	w.addAgent(Agent{Maturity: 1, X: 10, Y: 10, Vitality: 100})
+	w.addAgent(Agent{Maturity: 1, X: 390, Y: 390, Vitality: 100})
 
 	g := w.spatialIndex()
 	if g.cols != 1 || g.rows != 1 {

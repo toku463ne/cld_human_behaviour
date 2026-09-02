@@ -112,6 +112,37 @@ var variants = []variant{
 		about: "budget inherited with a quarter of the usual wobble",
 		apply: func(c *engine.Config) { c.BudgetInheritSpread = 7.5 },
 	},
+	{
+		name:  "widebudget",
+		about: "budget inherited with twice the usual wobble",
+		apply: func(c *engine.Config) { c.BudgetInheritSpread = 60 },
+	},
+	// How lopsided the founders are. The allocation is only drawn once, for
+	// the first generation, so these arms ask whether that draw still shows
+	// after twenty thousand ticks of selection and mutation.
+	// The one dial on the direction of sexual selection: how much of looking
+	// like a good mate is the state somebody is in rather than the gene they
+	// are advertising.
+	{
+		name:  "looksonly",
+		about: "mates judged on the attractiveness gene alone, condition ignored",
+		apply: func(c *engine.Config) { c.FitnessConditionWeight = 0 },
+	},
+	{
+		name:  "conditionheavy",
+		about: "mates judged mostly on condition: the looks gene is a third of it",
+		apply: func(c *engine.Config) { c.FitnessConditionWeight = 0.7 },
+	},
+	{
+		name:  "lopsidedfounders",
+		about: "founders drawn with Dirichlet alpha 0.3: most of the budget on a few genes",
+		apply: func(c *engine.Config) { c.GeneInitAlpha = 0.3 },
+	},
+	{
+		name:  "evenfounders",
+		about: "founders drawn with Dirichlet alpha 2.0: nine near-equal shares",
+		apply: func(c *engine.Config) { c.GeneInitAlpha = 2.0 },
+	},
 	// The budget pushes attack to the ceiling, which doubles the damage a
 	// typical blow does compared with the world these constants were tuned
 	// in. These arms ask what that is worth undoing.
@@ -205,6 +236,158 @@ var variants = []variant{
 	// otherwise accumulate enough bad ticks to hit zero are usually killed
 	// or starved first. This arm shrinks the budget so the mechanism is
 	// visible at all, as a lever for tuning it later.
+	// The memory of stage 9. The world before it held an unbounded record of
+	// everybody ever seen, forgot at one rate for everybody, and let an agent
+	// lie down anywhere. "stage8" is all of that at once and is the arm the
+	// stage as a whole is measured against; the others take one piece away.
+	{
+		name:  "stage8",
+		about: "memory unbounded, nothing fresh kept by contact, resting safe anywhere: the world before stage 9",
+		apply: func(c *engine.Config) {
+			c.MemoryCapacity, c.MemoryBandwidthShare = 0, 0
+			c.ContactRefresh = false
+			c.AffinityPairBond, c.AffinityBirth, c.AffinityKin = 0, 0, 0
+			c.RestExposureWeight = 0
+		},
+	},
+	{
+		name:  "nomemorylimit",
+		about: "an agent can hold everybody it has ever seen",
+		apply: func(c *engine.Config) { c.MemoryCapacity, c.MemoryBandwidthShare = 0, 0 },
+	},
+	{
+		name:  "smallmemory",
+		about: "room for six faces instead of twelve",
+		apply: func(c *engine.Config) { c.MemoryCapacity = 6 },
+	},
+	{
+		name:  "bigmemory",
+		about: "room for twenty four",
+		apply: func(c *engine.Config) { c.MemoryCapacity = 24 },
+	},
+	{
+		name:  "nocontactrefresh",
+		about: "seeing somebody again does not keep the memory of them fresh",
+		apply: func(c *engine.Config) { c.ContactRefresh = false },
+	},
+	{
+		name:  "noaffinity",
+		about: "nothing good is ever remembered about anybody",
+		apply: func(c *engine.Config) {
+			c.AffinityPairBond, c.AffinityBirth, c.AffinityKin = 0, 0, 0
+		},
+	},
+	{
+		name:  "norestexposure",
+		about: "resting in the open is as safe as resting among your own",
+		apply: func(c *engine.Config) { c.RestExposureWeight = 0 },
+	},
+	{
+		name:  "hardrestexposure",
+		about: "four times the price for lying down among strangers: where the population starts to go",
+		apply: func(c *engine.Config) { c.RestExposureWeight = 0.20 },
+	},
+	// Stage 7d: growing up, wearing out, and keeping to a parent. "nochildhood"
+	// is all of the growing-up half at once and is the arm the stage is
+	// measured against; the others take one piece away.
+	{
+		name:  "nochildhood",
+		about: "born fully grown, nobody has to wait to breed, no childcare: the world before stage 7d",
+		apply: func(c *engine.Config) {
+			c.ChildAbilityShare, c.ReproMaturity = 1, 0
+			c.ChildRearingTicks = 0
+		},
+	},
+	{
+		name:  "strongchildren",
+		about: "a newborn expresses six tenths of what it inherited instead of a third",
+		apply: func(c *engine.Config) { c.ChildAbilityShare = 0.6 },
+	},
+	{
+		name:  "longchildhood",
+		about: "five years of eating well to grow up instead of three",
+		apply: func(c *engine.Config) { c.ChildhoodYears = 5 },
+	},
+	{
+		name:  "quickchildhood",
+		about: "sweep: eighteen months of growing up",
+		apply: func(c *engine.Config) { c.ChildhoodYears = 1.5 },
+	},
+	{
+		name:  "earlybreeding",
+		about: "sweep: offspring considered at seven tenths grown",
+		apply: func(c *engine.Config) { c.ReproMaturity = 0.7 },
+	},
+	{
+		name:  "mildchildhood",
+		about: "sweep: half strength at birth, two years, breeding at 0.8",
+		apply: func(c *engine.Config) {
+			c.ChildAbilityShare, c.ChildhoodYears, c.ReproMaturity = 0.5, 2, 0.8
+		},
+	},
+	{
+		name:  "norearing",
+		about: "children do not keep to a parent",
+		apply: func(c *engine.Config) { c.ChildRearingTicks = 0 },
+	},
+	{
+		name:  "wideleash",
+		about: "sweep: a child may stray as far as it can see (130) rather than 45",
+		apply: func(c *engine.Config) { c.RearingRadius = 130 },
+	},
+	{
+		name:  "mild2",
+		about: "sweep: 0.6 at birth, two years, breeding at 0.9, wide leash",
+		apply: func(c *engine.Config) {
+			c.ChildAbilityShare, c.ChildhoodYears, c.ReproMaturity = 0.6, 2, 0.9
+			c.RearingRadius = 130
+		},
+	},
+	{
+		name:  "mild3",
+		about: "sweep: 0.6 at birth, 1.5 years, breeding at 0.9, wide leash",
+		apply: func(c *engine.Config) {
+			c.ChildAbilityShare, c.ChildhoodYears, c.ReproMaturity = 0.6, 1.5, 0.9
+			c.RearingRadius = 130
+		},
+	},
+	{
+		name:  "onethreshold",
+		about: "the growth cap and the overfeeding cost at the same place: eating to the full costs nothing",
+		apply: func(c *engine.Config) { c.OverfedHunger = 0 },
+	},
+	{
+		name:  "growthonly",
+		about: "childhood but no decline and no cost for being worn down",
+		apply: func(c *engine.Config) { c.SenescenceRate, c.FrailLifespanRate = 0, 0 },
+	},
+	{
+		name:  "nosenescence",
+		about: "nobody ever declines with age",
+		apply: func(c *engine.Config) { c.SenescenceRate = 0 },
+	},
+	{
+		name:  "nofrailty",
+		about: "a long spell of being worn down costs no lifespan",
+		apply: func(c *engine.Config) { c.FrailLifespanRate = 0 },
+	},
+	{
+		name:  "life4000",
+		about: "sweep: MaxLifespan 4000",
+		apply: func(c *engine.Config) { c.MaxLifespan = 4000 },
+	},
+	{
+		name:  "life3000",
+		about: "sweep: MaxLifespan 3000",
+		apply: func(c *engine.Config) { c.MaxLifespan = 3000 },
+	},
+	{
+		name:  "fastwear",
+		about: "sweep: the same budget spent three times as fast",
+		apply: func(c *engine.Config) {
+			c.StarveLifespanRate, c.OverfedLifespanRate, c.FrailLifespanRate = 0.6, 0.6, 0.6
+		},
+	},
 	{
 		name:  "brittlelifespan",
 		about: "MaxLifespan cut to 1500: how visible aging death becomes when the budget is tight",
@@ -234,19 +417,22 @@ func variantByName(name string) (variant, bool) {
 // to compare against afterwards.
 var metricNames = []string{
 	"pop", "gen", "births", "deaths", "starved", "killed", "killShare", "aged", "agedShare", "fights",
+	"age", "maturity", "ageFactor", "childShare", "grewUp", "childDeathShare",
+	"birthRate", "deathRate", "killRate", "starveRate", "fightRate",
 	"clumping", "neighbours", "nearest",
 	"clusters", "clusterSize", "grouped", "largestShare",
 	"gap", "gapP10", "gapRel",
 	"halfLife", "together", "censored",
 	"fightCompanion", "fightStranger", "fightRatio",
 	"species", "rareShare", "rareTrough", "rareSwing",
+	"remembered", "friends", "memFull", "restNear",
 	"power", "rationality", "intelligence",
 	"sdPower", "sdRationality", "sdIntelligence",
 	"dPower", "dRationality", "dIntelligence",
 	"budget", "sdBudget", "dBudget",
 	"shAttack", "shDefence", "shVitality", "shSpeed", "shEvasion",
 	"shMemory", "shRationality", "shIntelligence", "shLooks",
-	"geniusYears", "greatGeniusYears",
+	"geniuses", "greatGeniuses", "geniusYears", "greatGeniusYears",
 	"hunts", "packSize", "evadedShare",
 	"extinct",
 }
@@ -283,6 +469,43 @@ type sample struct {
 	// between the genes moves.
 	budget, sdBudget float64
 	shares           [engine.NumGenes]float64
+
+	// How old the population is, how much of it has finished growing, and how
+	// much of what they inherited they can express today.
+	age, maturity, ageFactor, childShare float64
+
+	// What the population's memory is doing: how many others the average agent
+	// holds a record of, how many of those records carry affinity, the share of
+	// agents that have run out of room, and how many agents it is not fond of
+	// are standing over the ones that are resting.
+	remembered, friends, memFull, restNear float64
+}
+
+// perAgentLifetime converts a count of events into a rate per ten thousand
+// person-ticks, one person-tick being one agent living one tick. Ten thousand
+// of them is about a hundred agents living a hundred ticks, which puts the
+// figures in a range the summary's two decimals can tell apart - the same
+// reason the fight rates above are printed as percentages.
+//
+// It exists because the counts above are levels, not rates, and two arms whose
+// worlds are different sizes cannot be compared on levels. A world holding half
+// as many agents produces half as many children at exactly the same birth rate
+// per agent, and reading that as "they are not breeding" is a mistake that has
+// already been made once here (see the stage 9 entry in HISTORY.md).
+//
+// The window is the same final fifth the abilities are averaged over: the
+// opening stretch is the population finding its size, and its birth and death
+// rates belong to a transient rather than to the world being compared.
+//
+// Both species are in the numerator and in the denominator. Enemies breed and
+// die like anybody else, but the ones that walk in from off the map are not
+// births, so this is a rate for the world rather than a rate for humans. Use
+// the noenemies arm when a per-human figure is what is wanted.
+func perAgentLifetime(events int, personTicks float64) float64 {
+	if personTicks <= 0 {
+		return 0
+	}
+	return float64(events) / personTicks * 10000
 }
 
 // togetherLag is the lag the "together" metric reads the survival curve at.
@@ -334,8 +557,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		gaps := w.ClusterGaps(engine.DefaultClusterLinkDist)
 		sdP, sdR, sdI := abilitySpread(w)
 		budget, sdBudget, shares := budgetSplit(w)
+		mem := w.MemoryUse()
 		series = append(series, sample{
 			budget: budget, sdBudget: sdBudget, shares: shares,
+			age: s.AvgAge, maturity: s.AvgMaturity, ageFactor: s.AvgAgeFactor,
+			childShare: share(s.Children, s.Population),
+			remembered: mem.Remembered, friends: mem.Friends,
+			memFull: mem.FullShare, restNear: mem.RestNear,
 			tick: s.Tick, pop: s.Population,
 			power: s.AvgPower, rat: s.AvgRationality, intel: s.AvgIntelligence,
 			sdPower: sdP, sdRat: sdR, sdIntel: sdI,
@@ -346,9 +574,20 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			gap: gaps.Mean, gapP10: gaps.P10, gapRel: gaps.Relative,
 		})
 	}
+	// Person-ticks over the tail, and where the counters stood when it began,
+	// so that the rates below cover the same window as the abilities.
+	var personTicks float64
+	tailStart := w.Stats()
+
 	record()
 	for i := 0; i < ticks; i++ {
 		w.Step()
+		if i == watchFrom {
+			tailStart = w.Stats()
+		}
+		if i >= watchFrom {
+			personTicks += float64(len(w.Agents()))
+		}
 		if (i+1)%interval == 0 {
 			record()
 		}
@@ -380,16 +619,33 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	}
 
 	r := run{variant: v.name, seed: seed, metrics: map[string]float64{
-		"pop":          float64(end.Population),
-		"gen":          float64(end.MaxGeneration),
-		"births":       float64(end.Births),
-		"deaths":       float64(end.Deaths),
-		"starved":      float64(end.Deaths - end.Kills - end.AgingDeaths),
-		"killed":       float64(end.Kills),
-		"killShare":    share(end.Kills, end.Deaths),
-		"aged":         float64(end.AgingDeaths),
-		"agedShare":    share(end.AgingDeaths, end.Deaths),
-		"fights":       float64(end.Fights),
+		"pop":       float64(end.Population),
+		"gen":       float64(end.MaxGeneration),
+		"births":    float64(end.Births),
+		"deaths":    float64(end.Deaths),
+		"starved":   float64(end.Deaths - end.Kills - end.AgingDeaths),
+		"killed":    float64(end.Kills),
+		"killShare": share(end.Kills, end.Deaths),
+		"aged":      float64(end.AgingDeaths),
+		"agedShare": share(end.AgingDeaths, end.Deaths),
+		"fights":    float64(end.Fights),
+		// Growing up and wearing out. "grewUp" is the share of everybody ever
+		// born that lived long enough to finish growing, which is the figure
+		// that says whether childhood is survivable at all.
+		"age":             tail.age / float64(max(cfg.TicksPerYear, 1)),
+		"maturity":        tail.maturity,
+		"ageFactor":       tail.ageFactor,
+		"childShare":      tail.childShare,
+		"grewUp":          share(end.Matured, end.Births),
+		"childDeathShare": share(end.ChildDeaths, end.Deaths),
+		// The same events as levels, divided by how many agent-lifetimes the
+		// window actually contained. These are what to compare between arms
+		// whose populations differ; the levels above cannot be.
+		"birthRate":    perAgentLifetime(end.Births-tailStart.Births, personTicks),
+		"deathRate":    perAgentLifetime(end.Deaths-tailStart.Deaths, personTicks),
+		"killRate":     perAgentLifetime(end.Kills-tailStart.Kills, personTicks),
+		"starveRate":   perAgentLifetime((end.Deaths-end.Kills-end.AgingDeaths)-(tailStart.Deaths-tailStart.Kills-tailStart.AgingDeaths), personTicks),
+		"fightRate":    perAgentLifetime(end.Fights-tailStart.Fights, personTicks),
 		"clumping":     tail.clumping,
 		"neighbours":   tail.neighbours,
 		"nearest":      tail.nearest,
@@ -412,6 +668,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"rareShare":      rare.Share,
 		"rareTrough":     rare.Trough,
 		"rareSwing":      rare.Swing,
+		"remembered":     tail.remembered,
+		"friends":        tail.friends,
+		"memFull":        tail.memFull,
+		"restNear":       tail.restNear,
 		"power":          tail.power,
 		"rationality":    tail.rat,
 		"intelligence":   tail.intel,
@@ -430,9 +690,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// Kills that fed somebody, and how many had a share of each. A party
 		// size above one is pack hunting; it is the thing stage 11 was built
 		// to find out about, and nothing in the rules asks for it.
-		"hunts":            float64(end.Hunts),
-		"evadedShare":      share(end.Evaded, end.Fights),
-		"packSize":         share(end.HuntParty, end.Hunts) * 1, // mean per hunt
+		"hunts":       float64(end.Hunts),
+		"evadedShare": share(end.Evaded, end.Fights),
+		"packSize":    share(end.HuntParty, end.Hunts) * 1, // mean per hunt
+		// The counts as well as the intervals: an interval worked out from
+		// zero events is the length of the run, which reads exactly like an
+		// estimate and is not one. Same censoring the half-life has.
+		"geniuses":         float64(end.Geniuses),
+		"greatGeniuses":    float64(end.GreatGeniuses),
 		"geniusYears":      years(ticks, end.Geniuses, cfg.TicksPerYear),
 		"greatGeniusYears": years(ticks, end.GreatGeniuses, cfg.TicksPerYear),
 		"extinct":          boolToFloat(end.Population == 0),
@@ -477,6 +742,14 @@ func tailAverage(series []sample) sample {
 		out.gap += s.gap
 		out.gapP10 += s.gapP10
 		out.gapRel += s.gapRel
+		out.age += s.age
+		out.maturity += s.maturity
+		out.ageFactor += s.ageFactor
+		out.childShare += s.childShare
+		out.remembered += s.remembered
+		out.friends += s.friends
+		out.memFull += s.memFull
+		out.restNear += s.restNear
 		n++
 	}
 	if n == 0 {
@@ -504,6 +777,14 @@ func tailAverage(series []sample) sample {
 	out.gap /= d
 	out.gapP10 /= d
 	out.gapRel /= d
+	out.age /= d
+	out.maturity /= d
+	out.ageFactor /= d
+	out.childShare /= d
+	out.remembered /= d
+	out.friends /= d
+	out.memFull /= d
+	out.restNear /= d
 	return out
 }
 
@@ -515,6 +796,9 @@ func tailAverage(series []sample) sample {
 // spread settles wherever mutation alone can hold it; drawing each gene from
 // one parent or the other keeps it. The mean says which way selection is
 // pushing, and this says how much it has left to push.
+// The inherited values, not the expressed ones: selection acts on what is
+// passed on, and a world that happens to hold a lot of children would
+// otherwise look like a world that had bred weaker agents.
 func abilitySpread(w *engine.World) (power, rationality, intelligence float64) {
 	agents := w.Agents()
 	n := float64(len(agents))
@@ -523,16 +807,16 @@ func abilitySpread(w *engine.World) (power, rationality, intelligence float64) {
 	}
 	var mp, mr, mi float64
 	for i := range agents {
-		mp += agents[i].Attack()
-		mr += agents[i].Rationality()
-		mi += agents[i].Intelligence()
+		mp += agents[i].Gene(engine.GeneAttack)
+		mr += agents[i].Gene(engine.GeneRationality)
+		mi += agents[i].Gene(engine.GeneIntelligence)
 	}
 	mp, mr, mi = mp/n, mr/n, mi/n
 	var sp, sr, si float64
 	for i := range agents {
-		sp += (agents[i].Attack() - mp) * (agents[i].Attack() - mp)
-		sr += (agents[i].Rationality() - mr) * (agents[i].Rationality() - mr)
-		si += (agents[i].Intelligence() - mi) * (agents[i].Intelligence() - mi)
+		sp += (agents[i].Gene(engine.GeneAttack) - mp) * (agents[i].Gene(engine.GeneAttack) - mp)
+		sr += (agents[i].Gene(engine.GeneRationality) - mr) * (agents[i].Gene(engine.GeneRationality) - mr)
+		si += (agents[i].Gene(engine.GeneIntelligence) - mi) * (agents[i].Gene(engine.GeneIntelligence) - mi)
 	}
 	return math.Sqrt(sp / n), math.Sqrt(sr / n), math.Sqrt(si / n)
 }
@@ -584,6 +868,12 @@ var shareMetric = []string{
 // years is how long, in years of the world's clock, between one of these
 // events and the next. Zero events is reported as the length of the run, which
 // is a lower bound rather than an answer.
+// years is how long the world went, on average, between events of some kind.
+//
+// With no events at all there is no interval to report, and what comes back is
+// the length of the whole run - a lower bound, not an estimate. It looks
+// exactly like a real figure, so read it next to the count of events: a
+// geniusYears of 40 in a forty year run means "never", not "once".
 func years(ticks, events, ticksPerYear int) float64 {
 	if ticksPerYear <= 0 {
 		return 0

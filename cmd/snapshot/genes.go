@@ -72,9 +72,9 @@ func measureGenes(seeds, ticks int) geneDist {
 
 func collect(into *[3][]float64, w *engine.World) {
 	for _, a := range w.Agents() {
-		into[0] = append(into[0], a.Attack())
-		into[1] = append(into[1], a.Rationality())
-		into[2] = append(into[2], a.Intelligence())
+		into[0] = append(into[0], a.Gene(engine.GeneAttack))
+		into[1] = append(into[1], a.Gene(engine.GeneRationality))
+		into[2] = append(into[2], a.Gene(engine.GeneIntelligence))
 	}
 }
 

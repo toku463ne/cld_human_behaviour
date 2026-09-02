@@ -88,7 +88,7 @@ func (w *World) dropMeat(a *Agent) {
 	if w.cfg.MeatPerBudget <= 0 {
 		return
 	}
-	items := int(a.Budget() / w.cfg.MeatPerBudget)
+	items := int(a.Bulk(&w.cfg) / w.cfg.MeatPerBudget)
 	if items <= 0 {
 		return
 	}
@@ -143,5 +143,5 @@ func (w *World) meatFrom(a *Agent) float64 {
 	if w.cfg.MeatPerBudget <= 0 {
 		return 0
 	}
-	return a.Budget() / w.cfg.MeatPerBudget
+	return a.Bulk(&w.cfg) / w.cfg.MeatPerBudget
 }

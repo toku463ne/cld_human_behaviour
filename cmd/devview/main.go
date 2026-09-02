@@ -232,7 +232,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		if capacity > 0 {
 			filled = radius * float32(clamp01(a.Vitality/capacity))
 		}
-		ringWidth := float32(minRingSize + a.Attack()/100*(maxRingSize-minRingSize))
+		ringWidth := float32(minRingSize + a.Attack(&cfg)/100*(maxRingSize-minRingSize))
 
 		fill := colorMale
 		if a.Sex == engine.Female {
@@ -345,6 +345,7 @@ func (g *game) overlay() string {
 		s.AvgPower, s.AvgRationality, s.AvgIntelligence, s.AvgVitality, s.AvgHunger)
 	b.WriteString("circle = body (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
+	b.WriteString("children are small circles: a newborn expresses 60% of its genes and grows into the rest by eating\n")
 	b.WriteString("space pause   right/n one tick   -/= slower/faster   click a node   esc clear\n")
 	b.WriteString("tab decisions/beliefs   [ ] older/newer decision\n")
 	return b.String()
@@ -401,6 +402,10 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 			a.Vitality, a.MaxVitality(&cfg), a.Hunger, a.Species, a.Budget())
 		t.line("genes %s", geneLine(&a, 0, 5))
 		t.line("      %s", geneLine(&a, 5, engine.NumGenes))
+		t.line("age %5.1f years  grown %3.0f%%  expressing %3.0f%% of its genes",
+			float64(a.Age)/float64(max(cfg.TicksPerYear, 1)), a.Maturity*100, a.AgeFactor(&cfg)*100)
+		t.line("memory %d/%d faces   forgets at x%.2f",
+			len(g.world.Opinions(a.ID)), a.MemoryCapacity(&cfg), a.ForgetScale(&cfg))
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
 	} else {
@@ -528,7 +533,10 @@ func (g *game) drawBeliefs(t *textBox) {
 		return ids[i] < ids[j]
 	})
 
+	cfg := g.world.Config()
 	t.line("believes about others (true power in brackets):")
+	t.line("  aff is what it remembers them doing for it: a bond, a birth,")
+	t.line("  being its parent or its child. it will rest next to those.")
 	for i, id := range ids {
 		if i >= maxOpinionRows {
 			t.line("  ... and %d more", len(ids)-maxOpinionRows)
@@ -537,10 +545,10 @@ func (g *game) drawBeliefs(t *textBox) {
 		op := opinions[id]
 		truth := "gone"
 		if other, ok := g.world.AgentByID(id); ok {
-			truth = fmt.Sprintf("%.0f", other.Attack())
+			truth = fmt.Sprintf("%.0f", other.Attack(&cfg))
 		}
-		t.line("  #%-4d strength %5.1f +/- %5.1f  risk %5.1f  seen %2d [%s]",
-			id, op.Strength, math.Sqrt(op.Variance), op.Risk, op.Samples, truth)
+		t.line("  #%-4d str %5.1f+/-%5.1f  risk %5.1f  aff %5.1f  seen %2d [%s]",
+			id, op.Strength, math.Sqrt(op.Variance), op.Risk, op.Affinity, op.Samples, truth)
 	}
 }
 
@@ -548,10 +556,18 @@ func (g *game) Layout(int, int) (int, int) {
 	return screenWidth, screenHeight
 }
 
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func main() {
 	follow := flag.Int("follow", 0, "node ID to follow from the start (0 for none; nodes can also be clicked)")
 	seed := flag.Int64("seed", engine.DefaultConfig().Seed, "simulation seed")
 	slow := flag.Bool("slow", false, "start at 1/5 speed, for following a single node")
+	beliefs := flag.Bool("beliefs", false, "start on the beliefs panel rather than the decision one (tab switches)")
 	flag.Parse()
 
 	cfg := engine.DefaultConfig()
@@ -563,6 +579,9 @@ func main() {
 		g.speed = 1
 	}
 	g.selectAgent(*follow)
+	if *beliefs {
+		g.mode = modeBeliefs
+	}
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("devview - human behaviour simulation")

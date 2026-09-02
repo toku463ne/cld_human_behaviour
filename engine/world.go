@@ -6,13 +6,6 @@ import (
 )
 
 const (
-	// How much of how good a mate somebody looks is the condition they are in
-	// rather than the advertisement itself. The rest is the attractiveness
-	// gene. Condition is in there at all because a dying agent is a poor bet
-	// however fine it looks, and it is only a third of it because otherwise
-	// "attractive" would just mean "recently fed".
-	fitnessConditionWeight = 0.35
-
 	// Speed of an agent that is following its partner rather than chasing a
 	// target of its own.
 	pairFollowEffort = 0.35
@@ -43,6 +36,9 @@ type Stats struct {
 	Deaths        int
 	Kills         int
 	AgingDeaths   int // subset of Deaths caused by Lifespan reaching zero
+	Matured       int // agents that finished growing up
+	ChildDeaths   int // subset of Deaths of agents that never got there
+	Children      int // alive right now and not grown yet
 	Fights        int
 	MaxGeneration int
 
@@ -51,6 +47,14 @@ type Stats struct {
 	AvgIntelligence float64
 	AvgVitality     float64
 	AvgHunger       float64
+
+	// What the population is made of age-wise: how old the average agent is,
+	// how far through growing up it is, and how much of its inheritance it can
+	// express today. The last is the one that says whether the world is full
+	// of children, of adults, or of the old.
+	AvgAge       float64
+	AvgMaturity  float64
+	AvgAgeFactor float64
 }
 
 // attack is one blow queued during a tick, applied once everybody has acted so
@@ -130,6 +134,8 @@ type World struct {
 	deaths        int
 	kills         int
 	agingDeaths   int
+	matured       int
+	childDeaths   int
 	fights        int
 	maxGeneration int
 }
@@ -211,10 +217,13 @@ func (w *World) Stats() Stats {
 		Deaths:        w.deaths,
 		Kills:         w.kills,
 		AgingDeaths:   w.agingDeaths,
+		Matured:       w.matured,
+		ChildDeaths:   w.childDeaths,
 		Fights:        w.fights,
 		MaxGeneration: w.maxGeneration,
 	}
 	var sumPower, sumRationality, sumIntelligence, sumVitality, sumHunger float64
+	var sumAge, sumMaturity, sumFactor float64
 	for i := range w.agents {
 		a := &w.agents[i]
 		if a.Sex == Female {
@@ -222,11 +231,17 @@ func (w *World) Stats() Stats {
 		} else {
 			s.Males++
 		}
-		sumPower += a.Attack()
-		sumRationality += a.Rationality()
-		sumIntelligence += a.Intelligence()
+		sumPower += a.Gene(GeneAttack)
+		sumRationality += a.Gene(GeneRationality)
+		sumIntelligence += a.Gene(GeneIntelligence)
 		sumVitality += a.Vitality
 		sumHunger += a.Hunger
+		sumAge += float64(a.Age)
+		sumMaturity += a.Maturity
+		if a.Maturity < 1 {
+			s.Children++
+		}
+		sumFactor += a.AgeFactor(&w.cfg)
 	}
 	if s.Population > 0 {
 		n := float64(s.Population)
@@ -235,6 +250,9 @@ func (w *World) Stats() Stats {
 		s.AvgIntelligence = sumIntelligence / n
 		s.AvgVitality = sumVitality / n
 		s.AvgHunger = sumHunger / n
+		s.AvgAge = sumAge / n
+		s.AvgMaturity = sumMaturity / n
+		s.AvgAgeFactor = sumFactor / n
 	}
 	return s
 }
@@ -275,7 +293,7 @@ func (w *World) Step() {
 
 		if a.PartnerID != 0 {
 			w.stepPaired(a)
-		} else {
+		} else if !w.keepToGuardian(a) {
 			w.perform(a)
 		}
 		a.pruneRejected(w.tick)
@@ -519,7 +537,7 @@ func (w *World) resolveAttacks() {
 
 		// Only the part of the effort that went into the blow lands, so an
 		// attacker that is also guarding hits for less.
-		damage := damagePerTick(&w.cfg, from.Attack(), at.effort*from.mix().Attack)
+		damage := damagePerTick(&w.cfg, from.Attack(&w.cfg), at.effort*from.mix().Attack)
 
 		// The one being hit is meanwhile doing whatever it chose: turning the
 		// blow aside, not being there, or neither if it was eating.
@@ -591,6 +609,7 @@ func (w *World) metabolise() {
 		}
 		a.Vitality = math.Min(a.Vitality, a.MaxVitality(&w.cfg))
 
+		w.grow(a)
 		w.spendLifespan(a)
 		if !a.Alive {
 			continue
@@ -627,10 +646,85 @@ func (w *World) spendLifespan(a *Agent) {
 	if a.Hunger < w.cfg.OverfedHunger {
 		a.Lifespan -= w.cfg.OverfedLifespanRate
 	}
+	// And being worn down for a long stretch, which is a different thing from
+	// being hungry: an agent can be well fed and still spend its life being
+	// beaten below the vitality it takes to be alright. The counter resets the
+	// moment it climbs back out, so this is the cost of a long bad spell
+	// rather than a tally of every bad tick it ever had.
+	if w.cfg.FrailLifespanRate > 0 && w.cfg.FrailVitalityShare > 0 {
+		if a.Vitality < w.cfg.FrailVitalityShare*a.MaxVitality(&w.cfg) {
+			a.frailTicks++
+			if a.frailTicks > w.cfg.FrailGraceTicks {
+				a.Lifespan -= w.cfg.FrailLifespanRate
+			}
+		} else {
+			a.frailTicks = 0
+		}
+	}
+
 	if a.Lifespan <= 0 {
 		w.agingDeaths++
 		w.kill(a)
 	}
+}
+
+// grow moves an agent along towards being fully itself.
+//
+// Food buys it, not time: an agent grows at the rate it is fed, so a hungry
+// childhood is a long one and a starving agent does not grow at all. Nothing
+// here is a decision - there is no growing action and no growth term in the
+// utility formula. An agent eats because it is hungry, exactly as before, and
+// growing is what happens to a young body that manages it.
+//
+// The two lines this sits between are deliberately different: growth keeps
+// improving all the way to a full stomach (hunger 0), while the lifespan cost
+// of overeating starts at OverfedHunger, which is well before that. A child
+// therefore has something to gain from the last few mouthfuls that an adult
+// only pays for.
+func (w *World) grow(a *Agent) {
+	if a.Maturity >= 1 || w.cfg.ChildhoodYears <= 0 || w.cfg.TicksPerYear <= 0 {
+		return
+	}
+	fed := clamp((w.cfg.SatiatedHunger-a.Hunger)/w.cfg.SatiatedHunger, 0, 1)
+	if fed <= 0 {
+		return
+	}
+	a.Maturity += fed / (w.cfg.ChildhoodYears * float64(w.cfg.TicksPerYear))
+	if a.Maturity >= 1 {
+		a.Maturity = 1
+		w.matured++
+	}
+}
+
+// keepToGuardian walks a child back towards the parent it was born to when it
+// has wandered too far, and reports whether that is what it spent the tick on.
+//
+// This is the whole of childcare, and it is deliberately one-sided: the child
+// does the staying, and nothing is asked of the parent. There is no feeding,
+// no new action, and no term in anybody's utility formula for the survival of
+// a child. What the arrangement is worth has to come out of the rules that
+// already exist - a parent drives rivals off the ground it is standing on, and
+// after stage 9 the two of them are the only pair in the neighbourhood willing
+// to lie down and recover next to each other.
+//
+// A child whose parent has died is simply on its own from that tick.
+func (w *World) keepToGuardian(a *Agent) bool {
+	if a.RearingTimer <= 0 {
+		return false
+	}
+	a.RearingTimer--
+
+	guardian := w.agentByID(a.GuardianID)
+	if guardian == nil || !guardian.Alive {
+		a.RearingTimer, a.GuardianID = 0, 0
+		return false
+	}
+	if dist2(a.X, a.Y, guardian.X, guardian.Y) <= w.cfg.RearingRadius*w.cfg.RearingRadius {
+		return false
+	}
+	w.moveToward(a, guardian.X, guardian.Y, pairFollowEffort)
+	a.State = StateForage
+	return true
 }
 
 // --- reproduction ----------------------------------------------------------
@@ -639,6 +733,14 @@ func (w *World) bond(a, b *Agent) {
 	a.State, b.State = StatePaired, StatePaired
 	a.PartnerID, b.PartnerID = b.ID, a.ID
 	a.PairTimer, b.PairTimer = w.cfg.PairBondDuration, w.cfg.PairBondDuration
+
+	// The first good thing either of them remembers about anybody. It is the
+	// event that puts it there, not the time they go on to spend side by side:
+	// standing next to somebody is not a relationship, and if it were, every
+	// crowded agent would be fond of every other and there would be one group
+	// in the world.
+	w.rememberAffinity(a, b.ID, w.cfg.AffinityPairBond)
+	w.rememberAffinity(b, a.ID, w.cfg.AffinityPairBond)
 }
 
 func (w *World) releaseFromBond(a *Agent, cooldown int) {
@@ -745,13 +847,25 @@ func (w *World) tryBirth(pa, pb *Agent) {
 		w.randomSex(),
 		genome,
 		max(pa.Generation, pb.Generation)+1,
+		0, // and whoever is born has it all to do
 	)
 	child.Species = pa.Species
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
 
+	// It starts as a small thing that keeps to one of the two. Which one does
+	// not matter to any rule; taking the first keeps it deterministic.
+	child.GuardianID = pa.ID
+	child.RearingTimer = w.cfg.ChildRearingTicks
+
 	if child.Generation > w.maxGeneration {
 		w.maxGeneration = child.Generation
 	}
+	// Having got through it together counts for something on top of the bond
+	// itself. The child's side of it is not recorded here: it has no ID until
+	// the newborns are committed, and the parent link is what seeds it anyway
+	// (see World.record).
+	w.rememberAffinity(pa, pb.ID, w.cfg.AffinityBirth)
+	w.rememberAffinity(pb, pa.ID, w.cfg.AffinityBirth)
 	w.newborns = append(w.newborns, child)
 	w.births++
 }
@@ -759,6 +873,9 @@ func (w *World) tryBirth(pa, pb *Agent) {
 func (w *World) kill(a *Agent) {
 	a.Alive = false
 	w.deaths++
+	if a.Maturity < 1 {
+		w.childDeaths++
+	}
 	w.dropMeat(a)
 	if a.lastAttackTick >= w.tick-1 {
 		w.kills++
@@ -790,8 +907,8 @@ func fitness(a *Agent, cfg *Config) float64 {
 	if maxV := a.MaxVitality(cfg); maxV > 0 {
 		condition = clamp(a.Vitality/maxV, 0, 1) * MaxAbility
 	}
-	return a.Gene(GeneAttractiveness)*(1-fitnessConditionWeight) +
-		condition*fitnessConditionWeight
+	w := clamp(cfg.FitnessConditionWeight, 0, 1)
+	return a.Gene(GeneAttractiveness)*(1-w) + condition*w
 }
 
 func (w *World) perceivedFitness(observer, target *Agent) float64 {
@@ -801,7 +918,7 @@ func (w *World) perceivedFitness(observer, target *Agent) float64 {
 // patienceTicks is how long an agent keeps comparing candidates before it is
 // willing to settle. A rational agent can afford to wait and compare longer.
 func (w *World) patienceTicks(a *Agent) int {
-	return int(w.cfg.PatienceBase + a.Rationality()*w.cfg.PatienceRationality)
+	return int(w.cfg.PatienceBase + a.Rationality(&w.cfg)*w.cfg.PatienceRationality)
 }
 
 // willCommit reports whether an agent accepts the candidate in front of it:
@@ -921,7 +1038,11 @@ func (w *World) keepInBounds(a *Agent) {
 // --- population bookkeeping ------------------------------------------------
 
 // newAgent builds an agent without inserting it into the world.
-func (w *World) newAgent(x, y float64, sex Sex, genome []float64, generation int) Agent {
+// newAgent builds one. Maturity is a parameter rather than a default because
+// it decides how big the body is, and the vitality it starts with is a share
+// of that: a newborn has to be small from its first tick, and a founder has to
+// be grown from its first tick.
+func (w *World) newAgent(x, y float64, sex Sex, genome []float64, generation int, maturity float64) Agent {
 	for i := range genome {
 		genome[i] = clamp(genome[i], MinAbility, MaxAbility)
 	}
@@ -936,6 +1057,7 @@ func (w *World) newAgent(x, y float64, sex Sex, genome []float64, generation int
 		Generation: generation,
 		Alive:      true,
 		Lifespan:   w.cfg.MaxLifespan,
+		Maturity:   maturity,
 	}
 	a.Vitality = w.cfg.ChildVitalityShare * a.MaxVitality(&w.cfg)
 	return a
@@ -948,6 +1070,7 @@ func (w *World) randomAgent(species Species) Agent {
 		w.randomSex(),
 		w.drawGenomeFor(species),
 		0,
+		1, // whoever the world puts in from outside arrives grown
 	)
 	a.Species = species
 	a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))
