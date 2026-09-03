@@ -49,14 +49,20 @@ func (a *Agent) opinion(otherID int) *Opinion {
 // need be. It is the path for things that are not optional: being hit, and the
 // events that start an affinity. See recordOpinion for the path that can fail.
 func (w *World) opinionOf(a *Agent, otherID int) *Opinion {
-	return w.record(a, otherID, true)
+	return w.record(a, otherID, true, -1)
 }
 
 // recordOpinion returns a record to write to, and nil when the agent has no
 // room to take somebody new on: its memory is full of people who matter to it,
 // or it has already learned as much as it can take in this tick.
 func (w *World) recordOpinion(a *Agent, otherID int) *Opinion {
-	return w.record(a, otherID, false)
+	return w.record(a, otherID, false, -1)
+}
+
+// recordOpinionSeen is the same for a caller that has already glanced at the
+// other this tick: the glance it took is the one the first guess is made from.
+func (w *World) recordOpinionSeen(a *Agent, otherID int, seen float64) *Opinion {
+	return w.record(a, otherID, false, seen)
 }
 
 // record is the one place a memory is taken on.
@@ -71,7 +77,10 @@ func (w *World) recordOpinion(a *Agent, otherID int) *Opinion {
 // birth. They ignore the bandwidth and will push out the least valuable
 // record held even when it is a valuable one, because an agent does not get
 // to decline to notice that it was hit.
-func (w *World) record(a *Agent, otherID int, forced bool) *Opinion {
+// seen is the appearance the caller has already read off the other, or a
+// negative number when it has not looked yet and record should look for
+// itself if it turns out to need to.
+func (w *World) record(a *Agent, otherID int, forced bool, seen float64) *Opinion {
 	if a.opinions == nil {
 		a.opinions = make(map[int]*Opinion, 4)
 	}
@@ -106,8 +115,22 @@ func (w *World) record(a *Agent, otherID int, forced bool) *Opinion {
 		delete(a.opinions, victim)
 	}
 
+	// What this agent assumes about somebody it has taken no reading of: its
+	// own line, read off the stranger's build (appearance.go). The confidence
+	// is unchanged - a better guess is still a guess, and the first real
+	// reading has to move it as far as it ever did.
+	// Deliberately not written as one expression with a fallback: working out
+	// what a stranger looks like costs a glance (and a draw from the random
+	// source), so it must not happen when the caller has already taken one.
+	guess := 0.0
+	if seen >= 0 {
+		guess = w.strangerFromLooks(a, seen)
+	} else {
+		guess = w.strangerStrength(a, otherID)
+	}
+	w.noteFirstSight(a, guess, otherID)
 	op := &Opinion{
-		Strength: w.cfg.PriorStrength,
+		Strength: guess,
 		Variance: w.cfg.PriorVariance,
 		lastTick: w.tick,
 	}
@@ -274,11 +297,17 @@ func (w *World) rememberAffinity(a *Agent, otherID int, amount float64) {
 //
 // The reading is lost when there is no room for it: an agent that has taken in
 // all it can this tick, or whose memory is full of people who matter more,
-// watches the fight and learns nothing from it.
+// watches the fight and learns nothing about that individual from it. What it
+// does come away with either way is the impression - a body of that size hit
+// that hard - because that costs no room (appearance.go).
 func (w *World) observeStrength(observer *Agent, target *Agent, obsVariance float64) {
 	if observer.ID == target.ID {
 		return
 	}
+	noiseStd := (MaxAbility - observer.Rationality(&w.cfg)) / MaxAbility * w.cfg.JudgementNoise
+	reading := target.Attack(&w.cfg) + w.rng.NormFloat64()*noiseStd
+	w.learnFromLooks(observer, target, reading)
+
 	// Taking a reading is taking something in, whether or not the observer
 	// had heard of the target before, so it costs the same either way.
 	op := observer.opinion(target.ID)
@@ -293,8 +322,6 @@ func (w *World) observeStrength(observer *Agent, target *Agent, obsVariance floa
 		w.spendMemory(observer)
 	}
 
-	noiseStd := (MaxAbility - observer.Rationality(&w.cfg)) / MaxAbility * w.cfg.JudgementNoise
-	reading := target.Attack(&w.cfg) + w.rng.NormFloat64()*noiseStd
 	variance := obsVariance + noiseStd*noiseStd
 
 	k := op.Variance / (op.Variance + variance)

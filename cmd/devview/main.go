@@ -404,6 +404,7 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		t.line("      %s", geneLine(&a, 5, engine.NumGenes))
 		t.line("age %5.1f years  grown %3.0f%%  expressing %3.0f%% of its genes",
 			float64(a.Age)/float64(max(cfg.TicksPerYear, 1)), a.Maturity*100, a.AgeFactor(&cfg)*100)
+		t.line("looks %.0f (what others can see of its build)", a.Appearance(&cfg))
 		t.line("memory %d/%d faces   forgets at x%.2f",
 			len(g.world.Opinions(a.ID)), a.MemoryCapacity(&cfg), a.ForgetScale(&cfg))
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
@@ -512,9 +513,29 @@ func describeAction(a engine.Action) string {
 	}
 }
 
+// drawLooksSense prints what the node has made of appearance: the line it has
+// fitted for itself from every strength it has ever read, and what that line
+// says about somebody it has never met. This is the half of its beliefs that
+// is not about anybody in particular.
+func (g *game) drawLooksSense(t *textBox) {
+	ls := g.world.LooksSense(g.selected)
+	if !ls.Trusted {
+		t.line("sizing up strangers: %d readings, not enough to go by yet;", ls.Readings)
+		t.line("  a stranger is worth the flat prior %.0f to it", ls.Guess)
+		t.line("")
+		return
+	}
+	t.line("sizing up strangers: %d readings -> an average build is worth", ls.Readings)
+	t.line("  %.1f to it, %+.2f per point of build above that", ls.Guess, ls.Slope)
+	t.line("  (this is its own line, fitted from what it has seen)")
+	t.line("")
+}
+
 // drawBeliefs prints what the selected node reckons about everybody it has met:
 // how strong they are, how sure it is, and what they have already cost it.
 func (g *game) drawBeliefs(t *textBox) {
+	g.drawLooksSense(t)
+
 	opinions := g.world.Opinions(g.selected)
 	if len(opinions) == 0 {
 		t.line("has met nobody yet")

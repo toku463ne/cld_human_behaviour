@@ -141,7 +141,7 @@ type Config struct {
 	// --- judgement, memory and estimation ---
 	JudgementNoise float64 // spread of a fully irrational agent's misreading
 
-	PriorStrength     float64 // what an agent assumes about a stranger
+	PriorStrength     float64 // what an agent assumes about a stranger it cannot size up
 	PriorVariance     float64 // how unsure it is about that assumption
 	CombatObsVariance float64 // noise of one observation made while fighting
 	SpectateObsFactor float64 // watching others fight is worth less than fighting (>1)
@@ -164,6 +164,36 @@ type Config struct {
 	// stage 9.
 	MemoryCapacity       int
 	MemoryBandwidthShare float64
+
+	// --- learning from looks ---
+	//
+	// What can be seen of a body (Agent.Appearance: how big it is and how fast
+	// it moves) and what each agent has learned that it means. LearnFromLooks
+	// false is the world before stage 10, where every stranger was assumed to
+	// be PriorStrength however they looked.
+	//
+	// LooksSlope false leaves the learning on but flattens the line, so an
+	// agent learns what the strengths around it average to and nothing more.
+	// It is the control that separates the two halves of the gain: knowing
+	// what the world is like, and being able to read one body in it.
+	//
+	// AppearanceNoise is the spread of a fully irrational agent's misreading
+	// of a build, as JudgementNoise is for strength. It is much the smaller of
+	// the two on purpose: how big something is is easier to see than how hard
+	// it hits, and if it were not, appearance would carry nothing.
+	//
+	// AppearanceMinReads is how many readings an agent needs before it goes by
+	// its own line rather than the flat prior. A line through two points is
+	// not knowledge.
+	// AppearanceSlopePrior is how many readings' worth of "a build says
+	// nothing" an agent starts with. The fitted slope is pulled back towards
+	// zero by it, so a line only becomes steep once there is enough evidence
+	// to hold it up. Zero is the raw fit.
+	LearnFromLooks       bool
+	LooksSlope           bool
+	AppearanceNoise      float64
+	AppearanceMinReads   int
+	AppearanceSlopePrior float64
 
 	// ContactRefresh keeps what is already known about somebody from going
 	// stale while they are still around: seeing them resets where the fading
@@ -507,6 +537,17 @@ func DefaultConfig() Config {
 		// Twelve is a little under the number of others a crowded agent has in
 		// sight at once, so the limit binds where it matters - in a crowd -
 		// and never in an empty stretch of world.
+		// Size is read far more sharply than strength (6 against 40), and
+		// eight readings is where an agent starts trusting its own line. The
+		// sharpness had to be measured rather than guessed: at 12 the signal
+		// in a build is swamped entirely and reading it is worth nothing
+		// (HISTORY.md 2026-09-03).
+		LearnFromLooks:       true,
+		LooksSlope:           true,
+		AppearanceNoise:      6,
+		AppearanceMinReads:   8,
+		AppearanceSlopePrior: 60,
+
 		MemoryCapacity:       12,
 		MemoryBandwidthShare: 0.5,
 		ContactRefresh:       true,

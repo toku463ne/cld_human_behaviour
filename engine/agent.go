@@ -195,6 +195,12 @@ type Agent struct {
 	attackerID     int
 	lastAttackTick int
 
+	// looks is what this agent has made of appearance: the line it fits from
+	// how big somebody is to how hard they hit. It is not a memory of anybody
+	// in particular, so it is not held in opinions and does not compete for
+	// room there.
+	looks looksModel
+
 	// hitBy remembers everybody who has landed a blow recently and when, so
 	// that a carcass can be left to the ones who brought it down rather than
 	// to whoever happens to be standing nearby. Allocated on the first blow.

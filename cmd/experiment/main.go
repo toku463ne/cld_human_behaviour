@@ -218,6 +218,81 @@ var variants = []variant{
 	// stage 11 left undecided, and what it has to answer is whether a party
 	// of two ever beats hunting alone: the carcass grows with the budget
 	// while what one agent can bring down does not.
+	// Stage 10: what a stranger is assumed to be. "nolooks" is the world
+	// before it - everybody worth PriorStrength (50) whatever they looked
+	// like - and is the arm the stage is measured against. "flatlooks" keeps
+	// the learning but flattens the line, which separates learning what the
+	// world averages to from being able to read one body in it.
+	{
+		name:  "nolooks",
+		about: "a stranger is worth the flat prior however they look: the world before stage 10",
+		apply: func(c *engine.Config) { c.LearnFromLooks = false },
+	},
+	{
+		// The diagnostic pair for where the population goes. A learned guess
+		// about a stranger is lower than the flat 50 was, and the estimate of
+		// a stranger is what the exposure of resting is made of, so the first
+		// suspect is that agents simply rest more. Paired against
+		// "norestexposure", which is the same world with the learning in it.
+		name:  "restsafenolooks",
+		about: "resting safe anywhere and no learning from looks: is the cost of learning all in the resting?",
+		apply: func(c *engine.Config) { c.RestExposureWeight, c.LearnFromLooks = 0, false },
+	},
+	{
+		// Learning splits into two things: what an agent comes to assume about
+		// a stranger on average, and its being able to tell one stranger from
+		// another. This arm has neither, but moves the flat prior to what the
+		// learners settle on (about 36), which is how the two are told apart:
+		// whatever this arm does to the world is the level, not the learning.
+		name:  "lowprior",
+		about: "no learning, but a stranger is assumed to be 36 rather than 50",
+		apply: func(c *engine.Config) { c.LearnFromLooks, c.PriorStrength = false, 36 },
+	},
+	{
+		name:  "flatlooks",
+		about: "an agent learns what strengths around it average to, but not to read a build",
+		apply: func(c *engine.Config) { c.LooksSlope = false },
+	},
+	{
+		name:  "rawslope",
+		about: "the fitted slope taken as it comes, with nothing pulling it back to zero",
+		apply: func(c *engine.Config) { c.AppearanceSlopePrior = 0 },
+	},
+	{
+		name:  "softslope",
+		about: "sweep: the slope pulled back by 200 readings' worth of doubt instead of 60",
+		apply: func(c *engine.Config) { c.AppearanceSlopePrior = 200 },
+	},
+	{
+		name:  "quickslope",
+		about: "sweep: pulled back by only 20 readings' worth",
+		apply: func(c *engine.Config) { c.AppearanceSlopePrior = 20 },
+	},
+	{
+		name:  "sharplooks",
+		about: "a build is seen exactly: the ceiling of what appearance can be worth",
+		apply: func(c *engine.Config) { c.AppearanceNoise = 0 },
+	},
+	{
+		name:  "quicktrust",
+		about: "sweep: an agent goes by its own line after 3 readings rather than 8",
+		apply: func(c *engine.Config) { c.AppearanceMinReads = 3 },
+	},
+	{
+		name:  "slowtrust",
+		about: "sweep: after 20 readings",
+		apply: func(c *engine.Config) { c.AppearanceMinReads = 20 },
+	},
+	{
+		name:  "dulllooks",
+		about: "sweep: a build misread by 12 rather than 6, which is enough to swamp it",
+		apply: func(c *engine.Config) { c.AppearanceNoise = 12 },
+	},
+	{
+		name:  "vaguelooks",
+		about: "a build is as hard to read as a strength (noise 40)",
+		apply: func(c *engine.Config) { c.AppearanceNoise = 40 },
+	},
 	{
 		name:  "bigenemies",
 		about: "enemies drawn at 700 instead of 520: a carcass worth nearly six of an ordinary body",
@@ -481,6 +556,8 @@ var metricNames = []string{
 	"shAttack", "shDefence", "shVitality", "shSpeed", "shEvasion",
 	"shMemory", "shRationality", "shIntelligence", "shLooks",
 	"geniuses", "greatGeniuses", "geniusYears", "greatGeniusYears",
+	"priorErr", "priorErrFlat", "priorErrFixed", "slopeGain", "learnGain",
+	"priorErrAll", "priorErrLearned", "priorErrGreen", "learnedShare", "firstSights",
 	"hunts", "jointHunts", "packSize", "evadedShare",
 	"extinct",
 }
@@ -549,6 +626,15 @@ type sample struct {
 // die like anybody else, but the ones that walk in from off the map are not
 // births, so this is a rate for the world rather than a rate for humans. Use
 // the noenemies arm when a per-human figure is what is wanted.
+// windowMean is a total divided by the count that went into it, and zero when
+// nothing did.
+func windowMean(total float64, n int) float64 {
+	if n <= 0 {
+		return 0
+	}
+	return total / float64(n)
+}
+
 func perAgentLifetime(events int, personTicks float64) float64 {
 	if personTicks <= 0 {
 		return 0
@@ -738,6 +824,41 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// Kills that fed somebody, and how many had a share of each. A party
 		// size above one is pack hunting; it is the thing stage 11 was built
 		// to find out about, and nothing in the rules asks for it.
+		// What an agent assumes about somebody it has never taken a reading
+		// of, and how far out it was. "priorErr" is the tail window, so that
+		// it covers the same span as the abilities; "priorErrAll" is the whole
+		// run, and the gap between the two says whether the world got better
+		// at it as it went.
+		"priorErr":    windowMean(end.FirstSightError-tailStart.FirstSightError, end.FirstSights-tailStart.FirstSights),
+		"priorErrAll": windowMean(end.FirstSightError, end.FirstSights),
+		"firstSights": float64(end.FirstSights),
+		// The same error split by the observer: the ones going by a line they
+		// fitted themselves, and the ones still on the flat prior because they
+		// have not seen enough. Both halves are in the same world, so the gap
+		// between them is the one comparison the arms cannot confound. With
+		// the learning off, "learnedShare" is zero and "priorErrLearned" is
+		// meaningless.
+		"priorErrLearned": windowMean(end.FirstSightErrorLearned-tailStart.FirstSightErrorLearned,
+			end.FirstSightsLearned-tailStart.FirstSightsLearned),
+		"priorErrGreen": windowMean(
+			(end.FirstSightError-tailStart.FirstSightError)-(end.FirstSightErrorLearned-tailStart.FirstSightErrorLearned),
+			(end.FirstSights-tailStart.FirstSights)-(end.FirstSightsLearned-tailStart.FirstSightsLearned)),
+		"learnedShare": share(end.FirstSightsLearned-tailStart.FirstSightsLearned, end.FirstSights-tailStart.FirstSights),
+		// The same encounters as "priorErr", scored by the estimators it is
+		// meant to beat. These three are the comparison that arms cannot make:
+		// two arms meet different creatures, and that difference is bigger
+		// than the one being looked for.
+		"priorErrFlat": windowMean(end.FirstSightErrorFlat-tailStart.FirstSightErrorFlat,
+			end.FirstSights-tailStart.FirstSights),
+		"priorErrFixed": windowMean(end.FirstSightErrorFixed-tailStart.FirstSightErrorFixed,
+			end.FirstSights-tailStart.FirstSights),
+		// Positive means the thing on the left of the name paid: "slopeGain"
+		// is what reading the build bought over ignoring it, "learnGain" what
+		// learning bought over the flat prior.
+		"slopeGain": windowMean(end.FirstSightErrorFlat-tailStart.FirstSightErrorFlat, end.FirstSights-tailStart.FirstSights) -
+			windowMean(end.FirstSightError-tailStart.FirstSightError, end.FirstSights-tailStart.FirstSights),
+		"learnGain": windowMean(end.FirstSightErrorFixed-tailStart.FirstSightErrorFixed, end.FirstSights-tailStart.FirstSights) -
+			windowMean(end.FirstSightError-tailStart.FirstSightError, end.FirstSights-tailStart.FirstSights),
 		"hunts":       float64(end.Hunts),
 		"jointHunts":  float64(end.JointHunts),
 		"evadedShare": share(end.Evaded, end.Fights),

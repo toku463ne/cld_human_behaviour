@@ -107,6 +107,13 @@ type AgentView struct {
 	// Fitness is how good a mate they look, ability and condition together,
 	// already blurred by the observer's rationality.
 	Fitness float64
+
+	// Appearance is what can be seen of the body itself - how much of it there
+	// is and how fast it moves - as this observer read it this tick. The true
+	// abilities are still not here: this is the correlate an agent learns to
+	// interpret for itself (appearance.go), and EstStrength is already what it
+	// made of it when there is nothing else to go on.
+	Appearance float64
 }
 
 // Perception is the slice of the world a controller gets to reason about. The
@@ -193,6 +200,9 @@ func (w *World) perceive(a *Agent) *Perception {
 		})
 	}
 
+	// How badly this one reads anything, worked out once for the whole crowd.
+	unit := w.judgementScale(a)
+
 	for _, i := range w.nearAgents {
 		o := &w.agents[i]
 		if !o.Alive || o.ID == a.ID {
@@ -221,19 +231,27 @@ func (w *World) perceive(a *Agent) *Perception {
 		// memory that is full of people who matter cannot take a stranger on:
 		// it goes on judging them by the population prior, as it did the first
 		// time. Meeting somebody it does know keeps that record fresh (#22).
-		est, variance, risk, affinity := w.cfg.PriorStrength, w.cfg.PriorVariance, 0.0, 0.0
+		// One glance at the build, used for both the view and - if this one is
+		// a stranger - for what is assumed about it.
+		seen := w.glimpse(o, unit, w.cfg.AppearanceNoise)
+
+		est, variance, risk, affinity := 0.0, w.cfg.PriorVariance, 0.0, 0.0
 		op := a.opinion(o.ID)
 		if op == nil {
-			op = w.recordOpinion(a, o.ID)
+			op = w.recordOpinionSeen(a, o.ID, seen)
 		} else {
 			w.touch(a, op)
 		}
 		if op != nil {
 			est, variance = op.Strength, op.Variance
 			risk, affinity = w.decayedRisk(a, op), w.decayedAffinity(a, op)
+		} else {
+			// No room to take this one on. It is judged by its build every
+			// time it is seen, and never becomes anybody in particular.
+			est = w.strangerFromLooks(a, seen)
 		}
 
-		blur := w.judgementError(a, w.cfg.JudgementNoise)
+		blur := w.noise(unit, w.cfg.JudgementNoise)
 		p.Others = append(p.Others, AgentView{
 			ID:          o.ID,
 			X:           o.X,
@@ -244,6 +262,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Prey:        o.Species != a.Species && eatsMeat(a.Species),
 			Meat:        w.meatFrom(o),
 			Vitality:    o.Vitality,
+			Appearance:  seen,
 			Paired:      o.PartnerID != 0,
 			Seeking:     o.State == StateSeekMate,
 			Rejected:    a.isRejected(o.ID),
@@ -252,7 +271,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Uncertainty: variance,
 			Risk:        risk,
 			Affinity:    affinity,
-			Fitness:     fitness(o, &w.cfg) + w.judgementError(a, w.cfg.JudgementNoise*0.5),
+			Fitness:     fitness(o, &w.cfg) + w.noise(unit, w.cfg.JudgementNoise*0.5),
 		})
 	}
 
@@ -269,9 +288,23 @@ func (w *World) perceive(a *Agent) *Perception {
 // else. Reading the world correctly is an ability of its own: the higher the
 // rationality, the smaller the error.
 func (w *World) judgementError(observer *Agent, scale float64) float64 {
-	std := (MaxAbility - observer.Rationality(&w.cfg)) / MaxAbility * scale
-	if std <= 0 {
-		return 0
+	return w.noise(w.judgementScale(observer), scale)
+}
+
+// judgementScale is how badly this observer reads anything at all: one, less
+// its rationality. It is split out from judgementError because an agent
+// sizing up a crowd makes several readings of each of them, and the answer is
+// the same for all of them.
+func (w *World) judgementScale(observer *Agent) float64 {
+	return (MaxAbility - observer.Rationality(&w.cfg)) / MaxAbility
+}
+
+// noise draws one misreading of the given size. It draws nothing at all when
+// there is no error to make, which is what keeps a run with the noise turned
+// off consuming the random source the same way it always did.
+func (w *World) noise(unit, scale float64) float64 {
+	if std := unit * scale; std > 0 {
+		return w.rng.NormFloat64() * std
 	}
-	return w.rng.NormFloat64() * std
+	return 0
 }

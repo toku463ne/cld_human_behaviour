@@ -32,6 +32,24 @@ type Stats struct {
 	HuntParty  int // how many took part, summed over those kills
 	JointHunts int // of those, the ones more than one agent had a hand in
 
+	// FirstSights is how many times an agent has had to assume something about
+	// somebody it had never taken a reading of, and FirstSightError the total
+	// distance those assumptions were off by. The mean of the two is what
+	// learning from looks is meant to bring down.
+	FirstSights     int
+	FirstSightError float64
+
+	// The same two counted over the agents that had learned enough to use
+	// their own line. In a world with the learning off, these stay at zero.
+	FirstSightsLearned     int
+	FirstSightErrorLearned float64
+
+	// What the same guesses would have cost with the build ignored, and with
+	// the flat prior the world used before stage 10. Counterfactuals over the
+	// same encounters, so the three are directly comparable.
+	FirstSightErrorFlat  float64
+	FirstSightErrorFixed float64
+
 	Geniuses      int // births that drew an exceptional budget
 	GreatGeniuses int // ... and the rarer, larger kind. Not counted in Geniuses
 	Deaths        int
@@ -126,20 +144,34 @@ type World struct {
 	tick      int
 	foodAccum float64
 
-	births        int
-	evaded        int // blows that missed because the target got out of the way
-	hunts         int // kills whose carcass went to somebody that eats it
-	huntParty     int // and how many had a share, summed over those kills
-	jointHunts    int // and how many of the kills had more than one hand in them
-	geniuses      int
-	greatGeniuses int
-	deaths        int
-	kills         int
-	agingDeaths   int
-	matured       int
-	childDeaths   int
-	fights        int
-	maxGeneration int
+	births     int
+	evaded     int // blows that missed because the target got out of the way
+	hunts      int // kills whose carcass went to somebody that eats it
+	huntParty  int // and how many had a share, summed over those kills
+	jointHunts int // and how many of the kills had more than one hand in them
+
+	// What the assumptions about strangers cost in accuracy: how many first
+	// sights there have been and the total error across them. Read only - the
+	// completion condition of stage 10 is that the mean of these two falls.
+	firstSights     int
+	firstSightError float64
+	// ... and the subset made by an agent with enough readings to go by its
+	// own line rather than the flat prior.
+	firstSightsLearned     int
+	firstSightErrorLearned float64
+	// The same encounters scored by the two estimators the learned one is
+	// measured against (appearance.go).
+	firstSightErrorFlat  float64
+	firstSightErrorFixed float64
+	geniuses             int
+	greatGeniuses        int
+	deaths               int
+	kills                int
+	agingDeaths          int
+	matured              int
+	childDeaths          int
+	fights               int
+	maxGeneration        int
 }
 
 // NewWorld creates a world populated according to cfg. The same cfg (same seed
@@ -207,23 +239,31 @@ func (w *World) SetController(id int, c Controller) bool {
 // Stats summarises the current population.
 func (w *World) Stats() Stats {
 	s := Stats{
-		Tick:          w.tick,
-		Population:    len(w.agents),
-		FoodItems:     len(w.foods),
-		Births:        w.births,
-		Evaded:        w.evaded,
-		Hunts:         w.hunts,
-		JointHunts:    w.jointHunts,
-		HuntParty:     w.huntParty,
-		Geniuses:      w.geniuses,
-		GreatGeniuses: w.greatGeniuses,
-		Deaths:        w.deaths,
-		Kills:         w.kills,
-		AgingDeaths:   w.agingDeaths,
-		Matured:       w.matured,
-		ChildDeaths:   w.childDeaths,
-		Fights:        w.fights,
-		MaxGeneration: w.maxGeneration,
+		Tick:       w.tick,
+		Population: len(w.agents),
+		FoodItems:  len(w.foods),
+		Births:     w.births,
+		Evaded:     w.evaded,
+		Hunts:      w.hunts,
+		JointHunts: w.jointHunts,
+
+		FirstSights:     w.firstSights,
+		FirstSightError: w.firstSightError,
+
+		FirstSightsLearned:     w.firstSightsLearned,
+		FirstSightErrorLearned: w.firstSightErrorLearned,
+		FirstSightErrorFlat:    w.firstSightErrorFlat,
+		FirstSightErrorFixed:   w.firstSightErrorFixed,
+		HuntParty:              w.huntParty,
+		Geniuses:               w.geniuses,
+		GreatGeniuses:          w.greatGeniuses,
+		Deaths:                 w.deaths,
+		Kills:                  w.kills,
+		AgingDeaths:            w.agingDeaths,
+		Matured:                w.matured,
+		ChildDeaths:            w.childDeaths,
+		Fights:                 w.fights,
+		MaxGeneration:          w.maxGeneration,
 	}
 	var sumPower, sumRationality, sumIntelligence, sumVitality, sumHunger float64
 	var sumAge, sumMaturity, sumFactor float64
