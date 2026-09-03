@@ -30,6 +30,7 @@ type Stats struct {
 	Evaded     int // blows dodged entirely
 	Hunts      int // kills that fed somebody: a carcass with a claim on it
 	HuntParty  int // how many took part, summed over those kills
+	JointHunts int // of those, the ones more than one agent had a hand in
 
 	Geniuses      int // births that drew an exceptional budget
 	GreatGeniuses int // ... and the rarer, larger kind. Not counted in Geniuses
@@ -129,6 +130,7 @@ type World struct {
 	evaded        int // blows that missed because the target got out of the way
 	hunts         int // kills whose carcass went to somebody that eats it
 	huntParty     int // and how many had a share, summed over those kills
+	jointHunts    int // and how many of the kills had more than one hand in them
 	geniuses      int
 	greatGeniuses int
 	deaths        int
@@ -211,6 +213,7 @@ func (w *World) Stats() Stats {
 		Births:        w.births,
 		Evaded:        w.evaded,
 		Hunts:         w.hunts,
+		JointHunts:    w.jointHunts,
 		HuntParty:     w.huntParty,
 		Geniuses:      w.geniuses,
 		GreatGeniuses: w.greatGeniuses,

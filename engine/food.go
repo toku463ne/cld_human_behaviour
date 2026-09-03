@@ -112,6 +112,12 @@ func (w *World) dropMeat(a *Agent) {
 		w.hunts++
 		w.huntParty += len(claim)
 	}
+	// Counted apart from the affinity so that the arm with the credit turned
+	// off still reports how often the rule had the chance to fire.
+	if len(claim) > 1 {
+		w.jointHunts++
+	}
+	w.rememberHunt(claim)
 	for i := 0; i < items; i++ {
 		if w.countKind(FoodMeat) >= w.cfg.MaxMeatItems {
 			return // as much meat as the world will hold is already lying about
@@ -122,6 +128,32 @@ func (w *World) dropMeat(a *Agent) {
 			Claim: claim, ClaimUntil: w.tick + w.cfg.MeatClaimTicks,
 			SpoilAt: w.tick + w.cfg.MeatSpoilTicks,
 		})
+	}
+}
+
+// rememberHunt is what everybody who brought the carcass down comes away with
+// besides the meat: each of them remembers each of the others a little better.
+//
+// This is the only affinity that can be earned from a stranger, and it is
+// deliberately hung on the distribution rule rather than on standing nearby.
+// An agent that was there but never landed a blow is not on the list, so what
+// is remembered is having taken the risk together, not having been present.
+//
+// Nothing is recorded for a party of one: there is nobody to remember.
+func (w *World) rememberHunt(party []int) {
+	if w.cfg.AffinityHunt <= 0 || len(party) < 2 {
+		return
+	}
+	for _, id := range party {
+		a := w.agentByID(id)
+		if a == nil || !a.Alive {
+			continue
+		}
+		for _, other := range party {
+			if other != id {
+				w.rememberAffinity(a, other, w.cfg.AffinityHunt)
+			}
+		}
 	}
 }
 

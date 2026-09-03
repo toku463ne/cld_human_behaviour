@@ -190,6 +190,19 @@ type Config struct {
 	AffinityDecayPerTick float64
 	AffinityTrust        float64 // affinity at which somebody is trusted completely
 
+	// AffinityHunt is what each pair that brought a carcass down together
+	// gains of each other. It is the one source that has to be earned with
+	// somebody who is not family: a bond and a birth need a partner, and kin
+	// is given at birth, so without this the only strangers an agent can come
+	// to trust are the ones it mates with.
+	//
+	// Who counts as having taken part is not a new rule: it is the same list
+	// the carcass is shared out to (Agent.recentAttackers, filtered to those
+	// who can eat it), so an agent cannot earn a friend by hitting something
+	// it has no use for, and hanging back until the kill is made earns
+	// nothing either.
+	AffinityHunt float64
+
 	// --- utility weights ---
 	//
 	// Every action is scored with the same formula:
@@ -505,6 +518,7 @@ func DefaultConfig() Config {
 		AffinityPairBond:     18,
 		AffinityBirth:        18,
 		AffinityKin:          22,
+		AffinityHunt:         6,
 		AffinityDecayPerTick: 0.0008,
 		AffinityTrust:        20,
 

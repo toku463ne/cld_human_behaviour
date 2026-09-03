@@ -214,6 +214,25 @@ var variants = []variant{
 		about: "neither guarding nor dodging does anything: the world as stage 7c left it",
 		apply: func(c *engine.Config) { c.DefenceCap, c.EvasionCap = 0, 0 },
 	},
+	// How big the other species is. The size distribution is the one thing
+	// stage 11 left undecided, and what it has to answer is whether a party
+	// of two ever beats hunting alone: the carcass grows with the budget
+	// while what one agent can bring down does not.
+	{
+		name:  "bigenemies",
+		about: "enemies drawn at 700 instead of 520: a carcass worth nearly six of an ordinary body",
+		apply: func(c *engine.Config) { c.EnemyBudgetMean = 700 },
+	},
+	{
+		name:  "smallenemies",
+		about: "enemies drawn at 400: barely more than a human",
+		apply: func(c *engine.Config) { c.EnemyBudgetMean = 400 },
+	},
+	{
+		name:  "variedenemies",
+		about: "the same average enemy, drawn twice as widely (std 180): more of the very large ones",
+		apply: func(c *engine.Config) { c.EnemyBudgetStd = 180 },
+	},
 	{
 		name:  "noprey",
 		about: "a carcass is worth nothing to whoever brings it down",
@@ -246,7 +265,7 @@ var variants = []variant{
 		apply: func(c *engine.Config) {
 			c.MemoryCapacity, c.MemoryBandwidthShare = 0, 0
 			c.ContactRefresh = false
-			c.AffinityPairBond, c.AffinityBirth, c.AffinityKin = 0, 0, 0
+			c.AffinityPairBond, c.AffinityBirth, c.AffinityKin, c.AffinityHunt = 0, 0, 0, 0
 			c.RestExposureWeight = 0
 		},
 	},
@@ -274,8 +293,37 @@ var variants = []variant{
 		name:  "noaffinity",
 		about: "nothing good is ever remembered about anybody",
 		apply: func(c *engine.Config) {
-			c.AffinityPairBond, c.AffinityBirth, c.AffinityKin = 0, 0, 0
+			c.AffinityPairBond, c.AffinityBirth, c.AffinityKin, c.AffinityHunt = 0, 0, 0, 0
 		},
+	},
+	// The last piece of stage 11: bringing a carcass down together is
+	// remembered. "nohuntaffinity" is the world as stage 11 left it, and is
+	// the arm the rule is measured against; the two sweeps are how the size
+	// of the credit was set.
+	{
+		name:  "nohuntaffinity",
+		about: "hunting something down together is not remembered: the world before the stage 11 remainder",
+		apply: func(c *engine.Config) { c.AffinityHunt = 0 },
+	},
+	{
+		// The diagnostic pair for what the credit actually does. Affinity buys
+		// exactly one thing at this stage - who an agent will lie down next to
+		// - so with rest exposure off the credit should buy nothing at all.
+		// Paired against "norestexposure", which is the same world with the
+		// credit still in it.
+		name:  "restsafenohunt",
+		about: "resting safe anywhere and no credit for a shared kill: is the credit felt anywhere but rest?",
+		apply: func(c *engine.Config) { c.RestExposureWeight, c.AffinityHunt = 0, 0 },
+	},
+	{
+		name:  "midhunt",
+		about: "sweep: twice the credit for a shared kill (12), two of them enough to trust somebody",
+		apply: func(c *engine.Config) { c.AffinityHunt = 12 },
+	},
+	{
+		name:  "bighunt",
+		about: "sweep: a shared kill worth more than a bond (24), one of them enough to trust somebody",
+		apply: func(c *engine.Config) { c.AffinityHunt = 24 },
 	},
 	{
 		name:  "norestexposure",
@@ -433,7 +481,7 @@ var metricNames = []string{
 	"shAttack", "shDefence", "shVitality", "shSpeed", "shEvasion",
 	"shMemory", "shRationality", "shIntelligence", "shLooks",
 	"geniuses", "greatGeniuses", "geniusYears", "greatGeniusYears",
-	"hunts", "packSize", "evadedShare",
+	"hunts", "jointHunts", "packSize", "evadedShare",
 	"extinct",
 }
 
@@ -691,6 +739,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// size above one is pack hunting; it is the thing stage 11 was built
 		// to find out about, and nothing in the rules asks for it.
 		"hunts":       float64(end.Hunts),
+		"jointHunts":  float64(end.JointHunts),
 		"evadedShare": share(end.Evaded, end.Fights),
 		"packSize":    share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from

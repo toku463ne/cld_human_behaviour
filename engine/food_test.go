@@ -296,3 +296,99 @@ func TestDodgingMissesBlowsEntirely(t *testing.T) {
 		t.Fatalf("an agent that was resting dodged %d blows", w2.Stats().Evaded)
 	}
 }
+
+// Bringing a carcass down together is the one thing that leaves an agent
+// thinking well of somebody it is not related to and did not mate with. Who
+// counts is the same list the meat is shared out to, so an onlooker that never
+// landed a blow comes away with nothing.
+func TestASharedKillIsRemembered(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	// Held by ID rather than by pointer: adding an agent may move the ones
+	// already there.
+	preyID := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 10,
+		Genome: filledGenome(80), Species: SpeciesEnemy})
+	oneID := w.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Vitality: 90})
+	twoID := w.addAgent(Agent{Maturity: 1, X: 110, Y: 100, Vitality: 90})
+	onlookerID := w.addAgent(Agent{Maturity: 1, X: 115, Y: 100, Vitality: 90})
+
+	w.agentByID(preyID).noteHit(oneID, w.tick)
+	w.agentByID(preyID).noteHit(twoID, w.tick)
+	w.kill(w.agentByID(preyID))
+
+	one, two, onlooker := w.agentByID(oneID), w.agentByID(twoID), w.agentByID(onlookerID)
+	if got := affinityOf(w, one, twoID); got != cfg.AffinityHunt {
+		t.Errorf("affinity for the one it hunted with is %.1f, want %.1f", got, cfg.AffinityHunt)
+	}
+	if got := affinityOf(w, two, oneID); got != cfg.AffinityHunt {
+		t.Errorf("the credit is not mutual: %.1f", got)
+	}
+	if got := affinityOf(w, one, onlookerID); got != 0 {
+		t.Errorf("an onlooker that took no part earned %.1f", got)
+	}
+	if len(onlooker.opinions) != 0 {
+		t.Errorf("the onlooker came away with %d opinions, want none", len(onlooker.opinions))
+	}
+}
+
+// A kill nobody could have a share of leaves nobody with a friend: a party of
+// one has nobody to remember, and a human killing a human holds no claim on
+// the body, so there is no hunting party to speak of.
+func TestASharedKillNeedsSomebodyToShareItWith(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	enemyID := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 10,
+		Genome: filledGenome(80), Species: SpeciesEnemy})
+	aloneID := w.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Vitality: 90})
+	w.agentByID(enemyID).noteHit(aloneID, w.tick)
+	w.kill(w.agentByID(enemyID))
+	if n := len(w.agentByID(aloneID).opinions); n != 0 {
+		t.Errorf("hunting alone left %d opinions, want none", n)
+	}
+	if w.Stats().JointHunts != 0 {
+		t.Error("a party of one counted as a joint hunt")
+	}
+
+	victimID := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 10,
+		Genome: filledGenome(80)})
+	killerAID := w.addAgent(Agent{Maturity: 1, X: 205, Y: 200, Vitality: 90})
+	killerBID := w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Vitality: 90})
+	w.agentByID(victimID).noteHit(killerAID, w.tick)
+	w.agentByID(victimID).noteHit(killerBID, w.tick)
+	w.kill(w.agentByID(victimID))
+	if got := affinityOf(w, w.agentByID(killerAID), killerBID); got != 0 {
+		t.Errorf("killing one of their own earned them %.1f of each other", got)
+	}
+}
+
+// The whole rule can be turned off, which is the arm the measurement compares
+// against.
+func TestSharedKillsCanBeTurnedOff(t *testing.T) {
+	cfg := testConfig()
+	cfg.AffinityHunt = 0
+	w := NewWorld(cfg)
+	preyID := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 10,
+		Genome: filledGenome(80), Species: SpeciesEnemy})
+	oneID := w.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Vitality: 90})
+	twoID := w.addAgent(Agent{Maturity: 1, X: 110, Y: 100, Vitality: 90})
+	w.agentByID(preyID).noteHit(oneID, w.tick)
+	w.agentByID(preyID).noteHit(twoID, w.tick)
+	w.kill(w.agentByID(preyID))
+
+	if len(w.agentByID(oneID).opinions) != 0 || len(w.agentByID(twoID).opinions) != 0 {
+		t.Error("the credit was paid with AffinityHunt at zero")
+	}
+	// The opportunity is still counted, so the arm with the rule off reports
+	// how often it would have fired.
+	if w.Stats().JointHunts != 1 {
+		t.Errorf("joint hunts %d, want 1: the count follows the kill, not the credit", w.Stats().JointHunts)
+	}
+}
+
+func affinityOf(w *World, a *Agent, otherID int) float64 {
+	op := a.opinion(otherID)
+	if op == nil {
+		return 0
+	}
+	return w.decayedAffinity(a, op)
+}

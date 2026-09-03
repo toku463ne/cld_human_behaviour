@@ -1520,7 +1520,13 @@ func TestDefaultWorldSustainsItself(t *testing.T) {
 	cfg.Seed = 7
 	w := NewWorld(cfg)
 
-	for i := 0; i < 8000; i++ {
+	// Twelve thousand ticks rather than eight: with the credit for a shared
+	// kill in it the world breeds more slowly (measured: about a generation
+	// fewer per fifty thousand ticks), and on this seed the second generation
+	// arrives at tick 9943 instead of 3777. The claim being made here is that
+	// the world keeps itself going, not that it does so by any particular
+	// tick.
+	for i := 0; i < 12000; i++ {
 		w.Step()
 		s := w.Stats()
 		if s.Population > cfg.MaxPopulation {

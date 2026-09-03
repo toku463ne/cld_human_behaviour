@@ -13,7 +13,9 @@ import (
 // of a nudge on every birth (both stage 7b), and again when the genes started
 // being paid for out of a budget (stage 7c), and again when memory became
 // finite and resting in the open stopped being free (stage 9), and again when
-// agents started being born small and growing into themselves (stage 7d).
+// agents started being born small and growing into themselves (stage 7d), and
+// again when bringing a carcass down together started being remembered (the
+// remainder of stage 11).
 //
 // Stage 7a is a change of how the neighbours are found, not of what happens,
 // and its completion condition is that the same seed gives the same run. That
@@ -31,9 +33,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 20, births: 11, deaths: 73, kills: 55, aging: 0, fights: 3303, gen: 2, power: 51.369615, vitality: 87.441434, hunger: 22.033539},
-	{seed: 2, pop: 23, births: 10, deaths: 69, kills: 57, aging: 0, fights: 4889, gen: 2, power: 39.544663, vitality: 88.014891, hunger: 22.562545},
-	{seed: 3, pop: 30, births: 14, deaths: 66, kills: 48, aging: 0, fights: 4134, gen: 2, power: 34.776475, vitality: 86.427621, hunger: 21.308168},
+	{seed: 1, pop: 25, births: 13, deaths: 70, kills: 54, aging: 0, fights: 3191, gen: 2, power: 46.606020, vitality: 71.487831, hunger: 29.305904},
+	{seed: 2, pop: 29, births: 13, deaths: 66, kills: 59, aging: 0, fights: 4199, gen: 2, power: 39.626280, vitality: 82.701459, hunger: 21.778533},
+	{seed: 3, pop: 29, births: 15, deaths: 68, kills: 49, aging: 0, fights: 4634, gen: 2, power: 33.779894, vitality: 75.007473, hunger: 21.173215},
 }
 
 const goldenTicks = 5000

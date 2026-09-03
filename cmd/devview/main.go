@@ -536,7 +536,8 @@ func (g *game) drawBeliefs(t *textBox) {
 	cfg := g.world.Config()
 	t.line("believes about others (true power in brackets):")
 	t.line("  aff is what it remembers them doing for it: a bond, a birth,")
-	t.line("  being its parent or its child. it will rest next to those.")
+	t.line("  being its parent or its child, or having helped bring a")
+	t.line("  carcass down. it will rest next to those.")
 	for i, id := range ids {
 		if i >= maxOpinionRows {
 			t.line("  ... and %d more", len(ids)-maxOpinionRows)
