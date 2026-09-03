@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -253,3 +254,205 @@ func TestRetaliationIsAnsweredOncePerEngagement(t *testing.T) {
 type frozenController struct{ act Action }
 
 func (c frozenController) Decide(*Perception) Action { return c.act }
+
+// --- stage 12b: trading what you assume --------------------------------------
+
+// The trade is not one of them learning from the other. Both move towards each
+// other by the same amount at the same moment, so neither can take without
+// giving.
+func TestTradingWhatYouAssumeMovesBothSidesAlike(t *testing.T) {
+	cfg := quietConfig()
+	cfg.LoreExchangeRate = 0.5
+	w := NewWorld(cfg)
+
+	a := &w.agents[w.addAgent(Agent{X: 10, Y: 10})-1]
+	b := &w.agents[w.addAgent(Agent{X: 12, Y: 10})-1]
+	a.lore.riskWeight, b.lore.riskWeight = 0.10, 0.30
+	a.lore.retaliation.mean, b.lore.retaliation.mean = 0.2, 0.8
+	surer := b.lore.retaliation.n
+
+	w.exchangeLore(a, b)
+
+	if a.lore.riskWeight != 0.20 || b.lore.riskWeight != 0.20 {
+		t.Fatalf("after meeting in the middle the two want %v and %v, want both at 0.20",
+			a.lore.riskWeight, b.lore.riskWeight)
+	}
+	if math.Abs(a.lore.retaliation.mean-0.5) > 1e-9 || math.Abs(b.lore.retaliation.mean-0.5) > 1e-9 {
+		t.Fatalf("beliefs came out at %v and %v, want both at 0.5",
+			a.lore.retaliation.mean, b.lore.retaliation.mean)
+	}
+	// Being told something is a claim, not the years of watching behind it.
+	if b.lore.retaliation.n != surer {
+		t.Fatalf("being told something changed how sure the teller was: %v then %v", surer, b.lore.retaliation.n)
+	}
+}
+
+// What the trade was worth is what actually changed hands, and both sides get
+// the same. Two agents that already agree trade nothing and think no more of
+// each other for it - which falls out of the arithmetic, not out of a test for
+// it.
+func TestATradeIsWorthWhatActuallyChangedHands(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+
+	affinityAfter := func(gap float64) float64 {
+		a := &w.agents[w.addAgent(Agent{X: 10, Y: 10})-1]
+		b := &w.agents[w.addAgent(Agent{X: 12, Y: 10})-1]
+		a.lore.riskWeight = cfg.RiskWeight
+		b.lore.riskWeight = cfg.RiskWeight + gap
+		w.exchangeLore(a, b)
+		// A trade worth nothing between two strangers leaves no record at
+		// all: standing next to somebody and agreeing with them about
+		// everything is not how you come to know them.
+		held := func(x, y *Agent) float64 {
+			op := x.opinion(y.ID)
+			if op == nil {
+				return 0
+			}
+			return w.decayedAffinity(x, op)
+		}
+		mine, theirs := held(a, b), held(b, a)
+		if math.Abs(mine-theirs) > 1e-9 {
+			t.Fatalf("the two sides of one trade were worth %v and %v, want the same", mine, theirs)
+		}
+		return mine
+	}
+
+	none, some, more := affinityAfter(0), affinityAfter(0.05), affinityAfter(0.15)
+	if none != 0 {
+		t.Fatalf("two agents that already agree gained %v of affinity, want none", none)
+	}
+	if !(more > some && some > 0) {
+		t.Fatalf("affinity from trades of nothing/some/more came out %v, %v, %v, want it to grow with the gap",
+			none, some, more)
+	}
+}
+
+// Whether or not there was anything to trade, they met: what each remembers of
+// the other stops going stale. Meeting is not a favour, so it happens either
+// way.
+func TestMeetingRefreshesTheRecordEvenWhenNothingIsTraded(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+
+	// Two identical pairs. Halfway through, one pair meets and the other does
+	// not; nothing is traded either way, because the two sides already agree.
+	met := &w.agents[w.addAgent(Agent{X: 10, Y: 10})-1]
+	metBy := &w.agents[w.addAgent(Agent{X: 12, Y: 10})-1]
+	apart := &w.agents[w.addAgent(Agent{X: 90, Y: 90})-1]
+	apartFrom := &w.agents[w.addAgent(Agent{X: 92, Y: 90})-1]
+	w.rememberDamage(met, metBy.ID, 20)
+	w.rememberDamage(apart, apartFrom.ID, 20)
+
+	w.tick += 500
+	metBy.lore = met.lore // identical: the trade moves nothing at all
+	w.exchangeLore(met, metBy)
+	w.tick += 500
+
+	kept := w.decayedRisk(met, met.opinion(metBy.ID))
+	faded := w.decayedRisk(apart, apart.opinion(apartFrom.ID))
+	if kept <= faded {
+		t.Fatalf("the pair that met remembers %v and the pair that did not %v, want meeting to have kept it fresher",
+			kept, faded)
+	}
+}
+
+// LoreExchangeRate 0 is the arm that says whether what spreads through a
+// population spread by being taught or by being survived.
+func TestExchangeRateZeroStopsAnythingBeingHandedOn(t *testing.T) {
+	cfg := quietConfig()
+	cfg.LoreExchangeRate = 0
+	w := NewWorld(cfg)
+
+	a := &w.agents[w.addAgent(Agent{X: 10, Y: 10})-1]
+	b := &w.agents[w.addAgent(Agent{X: 12, Y: 10})-1]
+	a.lore.riskWeight, b.lore.riskWeight = 0.10, 0.30
+	w.exchangeLore(a, b)
+
+	if a.lore.riskWeight != 0.10 || b.lore.riskWeight != 0.30 {
+		t.Fatalf("something was handed on with the rate at zero: %v and %v", a.lore.riskWeight, b.lore.riskWeight)
+	}
+	if w.exchanges != 0 {
+		t.Fatalf("%d trades were counted with the rate at zero", w.exchanges)
+	}
+}
+
+// The second path by which somebody else being alive is worth something: an
+// agent will spend time on one it has got something out of before. Nothing
+// here reads what the other actually believes - it cannot - only who has been
+// worth standing with.
+func TestWatchingSomebodyYouTrustIsWorthMoreThanWatchingAStranger(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+
+	watchValue := func(affinity, loreValue float64) float64 {
+		cfg := cfg
+		cfg.LoreValue = loreValue
+		p := &Perception{
+			Tick: 1, Cfg: &cfg, Rand: w.rng,
+			Self: SelfView{
+				ID: 1, X: 200, Y: 200, Vitality: 100, Hunger: 20,
+				MaxVitality: cfg.MaxVitality, MaxSpeed: cfg.MaxSpeed,
+				Retaliation: cfg.Retaliation, AcceptChance: cfg.AcceptChance,
+				RiskWeight: cfg.RiskWeight, CompetitionWeight: cfg.CompetitionWeight,
+				ShockRisk: cfg.ShockRisk},
+		}
+		o := AgentView{ID: 2, Dist: 10, Vitality: 60, EstStrength: 40,
+			Uncertainty: cfg.PriorVariance, Affinity: affinity}
+
+		c := &AIController{}
+		c.addObserve(p, &o)
+		return c.opts[0].util
+	}
+
+	stranger := watchValue(0, cfg.LoreValue)
+	friend := watchValue(cfg.AffinityTrust, cfg.LoreValue)
+	if friend <= stranger {
+		t.Fatalf("watching a friend scored %v and a stranger %v, want the friend to be worth more", friend, stranger)
+	}
+	if off := watchValue(cfg.AffinityTrust, 0); off != stranger {
+		t.Fatalf("with LoreValue 0 a friend scored %v and a stranger %v, want them equal", off, stranger)
+	}
+}
+
+// TopShare needs a scale before it means anything. Trading spread perfectly
+// evenly puts a fifth of it on a fifth of the population; trading handed out at
+// random still lands above that, because counts vary. That noise floor is what
+// a measured value has to beat before it is evidence of anybody becoming a hub.
+func TestTeachingTopShareHasACalibratedScale(t *testing.T) {
+	cfg := quietConfig()
+
+	topShare := func(counts []int) float64 {
+		w := NewWorld(cfg)
+		for _, n := range counts {
+			a := &w.agents[w.addAgent(Agent{X: 10, Y: 10})-1]
+			a.Age = 1000
+			a.timesTaught = n
+		}
+		return w.Teaching().TopShare
+	}
+
+	even := make([]int, 20)
+	for i := range even {
+		even[i] = 50
+	}
+	if got := topShare(even); math.Abs(got-0.2) > 1e-9 {
+		t.Fatalf("trading spread perfectly evenly gives a top share of %v, want 0.2", got)
+	}
+
+	// The noise floor: the same total handed out at random.
+	rng := rand.New(rand.NewSource(7))
+	sum := 0.0
+	const trials = 200
+	for i := 0; i < trials; i++ {
+		random := make([]int, 20)
+		for j := 0; j < 20*50; j++ {
+			random[rng.Intn(20)]++
+		}
+		sum += topShare(random)
+	}
+	floor := sum / trials
+	if floor < 0.2 || floor > 0.26 {
+		t.Fatalf("the noise floor for a top share came out at %v; the scale in the docs says about 0.22", floor)
+	}
+}

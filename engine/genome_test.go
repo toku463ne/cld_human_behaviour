@@ -125,6 +125,11 @@ func TestFitBudgetHandlesABudgetThatCannotBeSpent(t *testing.T) {
 
 func TestFoundersAreDrawnAroundTheBudget(t *testing.T) {
 	cfg := testConfig()
+	// Room for rules of thumb is bought out of this same budget, and how much
+	// each founder buys varies. That is a rule of its own (see
+	// TestRoomForIdeasIsBoughtOutOfTheSameBudget); switching it off is what
+	// leaves this test measuring only the draw.
+	cfg.HintSlots = 0
 	cfg.InitialPopulation = 2000
 	w := NewWorld(cfg)
 
@@ -202,6 +207,10 @@ func TestGeniusBirthsAreRareAndLarge(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationRate = 0
 	cfg.BudgetInheritSpread = 0
+	// A genius birth is also where a new idea comes from, and room for one
+	// costs budget. That is the other half of the same event and has its own
+	// test; here it would only blur the three budgets apart.
+	cfg.HintSlots = 0
 	w := NewWorld(cfg)
 	pa := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(20)}
 	pb := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(20)}

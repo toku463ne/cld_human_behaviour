@@ -88,6 +88,13 @@ type AIController struct {
 	// them.
 	incomingDmg float64
 	exposure    float64
+
+	// The deciding agent's rules of thumb and the situation they read (stage
+	// 12c). The situation is filled in once for the agent's own state and
+	// again for whoever each option is aimed at, so a hint about a stranger's
+	// strength says nothing about an option with no stranger in it.
+	hints []Hint
+	feats hintFeatures
 }
 
 func (c *AIController) Decide(p *Perception) Action {
@@ -95,6 +102,10 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.terms = c.terms[:0]
 	c.tracing = p.Trace != nil
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
+	// readSelf clears the whole situation, so the options scored before any
+	// target is read (rest, wandering, food) see nothing about a target.
+	c.hints = p.Self.Hints
+	c.feats.readSelf(p)
 	maxDepth := strategyDepth(p.Cfg, p.Self.Intelligence)
 
 	c.survey(p)
@@ -187,6 +198,9 @@ func damagePerTick(cfg *Config, power, effort float64) float64 {
 }
 
 func (c *AIController) add(a Action, u Utility) {
+	// The one place a rule of thumb touches a decision, and all it does is
+	// add to the score. Nothing branches on it.
+	u.Hint = c.feats.score(c.hints, a.Kind)
 	c.opts = append(c.opts, option{action: a, util: u.Total()})
 	if c.tracing {
 		c.terms = append(c.terms, u)
@@ -311,6 +325,9 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 			break
 		}
 		o := &p.Others[i]
+		// Every option below is aimed at this one, so the half of the
+		// situation that is about the target is read once here.
+		c.feats.readTarget(p, o)
 
 		if maxDepth >= depthReactive {
 			c.addAttack(p, o)
@@ -481,8 +498,17 @@ func (c *AIController) addObserve(p *Perception, o *AgentView) {
 	cfg := p.Cfg
 	unsure := clamp(o.Uncertainty/cfg.PriorVariance, 0, 1)
 	relevance := clamp(p.Self.FoodScarcity, 0, 3) / 3
+
+	// And standing with somebody is also how what each of them assumes gets
+	// traded (stage 12b). An agent cannot see what anybody else believes, so
+	// what it goes on is who has been worth standing with before - which makes
+	// this the one term in the whole formula that is worth more the more
+	// somebody else matters to it. It is what a group has to last on.
+	trust := clamp(o.Affinity/cfg.AffinityTrust, 0, 1)
+
 	c.add(Action{Kind: ActObserve, TargetID: o.ID, Effort: 0.3}, Utility{
 		Info:     Goal{Value: cfg.InfoValue * unsure, Chance: relevance},
+		Lore:     Goal{Value: cfg.LoreValue * trust, Chance: 1},
 		Ticks:    observeTicks,
 		TimeCost: observeTicks * cfg.TimeCost,
 	})

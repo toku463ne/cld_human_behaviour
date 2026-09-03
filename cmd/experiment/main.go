@@ -258,6 +258,83 @@ var variants = []variant{
 		about: "learning on, and a child starts where its parent's beliefs got to",
 		apply: func(c *engine.Config) { c.LearningRate, c.LamarckRate = 1, 1 },
 	},
+	// Stage 12b: what agents assume becomes tradeable. "no12b" is the world
+	// before it - the values are still each agent's own, but nothing hands
+	// them on and nobody seeks anybody out for them. The other two take the
+	// halves apart: the trade happening, and it being worth going after.
+	{
+		name:  "no12b",
+		about: "nothing is handed on and nobody is sought out for it: the world before stage 12b",
+		apply: func(c *engine.Config) { c.LoreExchangeRate, c.LoreValue = 0, 0 },
+	},
+	{
+		name:  "notrust",
+		about: "the trade happens when agents happen to stand together, but nobody seeks it out",
+		apply: func(c *engine.Config) { c.LoreValue = 0 },
+	},
+	{
+		name:  "noexchange",
+		about: "agents seek each other out but nothing passes between them: the control for the positive term",
+		apply: func(c *engine.Config) { c.LoreExchangeRate = 0 },
+	},
+	// Stage 12c: rules of thumb. "nohints" is the world before it, and it has
+	// to be read as a pair with the rest - room for an idea costs budget, so
+	// a world with hints in it is made of slightly smaller agents and the
+	// absolute ability figures are not comparable to any earlier baseline.
+	{
+		name:  "nohints",
+		about: "no room for rules of thumb and nothing charged for them: the world before stage 12c",
+		apply: func(c *engine.Config) { c.HintSlots = 0 },
+	},
+	{
+		name:  "hints10",
+		about: "sweep: room for an idea costs 10 of budget rather than 5",
+		apply: func(c *engine.Config) { c.HintSlotCost = 10 },
+	},
+	{
+		name:  "dearhints",
+		about: "sweep: room for an idea costs 15 of budget: where the population starts to pay",
+		apply: func(c *engine.Config) { c.HintSlotCost = 15 },
+	},
+	{
+		name:  "quiethints",
+		about: "sweep: rules of thumb are drawn at half the weight",
+		apply: func(c *engine.Config) { c.HintWeightStd, c.HintWeightMax = 3, 10 },
+	},
+	{
+		name:  "loudhints",
+		about: "sweep: rules of thumb are drawn at twice the weight",
+		apply: func(c *engine.Config) { c.HintWeightStd, c.HintWeightMax = 12, 40 },
+	},
+	{
+		name:  "nohintspread",
+		about: "hints exist and are inherited but never copied: does a good trick spread sideways?",
+		apply: func(c *engine.Config) { c.HintsSpread = false },
+	},
+	{
+		// The control the stage turns on. Room is bought and charged for
+		// exactly as it is in the default world, and the ideas in it say
+		// nothing at all. Any difference from the default is what having
+		// rules of thumb is worth, with the price already paid on both sides.
+		name:  "deadhints",
+		about: "rules of thumb cost the same and carry no weight: what are they worth net of what they cost?",
+		apply: func(c *engine.Config) { c.HintWeightStd, c.HintWeightMax = 0, 0 },
+	},
+	{
+		name:  "trust3",
+		about: "sweep: watching somebody you trust is worth 3 rather than 9",
+		apply: func(c *engine.Config) { c.LoreValue = 3 },
+	},
+	{
+		name:  "trust6",
+		about: "sweep: watching somebody you trust is worth 6 rather than 9",
+		apply: func(c *engine.Config) { c.LoreValue = 6 },
+	},
+	{
+		name:  "learning12b",
+		about: "stage 12b in place and agents also find the world out for themselves",
+		apply: func(c *engine.Config) { c.LearningRate = 1 },
+	},
 	{
 		name:  "spread10",
 		about: "sweep: preferences drawn 10% around the world's figure instead of 15%",
@@ -619,6 +696,8 @@ var metricNames = []string{
 	"priorErrAll", "priorErrLearned", "priorErrGreen", "learnedShare", "firstSights",
 	"hunts", "jointHunts", "packSize", "evadedShare",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
+	"loreRate", "taught", "teachTop",
+	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"extinct",
 }
@@ -674,6 +753,19 @@ type sample struct {
 	retal, accept                        float64
 	riskWeight, competition, shock       float64
 	sdRiskWeight, sdCompetition, sdShock float64
+
+	// How the trading of assumptions is spread: trades per agent per thousand
+	// ticks alive, and the share of it done by the busiest fifth. The second
+	// is the one the design is on the hook for - a rule meant to spread
+	// something around must not end up with three teachers and a crowd.
+	taught, teachTop float64
+
+	// What the population is making of its rules of thumb: room bought and
+	// ideas carried per agent, how many distinct ones are alive at all, and
+	// how evenly they are spread over those. The last two are the ones the
+	// stage is on the hook for - a population can carry plenty of hints and
+	// have them all be the same one.
+	hintSlots, hintsHeld, hintKinds, hintEntropy float64
 }
 
 // perAgentLifetime converts a count of events into a rate per ten thousand
@@ -763,7 +855,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		budget, sdBudget, shares := budgetSplit(w)
 		mem := w.MemoryUse()
 		lore := w.Lore()
+		teach := w.Teaching()
+		hints := w.HintUse()
 		series = append(series, sample{
+			taught: teach.Rate, teachTop: teach.TopShare,
+			hintSlots: hints.Slots, hintsHeld: hints.Held,
+			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
 			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
 			sdRiskWeight: lore.SdRiskWeight, sdCompetition: lore.SdCompetition, sdShock: lore.SdShockRisk,
@@ -888,18 +985,33 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// two "Err" figures are the ones to read: a belief is only worth
 		// anything if it is closer to the truth than the constant it replaced,
 		// and the truth is a figure of the run, not of the arm.
-		"retal":          tail.retal,
-		"trueRetal":      endLore.TrueRetaliation,
-		"retalErr":       math.Abs(tail.retal - endLore.TrueRetaliation),
-		"accept":         tail.accept,
-		"trueAccept":     endLore.TrueAccept,
-		"acceptErr":      math.Abs(tail.accept - endLore.TrueAccept),
-		"riskWeight":     tail.riskWeight,
-		"sdRiskWeight":   tail.sdRiskWeight,
-		"competition":    tail.competition,
-		"sdCompetition":  tail.sdCompetition,
-		"shock":          tail.shock,
-		"sdShock":        tail.sdShock,
+		"retal":         tail.retal,
+		"trueRetal":     endLore.TrueRetaliation,
+		"retalErr":      math.Abs(tail.retal - endLore.TrueRetaliation),
+		"accept":        tail.accept,
+		"trueAccept":    endLore.TrueAccept,
+		"acceptErr":     math.Abs(tail.accept - endLore.TrueAccept),
+		"riskWeight":    tail.riskWeight,
+		"sdRiskWeight":  tail.sdRiskWeight,
+		"competition":   tail.competition,
+		"sdCompetition": tail.sdCompetition,
+		"shock":         tail.shock,
+		"sdShock":       tail.sdShock,
+		// How often what an agent assumes actually changes hands, and how
+		// evenly it is spread. A weight explains nothing if the rule hardly
+		// ever fires, and a rule meant to spread something around must not
+		// end up with three teachers and a crowd.
+		"loreRate": perAgentLifetime(end.Exchanges-tailStart.Exchanges, personTicks),
+		"taught":   tail.taught,
+		"teachTop": tail.teachTop,
+		// What the population is making of its rules of thumb. The last two
+		// are the ones the stage is on the hook for: a population can carry
+		// plenty of hints and have them all be the same one.
+		"hintSlots":      tail.hintSlots,
+		"hintsHeld":      tail.hintsHeld,
+		"hintKinds":      tail.hintKinds,
+		"hintEntropy":    tail.hintEntropy,
+		"hintCopyRate":   perAgentLifetime(end.HintsCopied-tailStart.HintsCopied, personTicks),
 		"power":          tail.power,
 		"rationality":    tail.rat,
 		"intelligence":   tail.intel,
@@ -972,7 +1084,27 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	if keepSeries {
 		r.series = series
 	}
+	checkMetricsComplete(r.metrics)
 	return r
+}
+
+// checkMetricsComplete fails loudly when a name in metricNames has nothing
+// behind it.
+//
+// It is here because the alternative is what actually happened, twice: a
+// metric was added to the list and to the sample but not to the map that fills
+// it in, and it printed a confident 0.00 in every arm. A measurement that is
+// silently absent is worse than one that is missing, because it gets read.
+func checkMetricsComplete(m map[string]float64) {
+	var missing []string
+	for _, name := range metricNames {
+		if _, ok := m[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		panic("metrics listed but never filled in: " + strings.Join(missing, ", "))
+	}
 }
 
 // tailAverage averages the last fifth of the samples, ignoring ticks where the
@@ -1022,6 +1154,12 @@ func tailAverage(series []sample) sample {
 		out.sdRiskWeight += s.sdRiskWeight
 		out.sdCompetition += s.sdCompetition
 		out.sdShock += s.sdShock
+		out.taught += s.taught
+		out.teachTop += s.teachTop
+		out.hintSlots += s.hintSlots
+		out.hintsHeld += s.hintsHeld
+		out.hintKinds += s.hintKinds
+		out.hintEntropy += s.hintEntropy
 		n++
 	}
 	if n == 0 {
@@ -1065,6 +1203,12 @@ func tailAverage(series []sample) sample {
 	out.sdRiskWeight /= d
 	out.sdCompetition /= d
 	out.sdShock /= d
+	out.taught /= d
+	out.teachTop /= d
+	out.hintSlots /= d
+	out.hintsHeld /= d
+	out.hintKinds /= d
+	out.hintEntropy /= d
 	return out
 }
 

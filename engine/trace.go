@@ -86,10 +86,19 @@ type Utility struct {
 	Offspring Goal // a child
 	Info      Goal // learning how strong somebody really is
 	Explore   Goal // finding something to eat that is not in sight yet
+	Lore      Goal // what somebody you trust would tell you about the world
 
 	// Risk is the penalty for what this particular agent has already cost the
 	// deciding one, which is what keeps it away from somebody it lost to.
 	Risk float64
+
+	// Hint is what this agent's own rules of thumb make of the option (stage
+	// 12c). It is not a goal: there is no chance attached to it and it stands
+	// for nothing in particular, which is the point - it is a relation the
+	// designer did not write down, discovered by selection. It can be either
+	// sign, and it never decides anything on its own: the option still has to
+	// win the same comparison.
+	Hint float64
 
 	// The two costs of the formula, already weighted, plus what they were
 	// worked out from so that a trace can show both.
@@ -103,8 +112,8 @@ type Utility struct {
 // the design notes: goals first, then what they cost.
 func (u Utility) Total() float64 {
 	return u.Life.Score() + u.Stake.Score() + u.Rival.Score() +
-		u.Offspring.Score() + u.Info.Score() + u.Explore.Score() -
-		u.Risk - u.VitalityCost - u.TimeCost
+		u.Offspring.Score() + u.Info.Score() + u.Explore.Score() + u.Lore.Score() +
+		u.Hint - u.Risk - u.VitalityCost - u.TimeCost
 }
 
 // NamedGoal is a goal together with the name it goes by, for display.
@@ -124,6 +133,7 @@ func (u Utility) Goals() []NamedGoal {
 		{"offspring", u.Offspring},
 		{"info", u.Info},
 		{"explore", u.Explore},
+		{"lore", u.Lore},
 	}
 	out := make([]NamedGoal, 0, len(all))
 	for _, g := range all {

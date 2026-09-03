@@ -200,6 +200,19 @@ type Agent struct {
 	// its own. See lore.go for which of them it can be wrong about.
 	lore lore
 
+	// hints are this agent's rules of thumb (stage 12c, hint.go), and
+	// hintSlots the room it paid budget for. The two are not the same number:
+	// an empty slot still cost, and is what somebody else's idea can be
+	// copied into.
+	hints     []Hint
+	hintSlots int
+
+	// timesTaught is how often this agent has been in a trade of what it
+	// assumes (stage 12b), on either side of it. Nothing reads it: it is there
+	// so that the measurement can ask whether a few agents are teaching
+	// everybody, which is the failure mode the exchange was shaped to avoid.
+	timesTaught int
+
 	// looks is what this agent has made of appearance: the line it fits from
 	// how big somebody is to how hard they hit. It is not a memory of anybody
 	// in particular, so it is not held in opinions and does not compete for

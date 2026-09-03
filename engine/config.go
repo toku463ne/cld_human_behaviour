@@ -319,6 +319,73 @@ type Config struct {
 	LoreInitSpread  float64
 	LoreMutationStd float64
 
+	// --- trading it (stage 12b) ---
+	//
+	// LoreExchangeRate is how far each side moves towards the other when two
+	// agents have stood together long enough to trade what they assume. It
+	// rides on ActObserve and has no cost of its own. Both move by the same
+	// fraction of the gap at the same moment, so a half meets in the middle
+	// and nobody can take without giving. Zero turns handing anything on off
+	// entirely, which is the arm that says whether what spreads through the
+	// population spread by being taught or by being survived.
+	LoreExchangeRate float64
+
+	// AffinityLore is what a trade is worth to the two in it, per unit of what
+	// actually changed hands (measured as a share of the world's own figure,
+	// so that the five values, which are on quite different scales, can be
+	// added up). Two agents who already agree trade nothing and think no more
+	// of each other for it - there is no test for that, it is what the
+	// arithmetic does.
+	AffinityLore float64
+
+	// LoreValue is what watching somebody you are fond of is worth on top of
+	// sizing them up: the second path by which another agent being alive and
+	// nearby is worth something (the first is a carcass too big to bring down
+	// alone). It is the term that has to explain why a group lasts, as against
+	// why one forms.
+	//
+	// An agent cannot see what anybody else assumes, so what it goes on is
+	// affinity - who it has got something out of before. Zero removes the term
+	// and leaves the trade happening without anybody seeking it out.
+	LoreValue float64
+
+	// --- rules of thumb (stage 12c, hint.go) ---
+	//
+	// A hint is a situation, a move, and a weight: the relations the designer
+	// did not write down, left to selection to find. They only ever add to an
+	// option's score, and nothing anywhere branches on one.
+	//
+	// HintSlots is the most room any agent may have. Zero removes them
+	// entirely, which is the arm the stage is measured against - and it has to
+	// be run as a pair with the rest, because room costs budget and a world
+	// with hints in it is made of slightly smaller agents.
+	HintSlots int
+
+	// HintSlotCost is what one slot takes out of the budget the genes are
+	// then fitted to. It is charged for room, not for ideas: an empty slot
+	// costs the same, which is what makes carrying a lot of them a real
+	// trade against being big, fast or dangerous.
+	HintSlotCost float64
+
+	// The spread a weight is drawn and mutated with, and the range it is kept
+	// inside. Both are in the units an option is scored in.
+	HintWeightStd float64
+	HintWeightMax float64
+
+	// HintTradeWorth is what handing somebody an idea they did not have
+	// counts for, in the same units as the rest of a trade (a share of one of
+	// the five figures). Passing on a trick is worth more than shading a
+	// number towards each other, which is why it is not simply 1.
+	HintTradeWorth float64
+
+	// HintsSpread is whether an idea can be copied from one agent to another
+	// at all. True by default; false leaves hints existing, costing the same
+	// and being inherited the same, but only ever passed down a bloodline.
+	// It is the arm that says whether a good trick actually spreads by being
+	// copied, which is the one claim stage 12c makes that inheritance alone
+	// could not.
+	HintsSpread bool
+
 	// --- decision triggers ---
 	//
 	// Agents do not re-decide every tick, only when something happens. The
@@ -734,5 +801,45 @@ func DefaultConfig() Config {
 		// because it happens at every birth rather than one in fifty.
 		LoreInitSpread:  0.15,
 		LoreMutationStd: 0.08,
+
+		// Two percent of the gap, not the half that meeting in the middle
+		// would suggest. The symmetry is in the rule, not in the size: both
+		// sides move by the same amount whatever this is, and what it sets is
+		// how much one meeting counts for.
+		//
+		// It has to be small because meetings are not rare. A run holds
+		// something like nineteen thousand of them, and at a half the
+		// population converges on one set of values within a couple of
+		// generations - which is the thing stage 12a measured as harmful (a
+		// population that all wants the same thing stops rewarding reading
+		// the world accurately). At a half the spread of preferences falls
+		// from 0.089 to 0.055 and the population halves over a long run; at
+		// 0.02 both are back where they were without it, and agents still
+		// end up with three times as many others they are fond of.
+		LoreExchangeRate: 0.02,
+
+		// What one trade is worth in affinity. Swept: between 1 and 30 it
+		// moves neither the population nor how many others an agent ends up
+		// fond of by anything the noise does not cover, because what the
+		// trade is worth is dominated by how often it happens rather than by
+		// this. Left at the figure calibrated against a birth (18): a trade
+		// in which each side gives up a tenth of one of its five figures is
+		// worth about a third of a child.
+		AffinityLore: 30,
+		LoreValue:    9,
+
+		// Four ideas at most, at five budget apiece. The price was swept
+		// against a world with no room for ideas at all: at fifteen a full
+		// set costs a gene and a half and the population pays for it (-3.9
+		// over 48 seeds), at ten it still does (-2.7), and at five the cost
+		// is inside the noise (+1.5) while the ideas still have to be paid
+		// for out of the same budget as the body. Free would have been
+		// simpler and would have removed the trade the stage is about.
+		HintSlots:      4,
+		HintSlotCost:   5,
+		HintWeightStd:  6,
+		HintWeightMax:  20,
+		HintTradeWorth: 0.5,
+		HintsSpread:    true,
 	}
 }

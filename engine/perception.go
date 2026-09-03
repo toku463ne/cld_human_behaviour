@@ -63,6 +63,11 @@ type SelfView struct {
 	RiskWeight        float64
 	CompetitionWeight float64
 	ShockRisk         float64
+
+	// Hints are this agent's own rules of thumb (stage 12c). They are its
+	// own, so they belong here; they read nothing that is not already in this
+	// Perception, and all they can do is add to an option's score.
+	Hints []Hint
 }
 
 // FoodView is one food item as an agent sees it.
@@ -185,6 +190,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		RiskWeight:        a.lore.riskWeight,
 		CompetitionWeight: a.lore.competitionWeight,
 		ShockRisk:         a.lore.shockRisk,
+		Hints:             a.hints,
 	}
 
 	r := w.cfg.PerceptionRadius

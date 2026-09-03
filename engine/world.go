@@ -72,6 +72,15 @@ type Stats struct {
 	Fights        int
 	MaxGeneration int
 
+	// Exchanges is how many times two agents have traded what they assume
+	// (stage 12b). Counted so that the rate can be read next to the effect:
+	// a rule that hardly ever fires explains nothing whatever its weight.
+	Exchanges int
+
+	// HintsCopied is how many rules of thumb have passed from one agent to
+	// another rather than down a bloodline (stage 12c).
+	HintsCopied int
+
 	AvgPower        float64
 	AvgRationality  float64
 	AvgIntelligence float64
@@ -193,6 +202,11 @@ type World struct {
 	blowsAnswered      int
 	courtships         int
 	courtshipsAccepted int
+
+	// How many trades of what agents assume have taken place (stage 12b), and
+	// how many ideas were copied in the course of them (stage 12c).
+	exchanges   int
+	hintsCopied int
 }
 
 // NewWorld creates a world populated according to cfg. The same cfg (same seed
@@ -285,6 +299,8 @@ func (w *World) Stats() Stats {
 		ChildDeaths:            w.childDeaths,
 		Fights:                 w.fights,
 		MaxGeneration:          w.maxGeneration,
+		Exchanges:              w.exchanges,
+		HintsCopied:            w.hintsCopied,
 	}
 	var sumPower, sumRationality, sumIntelligence, sumVitality, sumHunger float64
 	var sumAge, sumMaturity, sumFactor float64
@@ -520,6 +536,10 @@ func (w *World) perform(a *Agent) {
 		}
 		if a.actionTicks >= observeTicks {
 			w.observeStrength(a, o, w.cfg.CombatObsVariance*w.cfg.SpectateObsFactor)
+			// Standing with somebody long enough to size them up is also
+			// standing with them long enough to trade what you each assume
+			// (stage 12b). It is the same act, so it gets no cost of its own.
+			w.exchangeLore(a, o)
 			a.requestDecision(TriggerGoalReached)
 		}
 
@@ -913,7 +933,12 @@ func (w *World) inheritGene(pa, pb float64) float64 {
 // The genome is then scaled onto the result, so what a child inherits gene by
 // gene is the shape of its parents and what it inherits here is the size. A
 // mutation moves the split rather than adding to the total.
-func (w *World) inheritBudget(pa, pb *Agent) float64 {
+// It also reports whether this was one of those births, because stage 12c
+// reuses the same rare event for the other kind of leap it needs: a rule of
+// thumb that is about something else entirely. A new idea and a body built to
+// a different scale are the same sort of event, and the world already had a
+// name for it.
+func (w *World) inheritBudget(pa, pb *Agent) (float64, bool) {
 	from := pa
 	if w.rng.Intn(2) == 1 {
 		from = pb
@@ -924,15 +949,18 @@ func (w *World) inheritBudget(pa, pb *Agent) float64 {
 	// Now and then somebody is born with far more to be made of than either
 	// parent had. The roll is taken every birth so that the random source is
 	// consumed the same way whether or not it lands.
+	genius := false
 	switch roll := w.rng.Float64(); {
 	case roll < w.cfg.GreatGeniusRate:
 		budget = w.cfg.GreatGeniusBudget
 		w.greatGeniuses++
+		genius = true
 	case roll < w.cfg.GreatGeniusRate+w.cfg.GeniusRate:
 		budget = w.cfg.GeniusBudget
 		w.geniuses++
+		genius = true
 	}
-	return budget + w.rng.NormFloat64()*w.cfg.BudgetInheritSpread
+	return budget + w.rng.NormFloat64()*w.cfg.BudgetInheritSpread, genius
 }
 
 // tryBirth produces a child that takes each ability from one parent or the
@@ -959,7 +987,15 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	for i := range genome {
 		genome[i] = w.inheritGene(pa.Gene(Gene(i)), pb.Gene(Gene(i)))
 	}
-	fitBudget(genome, w.inheritBudget(pa, pb))
+	// Room for rules of thumb is bought out of the same budget the body is,
+	// and it is bought first: what is left over is what the genes are fitted
+	// to. That is the whole economy of stage 12c - an agent carrying four
+	// ideas is visibly smaller, slower or weaker than one carrying none, and
+	// whether that trade is worth making is what selection is asked.
+	budget, genius := w.inheritBudget(pa, pb)
+	slots := w.inheritHintSlots(pa, pb, genius)
+	hints := w.inheritHints(pa, pb, slots, genius)
+	fitBudget(genome, budget-w.hintCost(slots))
 
 	child := w.newAgent(
 		(pa.X+pb.X)/2+w.randRange(-8, 8),
@@ -972,6 +1008,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.Species = pa.Species
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
 	child.lore = w.inheritLore(pa, pb)
+	child.hintSlots, child.hints = slots, hints
 
 	// It starts as a small thing that keeps to one of the two. Which one does
 	// not matter to any rule; taking the first keeps it deterministic.
@@ -1195,6 +1232,11 @@ func (w *World) randomAgent(species Species) Agent {
 	)
 	a.Species = species
 	a.lore = w.newLore()
+	a.hintSlots = w.drawHintSlots()
+	a.hints = w.drawHints(a.hintSlots)
+	// Room for ideas comes out of the same budget the body does, for founders
+	// as for everybody else.
+	fitBudget(a.Genome, a.Budget()-w.hintCost(a.hintSlots))
 	a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))
 	a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
 	// Founders are spread across a range of remaining lifespan too, the same

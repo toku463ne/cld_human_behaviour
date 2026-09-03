@@ -282,10 +282,32 @@ func (w *World) rememberDamage(a *Agent, fromID int, damage float64) {
 // callers are the events themselves - a pair forming, a child being born - so
 // that affinity only ever comes from something that happened.
 func (w *World) rememberAffinity(a *Agent, otherID int, amount float64) {
+	w.addAffinity(a, otherID, amount, true)
+}
+
+// rememberAffinityIfRoom is the same for something that happened *with*
+// somebody rather than *to* them: a trade of what the two of them assume
+// (stage 12b). It takes the optional path, so an agent whose memory is full of
+// people who matter to it does not throw one of them out for a passing
+// exchange with a stranger. What it got out of the meeting it got; what it
+// does not get is somebody new to remember.
+//
+// The difference is not only a rule. A trade happens thousands of times in a
+// run where a birth happens a handful, and forcing a record every time made
+// looking for the least valuable memory to evict - which prices every record
+// an agent holds - half the cost of the whole simulation.
+func (w *World) rememberAffinityIfRoom(a *Agent, otherID int, amount float64) {
+	w.addAffinity(a, otherID, amount, false)
+}
+
+func (w *World) addAffinity(a *Agent, otherID int, amount float64, forced bool) {
 	if amount <= 0 || otherID == 0 || a.ID == otherID {
 		return
 	}
-	op := w.opinionOf(a, otherID)
+	op := w.record(a, otherID, forced, -1)
+	if op == nil {
+		return
+	}
 	w.settle(a, op)
 	op.Affinity += amount
 }

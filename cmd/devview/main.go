@@ -415,6 +415,15 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 			as.Retaliation, as.RetaliationSeen, as.Accept, as.AcceptSeen)
 		t.line("wants:   risk x%.2f   rival %.3f   empty %.2f",
 			as.RiskWeight, as.Competition, as.ShockRisk)
+		// One rule of thumb per line: they are the least self explanatory
+		// thing on the panel, and running them together made the line longer
+		// than the panel is wide.
+		if hints, slots := a.Hints(); slots > 0 {
+			t.line("hunches: %d of %d rooms used", len(hints), slots)
+			for _, h := range hints {
+				t.line("   %-11s -> %-8s %+5.1f", h.Feature, h.Act, h.Weight)
+			}
+		}
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
 	} else {
@@ -506,6 +515,12 @@ func costTerms(u engine.Utility) string {
 	s := fmt.Sprintf("cost vit %.2f=-%.2f  time %.0ft=-%.2f", u.Vitality, u.VitalityCost, u.Ticks, u.TimeCost)
 	if u.Risk != 0 {
 		s += fmt.Sprintf("  risk -%.2f", u.Risk)
+	}
+	// What this node's own rules of thumb made of the option. It is neither a
+	// goal nor a cost: it stands for nothing in particular, which is the
+	// point of it.
+	if u.Hint != 0 {
+		s += fmt.Sprintf("  hunch %+.2f", u.Hint)
 	}
 	return s
 }

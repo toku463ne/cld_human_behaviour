@@ -13,6 +13,10 @@ const (
 	ActFlee               // run away from an agent
 	ActObserve            // keep an eye on somebody to size them up
 	ActCourt              // approach a candidate and try to form a pair
+
+	// numActionKinds is how many there are, for the code that has to range
+	// over them (the rules of thumb of stage 12c). It is not an action.
+	numActionKinds
 )
 
 func (k ActionKind) String() string {

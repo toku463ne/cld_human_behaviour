@@ -1,6 +1,9 @@
 package engine
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // This file is what an agent assumes when it works out what an option is
 // worth: the numbers that used to be the same for everybody, written into the
@@ -191,6 +194,93 @@ func boolValue(b bool) float64 {
 	return 0
 }
 
+// --- trading it ------------------------------------------------------------
+
+// exchangeLore is what happens when one agent has spent long enough watching
+// another (stage 12b). It rides on ActObserve rather than on an action of its
+// own: watching somebody already costs time and vitality, and already has the
+// exclusivity the trade needs - an agent can only watch one other at a time,
+// so nobody can broadcast.
+//
+// The trade is not one of them learning from the other. Both values move
+// towards each other by the same fraction of the gap, at the same moment, so
+// neither side can take without giving. Only the watcher chose to be here, but
+// what it gets out of it is not extracted: being looked at changes you too.
+//
+// Nothing here asks whether the two are kin. A parent and its child are
+// together for the whole rearing period and so trade often; strangers who
+// happen to stand still near each other trade once. That difference is in how
+// the world puts them, not in a rule about families.
+func (w *World) exchangeLore(a, o *Agent) {
+	rate := w.cfg.LoreExchangeRate
+	if rate <= 0 {
+		return
+	}
+
+	// How much of itself each side gave up, as a share of the world's own
+	// figure for that value, so that the five - which are on quite different
+	// scales - can be added together.
+	moved := 0.0
+	meet := func(x, y *float64, centre float64) {
+		gap := *y - *x
+		if gap == 0 || centre <= 0 {
+			return
+		}
+		step := gap * rate
+		*x += step
+		*y -= step
+		moved += 2 * abs(step) / centre
+	}
+	cfg := &w.cfg
+	// The facts move as means only: what somebody tells you is a claim, not
+	// the years of watching that produced it, so it does not make you any
+	// surer of anything than you were.
+	meet(&a.lore.retaliation.mean, &o.lore.retaliation.mean, cfg.Retaliation)
+	meet(&a.lore.accept.mean, &o.lore.accept.mean, cfg.AcceptChance)
+	meet(&a.lore.riskWeight, &o.lore.riskWeight, cfg.RiskWeight)
+	meet(&a.lore.competitionWeight, &o.lore.competitionWeight, cfg.CompetitionWeight)
+	meet(&a.lore.shockRisk, &o.lore.shockRisk, cfg.ShockRisk)
+
+	// A rule of thumb is not a number two agents can average: half of "go for
+	// the big ones when you are starving" is not a weaker version of it, it is
+	// nothing. So those are not met in the middle, they are copied - and only
+	// into an agent that paid for somewhere to put one (stage 12c).
+	moved += float64(w.exchangeHints(a, o)+w.exchangeHints(o, a)) * cfg.HintTradeWorth
+
+	w.exchanges++
+	o.timesTaught++
+	a.timesTaught++
+
+	// Whether or not anything was worth trading, they met: what each already
+	// remembers of the other stops going stale (#22). Only what is already
+	// remembered - standing next to somebody and agreeing with them about
+	// everything is not worth turning a stranger into an acquaintance for,
+	// and it must not push a record that matters out to make room. Doing this
+	// before the affinity keeps the two apart: meeting is not a favour, only
+	// what actually changed hands is.
+	if op := a.opinion(o.ID); op != nil {
+		w.touch(a, op)
+	}
+	if op := o.opinion(a.ID); op != nil {
+		w.touch(o, op)
+	}
+
+	// What it was worth is what actually moved. Two agents who already agree
+	// trade nothing and think no more of each other for it, and that falls out
+	// of the arithmetic rather than out of a test for it.
+	if gain := moved * cfg.AffinityLore; gain > 0 {
+		w.rememberAffinityIfRoom(a, o.ID, gain)
+		w.rememberAffinityIfRoom(o, a.ID, gain)
+	}
+}
+
+func abs(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 // --- reading it out ---------------------------------------------------------
 
 // Assumptions is what one agent assumes, for the viewer. The two counts are
@@ -219,6 +309,57 @@ func (a *Agent) Assumes() Assumptions {
 		Competition:     a.lore.competitionWeight,
 		ShockRisk:       a.lore.shockRisk,
 	}
+}
+
+// Teaching is how the trading of assumptions is spread across a population.
+//
+// It exists because the exchange was shaped to avoid one particular failure:
+// a handful of agents that everybody learns from, so that what the population
+// believes is really what three of them believe. Whether that happened is not
+// something the design can assert, so it is measured. Read only.
+type Teaching struct {
+	// Trades per agent per thousand ticks it has been alive. Dividing by age
+	// is what keeps this from simply reporting who is oldest.
+	Rate float64
+
+	// The share of all that trading done by the busiest fifth of the
+	// population. A fifth doing a fifth of it - 0.2 - is perfectly even; 1
+	// would be a fifth of them doing all of it.
+	TopShare float64
+}
+
+// Teaching reports how evenly the trading of assumptions is spread. Read only.
+func (w *World) Teaching() Teaching {
+	rates := make([]float64, 0, len(w.agents))
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Age <= 0 {
+			continue
+		}
+		rates = append(rates, float64(a.timesTaught)/float64(a.Age)*1000)
+	}
+	if len(rates) == 0 {
+		return Teaching{}
+	}
+
+	total := 0.0
+	for _, r := range rates {
+		total += r
+	}
+	out := Teaching{Rate: total / float64(len(rates))}
+	if total <= 0 {
+		return out
+	}
+	// The busiest fifth, at least one agent so that a small population still
+	// answers the question rather than dividing by zero.
+	slices.Sort(rates)
+	top := max(len(rates)/5, 1)
+	busiest := 0.0
+	for _, r := range rates[len(rates)-top:] {
+		busiest += r
+	}
+	out.TopShare = busiest / total
+	return out
 }
 
 // LoreView is what a population assumes, averaged, for the viewer and the
