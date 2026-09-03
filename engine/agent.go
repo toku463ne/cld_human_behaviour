@@ -195,11 +195,26 @@ type Agent struct {
 	attackerID     int
 	lastAttackTick int
 
+	// lore is what this agent assumes about the world and what it wants out
+	// of it: the figures the utility formula used to take from the config, now
+	// its own. See lore.go for which of them it can be wrong about.
+	lore lore
+
 	// looks is what this agent has made of appearance: the line it fits from
 	// how big somebody is to how hard they hit. It is not a memory of anybody
 	// in particular, so it is not held in opinions and does not compete for
 	// room there.
 	looks looksModel
+
+	// Who this agent is currently laying into and since when. It is what makes
+	// "did that one hit back" a question about an engagement rather than about
+	// a tick: the answer is read once, a few ticks in, so that a long one
+	// sided beating counts once and not eighty times. engageLast is the last
+	// tick a blow landed, which is how breaking off and coming back later is
+	// told apart from carrying on.
+	engageID    int
+	engageStart int
+	engageLast  int
 
 	// hitBy remembers everybody who has landed a blow recently and when, so
 	// that a carcass can be left to the ones who brought it down rather than

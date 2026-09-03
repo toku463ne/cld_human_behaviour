@@ -17,6 +17,17 @@ const (
 
 	// How long ActObserve takes before it has told the watcher anything.
 	observeTicks = 10
+
+	// How long after the first blow of an engagement the question "did that
+	// one hit back" is answered, and how long a gap ends the engagement.
+	//
+	// Not on the first blow: being hit is what makes the other side think
+	// again, and it cannot do that until the next tick, so the first blow
+	// always reads "no" whoever it lands on. Five ticks is long enough for an
+	// agent that was eating or running to turn round, and short enough that
+	// the answer is still about this fight.
+	retaliationSampleTicks = 5
+	engagementGapTicks     = 20
 )
 
 // Stats is an aggregated view of the world, cheap enough to compute per frame.
@@ -172,6 +183,16 @@ type World struct {
 	childDeaths          int
 	fights               int
 	maxGeneration        int
+
+	// What the world actually does, against which what the agents believe can
+	// be checked: how many blows were sampled and how many of them were
+	// answered, and how many proposals were made and accepted. Counted over
+	// the whole run and read only by the measurement (World.Lore); no rule
+	// consults them, and no agent has access to them.
+	blowsSeen          int
+	blowsAnswered      int
+	courtships         int
+	courtshipsAccepted int
 }
 
 // NewWorld creates a world populated according to cfg. The same cfg (same seed
@@ -525,8 +546,15 @@ func (w *World) court(a *Agent) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}
-	// Both sides have to be convinced, each on its own comparison clock.
-	if w.willCommit(a, w.perceivedFitness(a, o)) && w.willCommit(o, w.perceivedFitness(o, a)) {
+	// Both sides have to be convinced, each on its own comparison clock. The
+	// two answers are worked out separately rather than in one condition
+	// because only one of them is news about the world: whether the other side
+	// agreed. The suitor changing its own mind teaches it nothing about how
+	// often a proposal is accepted, so that is not what it learns from.
+	mine := w.willCommit(a, w.perceivedFitness(a, o))
+	theirs := w.willCommit(o, w.perceivedFitness(o, a))
+	w.noteCourtship(a, theirs)
+	if mine && theirs {
 		w.bond(a, o)
 		return
 	}
@@ -597,6 +625,26 @@ func (w *World) resolveAttacks() {
 		to.attackerID = from.ID
 		to.lastAttackTick = w.tick
 
+		// One reading of this fight per engagement, taken a few ticks in: what
+		// the utility formula wants to know is whether starting on somebody
+		// gets you hit back, which is a question about picking a fight and not
+		// about a tick of one. Sampling every blow instead would answer it
+		// mostly from long one sided beatings - exactly the fights where
+		// nobody is hitting back - and the world would come out three times
+		// milder than it is.
+		if from.engageID != to.ID || w.tick-from.engageLast > engagementGapTicks {
+			from.engageID, from.engageStart = to.ID, w.tick
+		}
+		from.engageLast = w.tick
+		if w.tick-from.engageStart == retaliationSampleTicks {
+			hitBack := to.Action.Kind == ActAttack && to.Action.TargetID == from.ID
+			w.blowsSeen++
+			if hitBack {
+				w.blowsAnswered++
+			}
+			w.noteEngagement(from, to, hitBack)
+		}
+
 		if w.tick%spectateInterval == 0 {
 			w.exchangeReadings(from, to)
 		}
@@ -628,6 +676,35 @@ func (w *World) exchangeReadings(x, y *Agent) {
 		}
 		w.observeStrength(o, x, spectated)
 		w.observeStrength(o, y, spectated)
+	}
+}
+
+// noteEngagement carries the answer to the other question a fight settles -
+// did the one being hit hit back - to whoever is in a position to have seen
+// it: the one throwing the punches, and the onlookers. Not the one being hit:
+// its own choice is not evidence about how the world tends to answer, and an
+// agent that learned from it would only be agreeing with itself.
+//
+// It walks the neighbourhood the way the strength readings do, but once per
+// engagement rather than every twenty ticks, so it is the cheaper of the two.
+func (w *World) noteEngagement(attacker, target *Agent, hitBack bool) {
+	w.noteRetaliation(attacker, hitBack)
+	if w.cfg.LearningRate <= 0 {
+		return
+	}
+
+	r := w.cfg.PerceptionRadius
+	r2 := r * r
+	w.nearScratch = w.spatialIndex().appendAgentsNear(w.nearScratch[:0], attacker.X, attacker.Y, r)
+	for _, i := range w.nearScratch {
+		o := &w.agents[i]
+		if !o.Alive || o.ID == attacker.ID || o.ID == target.ID {
+			continue
+		}
+		if dist2(o.X, o.Y, attacker.X, attacker.Y) > r2 {
+			continue
+		}
+		w.noteRetaliation(o, hitBack)
 	}
 }
 
@@ -894,6 +971,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	)
 	child.Species = pa.Species
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
+	child.lore = w.inheritLore(pa, pb)
 
 	// It starts as a small thing that keeps to one of the two. Which one does
 	// not matter to any rule; taking the first keeps it deterministic.
@@ -1116,6 +1194,7 @@ func (w *World) randomAgent(species Species) Agent {
 		1, // whoever the world puts in from outside arrives grown
 	)
 	a.Species = species
+	a.lore = w.newLore()
 	a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))
 	a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
 	// Founders are spread across a range of remaining lifespan too, the same
@@ -1148,6 +1227,14 @@ func (w *World) addAgent(a Agent) int {
 		for i := range a.Genome {
 			a.Genome[i] = midAbility
 		}
+	}
+	// Likewise for what it assumes: an agent built as a literal, which is
+	// almost always a test, gets the world's own figures rather than a set of
+	// zeroes that would have it believe nobody ever hits back. It is given
+	// them straight, without the founder's spread, so that handing the world
+	// an agent draws nothing from the random source.
+	if a.lore.unset() {
+		a.lore = w.plainLore()
 	}
 	w.index[a.ID] = len(w.agents)
 	w.agents = append(w.agents, a)

@@ -766,7 +766,16 @@ func TestPreemptionFadesWhenFoodIsPlentiful(t *testing.T) {
 				ID: 1, X: 200, Y: 200, Vitality: 100, Hunger: 20,
 				Attack: 80, Rationality: 100, Intelligence: 100,
 				MaxVitality: cfg.MaxVitality, MaxSpeed: cfg.MaxSpeed,
-				FoodScarcity: scarcity},
+				FoodScarcity: scarcity,
+				// What the agent assumes, which since stage 12a comes from the
+				// agent and not from the config. A perception built by hand has
+				// to say so, or it is one that believes nothing is worth
+				// anything.
+				Retaliation:       cfg.Retaliation,
+				AcceptChance:      cfg.AcceptChance,
+				RiskWeight:        cfg.RiskWeight,
+				CompetitionWeight: cfg.CompetitionWeight,
+				ShockRisk:         cfg.ShockRisk},
 			Rand: w.rng}
 		victim := AgentView{ID: 2, Dist: 10, Vitality: 40, EstStrength: 20}
 

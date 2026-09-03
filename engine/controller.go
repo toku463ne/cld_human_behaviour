@@ -116,7 +116,7 @@ func (c *AIController) Decide(p *Perception) Action {
 // whatever the drain, an agent with nothing left in the tank does not survive
 // the next thing that happens to it. Leaving the second one out would make
 // spending vitality look free to anybody who is not currently hungry.
-func pressure(cfg *Config, maxVitality, vitality, drain float64) float64 {
+func pressure(cfg *Config, s *SelfView, vitality, drain float64) float64 {
 	if vitality <= 0 {
 		return 1
 	}
@@ -126,7 +126,7 @@ func pressure(cfg *Config, maxVitality, vitality, drain float64) float64 {
 			pDrain = 1 - ticksLeft/cfg.PlanHorizon
 		}
 	}
-	pWorn := cfg.ShockRisk * (1 - clamp(vitality/maxVitality, 0, 1))
+	pWorn := s.ShockRisk * (1 - clamp(vitality/s.MaxVitality, 0, 1))
 	return clamp(1-(1-pDrain)*(1-pWorn), 0, 1)
 }
 
@@ -202,7 +202,7 @@ func (c *AIController) addRest(p *Perception) {
 	s := &p.Self
 	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := c.incomingDmg
-	now := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
+	now := pressure(cfg, s, s.Vitality, drain+incoming)
 
 	// Lying down among strangers is not the same as lying down among your
 	// own. What it costs is worked out the way every other few ticks ahead is
@@ -213,7 +213,7 @@ func (c *AIController) addRest(p *Perception) {
 
 	// Whatever is hitting the agent goes on hitting it while it sits there,
 	// and so does whatever starts while it is down.
-	after := pressure(cfg, s.MaxVitality,
+	after := pressure(cfg, s,
 		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed),
 		drain+incoming+exposed)
 	c.add(Action{Kind: ActRest}, Utility{
@@ -225,9 +225,9 @@ func (c *AIController) addRest(p *Perception) {
 // same units the food options are scored in: how much less likely it makes
 // dying inside the planning horizon.
 func mealValue(cfg *Config, s *SelfView, incoming float64) float64 {
-	now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
+	now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
 	fed := math.Max(0, s.Hunger-cfg.FoodNutrition)
-	after := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, fed)+incoming)
+	after := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, fed)+incoming)
 	return (now - after) * cfg.LifeValue
 }
 
@@ -262,7 +262,7 @@ func (c *AIController) addFood(p *Perception) {
 	s := &p.Self
 	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := c.incomingDmg
-	now := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
+	now := pressure(cfg, s, s.Vitality, drain+incoming)
 
 	for i := range p.Foods {
 		if i >= maxFoodOptions {
@@ -282,7 +282,7 @@ func (c *AIController) addFood(p *Perception) {
 			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition)
 			vitAfter := s.Vitality - cost
 			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming)
-			after := pressure(cfg, s.MaxVitality, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
+			after := pressure(cfg, s, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
 
 			meal := (now - after) * cfg.LifeValue
 			c.add(Action{Kind: ActEat, TargetID: f.ID, Effort: effort}, Utility{
@@ -355,9 +355,13 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		// about them, so an agent finds out by being surprised. What it does
 		// know is its own guard, which is what the incoming blow is reduced
 		// by below.
-		const retaliation = 0.7
+		//
+		// How readily the other side hits back at all is this agent's own
+		// figure now (lore.go): one that has been picking on people who did
+		// not fight back expects the next one not to either, and is wrong
+		// about the one that does.
 		mine := damagePerTick(cfg, s.Attack, effort*m.Attack)
-		theirs := damagePerTick(cfg, o.EstStrength, retaliation) *
+		theirs := damagePerTick(cfg, o.EstStrength, s.Retaliation) *
 			(1 - s.Defence*m.Defence) * (1 - s.Evasion*m.Evasion)
 
 		// Either they go down, or one side breaks off first. A weakened
@@ -370,8 +374,8 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCostAt(cfg, effort)
 
 		drain := projectedDrain(cfg, s.HungerRate, s.Hunger+s.HungerRate*ticks)
-		now := pressure(cfg, s.MaxVitality, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incomingDmg)
-		after := pressure(cfg, s.MaxVitality, s.Vitality-cost, drain)
+		now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incomingDmg)
+		after := pressure(cfg, s, s.Vitality-cost, drain)
 		lifeTerm := (now - after) * cfg.LifeValue
 
 		// The meal in front of them. Driving this one off wins the race for
@@ -403,7 +407,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		competition := Goal{}
 		if maxDepth >= depthPreemtive {
 			competition = Goal{
-				Value:  cfg.CompetitionWeight * cfg.LifeValue * clamp(s.FoodScarcity, 0, 3) / 3,
+				Value:  s.CompetitionWeight * cfg.LifeValue * clamp(s.FoodScarcity, 0, 3) / 3,
 				Chance: pWin,
 			}
 		}
@@ -412,7 +416,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 			Life:         Goal{Value: lifeTerm, Chance: 1},
 			Stake:        stake,
 			Rival:        competition,
-			Risk:         cfg.RiskWeight * o.Risk,
+			Risk:         s.RiskWeight * o.Risk,
 			Vitality:     cost,
 			Ticks:        ticks,
 			VitalityCost: cost * cfg.VitalityWeight,
@@ -430,7 +434,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 
 	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := damagePerTick(cfg, o.EstStrength, 1)
-	staying := pressure(cfg, s.MaxVitality, s.Vitality, drain+incoming)
+	staying := pressure(cfg, s, s.Vitality, drain+incoming)
 
 	// Breaking away is not free: for a while the agent is still in reach and
 	// is the one not hitting back, which is the cheapest thing there is to
@@ -439,7 +443,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	// is about to kill the agent, and loses whenever it is not.
 	cost := moveCostAt(cfg, cfg.FleeEffort)*fleeExposureTicks + incoming*fleeExposureTicks*0.4
 	pEscape := clamp(s.Vitality/(s.Vitality+o.Vitality+1e-9), 0.15, 0.9)
-	fled := pressure(cfg, s.MaxVitality, s.Vitality-cost, drain)
+	fled := pressure(cfg, s, s.Vitality-cost, drain)
 
 	c.add(Action{Kind: ActFlee, TargetID: o.ID, Effort: cfg.FleeEffort, Stance: StanceEvasive}, Utility{
 		Life:         Goal{Value: (staying - fled) * cfg.LifeValue, Chance: pEscape},
@@ -454,14 +458,14 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 // priority 1 is comfortable.
 func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	cfg := p.Cfg
-	const pAccept = 0.6
+	s := &p.Self
 
 	effort := 0.6
 	ticks := o.Dist/speedAt(p.Self.MaxSpeed, effort) + 1
 	cost := moveCostAt(cfg, effort) * ticks
 
 	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, Utility{
-		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: pAccept},
+		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance},
 		Vitality:     cost,
 		Ticks:        ticks,
 		VitalityCost: cost * cfg.VitalityWeight,

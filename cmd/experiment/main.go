@@ -228,6 +228,65 @@ var variants = []variant{
 		about: "a stranger is worth the flat prior however they look: the world before stage 10",
 		apply: func(c *engine.Config) { c.LearnFromLooks = false },
 	},
+	// Stage 12a: the figures the utility formula leans on stop being the same
+	// for everybody. "nolore" is the world before it - one set of numbers,
+	// right by construction - and it is the arm the stage is measured against.
+	// The others take the halves apart: whether an agent may want different
+	// things from its neighbour, and whether it may find the world out.
+	{
+		name:  "nolore",
+		about: "everybody assumes exactly the same and learns nothing: the world before stage 12a",
+		apply: func(c *engine.Config) {
+			c.LearningRate, c.LoreInitSpread, c.LoreMutationStd = 0, 0, 0
+		},
+	},
+	{
+		name:  "onepreference",
+		about: "everybody wants the same things; the preferences do not vary or mutate",
+		apply: func(c *engine.Config) { c.LoreInitSpread, c.LoreMutationStd = 0, 0 },
+	},
+	{
+		// The costly one, and the reason learning is off by default. It works
+		// - the belief lands far closer to what the world actually does - and
+		// the world cannot afford what it finds out.
+		name:  "learning",
+		about: "agents find out how often the one you hit hits back, instead of assuming 0.7",
+		apply: func(c *engine.Config) { c.LearningRate = 1 },
+	},
+	{
+		name:  "lamarck",
+		about: "learning on, and a child starts where its parent's beliefs got to",
+		apply: func(c *engine.Config) { c.LearningRate, c.LamarckRate = 1, 1 },
+	},
+	{
+		name:  "spread10",
+		about: "sweep: preferences drawn 10% around the world's figure instead of 15%",
+		apply: func(c *engine.Config) { c.LoreInitSpread = 0.10 },
+	},
+	{
+		name:  "spread25",
+		about: "sweep: preferences drawn 25% around: where the population starts to go",
+		apply: func(c *engine.Config) { c.LoreInitSpread = 0.25 },
+	},
+	// What the assumption is worth as a plain number, with nobody learning
+	// anything. The world's true retaliation rate is about 0.15, and these
+	// say what the controller's 0.7 was buying: the population, all of it.
+	{
+		name:  "retal45",
+		about: "sweep: everybody assumes 0.45 rather than 0.7, nobody learns",
+		apply: func(c *engine.Config) {
+			c.LoreInitSpread, c.LoreMutationStd = 0, 0
+			c.Retaliation = 0.45
+		},
+	},
+	{
+		name:  "retal20",
+		about: "sweep: everybody assumes the truth (0.2), nobody learns",
+		apply: func(c *engine.Config) {
+			c.LoreInitSpread, c.LoreMutationStd = 0, 0
+			c.Retaliation = 0.2
+		},
+	},
 	{
 		// The diagnostic pair for where the population goes. A learned guess
 		// about a stranger is lower than the flat 50 was, and the estimate of
@@ -559,6 +618,8 @@ var metricNames = []string{
 	"priorErr", "priorErrFlat", "priorErrFixed", "slopeGain", "learnGain",
 	"priorErrAll", "priorErrLearned", "priorErrGreen", "learnedShare", "firstSights",
 	"hunts", "jointHunts", "packSize", "evadedShare",
+	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
+	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"extinct",
 }
 
@@ -604,6 +665,15 @@ type sample struct {
 	// agents that have run out of room, and how many agents it is not fond of
 	// are standing over the ones that are resting.
 	remembered, friends, memFull, restNear float64
+
+	// What the population assumes: the mean of each of the five figures the
+	// utility formula used to take from the config, and the spread of the
+	// three that are preferences rather than claims about the world. The
+	// spread is the one that matters - a mean says which way a population
+	// leans, only a spread says whether there is anything left to select on.
+	retal, accept                        float64
+	riskWeight, competition, shock       float64
+	sdRiskWeight, sdCompetition, sdShock float64
 }
 
 // perAgentLifetime converts a count of events into a rate per ten thousand
@@ -692,7 +762,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		sdP, sdR, sdI := abilitySpread(w)
 		budget, sdBudget, shares := budgetSplit(w)
 		mem := w.MemoryUse()
+		lore := w.Lore()
 		series = append(series, sample{
+			retal: lore.Retaliation, accept: lore.Accept,
+			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
+			sdRiskWeight: lore.SdRiskWeight, sdCompetition: lore.SdCompetition, sdShock: lore.SdShockRisk,
 			budget: budget, sdBudget: sdBudget, shares: shares,
 			age: s.AvgAge, maturity: s.AvgMaturity, ageFactor: s.AvgAgeFactor,
 			childShare: share(s.Children, s.Population),
@@ -735,6 +809,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	}
 
 	end := w.Stats()
+	// What the world actually did over the whole run, which is what the
+	// beliefs above are trying to find out. It is not a property of the arm:
+	// two arms fight different amounts and so answer the question differently.
+	endLore := w.Lore()
 	tail := tailAverage(series)
 	mem := member.Result()
 	fr := fights.Result()
@@ -806,6 +884,22 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"friends":        tail.friends,
 		"memFull":        tail.memFull,
 		"restNear":       tail.restNear,
+		// What the population assumes, and what the world actually did. The
+		// two "Err" figures are the ones to read: a belief is only worth
+		// anything if it is closer to the truth than the constant it replaced,
+		// and the truth is a figure of the run, not of the arm.
+		"retal":          tail.retal,
+		"trueRetal":      endLore.TrueRetaliation,
+		"retalErr":       math.Abs(tail.retal - endLore.TrueRetaliation),
+		"accept":         tail.accept,
+		"trueAccept":     endLore.TrueAccept,
+		"acceptErr":      math.Abs(tail.accept - endLore.TrueAccept),
+		"riskWeight":     tail.riskWeight,
+		"sdRiskWeight":   tail.sdRiskWeight,
+		"competition":    tail.competition,
+		"sdCompetition":  tail.sdCompetition,
+		"shock":          tail.shock,
+		"sdShock":        tail.sdShock,
 		"power":          tail.power,
 		"rationality":    tail.rat,
 		"intelligence":   tail.intel,
@@ -920,6 +1014,14 @@ func tailAverage(series []sample) sample {
 		out.friends += s.friends
 		out.memFull += s.memFull
 		out.restNear += s.restNear
+		out.retal += s.retal
+		out.accept += s.accept
+		out.riskWeight += s.riskWeight
+		out.competition += s.competition
+		out.shock += s.shock
+		out.sdRiskWeight += s.sdRiskWeight
+		out.sdCompetition += s.sdCompetition
+		out.sdShock += s.sdShock
 		n++
 	}
 	if n == 0 {
@@ -955,6 +1057,14 @@ func tailAverage(series []sample) sample {
 	out.friends /= d
 	out.memFull /= d
 	out.restNear /= d
+	out.retal /= d
+	out.accept /= d
+	out.riskWeight /= d
+	out.competition /= d
+	out.shock /= d
+	out.sdRiskWeight /= d
+	out.sdCompetition /= d
+	out.sdShock /= d
 	return out
 }
 

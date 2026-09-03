@@ -271,6 +271,54 @@ type Config struct {
 	InfoValue         float64 // value of shrinking the uncertainty about somebody
 	ExploreValue      float64 // value of wandering when nothing is in sight
 
+	// --- what an agent assumes (lore.go) ---
+	//
+	// Two of the figures the utility formula leans on are claims about the
+	// world rather than about the agent: how often somebody who is hit hits
+	// back, and how often a proposal is accepted. They used to be constants in
+	// the controller, the same for everybody and right by construction. They
+	// are now what each agent has made of what it has seen, and these two are
+	// the world's own figures - the starting assumption a founder is given and
+	// a child falls back on, not a fact the engine consults.
+	//
+	// ShockRisk, CompetitionWeight and RiskWeight above become centres in the
+	// same way: an agent's own value is drawn around them and inherited from
+	// there.
+	Retaliation  float64 // assumed chance the one you hit hits back
+	AcceptChance float64 // assumed chance a courtship is accepted
+
+	// LearningRate is how far one observation moves a belief, as a share of
+	// the move a plain running mean would make. Zero stops every agent
+	// learning anything, and zero is the default.
+	//
+	// It is off because it was measured, not because it does not work: it
+	// works, and that is the problem. The world's true retaliation rate is
+	// about 0.15, against the 0.7 the controller used to assume, and agents
+	// that find that out halve the population - not by killing each other,
+	// but by brawling, scattering and then starving. The 0.7 was not a fact
+	// about the world, it was a deterrent holding it together. Turning this
+	// on is a decision for when the world has a real one; see HISTORY.md.
+	LearningRate float64
+
+	// LoreMemory caps the evidence behind a belief. Without a cap an old agent
+	// could not notice that the world had changed, for the same reason its
+	// memory of individuals fades.
+	LoreMemory float64
+
+	// LorePriorCount is how much evidence the starting assumption is worth. It
+	// is what stops the first surprise from throwing a belief across the
+	// range; a handful of observations still move it.
+	LorePriorCount float64
+
+	// LoreInitSpread is the spread of a founder's preferences around the
+	// world's figure, and LoreMutationStd the spread of the jog a child's gets
+	// on inheritance. Both are proportional, so one number does for values of
+	// different sizes. Zero for both gives a population that wants exactly the
+	// same things and has nothing for selection to work on - the arm that says
+	// how much of what follows is selection on preference.
+	LoreInitSpread  float64
+	LoreMutationStd float64
+
 	// --- decision triggers ---
 	//
 	// Agents do not re-decide every tick, only when something happens. The
@@ -451,11 +499,15 @@ type Config struct {
 	MateRejectDuration  int     // ticks a passed over candidate is left aside
 
 	// LamarckRate is how much of what a parent learned in its lifetime is
-	// passed to its child, on top of what it inherits. It is here and unused:
-	// there is nothing learned to pass on until stage 12 gives agents their
-	// own values for the assumptions in the utility formula. The slot is set
-	// aside now so that the inheritance code has one place for it, rather than
-	// being rearranged later to make room.
+	// passed to its child, on top of what it inherits: it applies to the
+	// beliefs about the world in lore.go, which are the only things an agent
+	// finds out rather than is born with.
+	//
+	// Zero by default, and that is the point of it. At zero every child has to
+	// discover the world for itself, so whatever the population comes to
+	// believe it believes because the ones who believed it lived. Turn it up
+	// and the same belief can spread by being handed down. Running both is the
+	// only way to tell those two apart.
 	LamarckRate float64
 }
 
@@ -656,5 +708,31 @@ func DefaultConfig() Config {
 		PatienceRationality: 0.5,
 		CommitFitness:       78,
 		MateRejectDuration:  40,
+
+		// The two figures the controller used to hardcode, unchanged in value:
+		// this is the same world it was, with the numbers now somewhere an
+		// agent can disagree with them.
+		Retaliation:  0.7,
+		AcceptChance: 0.6,
+
+		// Off, for the reason written against the field. The two figures
+		// below are what it runs at when it is turned on: a belief moves the
+		// whole way a running mean would, and it takes about sixty
+		// observations to be worth as much as the founding assumption is
+		// worth eight. Both are ordinary numbers of fights and proposals
+		// within one life, so a belief is a lifetime's impression and not a
+		// tally of everything that ever happened.
+		LearningRate:   0,
+		LoreMemory:     60,
+		LorePriorCount: 8,
+
+		// How much the population disagrees about what is worth doing.
+		// Calibrated rather than guessed: at 0.25 it costs a fifth of the
+		// population, at 0.15 the cost is inside the noise (-4.2 +/- 4.4 over
+		// 24 seeds) and the spread still standing at the end of a run is
+		// real. The jog on inheritance is smaller than the gene mutation
+		// because it happens at every birth rather than one in fifty.
+		LoreInitSpread:  0.15,
+		LoreMutationStd: 0.08,
 	}
 }

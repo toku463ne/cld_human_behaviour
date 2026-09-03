@@ -16,7 +16,8 @@ import (
 // agents started being born small and growing into themselves (stage 7d), and
 // again when bringing a carcass down together started being remembered (the
 // remainder of stage 11), and again when a stranger stopped being worth the
-// same flat prior to everybody (stage 10).
+// same flat prior to everybody (stage 10), and again when what an agent wants
+// out of the world stopped being the same for everybody (stage 12a).
 //
 // Stage 7a is a change of how the neighbours are found, not of what happens,
 // and its completion condition is that the same seed gives the same run. That
@@ -34,9 +35,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 30, births: 17, deaths: 69, kills: 53, aging: 0, fights: 3451, gen: 2, power: 37.466441, vitality: 64.951394, hunger: 34.617854},
-	{seed: 2, pop: 17, births: 7, deaths: 71, kills: 59, aging: 0, fights: 4445, gen: 1, power: 41.679301, vitality: 84.190528, hunger: 23.174556},
-	{seed: 3, pop: 25, births: 12, deaths: 69, kills: 54, aging: 0, fights: 4722, gen: 2, power: 38.219978, vitality: 99.664934, hunger: 15.075790},
+	{seed: 1, pop: 24, births: 13, deaths: 68, kills: 60, aging: 0, fights: 4629, gen: 2, power: 48.605653, vitality: 79.717566, hunger: 18.400955},
+	{seed: 2, pop: 16, births: 10, deaths: 74, kills: 66, aging: 0, fights: 5791, gen: 2, power: 48.283444, vitality: 97.611431, hunger: 28.481257},
+	{seed: 3, pop: 23, births: 11, deaths: 70, kills: 59, aging: 0, fights: 4979, gen: 2, power: 36.451804, vitality: 67.616093, hunger: 17.194340},
 }
 
 const goldenTicks = 5000

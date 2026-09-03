@@ -49,6 +49,20 @@ type SelfView struct {
 	// pre-emptive attack rule leans on, so that a well stocked world removes
 	// the motive for violence all by itself.
 	FoodScarcity float64
+
+	// What this agent assumes when it works out what an option is worth: two
+	// claims about the world it has been finding out (how often the one you
+	// hit hits back, how often a proposal is accepted) and three preferences
+	// it was born with (lore.go). They were the same numbers for everybody
+	// until stage 12; the controller reads them from here now, so that being
+	// wrong about the world, or wanting different things out of it, is
+	// something an agent can be.
+	Retaliation  float64
+	AcceptChance float64
+
+	RiskWeight        float64
+	CompetitionWeight float64
+	ShockRisk         float64
 }
 
 // FoodView is one food item as an agent sees it.
@@ -165,6 +179,12 @@ func (w *World) perceive(a *Agent) *Perception {
 		Evasion:      w.cfg.EvasionCap * a.Gene(GeneEvasion) / MaxAbility * clamp(a.MaxSpeed(&w.cfg)/w.cfg.MaxSpeed, 0, 2),
 		CanReproduce: a.CanReproduce(&w.cfg),
 		AttackerID:   a.attackerID,
+
+		Retaliation:       a.lore.retaliation.mean,
+		AcceptChance:      a.lore.accept.mean,
+		RiskWeight:        a.lore.riskWeight,
+		CompetitionWeight: a.lore.competitionWeight,
+		ShockRisk:         a.lore.shockRisk,
 	}
 
 	r := w.cfg.PerceptionRadius

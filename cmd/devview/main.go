@@ -407,6 +407,14 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		t.line("looks %.0f (what others can see of its build)", a.Appearance(&cfg))
 		t.line("memory %d/%d faces   forgets at x%.2f",
 			len(g.world.Opinions(a.ID)), a.MemoryCapacity(&cfg), a.ForgetScale(&cfg))
+		// What it assumes, as against what it knows about anybody in
+		// particular. The counts say whether it has seen anything: with
+		// learning off they never move off the founding figure.
+		as := a.Assumes()
+		t.line("assumes: hit back %.2f (%.0f seen)   courted %.2f (%.0f seen)",
+			as.Retaliation, as.RetaliationSeen, as.Accept, as.AcceptSeen)
+		t.line("wants:   risk x%.2f   rival %.3f   empty %.2f",
+			as.RiskWeight, as.Competition, as.ShockRisk)
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
 	} else {
