@@ -629,6 +629,17 @@ type Config struct {
 	TriggerVitalityDrop float64
 	TriggerIdleTicks    int
 
+	// SightingRetriggers makes the two sighting triggers fire on every tick
+	// something is in view rather than on the tick it comes into view. That
+	// is how they behaved before the edge was put in, and it is the arm this
+	// is measured against.
+	//
+	// The level version asks an agent crossing a place with food in it to
+	// think again on every tick of the crossing, about a thing it decided to
+	// walk past a tick earlier. It costs 2.4x the whole simulation and buys
+	// the agent a second look at food it has already considered.
+	SightingRetriggers bool
+
 	// --- intelligence ---
 	//
 	// Two separate handles, matching the two halves of the ability: how many

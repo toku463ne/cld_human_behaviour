@@ -207,6 +207,15 @@ type Agent struct {
 	hints     []Hint
 	hintSlots int
 
+	// sawFood and sawMate are what was in sight when this agent was last
+	// asked whether anything had turned up, so that "something came into
+	// view" can be told from "something is in view". Without them the two
+	// sighting triggers fire on every tick an agent spends walking through a
+	// place with food in it, having decided to keep walking past that same
+	// food a tick earlier.
+	sawFood bool
+	sawMate bool
+
 	// chronotype is the hour of the world's day this agent sleeps best at, on
 	// a circle from 0 to 1 (stage 18, clock.go). Deliberately not one of the
 	// budget genes: those are quantities you can buy more of, and an hour is a

@@ -448,16 +448,30 @@ func (w *World) decisionTrigger(a *Agent) Trigger {
 		return TriggerIdle
 	}
 	// Food came into view while the agent had nothing better to do.
+	//
+	// Came into view, not is in view. The difference is the whole cost of
+	// this branch: an agent crossing a place with food in it sees food on
+	// every tick of the crossing, and firing on each of them asks it to think
+	// again about a thing it decided to walk past a tick ago. Rising edges
+	// only, so it is asked once per arrival.
 	if a.Action.Kind == ActRest || a.Action.Kind == ActMove {
-		if w.nearestFoodInSight(a) >= 0 {
+		sees := w.nearestFoodInSight(a) >= 0
+		arrived := sees && (!a.sawFood || w.cfg.SightingRetriggers)
+		a.sawFood = sees
+		if arrived {
 			return TriggerFoodInSight
 		}
 		// So did somebody worth crossing the world for. This adds no action:
 		// courting is scored by the same utility comparison as everything
 		// else. It only stops an agent walking past a candidate because it
 		// happened not to be thinking at that moment.
-		if a.CanReproduce(&w.cfg) && w.strikingCandidateInSight(a) {
-			return TriggerMateInSight
+		if a.CanReproduce(&w.cfg) {
+			seesMate := w.strikingCandidateInSight(a)
+			arrivedMate := seesMate && (!a.sawMate || w.cfg.SightingRetriggers)
+			a.sawMate = seesMate
+			if arrivedMate {
+				return TriggerMateInSight
+			}
 		}
 	}
 	return TriggerNone

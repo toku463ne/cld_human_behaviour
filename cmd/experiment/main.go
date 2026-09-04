@@ -265,6 +265,15 @@ var variants = []variant{
 	// The groundwork for terrain: a race for food is judged on who would
 	// arrive first rather than on who is nearer, so how fast a body is and how
 	// hard it is trying both count. "racedistance" is the world before it.
+	// The sighting triggers. "resighting" is how they behaved before the edge
+	// was put in: fire on every tick something is in view rather than on the
+	// tick it comes into view. It costs 2.4x the simulation, and this says
+	// what it bought.
+	{
+		name:  "resighting",
+		about: "an agent reconsiders every tick food is in view, not just when it arrives",
+		apply: func(c *engine.Config) { c.SightingRetriggers = true },
+	},
 	// Stage 18: the world gets a day, and not everybody keeps the same hours.
 	// "oneclock" is the arm the stage is measured against - a world with a day
 	// in it and no disagreement about when to sleep - and "noclock" is the

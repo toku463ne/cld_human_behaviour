@@ -41,9 +41,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 26, births: 5, deaths: 61, kills: 41, aging: 0, fights: 3268, gen: 1, power: 52.171682, vitality: 88.103432, hunger: 29.910611},
-	{seed: 2, pop: 25, births: 10, deaths: 67, kills: 47, aging: 0, fights: 4590, gen: 2, power: 48.353316, vitality: 87.435917, hunger: 16.537079},
-	{seed: 3, pop: 28, births: 11, deaths: 65, kills: 46, aging: 0, fights: 3573, gen: 2, power: 29.795695, vitality: 81.459373, hunger: 16.863770},
+	{seed: 1, pop: 35, births: 13, deaths: 60, kills: 39, aging: 0, fights: 3452, gen: 2, power: 36.343632, vitality: 76.782622, hunger: 22.971672},
+	{seed: 2, pop: 30, births: 20, deaths: 72, kills: 56, aging: 0, fights: 6556, gen: 2, power: 38.382564, vitality: 80.043564, hunger: 16.752121},
+	{seed: 3, pop: 30, births: 12, deaths: 64, kills: 46, aging: 0, fights: 3333, gen: 3, power: 51.393526, vitality: 88.761080, hunger: 21.938254},
 }
 
 const goldenTicks = 5000

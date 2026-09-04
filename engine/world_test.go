@@ -2231,3 +2231,50 @@ func TestClusterGapsRelativeOfARandomLayout(t *testing.T) {
 			"the scale is only readable on its own if no structure means no signal", rel)
 	}
 }
+
+// A sighting trigger fires when something comes into view, not on every tick it
+// is in view. The difference is not a detail: an agent crossing a place with
+// food in it sees food on every tick of the crossing, and asking it to think
+// again each time both costs the whole simulation 2.4x and leaves it thrashing
+// instead of following anything through.
+func TestASightingFiresOnArrivalAndNotWhileInView(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 80, Hunger: 40,
+		Genome: genomeOf(50, 50, 50)}))
+	a.Action = Action{Kind: ActMove}
+	a.needsDecision = false
+	a.lastDecisionTick = w.tick
+
+	// Nothing in sight yet.
+	if got := w.decisionTrigger(a); got == TriggerFoodInSight {
+		t.Fatal("food was seen before any was put there")
+	}
+
+	w.addFood(210, 200)
+	if got := w.decisionTrigger(a); got != TriggerFoodInSight {
+		t.Fatalf("food arriving in view raised %v, want %v", got, TriggerFoodInSight)
+	}
+	// Still there, and it has already been considered.
+	if got := w.decisionTrigger(a); got == TriggerFoodInSight {
+		t.Fatal("food still in view raised the arrival trigger a second time")
+	}
+
+	// Out of view and back again is a new arrival.
+	a.X, a.Y = 20, 20
+	if got := w.decisionTrigger(a); got == TriggerFoodInSight {
+		t.Fatal("food out of view raised the arrival trigger")
+	}
+	a.X, a.Y = 200, 200
+	if got := w.decisionTrigger(a); got != TriggerFoodInSight {
+		t.Fatalf("coming back to the food raised %v, want %v", got, TriggerFoodInSight)
+	}
+
+	// And the old behaviour is still reachable, because it is the arm the
+	// change was measured against.
+	w.cfg.SightingRetriggers = true
+	if got := w.decisionTrigger(a); got != TriggerFoodInSight {
+		t.Fatalf("with retriggering on, food in view raised %v, want it every tick", got)
+	}
+}
