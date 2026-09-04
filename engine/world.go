@@ -132,6 +132,10 @@ type World struct {
 	regions    []region
 	foodWeight float64
 
+	// pendingSeeds are seeds that have been carried somewhere in an animal
+	// and are waiting for the world's next planting (stage 17c).
+	pendingSeeds []pendingSeed
+
 	// index maps an agent ID to its position in agents, and foodIndex does the
 	// same for food, so that following a target does not scan everything.
 	index     map[int]int
@@ -407,6 +411,10 @@ func (w *World) Step() {
 
 	w.resolveAttacks()
 	w.metabolise()
+
+	// After everybody has moved, so a carried seed comes up where its carrier
+	// ended up rather than where it set off (stage 17c).
+	w.dropSeeds()
 
 	w.commitNewborns()
 	w.removeDead()
@@ -1080,6 +1088,8 @@ func (w *World) eat(a *Agent, foodID int) {
 	// downstream of hunger follows from that on its own.
 	a.Hunger = math.Max(0, a.Hunger-w.cfg.FoodNutrition*w.dietValue(a, f.Kind))
 	w.noteEaten(a, f.Kind)
+	// Some of what it swallows lives through the journey (stage 17c).
+	w.noteSeedEaten(a, f)
 	w.removeFoodByID(foodID)
 }
 
@@ -1394,6 +1404,40 @@ func (w *World) spawnFood() {
 	if len(w.foods) >= w.cfg.MaxFoodItems {
 		return
 	}
+	// A seed that has been carried somewhere first, if one is waiting. It
+	// takes the place of this planting rather than adding to it, which is what
+	// keeps the count of plants FoodSpawnRate's business alone.
+	if s, ok := w.takePendingSeed(); ok {
+		w.addPlant(clamp(s.x, 10, w.cfg.Width-10), clamp(s.y, 10, w.cfg.Height-10),
+			w.inheritPlantGenes(s.genes))
+		return
+	}
+
+	// A seedling of whichever plant the world picked to seed from, which is
+	// weighted by how readily each seeds and by how good its ground is. How
+	// many appear is untouched - FoodSpawnRate still says that - and all this
+	// decides is whose child it is and where it lands.
+	//
+	// With nothing left to seed from, the world falls back to putting one
+	// wherever the ground is good. Otherwise a world that lost its last plant
+	// could never grow another, which is an absorbing state and not a rule
+	// anybody chose.
+	if w.cfg.PlantGenetics {
+		if i := w.seedFrom(); i >= 0 {
+			parent := &w.foods[i]
+			genes := w.inheritPlantGenes(parent.Genes)
+			angle := w.rng.Float64() * 2 * math.Pi
+			// Uniform over the disc rather than over the radius, or seeds
+			// would pile up at the centre of every parent's reach.
+			d := genes.Spread * math.Sqrt(w.rng.Float64())
+			w.addPlant(
+				clamp(parent.X+math.Cos(angle)*d, 10, w.cfg.Width-10),
+				clamp(parent.Y+math.Sin(angle)*d, 10, w.cfg.Height-10),
+				genes)
+			return
+		}
+	}
+
 	if w.cfg.FoodSpread <= 0 {
 		w.addFood(w.randRange(10, w.cfg.Width-10), w.randRange(10, w.cfg.Height-10))
 		return
@@ -1410,10 +1454,15 @@ func (w *World) spawnFood() {
 // addFood grows a plant at the given position and returns its ID, or 0 when
 // the world already holds as many plants as it may.
 func (w *World) addFood(x, y float64) int {
+	return w.addPlant(x, y, w.drawPlantGenes())
+}
+
+// addPlant is addFood for a plant whose parentage is already decided.
+func (w *World) addPlant(x, y float64, genes plantGenes) int {
 	if w.countKind(FoodPlant) >= w.cfg.MaxFoodItems {
 		return 0
 	}
-	return w.putFood(Food{X: x, Y: y, Kind: FoodPlant})
+	return w.putFood(Food{X: x, Y: y, Kind: FoodPlant, Genes: genes})
 }
 
 // countKind is how many items of one kind are lying about. The two kinds have

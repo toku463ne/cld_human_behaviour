@@ -207,6 +207,12 @@ type Agent struct {
 	hints     []Hint
 	hintSlots int
 
+	// seed is a plant this agent ate that survived being eaten, and seedDueAt
+	// when it comes up (stage 17c). Zero means it is carrying nothing. One at
+	// a time: a gut is not a granary.
+	seed      plantGenes
+	seedDueAt int
+
 	// recentFood is how much of each kind this agent has eaten lately, and
 	// dietTick when that was last written (stage 16, diet.go). It fades on
 	// reading, like every other quantity that fades. It is not a state axis:
@@ -379,4 +385,8 @@ type Food struct {
 
 	// SpoilAt is when meat is gone, 0 for anything that does not spoil.
 	SpoilAt int
+
+	// Genes is what a plant inherited from the one it grew from (plant.go).
+	// Meat has none: a carcass is not a lineage.
+	Genes plantGenes
 }

@@ -179,9 +179,63 @@ type Config struct {
 	// stops.
 	DietSatiety       float64
 	DietForgetPerTick float64
-	GrabRadius        float64 // how close an agent must be to eat
-	CombatRadius      float64 // how close an agent must be to land a blow
-	BoundaryMargin    float64
+
+	// --- plants that inherit something (stage 17a, plant.go) ---
+	//
+	// PlantGenetics turns the plants' own inheritance on. False leaves them
+	// where stage 15a had them - appearing wherever the ground is good, with
+	// no parent and nothing passed on - and false is the default.
+	//
+	// It is off because it was measured. The mechanism works - the plants
+	// evolve, readily and in a direction - and it takes two thirds of the
+	// population with it, by two separate routes that no setting escapes
+	// together. Seeds thrown a short way make thickets and leave half the
+	// world's regions with nothing growing in them, which is an absorbing
+	// state because nothing can seed where nothing grows. Seeds thrown far
+	// keep every region stocked and destroy what stage 15 built the
+	// population on: food that stays put long enough to be worth learning
+	// about. See HISTORY.md.
+	//
+	// A plant has two genes and no budget and no decisions (#42). How many
+	// plants there are is still FoodSpawnRate's business and nothing here
+	// changes it; what the genes decide is whose children they are and where
+	// they land.
+	PlantGenetics bool
+
+	// PlantSpread is how far a seed lands from its parent to begin with, and
+	// PlantSpreadMax the furthest evolution may take that. It is also the
+	// distance the plants' clumping is measured at.
+	PlantSpread    float64
+	PlantSpreadMax float64
+
+	// Rare and large, as the agents' mutation is and for the same reason: a
+	// nudge on every seed would leave nothing of the parent in the child.
+	PlantMutationRate float64
+	PlantMutationStd  float64
+
+	// SeedSurvival is how often a seed lives through being eaten, and
+	// SeedGutTicks how long it is carried before it comes up (stage 17c,
+	// #44). Zero for the first turns carrying off, and zero is the default.
+	//
+	// It rides on the eating that was already happening: no new action, no
+	// carrying behaviour, and the count of plants is untouched - a carried
+	// seed takes the place of the world's next planting rather than adding to
+	// it.
+	//
+	// It was built to be the answer to what wind dispersal does to the map,
+	// animals being the only thing here that travels from where the food is to
+	// where it is not. It is not: with it on, the share of regions with
+	// nothing growing in them is 0.55 against 0.53 without, which is no
+	// difference at all. And on its own, with the plants inheriting nothing,
+	// it costs a third of the population - a carried seed comes up where an
+	// animal has just been, which is ground that has just been grazed, so it
+	// plants food where the food has already gone rather than where the
+	// ground is good.
+	SeedSurvival   float64
+	SeedGutTicks   int
+	GrabRadius     float64 // how close an agent must be to eat
+	CombatRadius   float64 // how close an agent must be to land a blow
+	BoundaryMargin float64
 
 	// --- what is left when somebody dies ---
 	//
@@ -773,6 +827,19 @@ func DefaultConfig() Config {
 		SamenessPenalty:   0.35,
 		DietSatiety:       4,
 		DietForgetPerTick: 0.002,
+
+		// Both off, and measured rather than guessed. See the fields for what
+		// happens when they are on; the short of it is that this world's
+		// population had come to depend on the food geography being stable
+		// and learnable, and plants that decide their own whereabouts take
+		// that away. The figures below are what they run at when turned on.
+		PlantGenetics:     false,
+		PlantSpread:       90,
+		PlantSpreadMax:    500,
+		PlantMutationRate: 0.05,
+		PlantMutationStd:  0.4,
+		SeedSurvival:      0,
+		SeedGutTicks:      120,
 		GrabRadius:        11,
 		CombatRadius:      15,
 		BoundaryMargin:    8,

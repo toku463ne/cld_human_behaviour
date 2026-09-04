@@ -265,6 +265,39 @@ var variants = []variant{
 	// The groundwork for terrain: a race for food is judged on who would
 	// arrive first rather than on who is nearer, so how fast a body is and how
 	// hard it is trying both count. "racedistance" is the world before it.
+	// Stage 17a: the plants inherit where they came from. "noplantgenes" is
+	// the world stage 15a left, where a plant appeared wherever the ground was
+	// good and had no parent at all.
+	{
+		name:  "noplantgenes",
+		about: "plants appear wherever the ground is good and pass nothing on: the world before stage 17a",
+		apply: func(c *engine.Config) { c.PlantGenetics = false },
+	},
+	{
+		name:  "noseedcarry",
+		about: "nothing survives being eaten: wind dispersal alone (17a without 17c)",
+		apply: func(c *engine.Config) { c.SeedSurvival = 0 },
+	},
+	{
+		name:  "carryonly",
+		about: "seeds only travel in animals; the plants themselves throw nothing far",
+		apply: func(c *engine.Config) { c.PlantSpread, c.PlantSpreadMax = 20, 40 },
+	},
+	{
+		name:  "shortseed",
+		about: "sweep: seeds land close to the parent and cannot evolve far",
+		apply: func(c *engine.Config) { c.PlantSpread, c.PlantSpreadMax = 30, 60 },
+	},
+	{
+		name:  "longseed",
+		about: "sweep: seeds are thrown across the world from the start",
+		apply: func(c *engine.Config) { c.PlantSpread = 300 },
+	},
+	{
+		name:  "frozenplants",
+		about: "plants have genes but never mutate: the shape without the evolution",
+		apply: func(c *engine.Config) { c.PlantMutationRate = 0 },
+	},
 	// Stage 16: living on one thing is worth progressively less. Measured on
 	// its own and expected to do almost nothing, because a human's food is
 	// plants near enough always - this is the baseline for when stage 17
@@ -801,6 +834,7 @@ var metricNames = []string{
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
 	"regionKnown", "regionTold", "regionRank", "regionSpread",
 	"dietVariety", "dietDiscount",
+	"plantSpread", "plantRegrow", "plantClump", "plantEmpty", "seedsCarried",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -888,6 +922,13 @@ type sample struct {
 	// what the average mouthful is actually worth after the discount for
 	// sameness. A rule that never fires leaves the second at one.
 	dietVariety, dietDiscount float64
+
+	// What the plants have become: how far they throw a seed, how readily
+	// they throw one, the thickets that makes, and the share of the world's
+	// regions with nothing growing in them. The last is watched the way the
+	// rarer species' trough is - nothing can seed where nothing grows, so an
+	// empty region is an absorbing state.
+	plantSpread, plantRegrow, plantClump, plantEmpty, seedsCarried float64
 
 	// What the population is making of its rules of thumb: room bought and
 	// ideas carried per agent, how many distinct ones are alive at all, and
@@ -990,6 +1031,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		rich := w.Richness()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
+		plants := w.Plants()
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
@@ -997,7 +1039,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			regionKnown: known.Known, regionTold: known.Told,
 			regionRank: known.Rank, regionSpread: known.Spread,
 			dietVariety: diet.Variety, dietDiscount: diet.Discount,
-			hintSlots: hints.Slots, hintsHeld: hints.Held,
+			plantSpread: plants.Spread, plantRegrow: plants.Regrow,
+			plantClump: plants.Clumping, plantEmpty: plants.Empty,
+			seedsCarried: plants.Carried,
+			hintSlots:    hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
 			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
@@ -1235,6 +1280,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// never fires; dietVariety at zero is a world with nothing to vary.
 		"dietVariety":  tail.dietVariety,
 		"dietDiscount": tail.dietDiscount,
+		// What the plants have become. plantEmpty is the one to watch: a
+		// region with nothing growing in it cannot be seeded into, so zero is
+		// absorbing there exactly as it is for a species.
+		"plantSpread":  tail.plantSpread,
+		"plantRegrow":  tail.plantRegrow,
+		"plantClump":   tail.plantClump,
+		"plantEmpty":   tail.plantEmpty,
+		"seedsCarried": tail.seedsCarried,
 		"packSize":     share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an
@@ -1334,6 +1387,11 @@ func tailAverage(series []sample) sample {
 		out.regionSpread += s.regionSpread
 		out.dietVariety += s.dietVariety
 		out.dietDiscount += s.dietDiscount
+		out.plantSpread += s.plantSpread
+		out.plantRegrow += s.plantRegrow
+		out.plantClump += s.plantClump
+		out.plantEmpty += s.plantEmpty
+		out.seedsCarried += s.seedsCarried
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -1394,6 +1452,11 @@ func tailAverage(series []sample) sample {
 	out.regionSpread /= d
 	out.dietVariety /= d
 	out.dietDiscount /= d
+	out.plantSpread /= d
+	out.plantRegrow /= d
+	out.plantClump /= d
+	out.plantEmpty /= d
+	out.seedsCarried /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d
