@@ -274,6 +274,31 @@ var variants = []variant{
 		apply: func(c *engine.Config) { c.PlantGenetics = false },
 	},
 	{
+		name:  "plantdefence",
+		about: "plants carry poison and a warning about it (stage 17b, off by default)",
+		apply: func(c *engine.Config) { c.PlantDefence = true },
+	},
+	{
+		name:  "blindtowarnings",
+		about: "the warnings are there and unreadable: what is reading them worth?",
+		apply: func(c *engine.Config) { c.PlantDefence, c.SignalNoise = true, 4 },
+	},
+	{
+		name:  "poison8",
+		about: "sweep: a full dose costs 8 of vitality rather than 18",
+		apply: func(c *engine.Config) { c.PlantDefence, c.PoisonDamage = true, 8 },
+	},
+	{
+		name:  "poison4",
+		about: "sweep: a full dose costs 4 of vitality",
+		apply: func(c *engine.Config) { c.PlantDefence, c.PoisonDamage = true, 4 },
+	},
+	{
+		name:  "poison2",
+		about: "sweep: a full dose costs 2 of vitality",
+		apply: func(c *engine.Config) { c.PlantDefence, c.PoisonDamage = true, 2 },
+	},
+	{
 		name:  "noseedcarry",
 		about: "nothing survives being eaten: wind dispersal alone (17a without 17c)",
 		apply: func(c *engine.Config) { c.SeedSurvival = 0 },
@@ -835,6 +860,7 @@ var metricNames = []string{
 	"regionKnown", "regionTold", "regionRank", "regionSpread",
 	"dietVariety", "dietDiscount",
 	"plantSpread", "plantRegrow", "plantClump", "plantEmpty", "seedsCarried",
+	"plantPoison", "plantSignal", "plantHonesty",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -929,6 +955,12 @@ type sample struct {
 	// rarer species' trough is - nothing can seed where nothing grows, so an
 	// empty region is an absorbing state.
 	plantSpread, plantRegrow, plantClump, plantEmpty, seedsCarried float64
+
+	// What the crop is defended with, and whether its warnings mean anything.
+	// Honesty is the one the stage turns on: the two genes are drawn and
+	// mutated independently, so any correlation between them is something the
+	// world arrived at.
+	plantPoison, plantSignal, plantHonesty float64
 
 	// What the population is making of its rules of thumb: room bought and
 	// ideas carried per agent, how many distinct ones are alive at all, and
@@ -1042,6 +1074,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			plantSpread: plants.Spread, plantRegrow: plants.Regrow,
 			plantClump: plants.Clumping, plantEmpty: plants.Empty,
 			seedsCarried: plants.Carried,
+			plantPoison:  plants.Poison, plantSignal: plants.Signal,
+			plantHonesty: plants.Honesty,
 			hintSlots:    hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
@@ -1288,6 +1322,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"plantClump":   tail.plantClump,
 		"plantEmpty":   tail.plantEmpty,
 		"seedsCarried": tail.seedsCarried,
+		// What the crop is defended with. plantHonesty is the correlation
+		// between poison and warning across the standing crop: nothing in the
+		// rules ties them together, so whatever it says the world found.
+		"plantPoison":  tail.plantPoison,
+		"plantSignal":  tail.plantSignal,
+		"plantHonesty": tail.plantHonesty,
 		"packSize":     share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an
@@ -1392,6 +1432,9 @@ func tailAverage(series []sample) sample {
 		out.plantClump += s.plantClump
 		out.plantEmpty += s.plantEmpty
 		out.seedsCarried += s.seedsCarried
+		out.plantPoison += s.plantPoison
+		out.plantSignal += s.plantSignal
+		out.plantHonesty += s.plantHonesty
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -1457,6 +1500,9 @@ func tailAverage(series []sample) sample {
 	out.plantClump /= d
 	out.plantEmpty /= d
 	out.seedsCarried /= d
+	out.plantPoison /= d
+	out.plantSignal /= d
+	out.plantHonesty /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d

@@ -35,6 +35,23 @@ type plantGenes struct {
 	// That is what makes it a fitness rather than a subsidy. A plant that
 	// seeds twice as readily takes the place of one that does not.
 	Regrow float64
+
+	// Poison is what eating this one costs, and Signal is how loudly it says
+	// so - smell and conspicuousness together, which is one thing rather than
+	// two because that is how they are argued about (#43).
+	//
+	// They are two genes and nothing ties them together. Whether a warning is
+	// honest is left to the world to decide: a plant that is all signal and no
+	// poison is trading on the reputation of ones that mean it, and if that
+	// pays it will happen. Nothing here is arranged to make it happen and
+	// nothing is arranged to stop it.
+	//
+	// Poison is hidden, as every ability of an agent is. What an eater gets is
+	// the signal, read with the error its rationality leaves it - which is
+	// what gives rationality a job on the food's side of the world for the
+	// first time.
+	Poison float64
+	Signal float64
 }
 
 // drawPlantGenes is what the first plants of a world are. They are drawn around
@@ -43,13 +60,19 @@ type plantGenes struct {
 // selection to work on.
 func (w *World) drawPlantGenes() plantGenes {
 	cfg := &w.cfg
-	if !cfg.PlantGenetics {
-		return plantGenes{Spread: cfg.PlantSpread, Regrow: 1}
+	g := plantGenes{Spread: cfg.PlantSpread, Regrow: 1}
+	if cfg.PlantGenetics {
+		g.Spread = clamp(w.randRange(cfg.PlantSpread*0.4, cfg.PlantSpread*1.6), 1, cfg.PlantSpreadMax)
+		g.Regrow = clamp(w.randRange(0.4, 1.6), plantRegrowFloor, plantRegrowMax)
 	}
-	return plantGenes{
-		Spread: clamp(w.randRange(cfg.PlantSpread*0.4, cfg.PlantSpread*1.6), 1, cfg.PlantSpreadMax),
-		Regrow: clamp(w.randRange(0.4, 1.6), plantRegrowFloor, plantRegrowMax),
+	if cfg.PlantDefence {
+		// Drawn independently, which is the whole point: an honest warning
+		// has to be something the world arrives at, not something the world
+		// was built with.
+		g.Poison = clamp(w.rng.Float64(), 0, 1)
+		g.Signal = clamp(w.rng.Float64(), 0, 1)
 	}
+	return g
 }
 
 // The range a plant's readiness to seed is kept in. A floor above zero because
@@ -68,7 +91,10 @@ const (
 func (w *World) inheritPlantGenes(parent plantGenes) plantGenes {
 	cfg := &w.cfg
 	out := parent
-	if cfg.PlantMutationRate > 0 {
+	if cfg.PlantMutationRate <= 0 {
+		return out
+	}
+	if cfg.PlantGenetics {
 		if w.rng.Float64() < cfg.PlantMutationRate {
 			out.Spread = clamp(out.Spread*(1+w.rng.NormFloat64()*cfg.PlantMutationStd), 1, cfg.PlantSpreadMax)
 		}
@@ -77,7 +103,65 @@ func (w *World) inheritPlantGenes(parent plantGenes) plantGenes {
 				plantRegrowFloor, plantRegrowMax)
 		}
 	}
+	if cfg.PlantDefence {
+		// Additive rather than proportional, because these run 0 to 1 and a
+		// proportional jump can never lift a plant off zero.
+		if w.rng.Float64() < cfg.PlantMutationRate {
+			out.Poison = clamp(out.Poison+w.rng.NormFloat64()*cfg.PlantMutationStd, 0, 1)
+		}
+		if w.rng.Float64() < cfg.PlantMutationRate {
+			out.Signal = clamp(out.Signal+w.rng.NormFloat64()*cfg.PlantMutationStd, 0, 1)
+		}
+	}
 	return out
+}
+
+// defenceParent picks a standing plant for a new one to take its defences
+// from, uniformly.
+//
+// Uniform is what makes this selection at all. Nothing weights the draw, so a
+// plant's only way of being picked more often is to still be there - and what
+// keeps a plant standing is not being eaten. Poison is selected for by
+// surviving, which is the mechanism it exists for, rather than by any rule
+// that says poison is good.
+//
+// It is deliberately separate from seedFrom. What broke the world at 17a was
+// where plants come up, not what they pass on, so the defences can be
+// inherited on a map that still puts plants where the ground is good.
+func (w *World) defenceParent() (plantGenes, bool) {
+	n := 0
+	for i := range w.foods {
+		if w.foods[i].Kind == FoodPlant {
+			n++
+		}
+	}
+	if n == 0 {
+		return plantGenes{}, false
+	}
+	k := w.rng.Intn(n)
+	for i := range w.foods {
+		if w.foods[i].Kind != FoodPlant {
+			continue
+		}
+		if k == 0 {
+			return w.foods[i].Genes, true
+		}
+		k--
+	}
+	return plantGenes{}, false
+}
+
+// dangerOf is what an eater makes of a plant: the warning it can see, read with
+// the error its own rationality leaves it.
+//
+// It reads the signal and believes it. Nothing here checks whether the plant
+// meant it, which is exactly the opening a liar needs - and whether anything
+// takes it is the question the two genes were left uncorrelated to ask.
+func (w *World) dangerOf(observer *Agent, f *Food) float64 {
+	if !w.cfg.PlantDefence || f.Kind != FoodPlant {
+		return 0
+	}
+	return clamp(f.Genes.Signal+w.judgementError(observer, w.cfg.SignalNoise), 0, 1)
 }
 
 // seedFrom picks which plant the next one grows from.
@@ -199,6 +283,15 @@ type PlantLife struct {
 	// the spread gene is worth having at all.
 	Clumping float64
 
+	// Poison and Signal are what the standing crop has become, and Honesty the
+	// correlation between them across it. Honesty is the one that answers the
+	// question the two genes were left uncorrelated to ask: at zero the
+	// warnings mean nothing, near one the world has arrived at telling the
+	// truth, and below zero it has arrived at lying.
+	Poison  float64
+	Signal  float64
+	Honesty float64
+
 	// Carried is how many seeds are in transit inside an animal right now
 	// (stage 17c). Zero when nothing is carried.
 	Carried float64
@@ -232,6 +325,25 @@ func (w *World) Plants() PlantLife {
 	}
 	out.Spread /= n
 	out.Regrow /= n
+
+	// What the crop is defended with, and whether its warnings mean anything.
+	var sp, ss, spp, sss, sps float64
+	for i := range w.foods {
+		f := &w.foods[i]
+		if f.Kind != FoodPlant {
+			continue
+		}
+		p, g := f.Genes.Poison, f.Genes.Signal
+		sp, ss = sp+p, ss+g
+		spp, sss, sps = spp+p*p, sss+g*g, sps+p*g
+	}
+	out.Poison, out.Signal = sp/n, ss/n
+	if n > 1 {
+		den := math.Sqrt((n*spp - sp*sp) * (n*sss - ss*ss))
+		if den > 0 {
+			out.Honesty = (n*sps - sp*ss) / den
+		}
+	}
 
 	// How many other plants are within a plant's own spread of it, against how
 	// many there would be if the same number were scattered evenly.

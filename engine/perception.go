@@ -111,6 +111,13 @@ type FoodView struct {
 	// same thing (stage 16). One for an agent with a varied diet.
 	Nutrition float64
 
+	// Danger is how poisonous this observer reckons the item is, from 0 to 1
+	// (stage 17b). It is a reading of the plant's warning, blurred by the
+	// observer's own rationality - the plant's actual poison is a hidden
+	// parameter and is not here, exactly as an agent's combat power is not in
+	// AgentView. An agent finds out what it really ate by eating it.
+	Danger float64
+
 	// RivalDist is how far the nearest other agent is from this item. Getting
 	// there first is a race, and this is what tells the agent its odds.
 	RivalDist float64
@@ -257,6 +264,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Dist:      math.Sqrt(d2),
 			Kind:      f.Kind,
 			Nutrition: p.Self.Nutrition[f.Kind],
+			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),
 		})
 	}

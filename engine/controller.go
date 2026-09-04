@@ -345,12 +345,16 @@ func (c *AIController) addFood(p *Perception) {
 			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming)
 			after := pressure(cfg, s, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
 
+			// What the warning on it says it will cost. The agent is reading
+			// a signal and believing it: nothing here can tell whether the
+			// plant meant it, which is the opening a liar would need.
+			poison := f.Danger * cfg.PoisonDamage
 			meal := (now - after) * cfg.LifeValue
 			c.add(Action{Kind: ActEat, TargetID: f.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: meal, Chance: pGet},
-				Vitality:     cost,
+				Vitality:     cost + poison*pGet,
 				Ticks:        ticks,
-				VitalityCost: cost * cfg.VitalityWeight,
+				VitalityCost: (cost + poison*pGet) * cfg.VitalityWeight,
 				TimeCost:     ticks * cfg.TimeCost,
 			})
 

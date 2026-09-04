@@ -231,8 +231,45 @@ type Config struct {
 	// animal has just been, which is ground that has just been grazed, so it
 	// plants food where the food has already gone rather than where the
 	// ground is good.
-	SeedSurvival   float64
-	SeedGutTicks   int
+	SeedSurvival float64
+	SeedGutTicks int
+
+	// --- poison and warning (stage 17b, #43) ---
+	//
+	// PlantDefence gives plants two more genes: what eating one costs, and how
+	// loudly it says so. They are drawn and inherited independently and
+	// nothing ties them together - whether a warning is honest is left to the
+	// world to arrive at, or not.
+	//
+	// It is separate from PlantGenetics on purpose. What took the population
+	// apart at 17a was where plants come up; what they pass on is a different
+	// question, so the defences can be inherited on a map that still puts
+	// plants where the ground is good. Their parent is drawn uniformly from
+	// the standing crop, so the only way to be picked more often is to still
+	// be standing - which is to say, not to have been eaten.
+	//
+	// False by default, because it costs nine tenths of the population at
+	// every dose tried, down to a ninth of the default one. Agents refuse food
+	// over warnings and starve, and the warnings are worth refusing over:
+	// poison and signal both sit near where they were drawn (0.52 and 0.49)
+	// with a correlation of about nothing, so a warning predicts nothing and
+	// the crop is neither honest nor consistently deceitful. It is noise that
+	// the eaters treat as information.
+	//
+	// It does raise the selection pressure on rationality, which nothing has
+	// managed since stage 9 (shRationality 0.07 -> 0.11 ***). Do not read that
+	// as reading warnings finally paying: with the signals made unreadable it
+	// rises exactly as much. What is selecting for rationality is the harsher
+	// world, not the warnings in it - the same confound stage 12a found when
+	// telling agents the truth about retaliation.
+	PlantDefence bool
+
+	// PoisonDamage is the vitality a fully poisonous plant takes off whoever
+	// eats it, and SignalNoise how badly the warning is read - scaled, like
+	// every other misreading, by what the reader spent on rationality. This is
+	// the first job rationality has ever had on the food's side of the world.
+	PoisonDamage   float64
+	SignalNoise    float64
 	GrabRadius     float64 // how close an agent must be to eat
 	CombatRadius   float64 // how close an agent must be to land a blow
 	BoundaryMargin float64
@@ -840,9 +877,17 @@ func DefaultConfig() Config {
 		PlantMutationStd:  0.4,
 		SeedSurvival:      0,
 		SeedGutTicks:      120,
-		GrabRadius:        11,
-		CombatRadius:      15,
-		BoundaryMargin:    8,
+
+		// A full dose costs about a fifth of an ordinary body's vitality:
+		// enough to be worth reading the warning for, not enough to make one
+		// mouthful fatal. The signal is read about as badly as a stranger's
+		// build is (stage 10), which is to say clearly but not exactly.
+		PlantDefence:   false,
+		PoisonDamage:   18,
+		SignalNoise:    0.25,
+		GrabRadius:     11,
+		CombatRadius:   15,
+		BoundaryMargin: 8,
 
 		PreyValue:       1,
 		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more

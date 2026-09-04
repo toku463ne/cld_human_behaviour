@@ -1087,6 +1087,12 @@ func (w *World) eat(a *Agent, foodID int) {
 	// (stage 16). Nothing else changes: hunger falls by less, and everything
 	// downstream of hunger follows from that on its own.
 	a.Hunger = math.Max(0, a.Hunger-w.cfg.FoodNutrition*w.dietValue(a, f.Kind))
+	// And whatever it was defended with (stage 17b). The plant's poison is a
+	// hidden parameter: this is where an agent finds out what it actually ate,
+	// as against what the warning said.
+	if w.cfg.PlantDefence && f.Kind == FoodPlant {
+		a.Vitality -= f.Genes.Poison * w.cfg.PoisonDamage
+	}
 	w.noteEaten(a, f.Kind)
 	// Some of what it swallows lives through the journey (stage 17c).
 	w.noteSeedEaten(a, f)
@@ -1413,6 +1419,20 @@ func (w *World) spawnFood() {
 		return
 	}
 
+	// A plant's defences are inherited even when its whereabouts are not: the
+	// parent is drawn uniformly from what is still standing, so staying
+	// uneaten is the only way to be picked more often (stage 17b).
+	defended := func(x, y float64) {
+		genes := w.drawPlantGenes()
+		if w.cfg.PlantDefence {
+			if parent, ok := w.defenceParent(); ok {
+				inherited := w.inheritPlantGenes(parent)
+				genes.Poison, genes.Signal = inherited.Poison, inherited.Signal
+			}
+		}
+		w.addPlant(x, y, genes)
+	}
+
 	// A seedling of whichever plant the world picked to seed from, which is
 	// weighted by how readily each seeds and by how good its ground is. How
 	// many appear is untouched - FoodSpawnRate still says that - and all this
@@ -1439,14 +1459,14 @@ func (w *World) spawnFood() {
 	}
 
 	if w.cfg.FoodSpread <= 0 {
-		w.addFood(w.randRange(10, w.cfg.Width-10), w.randRange(10, w.cfg.Height-10))
+		defended(w.randRange(10, w.cfg.Width-10), w.randRange(10, w.cfg.Height-10))
 		return
 	}
 	// Where a plant comes up is drawn in proportion to how well the ground
 	// grows things, and then uniformly inside that block. How many come up is
 	// untouched: FoodSpawnRate still says how many, and this only says where.
 	minX, minY, maxX, maxY := w.regionBounds(w.pickFoodRegion())
-	w.addFood(
+	defended(
 		w.randRange(math.Max(minX, 10), math.Min(maxX, w.cfg.Width-10)),
 		w.randRange(math.Max(minY, 10), math.Min(maxY, w.cfg.Height-10)))
 }
