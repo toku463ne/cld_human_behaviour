@@ -162,9 +162,26 @@ type Config struct {
 	// the country and never acting on it, which separates knowing from
 	// choosing.
 	RegionDrawValue float64
-	GrabRadius      float64 // how close an agent must be to eat
-	CombatRadius    float64 // how close an agent must be to land a blow
-	BoundaryMargin  float64
+
+	// --- living on one thing (stage 16, diet.go) ---
+	//
+	// SamenessPenalty is the most a mouthful can be discounted for being the
+	// same as everything else the agent has been eating. Zero turns the rule
+	// off, which is the arm it is measured against.
+	//
+	// It can never take the whole value: being sick of something is a reason
+	// to look for something else, not a reason to starve beside food, and an
+	// agent with only one thing available must still eat it.
+	SamenessPenalty float64
+
+	// DietSatiety is how many of one kind it takes to reach half the penalty,
+	// and DietForgetPerTick how fast having eaten it fades once the agent
+	// stops.
+	DietSatiety       float64
+	DietForgetPerTick float64
+	GrabRadius        float64 // how close an agent must be to eat
+	CombatRadius      float64 // how close an agent must be to land a blow
+	BoundaryMargin    float64
 
 	// --- what is left when somebody dies ---
 	//
@@ -748,9 +765,17 @@ func DefaultConfig() Config {
 		RegionToldCount:     2,
 		RegionPrior:         3,
 		RegionDrawValue:     4,
-		GrabRadius:          11,
-		CombatRadius:        15,
-		BoundaryMargin:      8,
+
+		// Small on purpose. This rule has almost nothing to bite on yet - a
+		// human's food is plants, near enough always - so it is set where it
+		// would matter if there were a choice, and measured now to have a
+		// baseline for when stage 17 provides one.
+		SamenessPenalty:   0.35,
+		DietSatiety:       4,
+		DietForgetPerTick: 0.002,
+		GrabRadius:        11,
+		CombatRadius:      15,
+		BoundaryMargin:    8,
 
 		PreyValue:       1,
 		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more

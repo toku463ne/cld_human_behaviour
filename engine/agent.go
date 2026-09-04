@@ -207,6 +207,13 @@ type Agent struct {
 	hints     []Hint
 	hintSlots int
 
+	// recentFood is how much of each kind this agent has eaten lately, and
+	// dietTick when that was last written (stage 16, diet.go). It fades on
+	// reading, like every other quantity that fades. It is not a state axis:
+	// there are still three of those, and this is bookkeeping.
+	recentFood [NumFoodKinds]float64
+	dietTick   int
+
 	// regions is what this agent has made of the ground it has been on (stage
 	// 15b, regionlore.go). Allocated on the first look, and never counted
 	// against what it can remember about people: somewhere is not somebody.

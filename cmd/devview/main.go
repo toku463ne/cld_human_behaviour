@@ -477,6 +477,10 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		}
 		shelter, food := g.world.GroundAt(a.X, a.Y)
 		t.line("ground here: resting x%.2f, plants x%.2f (1 = ordinary)", shelter, food)
+		if d := g.world.DietOf(a.ID); d[engine.FoodPlant] < 1 || d[engine.FoodMeat] < 1 {
+			t.line("sick of it: a plant is worth x%.2f, meat x%.2f",
+				d[engine.FoodPlant], d[engine.FoodMeat])
+		}
 		if known, total, gain := g.world.CountryKnownBy(a.ID); total > 0 {
 			where := "nowhere better known"
 			if gain > 0 {

@@ -1075,7 +1075,11 @@ func (w *World) eat(a *Agent, foodID int) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}
-	a.Hunger = math.Max(0, a.Hunger-w.cfg.FoodNutrition)
+	// Worth less if it is the same as everything else it has been living on
+	// (stage 16). Nothing else changes: hunger falls by less, and everything
+	// downstream of hunger follows from that on its own.
+	a.Hunger = math.Max(0, a.Hunger-w.cfg.FoodNutrition*w.dietValue(a, f.Kind))
+	w.noteEaten(a, f.Kind)
 	w.removeFoodByID(foodID)
 }
 

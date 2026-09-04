@@ -69,6 +69,12 @@ type SelfView struct {
 	// Perception, and all they can do is add to an option's score.
 	Hints []Hint
 
+	// Nutrition is what one of each kind of food is worth to this agent right
+	// now, as a share of what it would be worth to one that had not been
+	// living on it (stage 16). Deliberately not hidden: an animal knows when
+	// it is sick of something.
+	Nutrition [NumFoodKinds]float64
+
 	// BetterGround is how much more food this agent believes is to be found
 	// somewhere it has been than where it is standing, and BetterGroundX/Y
 	// where that is (stage 15b). Zero when it knows nowhere better - which
@@ -95,6 +101,15 @@ type FoodView struct {
 	ID   int
 	X, Y float64
 	Dist float64
+
+	// Kind is what it is. Not hidden: what something is is written on the
+	// outside of it, the same way a creature's species is.
+	Kind FoodKind
+
+	// Nutrition is what this item is worth to this agent right now, as a
+	// share of what it would be worth to one that had not been living on the
+	// same thing (stage 16). One for an agent with a varied diet.
+	Nutrition float64
 
 	// RivalDist is how far the nearest other agent is from this item. Getting
 	// there first is a race, and this is what tells the agent its odds.
@@ -212,6 +227,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		ShockRisk:         a.lore.shockRisk,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
+		Nutrition:         w.dietValues(a),
 	}
 
 	// The index narrows the world down to the cells sight could possibly reach;
@@ -239,6 +255,8 @@ func (w *World) perceive(a *Agent) *Perception {
 			X:         f.X,
 			Y:         f.Y,
 			Dist:      math.Sqrt(d2),
+			Kind:      f.Kind,
+			Nutrition: p.Self.Nutrition[f.Kind],
 			RivalDist: math.Inf(1),
 		})
 	}

@@ -25,6 +25,10 @@ const (
 	// FoodMeat is what is left of somebody. It remembers whose species it
 	// came from, because that decides who is allowed to eat it.
 	FoodMeat
+
+	// NumFoodKinds is how many there are, for the code that keeps one figure
+	// per kind (the diet rule of stage 16). It is not a kind.
+	NumFoodKinds
 )
 
 func (k FoodKind) String() string {

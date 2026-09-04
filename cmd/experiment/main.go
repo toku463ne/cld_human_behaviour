@@ -265,6 +265,20 @@ var variants = []variant{
 	// The groundwork for terrain: a race for food is judged on who would
 	// arrive first rather than on who is nearer, so how fast a body is and how
 	// hard it is trying both count. "racedistance" is the world before it.
+	// Stage 16: living on one thing is worth progressively less. Measured on
+	// its own and expected to do almost nothing, because a human's food is
+	// plants near enough always - this is the baseline for when stage 17
+	// gives them something to choose between.
+	{
+		name:  "nodietrule",
+		about: "no penalty for living on one thing: the world before stage 16",
+		apply: func(c *engine.Config) { c.SamenessPenalty = 0 },
+	},
+	{
+		name:  "harshdiet",
+		about: "sweep: living on one thing costs most of what it is worth",
+		apply: func(c *engine.Config) { c.SamenessPenalty = 0.8 },
+	},
 	// Stages 15b and 15c: agents learn what the ground they walk is like, and
 	// trade it. "noregionlore" is the world 15a left - the food is still
 	// uneven and agents still find it by standing on it, and that is all.
@@ -786,6 +800,7 @@ var metricNames = []string{
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
 	"regionKnown", "regionTold", "regionRank", "regionSpread",
+	"dietVariety", "dietDiscount",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -868,6 +883,11 @@ type sample struct {
 	// than walked, how well the views line up with the truth, and how much
 	// agents disagree about the same place.
 	regionKnown, regionTold, regionRank, regionSpread float64
+
+	// What the population is living on: how mixed the average diet is, and
+	// what the average mouthful is actually worth after the discount for
+	// sameness. A rule that never fires leaves the second at one.
+	dietVariety, dietDiscount float64
 
 	// What the population is making of its rules of thumb: room bought and
 	// ideas carried per agent, how many distinct ones are alive at all, and
@@ -969,12 +989,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		shelter := w.Shelter()
 		rich := w.Richness()
 		known := w.RegionKnowledge()
+		diet := w.Diet()
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
 			humanRich: rich.Humans, enemyRich: rich.Enemies, allRich: rich.All,
 			regionKnown: known.Known, regionTold: known.Told,
 			regionRank: known.Rank, regionSpread: known.Spread,
+			dietVariety: diet.Variety, dietDiscount: diet.Discount,
 			hintSlots: hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
@@ -1209,6 +1231,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"regionTold":   tail.regionTold,
 		"regionRank":   tail.regionRank,
 		"regionSpread": tail.regionSpread,
+		// What the population lives on. dietDiscount at one is a rule that
+		// never fires; dietVariety at zero is a world with nothing to vary.
+		"dietVariety":  tail.dietVariety,
+		"dietDiscount": tail.dietDiscount,
 		"packSize":     share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an
@@ -1306,6 +1332,8 @@ func tailAverage(series []sample) sample {
 		out.regionTold += s.regionTold
 		out.regionRank += s.regionRank
 		out.regionSpread += s.regionSpread
+		out.dietVariety += s.dietVariety
+		out.dietDiscount += s.dietDiscount
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -1364,6 +1392,8 @@ func tailAverage(series []sample) sample {
 	out.regionTold /= d
 	out.regionRank /= d
 	out.regionSpread /= d
+	out.dietVariety /= d
+	out.dietDiscount /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d

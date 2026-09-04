@@ -242,9 +242,11 @@ func (c *AIController) addRest(p *Perception) {
 // mealValue is what one item of food is worth to this agent right now, in the
 // same units the food options are scored in: how much less likely it makes
 // dying inside the planning horizon.
-func mealValue(cfg *Config, s *SelfView, incoming float64) float64 {
+// nutrition is what one of it is worth to this agent: the world's figure, less
+// whatever it has been living on lately (stage 16).
+func mealValue(cfg *Config, s *SelfView, incoming, nutrition float64) float64 {
 	now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
-	fed := math.Max(0, s.Hunger-cfg.FoodNutrition)
+	fed := math.Max(0, s.Hunger-cfg.FoodNutrition*nutrition)
 	after := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, fed)+incoming)
 	return (now - after) * cfg.LifeValue
 }
@@ -338,7 +340,7 @@ func (c *AIController) addFood(p *Perception) {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 
 			cost := moveCostAt(cfg, effort) * ticks
-			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition)
+			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*f.Nutrition)
 			vitAfter := s.Vitality - cost
 			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming)
 			after := pressure(cfg, s, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
@@ -458,7 +460,8 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		// whoever else took part. That is the arithmetic that makes a big
 		// animal worth taking on together and not alone.
 		if o.Prey && o.Meat >= 1 && s.Hunger > 0 && cfg.PreyValue > 0 {
-			bite := math.Min(o.Meat, 1) * cfg.PreyValue * mealValue(cfg, s, c.incomingDmg)
+			bite := math.Min(o.Meat, 1) * cfg.PreyValue *
+				mealValue(cfg, s, c.incomingDmg, s.Nutrition[FoodMeat])
 			pKill := clamp(exchange*mine/math.Max(o.Vitality, 1e-9), 0, 1) * pWin
 			stake = Goal{Value: stake.Value + bite, Chance: math.Max(stake.Chance, pKill)}
 		}
