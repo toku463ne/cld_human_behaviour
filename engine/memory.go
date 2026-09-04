@@ -98,12 +98,29 @@ func (w *World) record(a *Agent, otherID int, forced bool, seen float64) *Opinio
 
 	victim, evicting := 0, false
 	if capacity := a.MemoryCapacity(&w.cfg); capacity > 0 && len(a.opinions) >= capacity {
+		// An agent that has already been asked this and had nothing to give
+		// up is not asked again. The answer cannot change on its own: a
+		// record's weight only ever grows (something happened with that one)
+		// or fades towards zero without reaching it, so a memory with nothing
+		// expendable in it stays that way until a record leaves or joins.
+		//
+		// It matters because of what stage 12b did to the odds. Before agents
+		// traded, most memories held somebody they had merely walked past -
+		// weightless, and the first to go - so this search usually succeeded.
+		// Trading gives nearly every remembered face some affinity, and the
+		// share of full memories with anything expendable in them fell from
+		// 86% to 29%. The rest were searching the whole memory, refusing, and
+		// doing it again on the next stranger, for the rest of their lives.
+		if !forced && a.noSpareMemory {
+			return nil
+		}
 		id, ok := w.weakestOpinion(a, forced)
 		if !ok {
 			// Nothing in there is expendable: somebody who cost or gave the
 			// agent something is not thrown out to make room for a face in
 			// the crowd. Only the world's own events get to overwrite a
 			// memory that still carries weight.
+			a.noSpareMemory = true
 			return nil
 		}
 		victim, evicting = id, true
@@ -144,6 +161,12 @@ func (w *World) record(a *Agent, otherID int, forced bool, seen float64) *Opinio
 		op.Affinity = w.cfg.AffinityKin
 	}
 	a.opinions[otherID] = op
+	// Whatever the memory held a moment ago, it now holds this one, and a
+	// record nothing has happened around is the first thing there is to give
+	// up. (Kin are the exception - they start with affinity - but clearing the
+	// flag either way only costs one search, and getting it wrong the other
+	// way would lose a memory that mattered.)
+	a.noSpareMemory = false
 	return op
 }
 

@@ -248,6 +248,12 @@ type Agent struct {
 	// only room for so many of them: see MemoryCapacity.
 	opinions map[int]*Opinion
 
+	// noSpareMemory says a search for a record to give up has already been
+	// made and found nothing worth giving up. See World.record: it is a cache
+	// of an answer that cannot change until the set of records does, and it is
+	// cleared whenever one joins or leaves.
+	noSpareMemory bool
+
 	// memoryUsed is how many records have been taken in during memoryTick,
 	// which is what the bandwidth is counted against. The pair resets itself
 	// when the tick moves on, so no loop has to clear it.

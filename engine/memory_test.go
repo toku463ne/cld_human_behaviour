@@ -427,3 +427,74 @@ func TestMemoryUseReportsWhatIsHeld(t *testing.T) {
 		t.Fatalf("friends = %v, want 1", use.Friends)
 	}
 }
+
+// Once an agent has been asked to give up a record and had nothing to give up,
+// it is not asked again until the set of records changes. The answer cannot
+// change on its own - a record's weight only grows or fades towards zero
+// without reaching it - so the cached refusal has to give the same answers the
+// search would have.
+//
+// The reason it is worth caching is stage 12b: trading gives nearly every
+// remembered face some affinity, so the share of full memories with anything
+// expendable in them fell from 86% to 29%, and the rest were searching their
+// whole memory and refusing on every stranger for the rest of their lives.
+func TestAMemoryWithNothingToSpareIsNotSearchedAgain(t *testing.T) {
+	cfg := quietConfig()
+	cfg.MemoryCapacity = 3
+	w := NewWorld(cfg)
+
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 80, Genome: genomeOf(50, 50, 50)}))
+	for id := 101; id <= 103; id++ {
+		w.rememberDamage(a, id, 10)
+	}
+
+	if op := w.recordOpinion(a, 200); op != nil {
+		t.Fatal("took a stranger on over three memories that still carry weight")
+	}
+	if !a.noSpareMemory {
+		t.Fatal("the search found nothing to spare but the answer was not kept")
+	}
+	// Asked again, it gives the same answer - which is the point - and the
+	// records are untouched.
+	if op := w.recordOpinion(a, 201); op != nil {
+		t.Fatal("a second stranger got in")
+	}
+	if got := len(a.opinions); got != 3 {
+		t.Fatalf("holds %d records, want the 3 it started with", got)
+	}
+
+	// A blow evicts somebody, so the question is worth asking again: what
+	// replaced them might well be expendable.
+	w.rememberDamage(a, 200, 25)
+	if a.noSpareMemory {
+		t.Fatal("a record was replaced and the stale answer was kept")
+	}
+}
+
+// And the cached answer must never cost an agent a memory it would otherwise
+// have taken on. A memory with room in it is never refused, however many times
+// it has been full before.
+func TestRoomThatOpensUpIsUsed(t *testing.T) {
+	cfg := quietConfig()
+	cfg.MemoryCapacity = 3
+	w := NewWorld(cfg)
+
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 80, Genome: genomeOf(50, 50, 50)}))
+	for id := 101; id <= 103; id++ {
+		w.rememberDamage(a, id, 10)
+	}
+	if op := w.recordOpinion(a, 200); op != nil {
+		t.Fatal("took a stranger on over a full memory")
+	}
+
+	// Growing into a bigger memory is room, and it has to be usable.
+	cfg2 := w.cfg
+	cfg2.MemoryCapacity = 6
+	w.cfg = cfg2
+	if op := w.recordOpinion(a, 201); op == nil {
+		t.Fatal("refused a stranger although the memory had grown room for it")
+	}
+	if a.noSpareMemory {
+		t.Fatal("a record joined and the stale answer was kept")
+	}
+}
