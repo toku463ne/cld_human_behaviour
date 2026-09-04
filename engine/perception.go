@@ -193,25 +193,21 @@ func (w *World) perceive(a *Agent) *Perception {
 		Hints:             a.hints,
 	}
 
-	r := w.cfg.PerceptionRadius
-	r2 := r * r
-
-	// The index narrows the world down to the cells the circle of sight
-	// touches; the circle itself is still tested below, exactly as it was when
-	// this walked every agent and every item. The candidates arrive in
+	// The index narrows the world down to the cells sight could possibly reach;
+	// what is actually visible is still tested one by one below, exactly as it
+	// was when this walked every agent and every item. The candidates arrive in
 	// ascending index order, which is the order those loops used, so the
 	// perception buffers are filled identically and the random draws below
 	// happen in the same sequence.
-	g := w.spatialIndex()
-	w.nearFoods = g.appendFoodsNear(w.nearFoods[:0], a.X, a.Y, r)
-	w.nearAgents = g.appendAgentsNear(w.nearAgents[:0], a.X, a.Y, r)
+	w.nearFoods = w.appendFoodsInSight(w.nearFoods[:0], a.X, a.Y)
+	w.nearAgents = w.appendAgentsInSight(w.nearAgents[:0], a.X, a.Y)
 
 	for _, i := range w.nearFoods {
 		f := &w.foods[i]
-		d2 := dist2(a.X, a.Y, f.X, f.Y)
-		if d2 > r2 {
+		if !w.canSee(a.X, a.Y, f.X, f.Y) {
 			continue
 		}
+		d2 := dist2(a.X, a.Y, f.X, f.Y)
 		// What this agent cannot eat is not food to it: a carcass of its own
 		// kind, or somebody else's kill while the claim on it still stands.
 		if !w.canEat(a, f) {
@@ -234,10 +230,10 @@ func (w *World) perceive(a *Agent) *Perception {
 		if !o.Alive || o.ID == a.ID {
 			continue
 		}
-		d2 := dist2(a.X, a.Y, o.X, o.Y)
-		if d2 > r2 {
+		if !w.canSee(a.X, a.Y, o.X, o.Y) {
 			continue
 		}
+		d2 := dist2(a.X, a.Y, o.X, o.Y)
 
 		// Whoever else is around is also a rival for every item in sight. This
 		// rides on the scan above rather than asking the index per item: a

@@ -265,6 +265,25 @@ var variants = []variant{
 	// The groundwork for terrain: a race for food is judged on who would
 	// arrive first rather than on who is nearer, so how fast a body is and how
 	// hard it is trying both count. "racedistance" is the world before it.
+	// Stage 13: sight stops being a circle and becomes the cell an agent is
+	// standing in plus the ring around it. "sightcircle" is the world before
+	// it, and the two are calibrated to cover the same ground so that the
+	// shape is the only difference.
+	{
+		name:  "sightcircle",
+		about: "sight is a circle of 130 in every direction: the world before stage 13",
+		apply: func(c *engine.Config) { c.SightGrid = false },
+	},
+	{
+		name:  "sight2cells",
+		about: "sweep: two rings of smaller cells, the same ground seen through a finer grid",
+		apply: func(c *engine.Config) { c.SightCells, c.SightCellSize = 2, 46.1 },
+	},
+	{
+		name:  "sightblind",
+		about: "sweep: only the cell it is standing in, which is a ninth of the ground",
+		apply: func(c *engine.Config) { c.SightCells, c.SightCellSize = 0, 76.8 },
+	},
 	{
 		name:  "racedistance",
 		about: "a race for food goes to whoever is nearer, whatever their legs: the rule before the terrain groundwork",
@@ -703,6 +722,7 @@ var metricNames = []string{
 	"priorErr", "priorErrFlat", "priorErrFixed", "slopeGain", "learnGain",
 	"priorErrAll", "priorErrLearned", "priorErrGreen", "learnedShare", "firstSights",
 	"hunts", "jointHunts", "packSize", "evadedShare",
+	"flees", "escapeShare",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -1076,6 +1096,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"hunts":       float64(end.Hunts),
 		"jointHunts":  float64(end.JointHunts),
 		"evadedShare": share(end.Evaded, end.Fights),
+		// Whether running away works: attempts to flee over the tail window,
+		// and the share of them that ended with the pursuer out of sight. It
+		// is what stage 13 turns on - a circle has to be left in every
+		// direction at once, a block only has to be crossed out of.
+		"flees":       perAgentLifetime(end.Flees-tailStart.Flees, personTicks),
+		"escapeShare": share(end.Escapes-tailStart.Escapes, end.Flees-tailStart.Flees),
 		"packSize":    share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an

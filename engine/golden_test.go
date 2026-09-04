@@ -20,7 +20,9 @@ import (
 // out of the world stopped being the same for everybody (stage 12a), and again
 // when agents started trading it and carrying rules of thumb (stages 12b and
 // 12c), and again when a race for food started being judged on who would
-// arrive first rather than on who was nearer (the groundwork for terrain).
+// arrive first rather than on who was nearer (the groundwork for terrain), and
+// again when sight stopped being a circle and became a block of cells
+// (stage 13).
 //
 // Stage 7a is a change of how the neighbours are found, not of what happens,
 // and its completion condition is that the same seed gives the same run. That
@@ -38,9 +40,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 36, births: 17, deaths: 63, kills: 43, aging: 0, fights: 5066, gen: 2, power: 39.166197, vitality: 81.398703, hunger: 18.036782},
-	{seed: 2, pop: 28, births: 18, deaths: 72, kills: 49, aging: 0, fights: 5662, gen: 2, power: 38.058857, vitality: 65.580252, hunger: 17.134000},
-	{seed: 3, pop: 22, births: 10, deaths: 70, kills: 54, aging: 0, fights: 4405, gen: 1, power: 49.364103, vitality: 66.723230, hunger: 34.225316},
+	{seed: 1, pop: 39, births: 23, deaths: 65, kills: 49, aging: 0, fights: 4633, gen: 3, power: 39.864408, vitality: 64.830745, hunger: 17.914921},
+	{seed: 2, pop: 34, births: 13, deaths: 61, kills: 36, aging: 0, fights: 3516, gen: 2, power: 39.236518, vitality: 69.947191, hunger: 17.491620},
+	{seed: 3, pop: 20, births: 9, deaths: 71, kills: 57, aging: 0, fights: 3377, gen: 2, power: 50.693566, vitality: 75.960540, hunger: 23.059721},
 }
 
 const goldenTicks = 5000

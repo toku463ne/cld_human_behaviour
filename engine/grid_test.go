@@ -73,6 +73,10 @@ func sameIndexAsAFreshBuild(w *World) bool {
 
 func TestGridPutsEveryoneInTheCellTheyStandIn(t *testing.T) {
 	cfg := testConfig()
+	// The cell size is the widest question anybody asks, and since stage 13
+	// that is the reach of a block of sight. Putting sight back on a circle is
+	// what leaves this test measuring the index alone.
+	cfg.SightGrid = false
 	cfg.PerceptionRadius = 100 // a 400x400 world in cells of 100: 4 by 4
 	w := NewWorld(cfg)
 	w.addAgent(Agent{Maturity: 1, X: 10, Y: 10, Vitality: 100})   // cell (0,0)
@@ -247,6 +251,7 @@ func TestGridStaysTrueThroughARun(t *testing.T) {
 // index. Same for one whose radius would ask for millions of cells.
 func TestGridSurvivesAbsurdCellSizes(t *testing.T) {
 	cfg := testConfig()
+	cfg.SightGrid = false
 	cfg.PerceptionRadius = 0
 	w := NewWorld(cfg)
 	w.addAgent(Agent{Maturity: 1, X: 10, Y: 10, Vitality: 100})

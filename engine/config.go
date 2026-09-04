@@ -75,9 +75,28 @@ type Config struct {
 	MaxSpeed         float64 // speed at effort 1
 	MoveCost         float64 // vitality per tick at effort 1
 	PerceptionRadius float64
-	GrabRadius       float64 // how close an agent must be to eat
-	CombatRadius     float64 // how close an agent must be to land a blow
-	BoundaryMargin   float64
+
+	// --- what an agent can see (stage 13, sight.go) ---
+	//
+	// SightGrid swaps the circle above for a block of cells: the cell the agent
+	// is in, plus SightCells rings around it. False restores the circle, which
+	// is the arm this is measured against.
+	//
+	// A block is not a rounder or coarser circle. It sees different distances
+	// in different directions, and how far it sees depends on where in its cell
+	// the agent happens to be standing - which is what makes running away and
+	// racing for food different, and is the whole point of the change.
+	//
+	// SightCellSize is calibrated so that a block covers about the same ground
+	// as the circle did: (2N+1)^2 * size^2 = pi * radius^2. Without that the
+	// change would be "agents can see more" or "agents can see less", and the
+	// shape - the thing being tested - would not be separable from it.
+	SightGrid      bool
+	SightCellSize  float64
+	SightCells     int
+	GrabRadius     float64 // how close an agent must be to eat
+	CombatRadius   float64 // how close an agent must be to land a blow
+	BoundaryMargin float64
 
 	// --- what is left when somebody dies ---
 	//
@@ -633,9 +652,15 @@ func DefaultConfig() Config {
 		MaxSpeed:         1.7,
 		MoveCost:         0.035,
 		PerceptionRadius: 130,
-		GrabRadius:       11,
-		CombatRadius:     15,
-		BoundaryMargin:   8,
+
+		// One ring of cells, as asked for. The size follows from matching the
+		// circle's area: 9 * size^2 = pi * 130^2 gives 76.8.
+		SightGrid:      true,
+		SightCellSize:  76.8,
+		SightCells:     1,
+		GrabRadius:     11,
+		CombatRadius:   15,
+		BoundaryMargin: 8,
 
 		PreyValue:       1,
 		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more

@@ -84,6 +84,7 @@ var (
 	colorPairLink   = color.RGBA{0x0b, 0x0b, 0x0b, 0x30}
 	colorFightLink  = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
 	colorSelected   = color.RGBA{0x11, 0x11, 0x11, 0xff}
+	colorSight      = color.RGBA{0x33, 0x88, 0xcc, 0xa0}
 	colorTarget     = color.RGBA{0x11, 0x11, 0x11, 0x60}
 	colorHungerBar  = color.RGBA{0xc9, 0x8a, 0x20, 0xff}
 	colorTail       = color.RGBA{0x44, 0x44, 0x77, 0xb0}
@@ -196,6 +197,8 @@ func (g *game) Draw(screen *ebiten.Image) {
 }
 
 func (g *game) drawWorld(screen *ebiten.Image) {
+	g.drawSight(screen)
+
 	for _, f := range g.world.Foods() {
 		vector.DrawFilledCircle(screen, float32(f.X), float32(f.Y), 3, colorFood, true)
 	}
@@ -295,6 +298,24 @@ func clamp01(v float64) float64 {
 		return 1
 	}
 	return v
+}
+
+// drawSight outlines what the followed node can see. Since stage 13 that is a
+// block of cells rather than a circle, and the thing worth seeing on screen is
+// that it does not move with the node: it jumps a whole cell at a time, so a
+// node walking a straight line watches the world behind it stay visible and
+// then vanish all at once.
+func (g *game) drawSight(screen *ebiten.Image) {
+	if g.selected == 0 {
+		return
+	}
+	a, ok := g.world.AgentByID(g.selected)
+	if !ok {
+		return
+	}
+	minX, minY, maxX, maxY := g.world.SightBlock(a.X, a.Y)
+	vector.StrokeRect(screen, float32(minX), float32(minY),
+		float32(maxX-minX), float32(maxY-minY), 2, colorSight, false)
 }
 
 // markTarget rings whatever the selected node is currently acting on, so that

@@ -72,6 +72,14 @@ type Stats struct {
 	Fights        int
 	MaxGeneration int
 
+	// Flees is how many times an agent decided to run from somebody, and
+	// Escapes how many of those ended with the pursuer out of sight. The
+	// share of the two is what says whether running away works, which is what
+	// changes when sight stops being a circle: a block can be left by crossing
+	// one line, and how far that is depends on where the agent was standing.
+	Flees   int
+	Escapes int
+
 	// Exchanges is how many times two agents have traded what they assume
 	// (stage 12b). Counted so that the rate can be read next to the effect:
 	// a rule that hardly ever fires explains nothing whatever its weight.
@@ -203,6 +211,11 @@ type World struct {
 	courtships         int
 	courtshipsAccepted int
 
+	// Attempts to run away, and the ones that ended with the pursuer out of
+	// sight rather than with the agent dead or thinking better of it.
+	flees   int
+	escapes int
+
 	// How many trades of what agents assume have taken place (stage 12b), and
 	// how many ideas were copied in the course of them (stage 12c).
 	exchanges   int
@@ -299,6 +312,8 @@ func (w *World) Stats() Stats {
 		ChildDeaths:            w.childDeaths,
 		Fights:                 w.fights,
 		MaxGeneration:          w.maxGeneration,
+		Flees:                  w.flees,
+		Escapes:                w.escapes,
 		Exchanges:              w.exchanges,
 		HintsCopied:            w.hintsCopied,
 	}
@@ -466,6 +481,7 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 		a.State = StateFighting
 	case ActFlee:
 		a.State = StateFleeing
+		w.flees++
 	case ActRest:
 		a.State = StateResting
 	default:
@@ -518,7 +534,8 @@ func (w *World) perform(a *Agent) {
 			a.requestDecision(TriggerTargetLost)
 			return
 		}
-		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.PerceptionRadius*w.cfg.PerceptionRadius {
+		if !w.canSee(a.X, a.Y, o.X, o.Y) {
+			w.escapes++
 			a.requestDecision(TriggerGoalReached) // out of sight, out of danger
 			return
 		}
@@ -530,7 +547,7 @@ func (w *World) perform(a *Agent) {
 			a.requestDecision(TriggerTargetLost)
 			return
 		}
-		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.PerceptionRadius*w.cfg.PerceptionRadius {
+		if !w.canSee(a.X, a.Y, o.X, o.Y) {
 			w.moveToward(a, o.X, o.Y, a.Action.Effort)
 			return
 		}
@@ -679,19 +696,17 @@ func (w *World) exchangeReadings(x, y *Agent) {
 	w.observeStrength(x, y, w.cfg.CombatObsVariance)
 	w.observeStrength(y, x, w.cfg.CombatObsVariance)
 
-	r := w.cfg.PerceptionRadius
-	r2 := r * r
 	spectated := w.cfg.CombatObsVariance * w.cfg.SpectateObsFactor
 	// This runs after everybody has moved, so it is the second and last time
 	// in a tick that the index is rebuilt. Nothing in the blows that follow
 	// moves anybody, so the rest of the fights this tick reuse it.
-	w.nearScratch = w.spatialIndex().appendAgentsNear(w.nearScratch[:0], x.X, x.Y, r)
+	w.nearScratch = w.appendAgentsInSight(w.nearScratch[:0], x.X, x.Y)
 	for _, i := range w.nearScratch {
 		o := &w.agents[i]
 		if !o.Alive || o.ID == x.ID || o.ID == y.ID {
 			continue
 		}
-		if dist2(o.X, o.Y, x.X, x.Y) > r2 {
+		if !w.canSee(o.X, o.Y, x.X, x.Y) {
 			continue
 		}
 		w.observeStrength(o, x, spectated)
@@ -713,15 +728,13 @@ func (w *World) noteEngagement(attacker, target *Agent, hitBack bool) {
 		return
 	}
 
-	r := w.cfg.PerceptionRadius
-	r2 := r * r
-	w.nearScratch = w.spatialIndex().appendAgentsNear(w.nearScratch[:0], attacker.X, attacker.Y, r)
+	w.nearScratch = w.appendAgentsInSight(w.nearScratch[:0], attacker.X, attacker.Y)
 	for _, i := range w.nearScratch {
 		o := &w.agents[i]
 		if !o.Alive || o.ID == attacker.ID || o.ID == target.ID {
 			continue
 		}
-		if dist2(o.X, o.Y, attacker.X, attacker.Y) > r2 {
+		if !w.canSee(o.X, o.Y, attacker.X, attacker.Y) {
 			continue
 		}
 		w.noteRetaliation(o, hitBack)
@@ -1096,11 +1109,13 @@ func (w *World) willCommit(a *Agent, candidateFitness float64) bool {
 // Ties go to the last item examined, as they did when this walked the whole
 // list, which is why the candidates have to arrive in the order they sit in.
 func (w *World) nearestFoodInSight(a *Agent) int {
-	r := w.cfg.PerceptionRadius
-	best, bestDist := -1, r*r
-	w.nearScratch = w.spatialIndex().appendFoodsNear(w.nearScratch[:0], a.X, a.Y, r)
+	best, bestDist := -1, math.Inf(1)
+	w.nearScratch = w.appendFoodsInSight(w.nearScratch[:0], a.X, a.Y)
 	for _, i := range w.nearScratch {
 		f := &w.foods[i]
+		if !w.canSee(a.X, a.Y, f.X, f.Y) {
+			continue
+		}
 		if !w.canEat(a, f) {
 			continue
 		}
@@ -1116,15 +1131,14 @@ func (w *World) nearestFoodInSight(a *Agent) int {
 // agent is only interrupted for a candidate it would not have compared against
 // others anyway.
 func (w *World) strikingCandidateInSight(a *Agent) bool {
-	r := w.cfg.PerceptionRadius
-	w.nearScratch = w.spatialIndex().appendAgentsNear(w.nearScratch[:0], a.X, a.Y, r)
+	w.nearScratch = w.appendAgentsInSight(w.nearScratch[:0], a.X, a.Y)
 	for _, i := range w.nearScratch {
 		o := &w.agents[i]
 		if !o.Alive || o.ID == a.ID || o.Species != a.Species || o.Sex == a.Sex ||
 			o.PartnerID != 0 || a.isRejected(o.ID) {
 			continue
 		}
-		if dist2(a.X, a.Y, o.X, o.Y) > r*r {
+		if !w.canSee(a.X, a.Y, o.X, o.Y) {
 			continue
 		}
 		if w.perceivedFitness(a, o) >= w.cfg.CommitFitness {

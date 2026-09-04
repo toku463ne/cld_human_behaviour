@@ -14,9 +14,9 @@ import (
 //
 // Nothing about the world's rules lives here. The cell size is not in Config
 // for that reason: Config is the list of the rules of the world, and a change
-// here has to be invisible in the results. It is derived from PerceptionRadius
-// instead, which is the widest question anybody asks, so that the two can never
-// drift apart.
+// here has to be invisible in the results. It is derived from the widest
+// question anybody asks - which since stage 13 is the block of cells an agent
+// can see - so that the two can never drift apart.
 //
 // The index is a snapshot, not a running total. It is rebuilt from the agent
 // and food slices whenever something has moved, been born, eaten or died, and
@@ -141,15 +141,30 @@ func fitMark(mark []uint64, n int) []uint64 {
 // is the order the linear scan used, and the only one that leaves a run
 // unchanged.
 func (g *spatialGrid) appendAgentsNear(dst []int, x, y, radius float64) []int {
-	return g.appendNear(g.agents, g.agentMark, g.nAgents, dst, x, y, radius)
+	return g.appendAgentsInBox(dst, x-radius, y-radius, x+radius, y+radius)
 }
 
 // appendFoodsNear is appendAgentsNear for food.
 func (g *spatialGrid) appendFoodsNear(dst []int, x, y, radius float64) []int {
-	return g.appendNear(g.foods, g.foodMark, g.nFoods, dst, x, y, radius)
+	return g.appendFoodsInBox(dst, x-radius, y-radius, x+radius, y+radius)
 }
 
-// appendNear collects the candidates into a bitset and then reads the bitset
+// The same two asked for a rectangle instead of a square around a point.
+//
+// Sight is a block of cells that the agent is not standing in the middle of
+// (stage 13), so the square that contains it is nearly four times its area.
+// Asking for the block itself is the difference between walking the cells that
+// could hold something visible and walking the cells that could hold something
+// visible if the agent were somewhere else.
+func (g *spatialGrid) appendAgentsInBox(dst []int, minX, minY, maxX, maxY float64) []int {
+	return g.appendInBox(g.agents, g.agentMark, g.nAgents, dst, minX, minY, maxX, maxY)
+}
+
+func (g *spatialGrid) appendFoodsInBox(dst []int, minX, minY, maxX, maxY float64) []int {
+	return g.appendInBox(g.foods, g.foodMark, g.nFoods, dst, minX, minY, maxX, maxY)
+}
+
+// appendInBox collects the candidates into a bitset and then reads the bitset
 // out, which puts them in ascending order for the price of one bit each.
 //
 // Sorting them instead is the obvious thing to write, and it is what the first
@@ -165,12 +180,15 @@ func (g *spatialGrid) appendFoodsNear(dst []int, x, y, radius float64) []int {
 // thousand agents; with the bitset it does so at five or six hundred. The
 // indices are small and distinct, which is exactly when a bitset beats a
 // comparison sort.
-func (g *spatialGrid) appendNear(buckets [][]int, mark []uint64, n int, dst []int, x, y, radius float64) []int {
-	if radius < 0 {
-		radius = 0
+func (g *spatialGrid) appendInBox(buckets [][]int, mark []uint64, n int, dst []int, minX, minY, maxX, maxY float64) []int {
+	if maxX < minX {
+		minX, maxX = maxX, minX
 	}
-	c0, c1 := g.column(x-radius), g.column(x+radius)
-	r0, r1 := g.row(y-radius), g.row(y+radius)
+	if maxY < minY {
+		minY, maxY = maxY, minY
+	}
+	c0, c1 := g.column(minX), g.column(maxX)
+	r0, r1 := g.row(minY), g.row(maxY)
 
 	// A question that reaches every cell is not narrowing anything down, which
 	// happens whenever the world is small next to the range of sight. Handing
@@ -239,7 +257,24 @@ func clampInt(v, lo, hi int) int {
 // slower at every population tried, both in the default world and at nine times
 // its size, because the cells being walked grow as the square while the
 // candidates saved do not.
-func gridCellSize(cfg *Config) float64 { return cfg.PerceptionRadius }
+func gridCellSize(cfg *Config) float64 {
+	// The widest question anybody asks. Since stage 13 that is the reach of
+	// sight, which for a block of cells is further than the old circle: the
+	// index has to be sized to the query, not to the radius the query used to
+	// have, or the cells being walked stop covering it.
+	// Half the width of the region sight asks for, which for the old circle is
+	// exactly PerceptionRadius - the figure this used to be written as. Sight
+	// is asked for as a rectangle rather than a radius (appendInBox), so it is
+	// the width of that rectangle the cell has to be sized against, and stage
+	// 13 made it wider than the circle was.
+	// Zero and nonsense are passed straight through: newSpatialGrid turns them
+	// into a single bucket, which is the linear scan this replaces - slower,
+	// never wrong. Clamping to something tiny here instead would ask it for a
+	// grid of billions of cells.
+	w := World{cfg: *cfg}
+	minX, _, maxX, _ := w.SightBlock(0, 0)
+	return (maxX - minX) / 2
+}
 
 // invalidateIndex says the grid no longer matches the world. Everything that
 // moves an agent, adds or removes one, or touches the food calls this; the
