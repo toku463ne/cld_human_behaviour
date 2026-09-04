@@ -390,8 +390,8 @@ func (g *game) overlay() string {
 	if g.paused {
 		state = "PAUSED"
 	}
-	fmt.Fprintf(&b, "tick %d  pop %d (m %d / f %d)  food %d  births %d  deaths %d (kills %d)  gen %d  [%s]\n",
-		s.Tick, s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, s.MaxGeneration, state)
+	fmt.Fprintf(&b, "tick %d (hour %.2f)  pop %d (m %d / f %d)  food %d  births %d  deaths %d (kills %d)  gen %d  [%s]\n",
+		s.Tick, g.world.Hour(), s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, s.MaxGeneration, state)
 	fmt.Fprintf(&b, "avg power %.1f  rationality %.1f  intelligence %.1f  vitality %.1f  hunger %.1f\n",
 		s.AvgPower, s.AvgRationality, s.AvgIntelligence, s.AvgVitality, s.AvgHunger)
 	b.WriteString("circle = body (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
@@ -474,6 +474,16 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 			for _, h := range hints {
 				t.line("   %-11s -> %-8s %+5.1f", h.Feature, h.Act, h.Weight)
 			}
+		}
+		if chrono, fit := g.world.ClockOf(a.ID); g.world.Hour() > 0 || chrono > 0 {
+			sleepy := "wide awake"
+			switch {
+			case fit > 0.5:
+				sleepy = "its own hour"
+			case fit > -0.5:
+				sleepy = "neither here nor there"
+			}
+			t.line("clock: sleeps best at %.2f, now %.2f (%s)", chrono, g.world.Hour(), sleepy)
 		}
 		shelter, food := g.world.GroundAt(a.X, a.Y)
 		t.line("ground here: resting x%.2f, plants x%.2f (1 = ordinary)", shelter, food)

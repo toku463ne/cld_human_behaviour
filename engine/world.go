@@ -776,7 +776,10 @@ func (w *World) metabolise() {
 		if drain := hungerDrain(&w.cfg, a.Hunger); drain > 0 {
 			a.Vitality -= drain
 		} else if a.Hunger <= w.cfg.SatiatedHunger {
-			a.Vitality += w.cfg.RegenRate * (1 - clamp(a.effortSpent, 0, 1))
+			// At the rate this hour suits this agent (stage 18): the same
+			// recovery it always had, scaled by how close the world's clock
+			// is to its own.
+			a.Vitality += w.restRate(a) * (1 - clamp(a.effortSpent, 0, 1))
 		}
 		a.Vitality = math.Min(a.Vitality, a.MaxVitality(&w.cfg))
 
@@ -1039,6 +1042,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.Species = pa.Species
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
 	child.lore = w.inheritLore(pa, pb)
+	child.chronotype = w.inheritChronotype(pa, pb)
 	child.hintSlots, child.hints = slots, hints
 
 	// It starts as a small thing that keeps to one of the two. Which one does
@@ -1278,6 +1282,7 @@ func (w *World) randomAgent(species Species) Agent {
 	)
 	a.Species = species
 	a.lore = w.newLore()
+	a.chronotype = w.drawChronotype()
 	a.hintSlots = w.drawHintSlots()
 	a.hints = w.drawHints(a.hintSlots)
 	// Room for ideas comes out of the same budget the body does, for founders

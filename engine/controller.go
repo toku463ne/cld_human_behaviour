@@ -149,11 +149,11 @@ func pressure(cfg *Config, s *SelfView, vitality, drain float64) float64 {
 // than it heals recovers nothing, however well fed it is. Leaving that out
 // would let "sit still and get better" look like an answer to being attacked,
 // and nothing would ever run away.
-func recoverable(cfg *Config, maxVitality, hungerRate, vitality, hunger, incoming float64) float64 {
+func recoverable(cfg *Config, maxVitality, hungerRate, vitality, hunger, incoming, regen float64) float64 {
 	if hunger >= cfg.SatiatedHunger {
 		return 0
 	}
-	net := cfg.RegenRate - incoming
+	net := regen - incoming
 	if net <= 0 {
 		return 0
 	}
@@ -232,7 +232,7 @@ func (c *AIController) addRest(p *Perception) {
 	// Whatever is hitting the agent goes on hitting it while it sits there,
 	// and so does whatever starts while it is down.
 	after := pressure(cfg, s,
-		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed),
+		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed, s.RestRate),
 		drain+incoming+exposed)
 	c.add(Action{Kind: ActRest}, Utility{
 		Life: Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
@@ -342,7 +342,7 @@ func (c *AIController) addFood(p *Perception) {
 			cost := moveCostAt(cfg, effort) * ticks
 			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*f.Nutrition)
 			vitAfter := s.Vitality - cost
-			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming)
+			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
 			after := pressure(cfg, s, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
 
 			// What the warning on it says it will cost. The agent is reading
@@ -597,8 +597,16 @@ func (c *AIController) survey(p *Perception) {
 		if cfg.PerceptionRadius > 0 {
 			near = clamp(1-o.Dist/cfg.PerceptionRadius, 0, 1)
 		}
+		// Somebody it trusts is somebody it does not have to keep an eye on -
+		// but only while that somebody is awake. A sleeping friend cannot
+		// watch over anybody (stage 18).
+		//
+		// This is a condition on a term that was already there rather than a
+		// new one, and it is what turns "we happen to sleep at different
+		// hours" into "somebody is keeping watch" without a watchman existing
+		// anywhere in the rules.
 		trust := 0.0
-		if cfg.AffinityTrust > 0 {
+		if cfg.AffinityTrust > 0 && (cfg.SleepingWatch || !o.Resting) {
 			trust = clamp(o.Affinity/cfg.AffinityTrust, 0, 1)
 		}
 		c.exposure += threat * near * (1 - trust)

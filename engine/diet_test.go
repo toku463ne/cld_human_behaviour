@@ -98,7 +98,7 @@ func TestBeingSickOfSomethingIsVisibleToTheDecision(t *testing.T) {
 			Self: SelfView{
 				ID: 1, X: 100, Y: 100, Vitality: 60, Hunger: 70,
 				MaxVitality: cfg.MaxVitality, MaxSpeed: cfg.MaxSpeed,
-				HungerRate:  cfg.HungerRate,
+				HungerRate: cfg.HungerRate, RestRate: cfg.RegenRate,
 				Retaliation: cfg.Retaliation, AcceptChance: cfg.AcceptChance,
 				RiskWeight: cfg.RiskWeight, CompetitionWeight: cfg.CompetitionWeight,
 				ShockRisk: cfg.ShockRisk},

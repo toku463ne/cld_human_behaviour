@@ -268,8 +268,41 @@ type Config struct {
 	// eats it, and SignalNoise how badly the warning is read - scaled, like
 	// every other misreading, by what the reader spent on rationality. This is
 	// the first job rationality has ever had on the food's side of the world.
-	PoisonDamage   float64
-	SignalNoise    float64
+	PoisonDamage float64
+	SignalNoise  float64
+
+	// --- the world's day, and who keeps which hours (stage 18, clock.go) ---
+	//
+	// TicksPerDay gives the world a cycle. Zero is a world with no clock,
+	// which is the one from before this stage and draws nothing extra from
+	// the random source.
+	//
+	// What varies with the hour is how well an agent rests, and nothing else.
+	// Resting is already priced per agent and per moment, so the hour needs no
+	// new formula; making sight or the food spawn vary would be a change to
+	// the world for everybody at once, which is a different question from the
+	// one being asked here.
+	TicksPerDay int
+
+	// RestPhaseDepth is how much better an agent recovers at its own hour than
+	// at its opposite one: recovery is the world's rate times 1 +/- this. It
+	// never reaches zero, because a way back from exhaustion is the one rule
+	// the world cannot do without.
+	RestPhaseDepth float64
+
+	// ChronotypeSpread is how much of the day the population's clocks are
+	// scattered over, and ChronotypeMutation how far a child's drifts from its
+	// parent's. Spread zero puts everybody on the same clock, which is the arm
+	// the stage is measured against: a world with a day in it but no
+	// disagreement about when to sleep.
+	ChronotypeSpread   float64
+	ChronotypeMutation float64
+
+	// SleepingWatch makes a trusted neighbour discount the danger of lying
+	// down whether or not it is awake, which is how it worked before this
+	// stage. It is the control that says whether keeping watch is worth
+	// anything: with it true, differing hours are decoration.
+	SleepingWatch  bool
 	GrabRadius     float64 // how close an agent must be to eat
 	CombatRadius   float64 // how close an agent must be to land a blow
 	BoundaryMargin float64
@@ -882,6 +915,14 @@ func DefaultConfig() Config {
 		// enough to be worth reading the warning for, not enough to make one
 		// mouthful fatal. The signal is read about as badly as a stranger's
 		// build is (stage 10), which is to say clearly but not exactly.
+		// A day of a thousand ticks: a life of about ten years at five hundred
+		// ticks a year runs to five thousand days, which is a creature that
+		// has seen a great many of them rather than a handful.
+		TicksPerDay:        1000,
+		RestPhaseDepth:     0.5,
+		ChronotypeSpread:   1,
+		ChronotypeMutation: 0.08,
+
 		PlantDefence:   false,
 		PoisonDamage:   18,
 		SignalNoise:    0.25,

@@ -265,6 +265,30 @@ var variants = []variant{
 	// The groundwork for terrain: a race for food is judged on who would
 	// arrive first rather than on who is nearer, so how fast a body is and how
 	// hard it is trying both count. "racedistance" is the world before it.
+	// Stage 18: the world gets a day, and not everybody keeps the same hours.
+	// "oneclock" is the arm the stage is measured against - a world with a day
+	// in it and no disagreement about when to sleep - and "noclock" is the
+	// world from before there was a day at all.
+	{
+		name:  "noclock",
+		about: "the world has no day: the world before stage 18",
+		apply: func(c *engine.Config) { c.TicksPerDay = 0 },
+	},
+	{
+		name:  "oneclock",
+		about: "a day, and everybody sleeps at the same hour of it",
+		apply: func(c *engine.Config) { c.ChronotypeSpread = 0 },
+	},
+	{
+		name:  "sleepingwatch",
+		about: "a friend keeps watch even while asleep: what is being awake worth?",
+		apply: func(c *engine.Config) { c.SleepingWatch = true },
+	},
+	{
+		name:  "longday",
+		about: "sweep: a day of four thousand ticks rather than one thousand",
+		apply: func(c *engine.Config) { c.TicksPerDay = 4000 },
+	},
 	// Stage 17a: the plants inherit where they came from. "noplantgenes" is
 	// the world stage 15a left, where a plant appeared wherever the ground was
 	// good and had no parent at all.
@@ -861,6 +885,7 @@ var metricNames = []string{
 	"dietVariety", "dietDiscount",
 	"plantSpread", "plantRegrow", "plantClump", "plantEmpty", "seedsCarried",
 	"plantPoison", "plantSignal", "plantHonesty",
+	"allAsleep", "clockSpread",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -961,6 +986,11 @@ type sample struct {
 	// mutated independently, so any correlation between them is something the
 	// world arrived at.
 	plantPoison, plantSignal, plantHonesty float64
+
+	// The completion condition of stage 18: the share of groups caught with
+	// every member asleep at once, and how varied the population's clocks
+	// are. The first means nothing without the second.
+	allAsleep, clockSpread float64
 
 	// What the population is making of its rules of thumb: room bought and
 	// ideas carried per agent, how many distinct ones are alive at all, and
@@ -1064,6 +1094,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		plants := w.Plants()
+		vig := w.Vigilance(engine.DefaultClusterLinkDist)
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
@@ -1076,7 +1107,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			seedsCarried: plants.Carried,
 			plantPoison:  plants.Poison, plantSignal: plants.Signal,
 			plantHonesty: plants.Honesty,
-			hintSlots:    hints.Slots, hintsHeld: hints.Held,
+			allAsleep:    vig.AllResting, clockSpread: vig.Spread,
+			hintSlots: hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
 			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
@@ -1328,7 +1360,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"plantPoison":  tail.plantPoison,
 		"plantSignal":  tail.plantSignal,
 		"plantHonesty": tail.plantHonesty,
-		"packSize":     share(end.HuntParty, end.Hunts) * 1, // mean per hunt
+		// Stage 18. allAsleep is the share of groups caught with everybody
+		// asleep at once; clockSpread is how varied the population's hours
+		// are, without which the first says nothing.
+		"allAsleep":   tail.allAsleep,
+		"clockSpread": tail.clockSpread,
+		"packSize":    share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an
 		// estimate and is not one. Same censoring the half-life has.
@@ -1435,6 +1472,8 @@ func tailAverage(series []sample) sample {
 		out.plantPoison += s.plantPoison
 		out.plantSignal += s.plantSignal
 		out.plantHonesty += s.plantHonesty
+		out.allAsleep += s.allAsleep
+		out.clockSpread += s.clockSpread
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -1503,6 +1542,8 @@ func tailAverage(series []sample) sample {
 	out.plantPoison /= d
 	out.plantSignal /= d
 	out.plantHonesty /= d
+	out.allAsleep /= d
+	out.clockSpread /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d

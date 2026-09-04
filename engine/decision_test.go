@@ -581,7 +581,7 @@ func TestAFasterAgentRatesItsChancesFromFurtherAway(t *testing.T) {
 			Self: SelfView{
 				ID: 1, X: 200, Y: 200, Vitality: 60, Hunger: 60,
 				MaxVitality: cfg.MaxVitality, MaxSpeed: mySpeed,
-				HungerRate:  cfg.HungerRate,
+				HungerRate: cfg.HungerRate, RestRate: cfg.RegenRate,
 				Retaliation: cfg.Retaliation, AcceptChance: cfg.AcceptChance,
 				RiskWeight: cfg.RiskWeight, CompetitionWeight: cfg.CompetitionWeight,
 				ShockRisk: cfg.ShockRisk},

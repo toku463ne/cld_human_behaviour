@@ -207,6 +207,12 @@ type Agent struct {
 	hints     []Hint
 	hintSlots int
 
+	// chronotype is the hour of the world's day this agent sleeps best at, on
+	// a circle from 0 to 1 (stage 18, clock.go). Deliberately not one of the
+	// budget genes: those are quantities you can buy more of, and an hour is a
+	// direction rather than an amount.
+	chronotype float64
+
 	// seed is a plant this agent ate that survived being eaten, and seedDueAt
 	// when it comes up (stage 17c). Zero means it is carrying nothing. One at
 	// a time: a gut is not a granary.

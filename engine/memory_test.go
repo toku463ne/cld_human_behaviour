@@ -349,6 +349,15 @@ func restScene(cfg Config) (*World, int, []int) {
 	subject := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 30, Hunger: 5,
 		Genome: genomeOf(50, 100, 100)})
 	others := crowd(w, 4, 200, 200)
+	// Awake. An agent that has not decided anything yet has the zero Action,
+	// which is ActRest, and since stage 18 a sleeping neighbour is not one
+	// that can be trusted to keep watch - so a crowd left at its zero value
+	// would be asleep and the trust would never apply.
+	for _, id := range others {
+		if o := w.agentByID(id); o != nil {
+			o.Action = Action{Kind: ActMove}
+		}
+	}
 	return w, subject, others
 }
 

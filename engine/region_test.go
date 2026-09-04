@@ -90,7 +90,7 @@ func TestShelteredGroundIsOnlyWorthSomethingWhenSomebodyIsAround(t *testing.T) {
 			Self: SelfView{
 				ID: 1, X: 200, Y: 200, Vitality: 40, Hunger: 10,
 				MaxVitality: cfg.MaxVitality, MaxSpeed: cfg.MaxSpeed,
-				HungerRate: cfg.HungerRate, Shelter: shelter,
+				HungerRate: cfg.HungerRate, RestRate: cfg.RegenRate, Shelter: shelter,
 				Retaliation: cfg.Retaliation, AcceptChance: cfg.AcceptChance,
 				RiskWeight: cfg.RiskWeight, CompetitionWeight: cfg.CompetitionWeight,
 				ShockRisk: cfg.ShockRisk},

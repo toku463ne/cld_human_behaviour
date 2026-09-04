@@ -195,6 +195,10 @@ func TestStarvationKillsAgent(t *testing.T) {
 
 func TestSatiatedRestingAgentRecovers(t *testing.T) {
 	cfg := testConfig()
+	// The world's flat recovery rate, with no clock: how well an agent
+	// recovers at this hour is a rule of its own (stage 18) and has its own
+	// test.
+	cfg.TicksPerDay = 0
 	w := NewWorld(cfg)
 	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 50, Hunger: 0})
 	w.SetController(id, fixedController{Action{Kind: ActRest}})
@@ -981,6 +985,7 @@ func TestBirthRecordsLineageBothWays(t *testing.T) {
 func TestChildTakesEachAbilityFromOneParentOrTheOther(t *testing.T) {
 	cfg := testConfig()
 	cfg.MutationStd = 0 // isolate inheritance from mutation
+	cfg.TicksPerDay = 0 // ... and from the hour, which scales the recovery below
 	w, male, female := pairAboutToGiveBirth(t, cfg)
 
 	w.Step()
@@ -1003,7 +1008,10 @@ func TestChildTakesEachAbilityFromOneParentOrTheOther(t *testing.T) {
 		t.Fatalf("child generation = %d, want 6", child.Generation)
 	}
 
-	// Raising a child costs both parents vitality, equally.
+	// Raising a child costs both parents vitality, equally. The recovery in
+	// there is the world's flat rate because this world has no clock: how
+	// well an agent mends at a given hour is stage 18's rule and has its own
+	// test.
 	want := 90 - cfg.BirthVitalityCost/2 + cfg.RegenRate
 	for _, id := range []int{male, female} {
 		p := mustAgent(t, w, id)

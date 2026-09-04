@@ -88,6 +88,11 @@ type SelfView struct {
 	BetterGroundX float64
 	BetterGroundY float64
 
+	// RestRate is what lying down would actually mend per tick at this hour
+	// (stage 18). An agent knows whether it is sleepy: this is its own body
+	// and not a reading of anything.
+	RestRate float64
+
 	// Shelter is how exposed lying down right here would be, as a multiplier
 	// on RestExposureWeight (stage 14). It is about the spot the agent is
 	// standing on rather than about anybody else, which is why it is in this
@@ -151,6 +156,7 @@ type AgentView struct {
 
 	Paired      bool
 	Seeking     bool // looks like it is after a mate
+	Resting     bool // lying down, which is visible and matters (stage 18)
 	AttackingMe bool
 	// Rejected is set for a candidate this agent recently walked away from and
 	// is not interested in comparing again just yet.
@@ -234,6 +240,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		ShockRisk:         a.lore.shockRisk,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
+		RestRate:          w.restRate(a),
 		Nutrition:         w.dietValues(a),
 	}
 
@@ -334,6 +341,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Appearance:  seen,
 			Paired:      o.PartnerID != 0,
 			Seeking:     o.State == StateSeekMate,
+			Resting:     o.Action.Kind == ActRest,
 			Rejected:    a.isRejected(o.ID),
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
 			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
