@@ -386,6 +386,13 @@ type Config struct {
 	// could not.
 	HintsSpread bool
 
+	// RaceOnDistance judges a race for food by who is nearer rather than by
+	// who would arrive first: the rule as it stood before the groundwork for
+	// terrain. It ignores how fast either body is and how hard the agent is
+	// about to try, which is what left the speed gene with nothing to buy.
+	// True restores it, as the arm to compare against.
+	RaceOnDistance bool
+
 	// --- decision triggers ---
 	//
 	// Agents do not re-decide every tick, only when something happens. The

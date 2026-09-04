@@ -284,14 +284,35 @@ func (c *AIController) addFood(p *Perception) {
 		}
 		f := &p.Foods[i]
 
-		// Odds of getting there first, modelled as a plain race.
+		// Whoever gets there first is whoever takes less time to arrive, which
+		// is not the same question as who is nearer. The agent knows how fast
+		// it is; it knows nothing about the other one's legs - speed is a
+		// hidden ability like every other - so it assumes an ordinary body,
+		// the same shape of assumption the population prior makes about a
+		// stranger's strength. Being faster than average is what wins races,
+		// and it is the first thing the gene has ever bought.
+		//
+		// Both sides are assumed to be travelling the same way, so the effort
+		// cancels and only the difference in legs is left. Scoring the agent's
+		// own effort against a rival assumed to be sprinting was tried and is
+		// much worse: the one nearby is only the nearest agent, who may well
+		// be asleep, and treating every one of them as racing makes strolling
+		// over to a contested item look hopeless. It cost two thirds of the
+		// population (see HISTORY.md).
 		pGet := 1.0
 		if !math.IsInf(f.RivalDist, 1) {
-			pGet = clamp(f.RivalDist/(f.RivalDist+f.Dist+1e-9), 0.05, 1)
+			if cfg.RaceOnDistance {
+				pGet = clamp(f.RivalDist/(f.RivalDist+f.Dist+1e-9), 0.05, 1)
+			} else {
+				mine := f.Dist / s.MaxSpeed
+				theirs := f.RivalDist / cfg.MaxSpeed
+				pGet = clamp(theirs/(theirs+mine+1e-9), 0.05, 1)
+			}
 		}
 
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
+
 			cost := moveCostAt(cfg, effort) * ticks
 			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition)
 			vitAfter := s.Vitality - cost

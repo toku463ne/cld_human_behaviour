@@ -564,3 +564,55 @@ func TestStrategyDepthGateOffUnlocksEverything(t *testing.T) {
 		t.Fatalf("pre-emptive value %v, want it available with the gate off", v)
 	}
 }
+
+// A race for food goes to whoever would arrive first, which is not the same
+// question as who is nearer. The agent knows its own legs and assumes an
+// ordinary body of everybody else, so being faster than average is worth
+// something even from further away.
+func TestAFasterAgentRatesItsChancesFromFurtherAway(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+
+	odds := func(mySpeed, myDist, rivalDist float64, onDistance bool) float64 {
+		cfg := cfg
+		cfg.RaceOnDistance = onDistance
+		p := &Perception{
+			Tick: 1, Cfg: &cfg, Rand: w.rng,
+			Self: SelfView{
+				ID: 1, X: 200, Y: 200, Vitality: 60, Hunger: 60,
+				MaxVitality: cfg.MaxVitality, MaxSpeed: mySpeed,
+				HungerRate:  cfg.HungerRate,
+				Retaliation: cfg.Retaliation, AcceptChance: cfg.AcceptChance,
+				RiskWeight: cfg.RiskWeight, CompetitionWeight: cfg.CompetitionWeight,
+				ShockRisk: cfg.ShockRisk},
+			Foods: []FoodView{{ID: 9, Dist: myDist, RivalDist: rivalDist, RivalID: 2}},
+		}
+		// Tracing is what fills in the breakdown, and the breakdown is where
+		// the odds are. They are the same on every effort level, so the first
+		// option answers for all of them.
+		c := &AIController{tracing: true}
+		c.addFood(p)
+		return c.terms[0].Life.Chance
+	}
+
+	// Same distances, different legs: the faster one rates its chances higher.
+	slow := odds(cfg.MaxSpeed*0.6, 100, 80, false)
+	fast := odds(cfg.MaxSpeed*1.6, 100, 80, false)
+	if fast <= slow {
+		t.Fatalf("a fast agent rated the same race %v and a slow one %v, want the fast one higher", fast, slow)
+	}
+
+	// The old rule cannot tell them apart, which is what it was replaced for.
+	slowOld := odds(cfg.MaxSpeed*0.6, 100, 80, true)
+	fastOld := odds(cfg.MaxSpeed*1.6, 100, 80, true)
+	if fastOld != slowOld {
+		t.Fatalf("judging on distance gave %v and %v, want the legs to make no difference", fastOld, slowOld)
+	}
+
+	// An ordinary body gets the same answer either way: the new rule is the
+	// old one with the legs put back in, not a different bet.
+	ordinary := odds(cfg.MaxSpeed, 100, 80, false)
+	if math.Abs(ordinary-slowOld) > 1e-6 {
+		t.Fatalf("an average agent rated the race %v by time and %v by distance, want them equal", ordinary, slowOld)
+	}
+}

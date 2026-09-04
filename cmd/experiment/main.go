@@ -262,6 +262,14 @@ var variants = []variant{
 	// before it - the values are still each agent's own, but nothing hands
 	// them on and nobody seeks anybody out for them. The other two take the
 	// halves apart: the trade happening, and it being worth going after.
+	// The groundwork for terrain: a race for food is judged on who would
+	// arrive first rather than on who is nearer, so how fast a body is and how
+	// hard it is trying both count. "racedistance" is the world before it.
+	{
+		name:  "racedistance",
+		about: "a race for food goes to whoever is nearer, whatever their legs: the rule before the terrain groundwork",
+		apply: func(c *engine.Config) { c.RaceOnDistance = true },
+	},
 	{
 		name:  "no12b",
 		about: "nothing is handed on and nobody is sought out for it: the world before stage 12b",
