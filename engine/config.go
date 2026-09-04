@@ -417,6 +417,13 @@ type Config struct {
 	// nothing" an agent starts with. The fitted slope is pulled back towards
 	// zero by it, so a line only becomes steep once there is enough evidence
 	// to hold it up. Zero is the raw fit.
+	// LooksShowBulk makes what an observer sees of a body its total size
+	// rather than its vitality and speed genes averaged (stage 10, see
+	// Agent.Appearance). Attack stays hidden either way; the difference is
+	// whether the visible thing is one of attack's competitors for the budget
+	// or the budget itself.
+	LooksShowBulk bool
+
 	LearnFromLooks       bool
 	LooksSlope           bool
 	AppearanceNoise      float64

@@ -615,6 +615,16 @@ var variants = []variant{
 		apply: func(c *engine.Config) { c.LearnFromLooks, c.PriorStrength = false, 36 },
 	},
 	{
+		// The stage 10 carry-over. Reading a build is worth nothing because
+		// the visible genes are attack's competitors for the budget: every
+		// point spent on being big is a point not spent on hitting. This arm
+		// shows the total instead of the split - size visible, allocation
+		// still hidden - and asks whether there is a signal there at all.
+		name:  "bulklooks",
+		about: "what is visible of a body is its size rather than two of its genes",
+		apply: func(c *engine.Config) { c.LooksShowBulk = true },
+	},
+	{
 		name:  "flatlooks",
 		about: "an agent learns what strengths around it average to, but not to read a build",
 		apply: func(c *engine.Config) { c.LooksSlope = false },
@@ -933,6 +943,7 @@ var metricNames = []string{
 	"plantSpread", "plantRegrow", "plantClump", "plantEmpty", "seedsCarried",
 	"plantPoison", "plantSignal", "plantHonesty",
 	"allAsleep", "clockSpread",
+	"looksCorr", "looksCorrHuman", "looksCeiling",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -1039,6 +1050,11 @@ type sample struct {
 	// are. The first means nothing without the second.
 	allAsleep, clockSpread float64
 
+	// How much a body actually says about a blow: the ceiling on everything
+	// stage 10 does. A line fitted to a weak signal cannot read more out of
+	// it than is in it.
+	looksCorr, looksCorrHuman, looksCeiling float64
+
 	// What the population is making of its rules of thumb: room bought and
 	// ideas carried per agent, how many distinct ones are alive at all, and
 	// how evenly they are spread over those. The last two are the ones the
@@ -1142,6 +1158,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		diet := w.Diet()
 		plants := w.Plants()
 		vig := w.Vigilance(engine.DefaultClusterLinkDist)
+		looks := w.LooksSignal()
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
@@ -1155,7 +1172,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			plantPoison:  plants.Poison, plantSignal: plants.Signal,
 			plantHonesty: plants.Honesty,
 			allAsleep:    vig.AllResting, clockSpread: vig.Spread,
-			hintSlots: hints.Slots, hintsHeld: hints.Held,
+			looksCorr: looks.All, looksCorrHuman: looks.Within,
+			looksCeiling: looks.Ceiling,
+			hintSlots:    hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
 			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
@@ -1412,7 +1431,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// are, without which the first says nothing.
 		"allAsleep":   tail.allAsleep,
 		"clockSpread": tail.clockSpread,
-		"packSize":    share(end.HuntParty, end.Hunts) * 1, // mean per hunt
+		// The ceiling on stage 10: how much a build says about a blow, over
+		// everybody and within one kind, and the error a perfect reader of
+		// the build would still be left with.
+		"looksCorr":      tail.looksCorr,
+		"looksCorrHuman": tail.looksCorrHuman,
+		"looksCeiling":   tail.looksCeiling,
+		"packSize":       share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an
 		// estimate and is not one. Same censoring the half-life has.
@@ -1521,6 +1546,9 @@ func tailAverage(series []sample) sample {
 		out.plantHonesty += s.plantHonesty
 		out.allAsleep += s.allAsleep
 		out.clockSpread += s.clockSpread
+		out.looksCorr += s.looksCorr
+		out.looksCorrHuman += s.looksCorrHuman
+		out.looksCeiling += s.looksCeiling
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -1591,6 +1619,9 @@ func tailAverage(series []sample) sample {
 	out.plantHonesty /= d
 	out.allAsleep /= d
 	out.clockSpread /= d
+	out.looksCorr /= d
+	out.looksCorrHuman /= d
+	out.looksCeiling /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d

@@ -176,3 +176,51 @@ func TestFirstSightErrorIsMeasured(t *testing.T) {
 		t.Error("an agent with the learning off was counted as going by its own line")
 	}
 }
+
+// What a build says about a blow, and why it says so little.
+//
+// Appearance is deliberately built from genes that are not attack, so that the
+// answer is not visible in the question. Under a budget those genes are
+// attack's competitors - a point spent on being big is a point not spent on
+// hitting - so the harder the budget binds, the less such a reading can
+// predict the thing it is read for. Showing the total instead leaves the
+// allocation hidden while making the size honest.
+func TestABuildSaysMoreWhenItShowsSizeThanWhenItShowsTwoGenes(t *testing.T) {
+	corr := func(bulk bool) float64 {
+		cfg := DefaultConfig()
+		cfg.Seed = 31
+		cfg.LooksShowBulk = bulk
+		w := NewWorld(cfg)
+		for i := 0; i < 4000; i++ {
+			w.Step()
+		}
+		return w.LooksSignal().All
+	}
+	genes, size := corr(false), corr(true)
+	if size <= genes {
+		t.Fatalf("size correlates %v with attack and two of its competitors %v, want size to say more",
+			size, genes)
+	}
+}
+
+// Either way the blow itself stays out of what can be seen: an observer that
+// knew Appearance exactly would still not know what it was facing.
+func TestNoWayOfLookingRevealsTheBlow(t *testing.T) {
+	for _, bulk := range []bool{false, true} {
+		cfg := DefaultConfig()
+		cfg.Seed = 32
+		cfg.LooksShowBulk = bulk
+		w := NewWorld(cfg)
+		for i := 0; i < 2000; i++ {
+			w.Step()
+		}
+		sig := w.LooksSignal()
+		if math.Abs(sig.All) > 0.9 {
+			t.Fatalf("with bulk=%v a build correlates %v with the blow, which is measurement rather than estimation",
+				bulk, sig.All)
+		}
+		if sig.Ceiling <= 0 {
+			t.Fatalf("with bulk=%v a perfect reader of the build would make no error at all", bulk)
+		}
+	}
+}

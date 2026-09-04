@@ -38,10 +38,92 @@ import "math"
 // It deliberately leaves out attack itself. A visible correlate that contains
 // the answer would make the whole thing a slower way of reading the truth.
 func (a *Agent) Appearance(cfg *Config) float64 {
+	// How much creature there is, rather than two particular genes.
+	//
+	// The original reading - the vitality and speed genes averaged - was
+	// chosen to keep the answer out of the question: attack must not be
+	// visible, or reading a build is not an estimate but a slow measurement.
+	// But under a budget those two genes are attack's *competitors*: every
+	// point spent on being big or quick is a point not spent on hitting. The
+	// harder the budget binds, the more any such reading anti-predicts the
+	// thing it is being read for, and the correlation measured at 0.22 when
+	// this went in had fallen to 0.08 by the time the world had grown.
+	//
+	// Bulk is the total, and the total is a different kind of fact from the
+	// split. A big creature has more of everything, which is honestly worth
+	// knowing; how it spent that total - whether the bulk went into hitting
+	// or into carrying - is still hidden, which is what keeps this an
+	// estimate. Size is visible, allocation is not.
+	if cfg.LooksShowBulk {
+		// Scaled to the range an ability lives in, so that a line fitted to
+		// it is fitted to numbers of the size everything else here uses.
+		if cfg.GeneBudgetMean > 0 {
+			return a.Bulk(cfg) / cfg.GeneBudgetMean * midAbility
+		}
+	}
 	// One age factor for both genes rather than one each: this is read for
 	// every agent in sight of every agent that thinks, and Ability would work
 	// the same curve out twice.
 	return (a.Gene(GeneVitality) + a.Gene(GeneSpeed)) / 2 * a.AgeFactor(cfg)
+}
+
+// LooksSignal is how much a body actually says about what it hits for: the
+// correlation between what an observer can see of an agent (Appearance) and
+// what it can do (Attack), across the living population.
+//
+// It is the ceiling on everything stage 10 does. An agent fitting a line to a
+// signal this weak can never read more out of it than is in it, so this is the
+// number to look at before asking why learning to read builds is not worth
+// more. Read only, and it is not something any agent can see.
+type LooksSignal struct {
+	All     float64 // over everybody alive
+	Within  float64 // within one kind, which is who an agent mostly meets
+	Ceiling float64 // the error a perfect reader of the build would still make
+}
+
+// LooksSignal reports how much a build says about a blow. Read only.
+func (w *World) LooksSignal() LooksSignal {
+	var out LooksSignal
+	corr := func(pick func(*Agent) bool) float64 {
+		var n, sx, sy, sxx, syy, sxy float64
+		for i := range w.agents {
+			a := &w.agents[i]
+			if !a.Alive || !pick(a) {
+				continue
+			}
+			x, y := a.Appearance(&w.cfg), a.Attack(&w.cfg)
+			n, sx, sy = n+1, sx+x, sy+y
+			sxx, syy, sxy = sxx+x*x, syy+y*y, sxy+x*y
+		}
+		if n < 2 {
+			return 0
+		}
+		den := math.Sqrt((n*sxx - sx*sx) * (n*syy - sy*sy))
+		if den == 0 {
+			return 0
+		}
+		return (n*sxy - sx*sy) / den
+	}
+	out.All = corr(func(*Agent) bool { return true })
+	out.Within = corr(func(a *Agent) bool { return a.Species == SpeciesHuman })
+
+	// What is left over even for a reader that knows the true line: the
+	// spread of attack that the build does not account for.
+	var n, sum, sumSq float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		v := a.Attack(&w.cfg)
+		n, sum, sumSq = n+1, sum+v, sumSq+v*v
+	}
+	if n > 1 {
+		if variance := sumSq/n - (sum/n)*(sum/n); variance > 0 {
+			out.Ceiling = math.Sqrt(variance * (1 - out.All*out.All))
+		}
+	}
+	return out
 }
 
 // looksModel is one agent's answer to "what does a body like that usually
