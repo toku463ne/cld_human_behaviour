@@ -477,6 +477,13 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		}
 		shelter, food := g.world.GroundAt(a.X, a.Y)
 		t.line("ground here: resting x%.2f, plants x%.2f (1 = ordinary)", shelter, food)
+		if known, total, gain := g.world.CountryKnownBy(a.ID); total > 0 {
+			where := "nowhere better known"
+			if gain > 0 {
+				where = fmt.Sprintf("reckons somewhere is %.1f better", gain)
+			}
+			t.line("country: knows %d of %d regions, %s", known, total, where)
+		}
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
 	} else {

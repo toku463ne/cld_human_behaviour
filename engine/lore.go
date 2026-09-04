@@ -247,6 +247,12 @@ func (w *World) exchangeLore(a, o *Agent) {
 	// into an agent that paid for somewhere to put one (stage 12c).
 	moved += float64(w.exchangeHints(a, o)+w.exchangeHints(o, a)) * cfg.HintTradeWorth
 
+	// And what each of them has made of the country (stage 15c). It rides here
+	// rather than getting a path of its own, and there is no "tell" action:
+	// what a parent passes to its child is the same trade, run often because
+	// the two of them are together for the whole rearing period.
+	moved += w.exchangeRegions(a, o)
+
 	w.exchanges++
 	o.timesTaught++
 	a.timesTaught++

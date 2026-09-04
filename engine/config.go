@@ -121,10 +121,50 @@ type Config struct {
 	// Both spreads are skipped entirely at zero, taking nothing from the
 	// random source, so either can be turned off and give the run the world
 	// had before that rule existed.
-	FoodSpread     float64
-	GrabRadius     float64 // how close an agent must be to eat
-	CombatRadius   float64 // how close an agent must be to land a blow
-	BoundaryMargin float64
+	FoodSpread float64
+
+	// --- what an agent makes of the ground (stages 15b, 15c) ---
+	//
+	// RegionLearnRate is how far one look moves an agent's estimate of the
+	// ground it is standing on. Zero stops agents knowing anything about
+	// where they are, which leaves stage 15a's sorting and nothing else - the
+	// arm this is measured against.
+	//
+	// An agent can only form a view of ground it has been on. Hearing about
+	// somewhere it has never been is what the trade is for (stage 15c), and
+	// it is the only way to be drawn to a place it has not found by accident.
+	RegionLearnRate float64
+
+	// RegionMemory caps how many looks an estimate is worth, and
+	// RegionForgetPerTick how fast it fades once the agent has left. Both are
+	// scaled by the memory gene: what that gene buys here is how well the
+	// country is held, not how many people are (#41).
+	RegionMemory        float64
+	RegionForgetPerTick float64
+
+	// RegionNoise is how badly the ground is read, in the same units as every
+	// other misreading: worse for an agent with less rationality.
+	RegionNoise float64
+
+	// RegionToldCount is what a handed-down view of somewhere is worth in
+	// looks. Low on purpose: being told about a place is a starting point,
+	// and the first look the agent takes for itself should overturn it.
+	RegionToldCount float64
+
+	// RegionPrior is roughly how much food is in sight on ordinary ground. It
+	// is not a rule - nothing reads it to decide anything - only the scale
+	// that puts a trade in the ground into the same units as a trade in
+	// anything else.
+	RegionPrior float64
+
+	// RegionDrawValue is what heading for better ground is worth, per unit of
+	// how much better it is believed to be. Zero leaves agents knowing about
+	// the country and never acting on it, which separates knowing from
+	// choosing.
+	RegionDrawValue float64
+	GrabRadius      float64 // how close an agent must be to eat
+	CombatRadius    float64 // how close an agent must be to land a blow
+	BoundaryMargin  float64
 
 	// --- what is left when somebody dies ---
 	//
@@ -691,13 +731,26 @@ func DefaultConfig() Config {
 		// cells each, which is coarse enough that walking across one takes a
 		// while. Finer regions would average out under any amount of
 		// wandering and there would be no such thing as a good place to be.
-		RegionCols:     4,
-		RegionRows:     3,
-		ShelterSpread:  0.6,
-		FoodSpread:     0.6,
-		GrabRadius:     11,
-		CombatRadius:   15,
-		BoundaryMargin: 8,
+		RegionCols:    4,
+		RegionRows:    3,
+		ShelterSpread: 0.6,
+		FoodSpread:    0.6,
+
+		// A look moves the estimate the whole way a running mean would, and
+		// forty looks is what an ordinary memory holds - a few visits' worth,
+		// not a lifetime. The fade is slow enough that country learned young
+		// is still worth something later, and fast enough that a world which
+		// changed would be noticed.
+		RegionLearnRate:     1.0,
+		RegionMemory:        40,
+		RegionForgetPerTick: 0.0004,
+		RegionNoise:         2.0,
+		RegionToldCount:     2,
+		RegionPrior:         3,
+		RegionDrawValue:     4,
+		GrabRadius:          11,
+		CombatRadius:        15,
+		BoundaryMargin:      8,
 
 		PreyValue:       1,
 		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more

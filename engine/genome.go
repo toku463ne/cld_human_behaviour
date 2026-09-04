@@ -178,6 +178,18 @@ func (a *Agent) ForgetScale(cfg *Config) float64 {
 	return clamp((MaxAbility-a.Ability(GeneMemory, cfg))/(MaxAbility-midAbility), 0, 2)
 }
 
+// MemoryScale is what this agent's memory is worth as a multiple of an
+// ordinary one: the other face of ForgetScale, for the things that are held
+// better rather than lost slower. An average memory scores exactly one.
+//
+// It is what the memory gene buys for an agent's view of the ground (stage
+// 15b): how many looks its estimate is worth, and how long it lasts. Somewhere
+// is not somebody, so knowing the country takes no room away from knowing the
+// neighbours (#41) - but it is still the same organ doing it.
+func (a *Agent) MemoryScale(cfg *Config) float64 {
+	return clamp(a.Ability(GeneMemory, cfg)/midAbility, 0.2, 2)
+}
+
 // HungerRate is how fast this agent gets hungry: the world's rate, plus
 // whatever it costs to run a body made of more than the average one. It is the
 // price of the budget, and the only thing stopping the budget from climbing

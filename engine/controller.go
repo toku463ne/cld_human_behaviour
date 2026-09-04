@@ -270,6 +270,26 @@ func (c *AIController) addExplore(p *Perception) {
 		Vitality:     cost,
 		VitalityCost: cost * cfg.VitalityWeight,
 	})
+
+	// And, for an agent that has been somewhere better than this, going back
+	// to it (stage 15b). This is the difference between finding good ground by
+	// accident and going to it: everything before this stage could only stay
+	// where it happened to be doing well.
+	//
+	// It is scored as one more option in the same comparison, not as a plan.
+	// The agent proposes a direction for one step; whether it keeps going that
+	// way is decided again next time it thinks, with whatever it has seen
+	// since. Nothing here searches a route or commits to a destination.
+	if s.BetterGround > 0 && cfg.RegionDrawValue > 0 {
+		ddx, ddy := s.BetterGroundX-s.X, s.BetterGroundY-s.Y
+		if d := math.Hypot(ddx, ddy); d > 1e-9 {
+			c.add(Action{Kind: ActMove, DX: ddx / d, DY: ddy / d, Effort: effort}, Utility{
+				Explore:      Goal{Value: cfg.RegionDrawValue * s.BetterGround, Chance: hungry},
+				Vitality:     cost,
+				VitalityCost: cost * cfg.VitalityWeight,
+			})
+		}
+	}
 }
 
 // addFood scores going for each item in sight. Reaching it is a race against

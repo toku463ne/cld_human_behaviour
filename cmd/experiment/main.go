@@ -265,6 +265,24 @@ var variants = []variant{
 	// The groundwork for terrain: a race for food is judged on who would
 	// arrive first rather than on who is nearer, so how fast a body is and how
 	// hard it is trying both count. "racedistance" is the world before it.
+	// Stages 15b and 15c: agents learn what the ground they walk is like, and
+	// trade it. "noregionlore" is the world 15a left - the food is still
+	// uneven and agents still find it by standing on it, and that is all.
+	{
+		name:  "noregionlore",
+		about: "agents never learn what the ground is like: the world after stage 15a and before 15b",
+		apply: func(c *engine.Config) { c.RegionLearnRate = 0 },
+	},
+	{
+		name:  "knownodraw",
+		about: "agents learn the country and never act on it: what is knowing worth without choosing?",
+		apply: func(c *engine.Config) { c.RegionDrawValue = 0 },
+	},
+	{
+		name:  "notoldground",
+		about: "agents learn the country but cannot hand it on: what does hearing about it add? (15c off)",
+		apply: func(c *engine.Config) { c.RegionToldCount = 0 },
+	},
 	// Stage 15a: the regions differ in how well they grow plants. "noplantgap"
 	// is the world before it, exactly. The amount of food is unchanged in
 	// every arm - only where it comes up moves - because FoodSpawnRate is the
@@ -767,6 +785,7 @@ var metricNames = []string{
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
+	"regionKnown", "regionTold", "regionRank", "regionSpread",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -843,6 +862,12 @@ type sample struct {
 	// the humans rather than to the plants, so their figure should follow the
 	// humans' with nothing of its own in it.
 	humanRich, enemyRich, allRich float64
+
+	// What the population has made of the ground: how many regions the
+	// average agent has a view of, how many of those it was told about rather
+	// than walked, how well the views line up with the truth, and how much
+	// agents disagree about the same place.
+	regionKnown, regionTold, regionRank, regionSpread float64
 
 	// What the population is making of its rules of thumb: room bought and
 	// ideas carried per agent, how many distinct ones are alive at all, and
@@ -943,10 +968,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		hints := w.HintUse()
 		shelter := w.Shelter()
 		rich := w.Richness()
+		known := w.RegionKnowledge()
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
 			humanRich: rich.Humans, enemyRich: rich.Enemies, allRich: rich.All,
+			regionKnown: known.Known, regionTold: known.Told,
+			regionRank: known.Rank, regionSpread: known.Spread,
 			hintSlots: hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
@@ -1174,7 +1202,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"enemyRich":     tail.enemyRich,
 		"richGain":      tail.humanRich - tail.allRich,
 		"enemyRichGain": tail.enemyRich - tail.allRich,
-		"packSize":      share(end.HuntParty, end.Hunts) * 1, // mean per hunt
+		// What the population has made of the ground. regionRank is the one
+		// that says whether any of it is true: the correlation between what
+		// agents believe about a region and how well it actually grows.
+		"regionKnown":  tail.regionKnown,
+		"regionTold":   tail.regionTold,
+		"regionRank":   tail.regionRank,
+		"regionSpread": tail.regionSpread,
+		"packSize":     share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an
 		// estimate and is not one. Same censoring the half-life has.
@@ -1267,6 +1302,10 @@ func tailAverage(series []sample) sample {
 		out.humanRich += s.humanRich
 		out.enemyRich += s.enemyRich
 		out.allRich += s.allRich
+		out.regionKnown += s.regionKnown
+		out.regionTold += s.regionTold
+		out.regionRank += s.regionRank
+		out.regionSpread += s.regionSpread
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -1321,6 +1360,10 @@ func tailAverage(series []sample) sample {
 	out.humanRich /= d
 	out.enemyRich /= d
 	out.allRich /= d
+	out.regionKnown /= d
+	out.regionTold /= d
+	out.regionRank /= d
+	out.regionSpread /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d

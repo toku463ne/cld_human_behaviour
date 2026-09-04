@@ -69,6 +69,19 @@ type SelfView struct {
 	// Perception, and all they can do is add to an option's score.
 	Hints []Hint
 
+	// BetterGround is how much more food this agent believes is to be found
+	// somewhere it has been than where it is standing, and BetterGroundX/Y
+	// where that is (stage 15b). Zero when it knows nowhere better - which
+	// includes knowing nowhere at all.
+	//
+	// It is a belief and not a fact: it is what the agent has made of the
+	// ground it has walked, blurred by how well it reads the world, faded by
+	// how long ago it was there, and possibly something it was simply told
+	// (stage 15c). The world's own figure never appears here.
+	BetterGround  float64
+	BetterGroundX float64
+	BetterGroundY float64
+
 	// Shelter is how exposed lying down right here would be, as a multiplier
 	// on RestExposureWeight (stage 14). It is about the spot the agent is
 	// standing on rather than about anybody else, which is why it is in this
@@ -309,6 +322,19 @@ func (w *World) perceive(a *Agent) *Perception {
 		p.Self.FoodScarcity = float64(len(p.Others)) / float64(len(p.Foods))
 	} else if len(p.Others) > 0 {
 		p.Self.FoodScarcity = float64(len(p.Others))
+	}
+
+	// What this look says about the ground the agent is standing on (stage
+	// 15b). It is not a new sense: the food it has just counted is the whole
+	// of the reading.
+	w.noteRegion(a, len(p.Foods))
+	if i, gain, ok := w.bestKnownRegion(a); ok {
+		minX, minY, maxX, maxY := w.regionBounds(i)
+		p.Self.BetterGroundX = (minX + maxX) / 2
+		p.Self.BetterGroundY = (minY + maxY) / 2
+		p.Self.BetterGround = gain
+	} else {
+		p.Self.BetterGround = 0
 	}
 
 	return p

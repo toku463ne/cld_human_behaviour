@@ -96,16 +96,21 @@ func (w *World) regionBounds(i int) (minX, minY, maxX, maxY float64) {
 	return float64(c) * cw, float64(r) * ch, float64(c+1) * cw, float64(r+1) * ch
 }
 
+// regionIndexAt is which block a position falls in, as an index.
+func (w *World) regionIndexAt(x, y float64) int {
+	cols, rows := max(w.cfg.RegionCols, 1), max(w.cfg.RegionRows, 1)
+	c := clampInt(int(x/w.cfg.Width*float64(cols)), 0, cols-1)
+	r := clampInt(int(y/w.cfg.Height*float64(rows)), 0, rows-1)
+	return r*cols + c
+}
+
 // regionAt is which block a position falls in. Positions are kept inside the
 // world by the boundary rule, so the clamp is a belt on top of braces.
 func (w *World) regionAt(x, y float64) *region {
 	if len(w.regions) == 0 {
 		return nil
 	}
-	cols, rows := max(w.cfg.RegionCols, 1), max(w.cfg.RegionRows, 1)
-	c := clampInt(int(x/w.cfg.Width*float64(cols)), 0, cols-1)
-	r := clampInt(int(y/w.cfg.Height*float64(rows)), 0, rows-1)
-	return &w.regions[r*cols+c]
+	return &w.regions[w.regionIndexAt(x, y)]
 }
 
 // shelterAt is how exposed resting at this spot is reckoned to be, as a

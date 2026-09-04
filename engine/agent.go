@@ -207,6 +207,11 @@ type Agent struct {
 	hints     []Hint
 	hintSlots int
 
+	// regions is what this agent has made of the ground it has been on (stage
+	// 15b, regionlore.go). Allocated on the first look, and never counted
+	// against what it can remember about people: somewhere is not somebody.
+	regions []regionView
+
 	// timesTaught is how often this agent has been in a trade of what it
 	// assumes (stage 12b), on either side of it. Nothing reads it: it is there
 	// so that the measurement can ask whether a few agents are teaching
