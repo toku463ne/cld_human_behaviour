@@ -1169,7 +1169,9 @@ func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 	a.X += dx / d * speed
 	a.Y += dy / d * speed
 	a.VX, a.VY = dx/d, dy/d
-	a.Vitality -= moveCostAt(&w.cfg, effort)
+	// Charged for the ground it is leaving, which is the ground it spent the
+	// tick on. Flat everywhere today; see terrain.go.
+	a.Vitality -= w.moveCostOn(a.X, a.Y, effort)
 	a.effortSpent = math.Max(a.effortSpent, effort)
 	w.invalidateIndex()
 }
