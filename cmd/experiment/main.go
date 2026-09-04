@@ -425,6 +425,44 @@ var variants = []variant{
 		about: "sweep: regions differ far more in how safe resting in them is",
 		apply: func(c *engine.Config) { c.ShelterSpread = 1 },
 	},
+	// The stage 9 carry-over: memory capacity has never earned a positive
+	// selection pressure (shMemory 0.07-0.08 at stages 9, 12 and 15b). The
+	// diagnosis written down at 15b was that twelve regions is too few for
+	// capacity to bind, since agents already know eight of them. These arms
+	// test that, rather than testing it again in the same world.
+	// Why extra memory is never worth buying. The suspicion is that contact
+	// refresh (#22) already keeps every record that matters: an agent never
+	// forgets anybody still standing near it, so more room only buys memories
+	// of people who have gone, which are worth nothing. These arms take the
+	// refreshing away and ask whether room starts paying.
+	{
+		name:  "staleandsmall",
+		about: "no contact refresh, room for six: does forgetting the living start to hurt?",
+		apply: func(c *engine.Config) { c.ContactRefresh, c.MemoryCapacity = false, 6 },
+	},
+	{
+		name:  "staleandbig",
+		about: "no contact refresh, room for twenty four: is room worth buying once it is needed?",
+		apply: func(c *engine.Config) { c.ContactRefresh, c.MemoryCapacity = false, 24 },
+	},
+	{
+		name:  "manyregions",
+		about: "the world cut into 108 regions: far more country than a memory can hold",
+		apply: func(c *engine.Config) { c.RegionCols, c.RegionRows = 12, 9 },
+	},
+	{
+		name:  "shortcountry",
+		about: "the country is forgotten ten times as fast: does holding it become worth paying for?",
+		apply: func(c *engine.Config) { c.RegionForgetPerTick = 0.004 },
+	},
+	{
+		name:  "manyshortregions",
+		about: "both: a lot of country, forgotten fast",
+		apply: func(c *engine.Config) {
+			c.RegionCols, c.RegionRows = 12, 9
+			c.RegionForgetPerTick = 0.004
+		},
+	},
 	{
 		name:  "fineregions",
 		about: "sweep: the same world cut into 48 small regions rather than 12 big ones",
