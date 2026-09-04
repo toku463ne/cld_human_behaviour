@@ -108,9 +108,20 @@ type Config struct {
 	// 1 +/- spread. Zero makes every region ordinary AND takes nothing from
 	// the random source, so the run is identical to one from before regions
 	// existed - which is the arm this is measured against.
-	RegionCols     int
-	RegionRows     int
-	ShelterSpread  float64
+	RegionCols    int
+	RegionRows    int
+	ShelterSpread float64
+
+	// FoodSpread is how much the regions differ in how well they grow plants
+	// (stage 15a). It changes where the food comes up and never how much: the
+	// world grows exactly as much as it did. That is deliberate, because
+	// FoodSpawnRate is the most selection-sensitive figure in the world and a
+	// rule that quietly changed the total would be measuring something else.
+	//
+	// Both spreads are skipped entirely at zero, taking nothing from the
+	// random source, so either can be turned off and give the run the world
+	// had before that rule existed.
+	FoodSpread     float64
 	GrabRadius     float64 // how close an agent must be to eat
 	CombatRadius   float64 // how close an agent must be to land a blow
 	BoundaryMargin float64
@@ -683,6 +694,7 @@ func DefaultConfig() Config {
 		RegionCols:     4,
 		RegionRows:     3,
 		ShelterSpread:  0.6,
+		FoodSpread:     0.6,
 		GrabRadius:     11,
 		CombatRadius:   15,
 		BoundaryMargin: 8,

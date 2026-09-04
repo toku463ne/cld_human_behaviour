@@ -126,8 +126,11 @@ type World struct {
 	foods  []Food
 
 	// regions is the world's own coarse division of itself (region.go). It is
-	// drawn once and never changes.
-	regions []region
+	// drawn once and never changes; foodWeight is the sum of what the blocks
+	// grow, kept so that drawing a place for a plant does not add them up
+	// again every time.
+	regions    []region
+	foodWeight float64
 
 	// index maps an agent ID to its position in agents, and foodIndex does the
 	// same for food, so that following a target does not scan everything.
@@ -1387,7 +1390,17 @@ func (w *World) spawnFood() {
 	if len(w.foods) >= w.cfg.MaxFoodItems {
 		return
 	}
-	w.addFood(w.randRange(10, w.cfg.Width-10), w.randRange(10, w.cfg.Height-10))
+	if w.cfg.FoodSpread <= 0 {
+		w.addFood(w.randRange(10, w.cfg.Width-10), w.randRange(10, w.cfg.Height-10))
+		return
+	}
+	// Where a plant comes up is drawn in proportion to how well the ground
+	// grows things, and then uniformly inside that block. How many come up is
+	// untouched: FoodSpawnRate still says how many, and this only says where.
+	minX, minY, maxX, maxY := w.regionBounds(w.pickFoodRegion())
+	w.addFood(
+		w.randRange(math.Max(minX, 10), math.Min(maxX, w.cfg.Width-10)),
+		w.randRange(math.Max(minY, 10), math.Min(maxY, w.cfg.Height-10)))
 }
 
 // addFood grows a plant at the given position and returns its ID, or 0 when

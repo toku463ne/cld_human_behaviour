@@ -308,17 +308,25 @@ func clamp01(v float64) float64 {
 // else about a region exists: it is not a wall and no node knows it is in one.
 func (g *game) drawRegions(screen *ebiten.Image) {
 	for _, r := range g.world.Regions() {
-		// Shelter runs about 0.4 (covered) to 1.6 (open). Only the covered
-		// half is shaded, so an ordinary world stays blank.
-		if r.Shelter >= 1 {
-			continue
+		w, h := float32(r.MaxX-r.MinX), float32(r.MaxY-r.MinY)
+
+		// Fill: how well the ground grows plants. Green for better than an
+		// equal share, brown for worse, nothing at all for ordinary, so a
+		// world without regions stays blank.
+		if shade := uint8(clamp01(math.Abs(r.Food-1)/0.6) * 55); shade > 0 {
+			fill := color.RGBA{0x30, 0x70, 0x30, shade} // rich
+			if r.Food < 1 {
+				fill = color.RGBA{0x80, 0x60, 0x20, shade} // thin
+			}
+			vector.DrawFilledRect(screen, float32(r.MinX), float32(r.MinY), w, h, fill, false)
 		}
-		shade := uint8(clamp01((1-r.Shelter)/0.6) * 70)
-		vector.DrawFilledRect(screen, float32(r.MinX), float32(r.MinY),
-			float32(r.MaxX-r.MinX), float32(r.MaxY-r.MinY),
-			color.RGBA{0x30, 0x60, 0x30, shade}, false)
-		vector.StrokeRect(screen, float32(r.MinX), float32(r.MinY),
-			float32(r.MaxX-r.MinX), float32(r.MaxY-r.MinY), 1, colorRegionEdge, false)
+
+		// Border: how sheltered the resting is. A thick edge is ground with
+		// its back covered.
+		if r.Shelter < 1 {
+			thick := float32(1 + clamp01((1-r.Shelter)/0.6)*3)
+			vector.StrokeRect(screen, float32(r.MinX), float32(r.MinY), w, h, thick, colorRegionEdge, false)
+		}
 	}
 }
 
@@ -467,8 +475,8 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 				t.line("   %-11s -> %-8s %+5.1f", h.Feature, h.Act, h.Weight)
 			}
 		}
-		t.line("standing on ground worth x%.2f for resting (1 = ordinary)",
-			g.world.ShelterAtView(a.X, a.Y))
+		shelter, food := g.world.GroundAt(a.X, a.Y)
+		t.line("ground here: resting x%.2f, plants x%.2f (1 = ordinary)", shelter, food)
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
 	} else {

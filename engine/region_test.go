@@ -144,3 +144,99 @@ func TestAnInstantWithNobodyRestingIsNotEvidence(t *testing.T) {
 		}
 	}
 }
+
+// The regions change where the plants come up and never how many. That
+// distinction is the whole safety of the stage: FoodSpawnRate is the most
+// selection-sensitive figure in the world, so a rule that quietly altered the
+// total would be measuring something else entirely.
+func TestRegionsMoveTheFoodWithoutChangingHowMuchThereIs(t *testing.T) {
+	count := func(spread float64) (total int, inRichest int, richest float64) {
+		cfg := DefaultConfig()
+		cfg.Seed = 11
+		cfg.FoodSpread = spread
+		cfg.MaxFoodItems = 100000 // let it pile up, so nothing is capped away
+		cfg.InitialPopulation, cfg.InitialEnemies = 0, 0
+		cfg.InitialFoodItems = 0
+		w := NewWorld(cfg)
+		for i := 0; i < 4000; i++ {
+			w.Step()
+		}
+		best := 0
+		for i := range w.regions {
+			if w.regions[i].Food > w.regions[best].Food {
+				best = i
+			}
+		}
+		minX, minY, maxX, maxY := w.regionBounds(best)
+		for _, f := range w.Foods() {
+			total++
+			if f.X >= minX && f.X < maxX && f.Y >= minY && f.Y < maxY {
+				inRichest++
+			}
+		}
+		return total, inRichest, w.regions[best].Food
+	}
+
+	flatTotal, flatBest, _ := count(0)
+	variedTotal, variedBest, richest := count(0.6)
+
+	// The same number of plants, give or take the odd one at the margin.
+	if d := math.Abs(float64(flatTotal - variedTotal)); d > float64(flatTotal)*0.02 {
+		t.Fatalf("a flat world grew %d plants and a varied one %d, want the same amount",
+			flatTotal, variedTotal)
+	}
+	// But more of them on the best ground.
+	if variedBest <= flatBest {
+		t.Fatalf("the richest region got %d plants against a flat world's %d for the same block (its multiplier is %.2f)",
+			variedBest, flatBest, richest)
+	}
+}
+
+// With no spread the food is laid out exactly as it always was, down to the
+// values taken from the random source.
+func TestNoFoodSpreadLeavesTheWorldExactlyAsItWas(t *testing.T) {
+	run := func(spread float64) Stats {
+		cfg := DefaultConfig()
+		cfg.Seed = 9
+		cfg.ShelterSpread = 0
+		cfg.FoodSpread = spread
+		w := NewWorld(cfg)
+		for i := 0; i < 1500; i++ {
+			w.Step()
+		}
+		return w.Stats()
+	}
+	if flat, again := run(0), run(0); flat != again {
+		t.Fatal("the same world twice gave different runs")
+	} else if varied := run(0.6); varied == flat {
+		t.Fatal("moving the food about changed nothing at all")
+	}
+}
+
+// Nobody of a kind standing anywhere is no evidence about where that kind
+// stands. Stage 14 made this mistake with resting and it is not being made
+// again.
+func TestRichnessOfAKindThatIsNotThereIsNotZero(t *testing.T) {
+	cfg := testConfig()
+	cfg.FoodSpread = 0.6
+	w := NewWorld(cfg)
+	w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+
+	got := w.Richness()
+	if got.Enemies != got.All {
+		t.Fatalf("with no predators alive their ground reads %v against %v overall, want no difference",
+			got.Enemies, got.All)
+	}
+	// And a world of identical regions reports no preference for anybody.
+	flat := DefaultConfig()
+	flat.Seed = 4
+	flat.FoodSpread = 0
+	fw := NewWorld(flat)
+	for i := 0; i < 2000; i++ {
+		fw.Step()
+		r := fw.Richness()
+		if math.Abs(r.Humans-1) > 1e-9 || math.Abs(r.Enemies-1) > 1e-9 || math.Abs(r.All-1) > 1e-9 {
+			t.Fatalf("at tick %d a world of identical regions reported richness %+v", i, r)
+		}
+	}
+}

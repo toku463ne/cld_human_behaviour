@@ -265,6 +265,30 @@ var variants = []variant{
 	// The groundwork for terrain: a race for food is judged on who would
 	// arrive first rather than on who is nearer, so how fast a body is and how
 	// hard it is trying both count. "racedistance" is the world before it.
+	// Stage 15a: the regions differ in how well they grow plants. "noplantgap"
+	// is the world before it, exactly. The amount of food is unchanged in
+	// every arm - only where it comes up moves - because FoodSpawnRate is the
+	// most selection-sensitive figure there is.
+	{
+		name:  "noplantgap",
+		about: "plants come up evenly across the world: the world before stage 15a",
+		apply: func(c *engine.Config) { c.FoodSpread = 0 },
+	},
+	{
+		name:  "sharpplantgap",
+		about: "sweep: the good ground grows far more than the bad",
+		apply: func(c *engine.Config) { c.FoodSpread = 1 },
+	},
+	{
+		// The control decision #39 asks for. The food is still uneven, but
+		// every reason to seek other agents out is off: no positive term for
+		// watching somebody you trust, and no discount for resting among
+		// friends. Whatever gathering is left is the plants pulling, not
+		// anything social.
+		name:  "richnosocial",
+		about: "uneven plants but no reason to seek anybody out: is gathering on good ground social at all?",
+		apply: func(c *engine.Config) { c.LoreValue, c.AffinityTrust = 0, 0 },
+	},
 	// Stage 14: the world gets regions, and they differ in how exposed lying
 	// down in them is. "noshelter" is the world before it, exactly - with no
 	// spread nothing is drawn from the random source at all.
@@ -742,6 +766,7 @@ var metricNames = []string{
 	"hunts", "jointHunts", "packSize", "evadedShare",
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
+	"humanRich", "enemyRich", "richGain", "enemyRichGain",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -812,6 +837,12 @@ type sample struct {
 	// second: shelter is a multiplier on what resting costs, so lower is
 	// better ground.
 	restShelter, shelterAll float64
+
+	// Where each kind of creature stands, measured by how well the ground
+	// grows plants. The predators are counted apart because they are drawn to
+	// the humans rather than to the plants, so their figure should follow the
+	// humans' with nothing of its own in it.
+	humanRich, enemyRich, allRich float64
 
 	// What the population is making of its rules of thumb: room bought and
 	// ideas carried per agent, how many distinct ones are alive at all, and
@@ -911,9 +942,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		teach := w.Teaching()
 		hints := w.HintUse()
 		shelter := w.Shelter()
+		rich := w.Richness()
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
+			humanRich: rich.Humans, enemyRich: rich.Enemies, allRich: rich.All,
 			hintSlots: hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
@@ -1135,7 +1168,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"restShelter": tail.restShelter,
 		"shelterAll":  tail.shelterAll,
 		"shelterGain": tail.shelterAll - tail.restShelter,
-		"packSize":    share(end.HuntParty, end.Hunts) * 1, // mean per hunt
+		// Where each kind stands, by how well the ground grows plants. A
+		// positive gain is a kind that has ended up on the good ground.
+		"humanRich":     tail.humanRich,
+		"enemyRich":     tail.enemyRich,
+		"richGain":      tail.humanRich - tail.allRich,
+		"enemyRichGain": tail.enemyRich - tail.allRich,
+		"packSize":      share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an
 		// estimate and is not one. Same censoring the half-life has.
@@ -1225,6 +1264,9 @@ func tailAverage(series []sample) sample {
 		out.teachTop += s.teachTop
 		out.restShelter += s.restShelter
 		out.shelterAll += s.shelterAll
+		out.humanRich += s.humanRich
+		out.enemyRich += s.enemyRich
+		out.allRich += s.allRich
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -1276,6 +1318,9 @@ func tailAverage(series []sample) sample {
 	out.teachTop /= d
 	out.restShelter /= d
 	out.shelterAll /= d
+	out.humanRich /= d
+	out.enemyRich /= d
+	out.allRich /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d
