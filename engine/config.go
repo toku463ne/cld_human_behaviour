@@ -91,9 +91,26 @@ type Config struct {
 	// as the circle did: (2N+1)^2 * size^2 = pi * radius^2. Without that the
 	// change would be "agents can see more" or "agents can see less", and the
 	// shape - the thing being tested - would not be separable from it.
-	SightGrid      bool
-	SightCellSize  float64
-	SightCells     int
+	SightGrid     bool
+	SightCellSize float64
+	SightCells    int
+
+	// --- the world's own regions (stage 14, region.go) ---
+	//
+	// One coarse division of the world that everything varying by place uses:
+	// how sheltered the resting is (this stage), how well the plants grow
+	// (stage 15), and whatever a region-by-region reset needs later. Not a
+	// wall, not a thing agents can see or name - just a number that differs
+	// from place to place.
+	//
+	// ShelterSpread is how much the regions differ in how exposed resting in
+	// them is: each draws a multiplier on RestExposureWeight from
+	// 1 +/- spread. Zero makes every region ordinary AND takes nothing from
+	// the random source, so the run is identical to one from before regions
+	// existed - which is the arm this is measured against.
+	RegionCols     int
+	RegionRows     int
+	ShelterSpread  float64
 	GrabRadius     float64 // how close an agent must be to eat
 	CombatRadius   float64 // how close an agent must be to land a blow
 	BoundaryMargin float64
@@ -655,9 +672,17 @@ func DefaultConfig() Config {
 
 		// One ring of cells, as asked for. The size follows from matching the
 		// circle's area: 9 * size^2 = pi * 130^2 gives 76.8.
-		SightGrid:      true,
-		SightCellSize:  76.8,
-		SightCells:     1,
+		SightGrid:     true,
+		SightCellSize: 76.8,
+		SightCells:    1,
+
+		// Twelve blocks of 200x200 in an 800x600 world: about seven sight
+		// cells each, which is coarse enough that walking across one takes a
+		// while. Finer regions would average out under any amount of
+		// wandering and there would be no such thing as a good place to be.
+		RegionCols:     4,
+		RegionRows:     3,
+		ShelterSpread:  0.6,
 		GrabRadius:     11,
 		CombatRadius:   15,
 		BoundaryMargin: 8,

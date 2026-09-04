@@ -223,7 +223,11 @@ func (c *AIController) addRest(p *Perception) {
 	// worked out: one trajectory, no branching, today's state carried forward
 	// - here, the share of the surrounding strength that would be free to land
 	// on an agent that has stopped watching for it.
-	exposed := cfg.RestExposureWeight * c.exposure
+	// ... and how much of that this particular patch of ground lets through
+	// (stage 14). Somewhere with its back covered is somewhere the same
+	// neighbours matter less. It is one multiplication and there is no second
+	// formula: the whole of "a good place to rest" is this.
+	exposed := cfg.RestExposureWeight * s.Shelter * c.exposure
 
 	// Whatever is hitting the agent goes on hitting it while it sits there,
 	// and so does whatever starts while it is down.

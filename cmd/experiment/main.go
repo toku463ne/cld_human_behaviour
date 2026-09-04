@@ -265,6 +265,24 @@ var variants = []variant{
 	// The groundwork for terrain: a race for food is judged on who would
 	// arrive first rather than on who is nearer, so how fast a body is and how
 	// hard it is trying both count. "racedistance" is the world before it.
+	// Stage 14: the world gets regions, and they differ in how exposed lying
+	// down in them is. "noshelter" is the world before it, exactly - with no
+	// spread nothing is drawn from the random source at all.
+	{
+		name:  "noshelter",
+		about: "every region is ordinary ground: the world before stage 14",
+		apply: func(c *engine.Config) { c.ShelterSpread = 0 },
+	},
+	{
+		name:  "sharpshelter",
+		about: "sweep: regions differ far more in how safe resting in them is",
+		apply: func(c *engine.Config) { c.ShelterSpread = 1 },
+	},
+	{
+		name:  "fineregions",
+		about: "sweep: the same world cut into 48 small regions rather than 12 big ones",
+		apply: func(c *engine.Config) { c.RegionCols, c.RegionRows = 8, 6 },
+	},
 	// Stage 13: sight stops being a circle and becomes the cell an agent is
 	// standing in plus the ring around it. "sightcircle" is the world before
 	// it, and the two are calibrated to cover the same ground so that the
@@ -723,6 +741,7 @@ var metricNames = []string{
 	"priorErrAll", "priorErrLearned", "priorErrGreen", "learnedShare", "firstSights",
 	"hunts", "jointHunts", "packSize", "evadedShare",
 	"flees", "escapeShare",
+	"restShelter", "shelterAll", "shelterGain",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
@@ -787,6 +806,12 @@ type sample struct {
 	// is the one the design is on the hook for - a rule meant to spread
 	// something around must not end up with three teachers and a crowd.
 	taught, teachTop float64
+
+	// Where the resting happens, against where the population is. If a good
+	// place to lie down is worth anything, the first should be below the
+	// second: shelter is a multiplier on what resting costs, so lower is
+	// better ground.
+	restShelter, shelterAll float64
 
 	// What the population is making of its rules of thumb: room bought and
 	// ideas carried per agent, how many distinct ones are alive at all, and
@@ -885,8 +910,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		lore := w.Lore()
 		teach := w.Teaching()
 		hints := w.HintUse()
+		shelter := w.Shelter()
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
+			restShelter: shelter.Resting, shelterAll: shelter.All,
 			hintSlots: hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
@@ -1102,6 +1129,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// direction at once, a block only has to be crossed out of.
 		"flees":       perAgentLifetime(end.Flees-tailStart.Flees, personTicks),
 		"escapeShare": share(end.Escapes-tailStart.Escapes, end.Flees-tailStart.Flees),
+		// Where the resting happens against where the population is. Shelter
+		// multiplies what resting costs, so lower is better ground and a
+		// positive shelterGain means agents are lying down in the good places.
+		"restShelter": tail.restShelter,
+		"shelterAll":  tail.shelterAll,
+		"shelterGain": tail.shelterAll - tail.restShelter,
 		"packSize":    share(end.HuntParty, end.Hunts) * 1, // mean per hunt
 		// The counts as well as the intervals: an interval worked out from
 		// zero events is the length of the run, which reads exactly like an
@@ -1190,6 +1223,8 @@ func tailAverage(series []sample) sample {
 		out.sdShock += s.sdShock
 		out.taught += s.taught
 		out.teachTop += s.teachTop
+		out.restShelter += s.restShelter
+		out.shelterAll += s.shelterAll
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -1239,6 +1274,8 @@ func tailAverage(series []sample) sample {
 	out.sdShock /= d
 	out.taught /= d
 	out.teachTop /= d
+	out.restShelter /= d
+	out.shelterAll /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d

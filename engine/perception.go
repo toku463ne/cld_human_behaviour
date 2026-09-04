@@ -68,6 +68,13 @@ type SelfView struct {
 	// own, so they belong here; they read nothing that is not already in this
 	// Perception, and all they can do is add to an option's score.
 	Hints []Hint
+
+	// Shelter is how exposed lying down right here would be, as a multiplier
+	// on RestExposureWeight (stage 14). It is about the spot the agent is
+	// standing on rather than about anybody else, which is why it is in this
+	// half of the perception: an agent can feel whether its back is covered
+	// where it is, and cannot see whether it would be covered over there.
+	Shelter float64
 }
 
 // FoodView is one food item as an agent sees it.
@@ -191,6 +198,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		CompetitionWeight: a.lore.competitionWeight,
 		ShockRisk:         a.lore.shockRisk,
 		Hints:             a.hints,
+		Shelter:           w.shelterAt(a.X, a.Y),
 	}
 
 	// The index narrows the world down to the cells sight could possibly reach;

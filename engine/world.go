@@ -125,6 +125,10 @@ type World struct {
 	agents []Agent
 	foods  []Food
 
+	// regions is the world's own coarse division of itself (region.go). It is
+	// drawn once and never changes.
+	regions []region
+
 	// index maps an agent ID to its position in agents, and foodIndex does the
 	// same for food, so that following a target does not scan everything.
 	index     map[int]int
@@ -236,6 +240,9 @@ func NewWorld(cfg Config) *World {
 		nextAgentID: 1,
 		nextFoodID:  1,
 	}
+	// Before anybody is put in it, because what the ground is like is not
+	// something the population decides.
+	w.buildRegions()
 	for i := 0; i < cfg.InitialPopulation; i++ {
 		w.addAgent(w.randomAgent(SpeciesHuman))
 	}

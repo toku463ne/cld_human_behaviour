@@ -85,6 +85,7 @@ var (
 	colorFightLink  = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
 	colorSelected   = color.RGBA{0x11, 0x11, 0x11, 0xff}
 	colorSight      = color.RGBA{0x33, 0x88, 0xcc, 0xa0}
+	colorRegionEdge = color.RGBA{0x30, 0x60, 0x30, 0x50}
 	colorTarget     = color.RGBA{0x11, 0x11, 0x11, 0x60}
 	colorHungerBar  = color.RGBA{0xc9, 0x8a, 0x20, 0xff}
 	colorTail       = color.RGBA{0x44, 0x44, 0x77, 0xb0}
@@ -197,6 +198,7 @@ func (g *game) Draw(screen *ebiten.Image) {
 }
 
 func (g *game) drawWorld(screen *ebiten.Image) {
+	g.drawRegions(screen)
 	g.drawSight(screen)
 
 	for _, f := range g.world.Foods() {
@@ -298,6 +300,26 @@ func clamp01(v float64) float64 {
 		return 1
 	}
 	return v
+}
+
+// drawRegions shades the world's own blocks by how exposed resting in them is
+// (stage 14). Darker is ground with its back covered, where lying down among
+// strangers costs less. Nothing else about a region is visible, because nothing
+// else about a region exists: it is not a wall and no node knows it is in one.
+func (g *game) drawRegions(screen *ebiten.Image) {
+	for _, r := range g.world.Regions() {
+		// Shelter runs about 0.4 (covered) to 1.6 (open). Only the covered
+		// half is shaded, so an ordinary world stays blank.
+		if r.Shelter >= 1 {
+			continue
+		}
+		shade := uint8(clamp01((1-r.Shelter)/0.6) * 70)
+		vector.DrawFilledRect(screen, float32(r.MinX), float32(r.MinY),
+			float32(r.MaxX-r.MinX), float32(r.MaxY-r.MinY),
+			color.RGBA{0x30, 0x60, 0x30, shade}, false)
+		vector.StrokeRect(screen, float32(r.MinX), float32(r.MinY),
+			float32(r.MaxX-r.MinX), float32(r.MaxY-r.MinY), 1, colorRegionEdge, false)
+	}
 }
 
 // drawSight outlines what the followed node can see. Since stage 13 that is a
@@ -445,6 +467,8 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 				t.line("   %-11s -> %-8s %+5.1f", h.Feature, h.Act, h.Weight)
 			}
 		}
+		t.line("standing on ground worth x%.2f for resting (1 = ordinary)",
+			g.world.ShelterAtView(a.X, a.Y))
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
 	} else {
