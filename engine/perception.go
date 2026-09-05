@@ -193,6 +193,16 @@ type Perception struct {
 	Foods  []FoodView
 	Others []AgentView
 
+	// Trigger is why the engine is asking. It is not a instruction - what to
+	// do about being hit is still for the controller to work out - but it is
+	// something the agent knows about its own situation, and one thing cannot
+	// be worked out without it: an agent asked because what it was after is
+	// gone (TriggerTargetLost) cannot tell from this perception whether the
+	// target was taken or has merely walked out of sight. The AI ignores it
+	// and re-scores everything; a human controller uses it to drop an order
+	// that has been overtaken by events.
+	Trigger Trigger
+
 	// Rand is the simulation's single random source. A controller that needs
 	// to break a tie draws from it, so that a run stays reproducible from its
 	// seed; a human controller ignores it.
@@ -209,6 +219,7 @@ type Perception struct {
 func (w *World) perceive(a *Agent) *Perception {
 	p := &w.perception
 	p.Tick = w.tick
+	p.Trigger = TriggerNone
 	p.Cfg = &w.cfg
 	p.Rand = w.rng
 	p.Foods = p.Foods[:0]

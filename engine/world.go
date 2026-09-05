@@ -484,6 +484,7 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	}
 
 	p := w.perceive(a)
+	p.Trigger = trigger
 	// Only an agent somebody asked to follow records anything. The controller
 	// fills in the options it compared; the world fills in the rest, so that a
 	// controller which ignores the trace still leaves a usable record.

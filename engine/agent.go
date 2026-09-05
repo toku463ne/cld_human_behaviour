@@ -377,11 +377,17 @@ func (a *Agent) recentAttackers(tick, window int) []int {
 // not finished growing up - childhood is a real span of the world's time, and
 // what it costs is the generations it holds up.
 func (a *Agent) CanReproduce(cfg *Config) bool {
-	return a.Maturity >= cfg.ReproMaturity &&
+	return a.IsAdult(cfg) &&
 		a.Hunger < cfg.ReproHunger &&
 		a.Vitality >= cfg.ReproVitalityShare*a.MaxVitality(cfg) &&
 		a.CooldownTimer <= 0
 }
+
+// IsAdult reports whether the agent has finished growing up. It is the one
+// place the line between a child and an adult is drawn: courting is not
+// considered before it (CanReproduce), and a player's controller is not handed
+// to a child before it either (World.Heirs).
+func (a *Agent) IsAdult(cfg *Config) bool { return a.Maturity >= cfg.ReproMaturity }
 
 // Food is one edible item lying in the world.
 type Food struct {

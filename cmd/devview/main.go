@@ -89,6 +89,9 @@ var (
 	colorTarget     = color.RGBA{0x11, 0x11, 0x11, 0x60}
 	colorHungerBar  = color.RGBA{0xc9, 0x8a, 0x20, 0xff}
 	colorTail       = color.RGBA{0x44, 0x44, 0x77, 0xb0}
+	colorPlayed     = color.RGBA{0xd9, 0x9a, 0x00, 0xff}
+	colorMark       = color.RGBA{0xd9, 0x9a, 0x00, 0xc0}
+	colorHeir       = color.RGBA{0x0c, 0xa3, 0x0c, 0xc0}
 )
 
 // panelMode is what the right hand panel shows about the selected node.
@@ -97,6 +100,9 @@ type panelMode uint8
 const (
 	modeDecision panelMode = iota // the utility comparison behind its last moves
 	modeBeliefs                   // what it reckons about everybody it has met
+	modePlay                      // what a person driving it has to go on
+
+	numPanelModes = int(iota)
 )
 
 type game struct {
@@ -113,7 +119,36 @@ type game struct {
 	// traceBack is how far into the decision history the panel is looking:
 	// 0 is the most recent decision.
 	traceBack int
+
+	// Stage 19: one node can be driven by whoever is at the keyboard. The
+	// controller is the engine's; everything else here is the interface's own
+	// bookkeeping, because the engine has no idea a game is being played.
+	played  int
+	human   *engine.HumanController
+	effort  float64
+	stance  engine.Stance
+	mark    mark
+	heir    int // the child the line is to continue through, 0 for none
+	notice  string
+	noticed int // tick the notice was put up
 }
+
+// mark is what the player last clicked: the thing an order will be aimed at.
+// It is not part of any decision - it is a cursor.
+type mark struct {
+	kind markKind
+	id   int
+	x, y float64
+}
+
+type markKind uint8
+
+const (
+	markNone markKind = iota
+	markAgent
+	markFood
+	markSpot
+)
 
 func (g *game) Update() error {
 	g.handleInput()
@@ -125,6 +160,7 @@ func (g *game) Update() error {
 		g.world.Step()
 		g.tickAccum--
 	}
+	g.carryTheLineOn()
 	return nil
 }
 
@@ -142,20 +178,255 @@ func (g *game) handleInput() {
 	case inpututil.IsKeyJustPressed(ebiten.KeyEqual):
 		g.speed = min(g.speed+1, len(speeds)-1)
 	case inpututil.IsKeyJustPressed(ebiten.KeyTab):
-		g.mode = 1 - g.mode
+		g.mode = panelMode((int(g.mode) + 1) % numPanelModes)
 	case inpututil.IsKeyJustPressed(ebiten.KeyBracketLeft):
 		g.traceBack++ // further back in time
 	case inpututil.IsKeyJustPressed(ebiten.KeyBracketRight):
 		g.traceBack = max(g.traceBack-1, 0)
 	case inpututil.IsKeyJustPressed(ebiten.KeyEscape):
-		g.selectAgent(0)
+		// While a node is being played the click is an aim rather than a
+		// selection, so escape drops the aim first and the node second.
+		if g.mark.kind != markNone {
+			g.mark = mark{}
+		} else {
+			g.selectAgent(0)
+		}
 	}
+
+	g.handlePlayInput()
+
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
 		if mx < worldWidth {
-			g.selectAgent(g.nodeAt(mx, my))
+			if g.played != 0 {
+				g.aimAt(mx, my)
+			} else {
+				g.selectAgent(g.nodeAt(mx, my))
+			}
 		}
 	}
+}
+
+// --- playing a node (stage 19) ---------------------------------------------
+//
+// The engine is not being asked to do anything new here: taking over is
+// SetController, an order is what the controller answers with the next time the
+// world asks, and handing the line on is the same controller installed on a
+// child. Everything below is interface.
+
+// handlePlayInput reads the keys that only mean something to a player.
+func (g *game) handlePlayInput() {
+	switch {
+	case inpututil.IsKeyJustPressed(ebiten.KeyH):
+		g.toggleControl()
+	case inpututil.IsKeyJustPressed(ebiten.KeyK):
+		g.pickHeir()
+	}
+	if g.played == 0 {
+		return
+	}
+	switch {
+	case inpututil.IsKeyJustPressed(ebiten.KeyEnter), inpututil.IsKeyJustPressed(ebiten.KeyKPEnter):
+		// Ask for the question rather than answering one: this is the only
+		// way a player gets a decision out of turn, and it goes through the
+		// same trigger machinery as everything else.
+		if g.world.RequestDecision(g.played) {
+			g.say("asked #%d to think again", g.played)
+		}
+	case inpututil.IsKeyJustPressed(ebiten.KeyS):
+		g.stance = (g.stance + 1) % engine.Stance(engine.NumStances)
+		g.say("stance %s (fighting orders only)", g.stance)
+	case inpututil.IsKeyJustPressed(ebiten.KeyR):
+		g.order(engine.Action{Kind: engine.ActRest})
+	case inpututil.IsKeyJustPressed(ebiten.KeyM):
+		g.orderMove()
+	case inpututil.IsKeyJustPressed(ebiten.KeyE):
+		g.orderAt(engine.ActEat, markFood)
+	case inpututil.IsKeyJustPressed(ebiten.KeyA):
+		g.orderAt(engine.ActAttack, markAgent)
+	case inpututil.IsKeyJustPressed(ebiten.KeyF):
+		g.orderAt(engine.ActFlee, markAgent)
+	case inpututil.IsKeyJustPressed(ebiten.KeyO):
+		g.orderAt(engine.ActObserve, markAgent)
+	case inpututil.IsKeyJustPressed(ebiten.KeyC):
+		g.orderAt(engine.ActCourt, markAgent)
+	}
+	for i, key := range effortKeys {
+		if inpututil.IsKeyJustPressed(key) {
+			g.effort = float64(i+1) / float64(len(effortKeys))
+			g.say("effort %.1f (from the next order on)", g.effort)
+		}
+	}
+}
+
+var effortKeys = []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4, ebiten.Key5}
+
+// toggleControl takes the selected node over, or hands it back to the AI.
+func (g *game) toggleControl() {
+	if g.played != 0 {
+		id := g.played
+		g.world.SetController(id, nil) // nil is the world's own AI again
+		g.played, g.human, g.heir = 0, nil, 0
+		g.say("#%d is back on the utility formula", id)
+		return
+	}
+	if g.selected == 0 {
+		g.say("click a node first, then press h to take it over")
+		return
+	}
+	g.human = engine.NewHumanController()
+	if !g.world.SetController(g.selected, g.human) {
+		g.human = nil
+		g.say("#%d is gone", g.selected)
+		return
+	}
+	g.played = g.selected
+	g.mode = modePlay
+	g.say("you are #%d. it rests until told otherwise", g.played)
+}
+
+// pickHeir names the child the line is to continue through, cycling if there
+// is more than one. Only grown children are offered: the engine's own line
+// between a child and an adult (Agent.IsAdult) is the same one that decides
+// whether an agent may court at all.
+func (g *game) pickHeir() {
+	if g.played == 0 {
+		return
+	}
+	heirs := g.world.Heirs(g.played)
+	if len(heirs) == 0 {
+		g.say("no grown children yet: the line ends with #%d", g.played)
+		g.heir = 0
+		return
+	}
+	next := heirs[0]
+	for i, id := range heirs {
+		if id == g.heir {
+			next = heirs[(i+1)%len(heirs)]
+			break
+		}
+	}
+	g.heir = next
+	g.say("the line goes on through #%d (%d grown children)", g.heir, len(heirs))
+}
+
+// carryTheLineOn moves the player to the named heir when the played node dies.
+// This is the whole of "switching to a child": the same controller, installed
+// on somebody else. The world never learns that anything changed hands.
+func (g *game) carryTheLineOn() {
+	if g.played == 0 {
+		return
+	}
+	if _, alive := g.world.AgentByID(g.played); alive {
+		return
+	}
+	dead := g.played
+	if g.heir != 0 && g.world.SetController(g.heir, g.human) {
+		g.played = g.heir
+		g.heir = 0
+		g.mark = mark{}
+		g.selectAgent(g.played)
+		g.say("#%d died. you are #%d now", dead, g.played)
+		return
+	}
+	g.played, g.human, g.heir = 0, nil, 0
+	g.say("#%d died with nobody named to follow it. the line ends", dead)
+}
+
+// aimAt points the order at whatever was clicked: somebody, something to eat,
+// or a patch of ground to walk to.
+func (g *game) aimAt(mx, my int) {
+	if id := g.nodeAt(mx, my); id != 0 && id != g.played {
+		g.mark = mark{kind: markAgent, id: id}
+		return
+	}
+	if f, ok := g.foodAt(mx, my); ok {
+		g.mark = mark{kind: markFood, id: f.ID, x: f.X, y: f.Y}
+		return
+	}
+	g.mark = mark{kind: markSpot, x: float64(mx), y: float64(my)}
+}
+
+// foodAt returns the food item under the cursor.
+func (g *game) foodAt(mx, my int) (engine.Food, bool) {
+	best, bestDist := engine.Food{}, pickRadius*pickRadius
+	found := false
+	for _, f := range g.world.Foods() {
+		dx, dy := f.X-float64(mx), f.Y-float64(my)
+		if d := dx*dx + dy*dy; d < bestDist {
+			bestDist, best, found = d, f, true
+		}
+	}
+	return best, found
+}
+
+// order hands the standing order to the controller and reports what came of it.
+// A refusal is worth showing rather than swallowing: it is the engine saying
+// the node could not have come up with that itself.
+func (g *game) order(a engine.Action) {
+	if g.human == nil {
+		return
+	}
+	a.Effort = g.effort
+	a.Stance = g.stance
+	if err := g.human.Order(a); err != nil {
+		g.say("no: %v", err)
+		return
+	}
+	g.say("order: %s. it will do that when next asked (enter to ask now)", describeAction(g.human.Standing()))
+}
+
+// orderMove walks towards the mark, whatever kind of thing it is.
+func (g *game) orderMove() {
+	a, ok := g.world.AgentByID(g.played)
+	if !ok {
+		return
+	}
+	x, y, ok := g.markPos()
+	if !ok {
+		g.say("click somewhere first: a move needs a direction")
+		return
+	}
+	g.order(engine.Action{Kind: engine.ActMove, DX: x - a.X, DY: y - a.Y})
+}
+
+// orderAt aims an action at the mark, when the mark is the right kind of thing
+// for it.
+func (g *game) orderAt(kind engine.ActionKind, want markKind) {
+	if g.mark.kind != want {
+		what := "somebody"
+		if want == markFood {
+			what = "something to eat"
+		}
+		g.say("%s needs %s: click one first", kind, what)
+		return
+	}
+	g.order(engine.Action{Kind: kind, TargetID: g.mark.id})
+}
+
+// markPos is where the mark is now. An agent moves, so its mark is followed
+// rather than remembered.
+func (g *game) markPos() (x, y float64, ok bool) {
+	switch g.mark.kind {
+	case markAgent:
+		if a, live := g.world.AgentByID(g.mark.id); live {
+			return a.X, a.Y, true
+		}
+	case markFood:
+		for _, f := range g.world.Foods() {
+			if f.ID == g.mark.id {
+				return f.X, f.Y, true
+			}
+		}
+	case markSpot:
+		return g.mark.x, g.mark.y, true
+	}
+	return 0, 0, false
+}
+
+func (g *game) say(format string, args ...any) {
+	g.notice = fmt.Sprintf(format, args...)
+	g.noticed = g.world.Tick()
 }
 
 // nodeAt returns the node under the cursor, or 0.
@@ -204,6 +475,8 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	for _, f := range g.world.Foods() {
 		vector.DrawFilledCircle(screen, float32(f.X), float32(f.Y), 3, colorFood, true)
 	}
+
+	g.drawAim(screen)
 
 	agents := g.world.Agents()
 
@@ -267,6 +540,14 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		if a.ID == g.selected {
 			vector.StrokeCircle(screen, x, y, radius+5, 1.5, colorSelected, true)
 			g.markTarget(screen, a)
+		}
+		// The body a person is driving, and the child the line is to carry on
+		// through. Neither is anything to the engine.
+		if a.ID == g.played {
+			vector.StrokeCircle(screen, x, y, radius+8, 2, colorPlayed, true)
+		}
+		if a.ID == g.heir {
+			vector.StrokeCircle(screen, x, y, radius+8, 1.5, colorHeir, true)
 		}
 	}
 }
@@ -365,6 +646,24 @@ func (g *game) markTarget(screen *ebiten.Image, a *engine.Agent) {
 	}
 }
 
+// drawAim shows where an order would be pointed. It is a cursor and nothing
+// more: the node knows nothing about it until an order names it.
+func (g *game) drawAim(screen *ebiten.Image) {
+	if g.played == 0 {
+		return
+	}
+	x, y, ok := g.markPos()
+	if !ok {
+		return
+	}
+	fx, fy := float32(x), float32(y)
+	vector.StrokeCircle(screen, fx, fy, 9, 1.5, colorMark, true)
+	vector.StrokeLine(screen, fx-13, fy, fx-10, fy, 1.5, colorMark, true)
+	vector.StrokeLine(screen, fx+10, fy, fx+13, fy, 1.5, colorMark, true)
+	vector.StrokeLine(screen, fx, fy-13, fx, fy-10, 1.5, colorMark, true)
+	vector.StrokeLine(screen, fx, fy+10, fx, fy+13, 1.5, colorMark, true)
+}
+
 func stateColor(s engine.State) color.RGBA {
 	switch s {
 	case engine.StateSeekMate:
@@ -398,7 +697,14 @@ func (g *game) overlay() string {
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
 	b.WriteString("children are small circles: a newborn expresses 60% of its genes and grows into the rest by eating\n")
 	b.WriteString("space pause   right/n one tick   -/= slower/faster   click a node   esc clear\n")
-	b.WriteString("tab decisions/beliefs   [ ] older/newer decision\n")
+	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node\n")
+	if g.played != 0 {
+		fmt.Fprintf(&b, "playing #%d: click to aim   r rest  m move  e eat  a attack  f flee  o observe  c court   1-5 effort  s stance   enter ask now  k heir\n",
+			g.played)
+	}
+	if g.notice != "" {
+		fmt.Fprintf(&b, "%s (tick %d)\n", g.notice, g.noticed)
+	}
 	return b.String()
 }
 
@@ -505,11 +811,156 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 	}
 	t.line("")
 
-	if g.mode == modeBeliefs {
+	switch g.mode {
+	case modeBeliefs:
 		g.drawBeliefs(t)
+	case modePlay:
+		g.drawPlay(t)
+	default:
+		g.drawDecision(t)
+	}
+}
+
+// drawPlay is the panel a person drives from. Everything on it comes out of
+// the perception the node was last handed, and nothing comes out of
+// World.Agents(): a player who could read the true power of the stranger in
+// front of them would be playing a different game from the one the AI plays.
+func (g *game) drawPlay(t *textBox) {
+	if g.played == 0 {
+		t.line("nobody is being played.")
+		t.line("")
+		t.line("click a node and press h to take it over. it")
+		t.line("then answers with whatever you last ordered,")
+		t.line("the next time the world asks it anything.")
+		t.line("")
+		t.line("keys once you have one:")
+		t.line("  click   aim at somebody, something to eat, a spot")
+		t.line("  r rest   m move to the mark   e eat   a attack")
+		t.line("  f flee   o observe            c court")
+		t.line("  1-5 effort   s stance   enter think again now")
+		t.line("  k name the child to carry on   h hand back to AI")
 		return
 	}
-	g.drawDecision(t)
+
+	asked, at := g.human.Asked()
+	// Everything the controller holds - the order, the view, the count - still
+	// belongs to the previous body until this one has been asked something.
+	fresh := g.human.Body() == g.played
+	t.line("YOU ARE #%d   effort %.1f   stance %s", g.played, g.effort, g.stance)
+	switch {
+	case !fresh:
+		t.line("standing order: none. an heir starts with none")
+		t.line("not asked as #%d yet (the line has been asked %d times)", g.played, asked)
+	case asked == 0:
+		t.line("standing order: %s", describeAction(g.human.Standing()))
+		t.line("not asked yet. it acts when the world next asks it.")
+	default:
+		t.line("standing order: %s", describeAction(g.human.Standing()))
+		t.line("asked %d times, last on tick %d (%d ago); it answered %s",
+			asked, at, g.world.Tick()-at, describeAction(g.human.LastAnswer()))
+	}
+	if v := g.human.Voided(); v > 0 {
+		t.line("%d order(s) lapsed: what they were aimed at was gone", v)
+	}
+	t.line("aim: %s", g.describeMark())
+	if g.heir != 0 {
+		t.line("line continues through #%d", g.heir)
+	} else {
+		t.line("no heir named (k). the line ends when this body does")
+	}
+	t.line("")
+
+	view, ok := g.human.View()
+	if !ok || !fresh {
+		// Between a handover and the first question put to the new body, the
+		// view still belongs to the one that died. Showing it under "you are
+		// #84" would be showing a player their predecessor's last moments as
+		// if they were their own.
+		t.line("it has not been asked anything yet, so it has")
+		t.line("nothing to tell you. press enter to ask it.")
+		return
+	}
+
+	// What the node knows about itself. This is the whole of what a decision
+	// has to go on, which is the question this stage exists to answer.
+	self := view.Self
+	t.line("IT KNOWS (as of tick %d):", view.Tick)
+	t.line("  vit %.1f/%.0f  hunger %.1f  crowding %.2f per meal",
+		self.Vitality, self.MaxVitality, self.Hunger, self.FoodScarcity)
+	t.line("  resting here mends %.3f/tick, exposure x%.2f", self.RestRate, self.Shelter)
+	if self.AttackerID != 0 {
+		t.line("  #%d is hitting it", self.AttackerID)
+	}
+	if self.BetterGround > 0 {
+		t.line("  reckons the ground at %.0f,%.0f is %.1f better",
+			self.BetterGroundX, self.BetterGroundY, self.BetterGround)
+	}
+	if !self.CanReproduce {
+		t.line("  not in a state to court")
+	}
+	t.line("")
+
+	if len(view.Others) == 0 {
+		t.line("SEES NOBODY")
+	} else {
+		t.line("SEES %d (strength is its guess, never the truth):", len(view.Others))
+		for i, o := range view.Others {
+			if i >= 6 || t.roomLeft() < 8 {
+				t.line("  ... and %d more", len(view.Others)-i)
+				break
+			}
+			tag := ""
+			switch {
+			case o.AttackingMe:
+				tag = " HITTING IT"
+			case o.Prey:
+				tag = " prey"
+			case o.Resting:
+				tag = " asleep"
+			case o.Paired:
+				tag = " paired"
+			}
+			t.line("  #%-4d %3.0f away  %s str %4.1f+/-%4.1f  aff %4.1f%s",
+				o.ID, o.Dist, o.Sex, o.EstStrength, math.Sqrt(o.Uncertainty), o.Affinity, tag)
+		}
+	}
+	t.line("")
+
+	if len(view.Foods) == 0 {
+		t.line("SEES NOTHING TO EAT")
+		return
+	}
+	t.line("SEES %d meals:", len(view.Foods))
+	for i, f := range view.Foods {
+		if i >= 5 || t.roomLeft() < 2 {
+			t.line("  ... and %d more", len(view.Foods)-i)
+			break
+		}
+		rival := ""
+		if f.RivalID != 0 {
+			rival = fmt.Sprintf("  #%d is %.0f away from it", f.RivalID, f.RivalDist)
+		}
+		t.line("  #%-4d %3.0f away  worth x%.2f%s", f.ID, f.Dist, f.Nutrition, rival)
+	}
+}
+
+// describeMark says what an order would be aimed at.
+func (g *game) describeMark() string {
+	switch g.mark.kind {
+	case markAgent:
+		if _, ok := g.world.AgentByID(g.mark.id); !ok {
+			return fmt.Sprintf("#%d, who is gone", g.mark.id)
+		}
+		return fmt.Sprintf("node #%d", g.mark.id)
+	case markFood:
+		if _, _, ok := g.markPos(); !ok {
+			return fmt.Sprintf("meal #%d, which is gone", g.mark.id)
+		}
+		return fmt.Sprintf("meal #%d", g.mark.id)
+	case markSpot:
+		return fmt.Sprintf("the ground at %.0f,%.0f", g.mark.x, g.mark.y)
+	}
+	return "nothing yet (click)"
 }
 
 // drawDecision prints one recorded decision: what prompted it, every option it
@@ -687,19 +1138,29 @@ func main() {
 	seed := flag.Int64("seed", engine.DefaultConfig().Seed, "simulation seed")
 	slow := flag.Bool("slow", false, "start at 1/5 speed, for following a single node")
 	beliefs := flag.Bool("beliefs", false, "start on the beliefs panel rather than the decision one (tab switches)")
+	play := flag.Bool("play", false, "drive the followed node yourself from the start (same as pressing h)")
 	flag.Parse()
 
 	cfg := engine.DefaultConfig()
 	cfg.Width, cfg.Height = worldWidth, worldHeight
 	cfg.Seed = *seed
 
-	g := &game{world: engine.NewWorld(cfg), speed: normalSpeed}
+	g := &game{world: engine.NewWorld(cfg), speed: normalSpeed, effort: 0.6}
 	if *slow {
 		g.speed = 1
 	}
 	g.selectAgent(*follow)
 	if *beliefs {
 		g.mode = modeBeliefs
+	}
+	if *play {
+		if g.selected == 0 {
+			// Somebody has to be picked, and the first node is as good as any.
+			if agents := g.world.Agents(); len(agents) > 0 {
+				g.selectAgent(agents[0].ID)
+			}
+		}
+		g.toggleControl()
 	}
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
