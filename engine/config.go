@@ -713,6 +713,16 @@ type Config struct {
 	ChildRearingTicks int
 	RearingRadius     float64
 
+	// RearingUntilGrown ties the leash to the child rather than to the clock:
+	// it keeps to the parent until it has finished growing, however long that
+	// takes, instead of for ChildRearingTicks. The two are not the same length
+	// even on paper - growth is bought with food, so a hungry child is still a
+	// child long after the fixed timer would have let go of it.
+	//
+	// False keeps the fixed count, which is what every measurement before
+	// 2026-09-06 was made under.
+	RearingUntilGrown bool
+
 	// --- reproduction ---
 	//
 	// The two vitality figures are shares of the agent's own capacity, not
@@ -1096,6 +1106,11 @@ func DefaultConfig() Config {
 		FrailLifespanRate:  0.2,
 
 		ChildRearingTicks: 1000, // the two years of childhood
+
+		// False: see HISTORY.md, 2026-09-06. Tying the leash to growing up
+		// instead costs the world population without buying the cohesion it
+		// looks like it should.
+		RearingUntilGrown: false,
 
 		// As far as the child can see, which is the point: keeping to a
 		// parent has to mean staying in the same neighbourhood, not staying

@@ -885,6 +885,21 @@ var variants = []variant{
 		about: "children do not keep to a parent",
 		apply: func(c *engine.Config) { c.ChildRearingTicks = 0 },
 	},
+	// Stage 7d's leash, asked the other way round: childcare that ends when
+	// the child has grown up rather than when a count runs out. Growing is
+	// bought with food, so the two are different lengths as well as different
+	// rules - "longrearing" is the control that separates the two, a fixed
+	// count set to about how long growing up actually takes.
+	{
+		name:  "rearuntilgrown",
+		about: "a child keeps to its parent until it has finished growing, however long that takes",
+		apply: func(c *engine.Config) { c.RearingUntilGrown = true },
+	},
+	{
+		name:  "longrearing",
+		about: "childcare still on a clock, but a clock as long as growing up takes (2500)",
+		apply: func(c *engine.Config) { c.ChildRearingTicks = 2500 },
+	},
 	{
 		name:  "wideleash",
 		about: "sweep: a child may stray as far as it can see (130) rather than 45",

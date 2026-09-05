@@ -927,10 +927,9 @@ func (w *World) grow(a *Agent) {
 //
 // A child whose parent has died is simply on its own from that tick.
 func (w *World) keepToGuardian(a *Agent) bool {
-	if a.RearingTimer <= 0 {
+	if !w.stillReared(a) {
 		return false
 	}
-	a.RearingTimer--
 
 	guardian := w.agentByID(a.GuardianID)
 	if guardian == nil || !guardian.Alive {
@@ -942,6 +941,30 @@ func (w *World) keepToGuardian(a *Agent) bool {
 	}
 	w.moveToward(a, guardian.X, guardian.Y, pairFollowEffort)
 	a.State = StateForage
+	return true
+}
+
+// stillReared reports whether this one is still keeping to a parent, and spends
+// the tick of childhood if the rule is the timed one.
+//
+// There are two ways of saying when childcare ends and they are not the same
+// question. The count is a length of time the world hands out at birth; being
+// grown is a state of the child, which it buys with food (World.grow), so a
+// hungry child stays a child. Under RearingUntilGrown the timer is not spent at
+// all: nothing about it would mean anything, and leaving it standing at what it
+// was born with says plainly that the clock is not what is being read.
+func (w *World) stillReared(a *Agent) bool {
+	if w.cfg.RearingUntilGrown {
+		if a.GuardianID == 0 || a.Maturity >= 1 {
+			a.GuardianID, a.RearingTimer = 0, 0
+			return false
+		}
+		return true
+	}
+	if a.RearingTimer <= 0 {
+		return false
+	}
+	a.RearingTimer--
 	return true
 }
 
@@ -1090,8 +1113,13 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.hintSlots, child.hints = slots, hints
 
 	// It starts as a small thing that keeps to one of the two. Which one does
-	// not matter to any rule; taking the first keeps it deterministic.
-	child.GuardianID = pa.ID
+	// not matter to any rule; taking the first keeps it deterministic. Zero
+	// ticks still means no childcare under either rule, which is what the
+	// arm that takes childcare away is: naming a guardian at all is what
+	// RearingUntilGrown reads.
+	if w.cfg.ChildRearingTicks > 0 {
+		child.GuardianID = pa.ID
+	}
 	child.RearingTimer = w.cfg.ChildRearingTicks
 
 	if child.Generation > w.maxGeneration {

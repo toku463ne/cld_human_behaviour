@@ -289,3 +289,56 @@ func TestAChildLeavesLessMeatThanAnAdult(t *testing.T) {
 }
 
 func dist(a, b *Agent) float64 { return math.Sqrt(dist2(a.X, a.Y, b.X, b.Y)) }
+
+// Under RearingUntilGrown the leash is tied to the child rather than to the
+// clock: the count it was born with runs out and it is still a child, and what
+// lets it go is having finished growing.
+func TestRearingUntilGrownEndsWithGrowingUpNotWithTheClock(t *testing.T) {
+	cfg := growthConfig()
+	cfg.RearingUntilGrown = true
+	w := NewWorld(cfg)
+
+	parent := w.addAgent(Agent{X: 200, Y: 200, Maturity: 1, Vitality: 80, Hunger: 10,
+		Genome: genomeOf(50, 50, 50)})
+	w.SetController(parent, fixedController{Action{Kind: ActRest}})
+	// Born with a childhood one tick long: under the timed rule it would be
+	// free after the first step.
+	child := w.addAgent(Agent{X: 200 + cfg.RearingRadius + 60, Y: 200, Vitality: 40, Hunger: 10,
+		Genome: genomeOf(50, 50, 50), GuardianID: parent, RearingTimer: 1})
+
+	before := dist(mustAgent(t, w, child), mustAgent(t, w, parent))
+	for i := 0; i < 60; i++ {
+		w.Step()
+	}
+	if after := dist(mustAgent(t, w, child), mustAgent(t, w, parent)); !(after < before) {
+		t.Fatalf("the child is %.1f from its parent, was %.1f", after, before)
+	}
+
+	// Grown, and the next tick lets go of it for good.
+	c := mustAgent(t, w, child)
+	c.Maturity = 1
+	c.X, c.Y = 200+cfg.RearingRadius+60, 200
+	away := dist(c, mustAgent(t, w, parent))
+	for i := 0; i < 60; i++ {
+		w.Step()
+	}
+	if c := mustAgent(t, w, child); c.GuardianID != 0 {
+		t.Fatalf("a grown child still keeps to #%d", c.GuardianID)
+	}
+	if got := dist(mustAgent(t, w, child), mustAgent(t, w, parent)); got < away*0.5 {
+		t.Fatalf("a grown child is still being pulled back: %.1f from %.1f", got, away)
+	}
+}
+
+// Taking childcare away still takes it away under either rule: with no ticks to
+// hand out, no newborn is given anybody to keep to.
+func TestNoRearingTicksMeansNoLeashEvenWhenItIsTiedToGrowingUp(t *testing.T) {
+	cfg := growthConfig()
+	cfg.RearingUntilGrown = true
+	cfg.ChildRearingTicks = 0
+	w, male, female := pairAboutToGiveBirth(t, cfg)
+	w.Step()
+	if child := findChild(t, w, male, female); child.GuardianID != 0 {
+		t.Fatalf("newborn keeps to #%d with childcare off", child.GuardianID)
+	}
+}

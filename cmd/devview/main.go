@@ -162,6 +162,13 @@ type game struct {
 	was     lifeMark
 	offer   *offer
 
+	// The question raised by the played body dying: which of the line's
+	// living children to go on as. It is the interface's question, like the
+	// milestone offer - the engine has never heard of a line - and it is asked
+	// rather than assumed, because going on as a newborn is a different game
+	// from going on as a grown child.
+	succession *succession
+
 	// What the player is playing, as against what the node is optimising for
 	// (the utility formula has no term for a line continuing). lineKids is
 	// every child ever born to a body this line has occupied, which is the
@@ -306,6 +313,19 @@ type offerPick struct {
 	want  engine.Disposition
 }
 
+// succession is the choice of body put to the player when the one they were
+// playing dies, and successionPick is one of the line's living children with a
+// word about what taking it over would be like.
+type succession struct {
+	dead  int
+	picks []successionPick
+}
+
+type successionPick struct {
+	id    int
+	about string
+}
+
 func (g *game) Update() error {
 	g.handleInput()
 	// Before the pause, so that bubbles go on fading while the clock is
@@ -330,7 +350,8 @@ func (g *game) handleInput() {
 	switch {
 	case inpututil.IsKeyJustPressed(ebiten.KeySpace):
 		g.paused = !g.paused
-	case g.play != playDriven && (inpututil.IsKeyJustPressed(ebiten.KeyRight) || inpututil.IsKeyJustPressed(ebiten.KeyN)):
+	case g.succession == nil && g.play != playDriven &&
+		(inpututil.IsKeyJustPressed(ebiten.KeyRight) || inpututil.IsKeyJustPressed(ebiten.KeyN)):
 		// One tick, and stay stopped: this is how a single decision gets read.
 		// While somebody is driving a node these keys walk it instead (see
 		// walkWithPad), because that is the same thing plus a step.
@@ -350,7 +371,7 @@ func (g *game) handleInput() {
 		g.traceBack++ // further back in time
 	case inpututil.IsKeyJustPressed(ebiten.KeyBracketRight):
 		g.traceBack = max(g.traceBack-1, 0)
-	case inpututil.IsKeyJustPressed(ebiten.KeyEscape):
+	case g.succession == nil && inpututil.IsKeyJustPressed(ebiten.KeyEscape):
 		// While a node is being played the click is an aim rather than a
 		// selection, so escape drops the aim first and the node second.
 		if g.mark.kind != markNone {
@@ -386,6 +407,12 @@ func (g *game) handleInput() {
 
 // handlePlayInput reads the keys that only mean something to a player.
 func (g *game) handlePlayInput() {
+	if g.succession != nil {
+		// Nothing else means anything: there is no body to drive until this
+		// is answered, and the clock is stopped behind it.
+		g.handleSuccessionInput()
+		return
+	}
 	switch {
 	case inpututil.IsKeyJustPressed(ebiten.KeyH):
 		g.toggleControl()
@@ -647,11 +674,14 @@ func (g *game) pickHeir() {
 	g.say("the line goes on through #%d (%d grown children)", g.heir, len(heirs))
 }
 
-// carryTheLineOn moves the player to the named heir when the played node dies.
+// carryTheLineOn deals with the played body dying. A named heir is taken over
+// straight away - that choice was already made, with k - and otherwise the
+// line's living children are put to the player as a question.
+//
 // This is the whole of "switching to a child": the same controller, installed
 // on somebody else. The world never learns that anything changed hands.
 func (g *game) carryTheLineOn() {
-	if g.played == 0 {
+	if g.played == 0 || g.succession != nil {
 		return
 	}
 	if _, alive := g.world.AgentByID(g.played); alive {
@@ -659,20 +689,136 @@ func (g *game) carryTheLineOn() {
 	}
 	dead := g.played
 	if g.heir != 0 && g.world.SetController(g.heir, g.controller()) {
-		g.played = g.heir
 		g.heir = 0
-		g.bodies++
-		g.last = nil // what the last body's answer bought died with it
-		g.endowTheProtagonist()
-		g.mark = mark{}
-		g.padKey = noKey // so a key still held walks the new body too
-		g.selectAgent(g.played)
-		g.say("#%d died. you are #%d now", dead, g.played)
+		g.takeOver(dead, g.played)
 		return
 	}
-	g.play, g.played, g.human, g.guided, g.heir, g.offer = playOff, 0, nil, nil, 0, nil
-	g.lineKids = nil // the rings on its children go with it
-	g.say("#%d died with nobody named to follow it. the line ends", dead)
+	if picks := g.survivors(dead); len(picks) > 0 {
+		g.succession = &succession{dead: dead, picks: picks}
+		g.paused = true
+		g.mode = modePlay
+		g.say("#%d died. 1-%d go on as one of its line, enter to stop here", dead, len(picks))
+		return
+	}
+	g.endTheLine("#%d died with nobody left to follow it. the line ends", dead)
+}
+
+// survivors lists who the line could go on in, nearest of kin first: the dead
+// body's own children before the rest of the line, and the grown before the
+// still growing.
+//
+// It is wider than World.Heirs, which counts only children that have finished
+// growing. That is the right line for naming an heir in advance - it is the
+// same maturity that decides whether a node may court at all - but it is the
+// wrong one for the moment a body dies. A player whose only child was born a
+// hundred ticks ago was told the line ended, with the child alive on screen.
+// Going on as a newborn is a poor hand, not an impossible one, and which it is
+// is the player's to judge, so it is offered and labelled rather than hidden.
+func (g *game) survivors(dead int) []successionPick {
+	cfg := g.world.Config()
+	type cand struct {
+		pick  successionPick
+		own   bool
+		grown bool
+	}
+	cands := make([]cand, 0, len(g.lineKids))
+	for _, id := range g.lineKids {
+		a, alive := g.world.AgentByID(id)
+		if !alive || id == dead {
+			continue
+		}
+		own := a.ParentIDs[0] == dead || a.ParentIDs[1] == dead
+		kin := "of the line"
+		if own {
+			kin = "its child"
+		}
+		grown := a.IsAdult(&cfg)
+		age := "still growing"
+		if grown {
+			age = "grown"
+		}
+		cands = append(cands, cand{own: own, grown: grown, pick: successionPick{
+			id: id,
+			about: fmt.Sprintf("%s, %s (%.0f%% grown, vit %.0f/%.0f)",
+				kin, age, a.Maturity*100, a.Vitality, a.MaxVitality(&cfg)),
+		}})
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].own != cands[j].own {
+			return cands[i].own
+		}
+		return cands[i].grown && !cands[j].grown
+	})
+	picks := make([]successionPick, 0, len(choiceKeys))
+	for _, c := range cands {
+		if len(picks) == len(choiceKeys) {
+			break
+		}
+		picks = append(picks, c.pick)
+	}
+	return picks
+}
+
+// handleSuccessionInput answers the question the death raised. Nothing else a
+// player can press means anything while it stands: there is no node to drive
+// and no question for one to answer.
+func (g *game) handleSuccessionInput() {
+	for i, key := range choiceKeys {
+		if i < len(g.succession.picks) && inpututil.IsKeyJustPressed(key) {
+			g.goOnAs(g.succession.picks[i].id)
+			return
+		}
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) ||
+		inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		dead := g.succession.dead
+		g.succession = nil
+		g.endTheLine("#%d died and the line was not carried on. it ends", dead)
+	}
+}
+
+// goOnAs installs the same controller on the chosen body.
+func (g *game) goOnAs(id int) {
+	dead := g.succession.dead
+	if !g.world.SetController(id, g.controller()) {
+		// It died while the question was up. The rest of the offer still
+		// stands, so the question is asked again rather than ended for it.
+		g.say("#%d is gone too", id)
+		if picks := g.survivors(dead); len(picks) > 0 {
+			g.succession.picks = picks
+			return
+		}
+		g.succession = nil
+		g.endTheLine("#%d died with nobody left to follow it. the line ends", dead)
+		return
+	}
+	g.succession = nil
+	g.heir = 0
+	g.takeOver(dead, id)
+	g.paused = false
+}
+
+// takeOver is the bookkeeping either way in: the controller is already on the
+// new body, and everything reset here belonged to the old one.
+func (g *game) takeOver(dead, id int) {
+	g.played = id
+	g.bodies++
+	g.last = nil // what the last body's answer bought died with it
+	g.endowTheProtagonist()
+	g.mark = mark{}
+	g.walkTo = mark{}
+	g.padKey = noKey // so a key still held walks the new body too
+	g.selectAgent(id)
+	g.say("#%d died. you are #%d now", dead, id)
+}
+
+// endTheLine puts everything down. A line that is over is over: the rings on
+// its children go with it.
+func (g *game) endTheLine(format string, args ...any) {
+	g.play, g.played, g.human, g.guided = playOff, 0, nil, nil
+	g.heir, g.offer, g.succession = 0, nil, nil
+	g.walkTo, g.mark, g.lineKids = mark{}, mark{}, nil
+	g.say(format, args...)
 }
 
 // --- what kind of bet each option is (C and D) ------------------------------
@@ -1934,6 +2080,10 @@ func (g *game) overlay() string {
 	case playAsked:
 		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir\n", g.played)
 	}
+	if g.succession != nil {
+		fmt.Fprintf(&b, "#%d is dead: 1-%d go on as one of its line, enter to stop here (see the panel)\n",
+			g.succession.dead, len(g.succession.picks))
+	}
 	if g.play == playDriven && g.walkTo.kind != markNone {
 		fmt.Fprintf(&b, "walking to %s\n", g.describeMark())
 	}
@@ -2061,6 +2211,10 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 // World.Agents(): a player who could read the true power of the stranger in
 // front of them would be playing a different game from the one the AI plays.
 func (g *game) drawPlay(t *textBox) {
+	if g.succession != nil {
+		g.drawSuccession(t)
+		return
+	}
 	if g.played == 0 {
 		t.line("nobody is being played.")
 		t.line("")
@@ -2301,6 +2455,30 @@ func (g *game) drawAsked(t *textBox) {
 		return
 	}
 	g.drawWhatItKnows(t, view)
+}
+
+// drawSuccession prints the choice of body left by a death. What is shown of
+// each one is what that body knows about itself - how far grown it is and what
+// is left in it - because a player who takes it over is about to be it.
+func (g *game) drawSuccession(t *textBox) {
+	t.line("#%d IS DEAD.", g.succession.dead)
+	t.line("")
+	t.line("YOUR LINE: %d bod(ies), %d ticks, %d born, %d alive",
+		g.bodies, g.lineAt-g.lineFrom, len(g.lineKids), g.livingKin())
+	t.line("")
+	t.line("go on as one of them?")
+	for i, p := range g.succession.picks {
+		if i >= len(choiceKeys) {
+			break
+		}
+		t.line("  [%d] #%-5d %s", i+1, p.id, p.about)
+	}
+	t.line("  [enter] stop here: the line ends")
+	t.line("")
+	t.line("a child that is still growing cannot court and")
+	t.line("expresses only part of what it inherited, and the")
+	t.line("parent it kept close to is the one that just died.")
+	t.line("it is a poor hand, not an impossible one.")
 }
 
 // drawGift says what this body was given for being the one that is played.

@@ -39,7 +39,7 @@
 | `Hunger` | 初期集団は0〜`SatiatedHunger`、子は `ChildHunger` | 空腹度。時間で上昇 |
 | `Age` | 0 | tick数。`TicksPerYear` で年に直る。**`SenescenceYears` を過ぎると能力の実効値が落ちていく**（`NODE.md` 11-1） |
 | `Maturity` | 初期集団・外敵は1、子は0 | 成熟度。**食事で進み、飢えていれば止まる**。能力の実効値（年齢補正の若い端）と、繁殖できるかどうかを決める |
-| `GuardianID` / `RearingTimer` | 0（子は親のIDと `ChildRearingTicks`） | 育児期間。子はこの間、親から `RearingRadius` 以上離れると戻る |
+| `GuardianID` / `RearingTimer` | 0（子は親のIDと `ChildRearingTicks`） | 育児期間。子はこの間、親から `RearingRadius` 以上離れると戻る。**`RearingUntilGrown = true` のときは `RearingTimer` を読まない**（減りもしない）——終わりを決めるのは `Maturity` で、`GuardianID` が「まだ子である」印になる |
 | `Lifespan` | 初期集団は `MaxLifespan` の50〜100%、子は `MaxLifespan` | 寿命の残量。過小・過度な食事で背景処理（`World.spendLifespan`）が減らす。0で死亡（死因は `Vitality` 0 とは別に `Stats().AgingDeaths` で数える）。**`Perception` に載らず、ノード自身は知らない**（C-2b） |
 | `Generation` | 0 | 世代。子は `max(親) + 1` |
 | `PartnerID` / `PairTimer` / `CooldownTimer` | 0 | ペアの状態 |
@@ -126,6 +126,7 @@
 | `SenescenceFloor` | 0.40 | 身体 | 衰えの下限。ここで止まる |
 | `ChildRearingTicks` | 1000 | 世界 | 育児期間（＝2年）。**0 で完全に切れる** |
 | `RearingRadius` | 130 | 世界 | 子が親から離れてよい距離。**視界（`PerceptionRadius`）と同じでなければならない**——短くすると子を食料から引き離して殺す（実測: 45で成人到達率0.46、130で0.72） |
+| `RearingUntilGrown` | false | 世界 | 育児の終わりを**時計ではなく子の状態**（成熟度1）で決める。**true にしても世界は良くならないので既定は false**——伸びるのは裾だけで（p90 が 1000 → 2000〜2800tick）、長く縛られるのは飢えている子だけだから（`grewUp` −0.03 \*\*、`starveRate` +0.29 \*、`clumping` は不動。2026-09-06） |
 
 ### C-3. 戦闘
 
