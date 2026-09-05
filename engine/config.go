@@ -360,6 +360,19 @@ type Config struct {
 	EvasionCost float64
 	FleeEffort  float64 // effort an agent puts into running away
 
+	// A blow that finds nothing leaves the one who threw it off balance:
+	// for OpeningTicks afterwards its own guard and dodge are worth
+	// OpeningGuard of what they would be. It is the first rule in the world
+	// that prices missing, and it is deliberately not something anybody can
+	// see coming - the evasion gene is a hidden parameter, so nothing can
+	// weigh "this one is hard to hit" before swinging. Only the outcome
+	// changes, and selection does the rest.
+	//
+	// OpeningTicks = 0 turns it off completely, and off it draws no random
+	// numbers and touches nothing, which is what makes the pair comparable.
+	OpeningTicks int
+	OpeningGuard float64
+
 	// SkirmishTicks is how long an agent expects a fight to last before one
 	// side gives up. Fights are only settled by a death when neither side
 	// breaks off, so pricing every fight as a fight to the death would make a
@@ -720,6 +733,16 @@ type Config struct {
 
 	ReproHunger        float64 // an agent only courts below this hunger
 	ReproVitalityShare float64 // ... and above this share of its own capacity
+
+	// Whether those two are a gate on the option or a reason inside the
+	// comparison. True is the world as it was: a hungry agent is not offered
+	// courting at all. False leaves the judgement to the utility formula,
+	// which prices the birth itself (see AIController.addCourt) - and to
+	// whoever is playing the node, which is the point of it.
+	//
+	// What is never a judgement is whether the body can pay for a birth at
+	// all; that stays a refusal either way.
+	CourtNeedsSurplus  bool
 	PairBondDuration   int     // ticks a pair stays together before the child is born
 	MatingCooldown     int     // ticks of rest after a bond ends
 	BirthVitalityCost  float64 // vitality the parents share to produce a child
@@ -811,12 +834,23 @@ type Config struct {
 	// out about 15% short, because a large jump from anywhere near the middle
 	// of the range is clipped at 1 or 100 and part of it is thrown away. 2%
 	// restores it, and still copies 98 genes in 100 unchanged.
-	MutationRate        float64
-	MutationStd         float64
+	MutationRate float64
+	MutationStd  float64
+	// Whether the comparison clock restarts every time an agent takes up
+	// courting again, or runs from when it first became able to. True is the
+	// world as it was, and it means "patience" measures the current attempt
+	// rather than the search: an agent turned down goes back to the beginning,
+	// so it never runs out and never settles.
+	CourtClockResets bool
+
 	PatienceBase        float64 // ticks of comparison before committing to a mate
 	PatienceRationality float64 // extra patience per point of rationality
 	CommitFitness       float64 // a candidate this good is worth committing to at once
-	MateRejectDuration  int     // ticks a passed over candidate is left aside
+	// CommitFloor is what an agent will still not settle for, however long it
+	// has been comparing. At 0 there is no floor and a patient agent accepts
+	// anybody, which is the world before stage 26.
+	CommitFloor        float64
+	MateRejectDuration int // ticks a passed over candidate is left aside
 
 	// LamarckRate is how much of what a parent learned in its lifetime is
 	// passed to its child, on top of what it inherits: it applies to the
@@ -954,13 +988,20 @@ func DefaultConfig() Config {
 		MeatSpoilTicks:  900,
 		HuntCreditTicks: 200,
 
-		AttackDamage:  1.15,
-		AttackCost:    0.30,
-		DefenceCap:    0.55,
-		DefenceCost:   0.12,
-		EvasionCap:    0.45,
-		EvasionCost:   0.20,
-		FleeEffort:    0.95,
+		AttackDamage: 1.15,
+		AttackCost:   0.30,
+		DefenceCap:   0.55,
+		DefenceCost:  0.12,
+		EvasionCap:   0.45,
+		EvasionCost:  0.20,
+		FleeEffort:   0.95,
+
+		// Three ticks is about a fifth of the SkirmishTicks a fight is priced
+		// over, so an opening is a moment inside a fight rather than the shape
+		// of the whole thing. Guard at 0.4 leaves something rather than
+		// nothing: an agent that misses is exposed, not helpless.
+		OpeningTicks:  3,
+		OpeningGuard:  0.4,
 		SkirmishTicks: 30,
 
 		JudgementNoise:    40,
@@ -1065,6 +1106,11 @@ func DefaultConfig() Config {
 
 		FitnessConditionWeight: 0.35,
 
+		// False: the judgement is the comparison's, and the player's. See
+		// HISTORY.md - the threshold was standing in for a term that was
+		// missing from the formula, and with the term there it costs more
+		// than it buys.
+		CourtNeedsSurplus:   false,
 		ReproHunger:         35,
 		ReproVitalityShare:  0.70,
 		PairBondDuration:    150,
@@ -1089,10 +1135,21 @@ func DefaultConfig() Config {
 		TicksPerYear:        500,
 		MutationRate:        0.02,
 		MutationStd:         40,
+		// False: the clock measures the search, not the latest attempt. See
+		// HISTORY.md - restarting it on every attempt meant a rejection put an
+		// agent back at the beginning of its patience, so it held out for an
+		// obvious catch for ever and nobody settled for anybody.
+		CourtClockResets:    false,
 		PatienceBase:        25,
 		PatienceRationality: 0.5,
 		CommitFitness:       78,
-		MateRejectDuration:  40,
+		// About the bottom quarter of the mate fitness in a running world
+		// (p25 was 37.5 when this was calibrated). Measured, it costs no
+		// population at all and buys a less violent world, fewer children
+		// dying, longer lives, and the first real selection on the looks
+		// gene. A floor of 50 - above the median - starts costing.
+		CommitFloor:        38,
+		MateRejectDuration: 40,
 
 		// The two figures the controller used to hardcode, unchanged in value:
 		// this is the same world it was, with the numbers now somewhere an

@@ -214,6 +214,62 @@ var variants = []variant{
 		about: "neither guarding nor dodging does anything: the world as stage 7c left it",
 		apply: func(c *engine.Config) { c.DefenceCap, c.EvasionCap = 0, 0 },
 	},
+	// Missing costs something. A blow that finds nothing leaves the one who
+	// threw it off balance, which is the first rule in the world that prices
+	// a miss. Nothing can see it coming, so what these arms ask is what
+	// selection makes of a cost nobody can plan around.
+	// Whether "I am too hungry to court" is a gate on the option or a reason
+	// inside the comparison. The design says no hardcoded behavioural
+	// threshold should exist; the priority rule says life comes before
+	// offspring. This is where the two meet.
+	// What a patient agent will still not settle for. Past its patience it used
+	// to accept anybody, which is the one place a candidate's condition - a
+	// third of how good a mate looks - stopped counting.
+	{
+		name:  "steadypatience",
+		about: "the comparison clock runs from when an agent could first look, not from its latest attempt",
+		apply: func(c *engine.Config) { c.CourtClockResets = false },
+	},
+	{
+		name:  "nofloor",
+		about: "no floor at all: a patient agent settles for anybody, the world before stage 26",
+		apply: func(c *engine.Config) { c.CommitFloor = 0 },
+	},
+	{
+		name:  "softfloor",
+		about: "a floor of 25, well under the population's median fitness",
+		apply: func(c *engine.Config) { c.CommitFloor = 25 },
+	},
+	{
+		name:  "pickyfloor",
+		about: "a patient agent still turns down a candidate under 38 (about the bottom quarter)",
+		apply: func(c *engine.Config) { c.CommitFloor = 38 },
+	},
+	{
+		name:  "pickyhard",
+		about: "... and under 50, which is above the median",
+		apply: func(c *engine.Config) { c.CommitFloor = 50 },
+	},
+	{
+		name:  "courtjudge",
+		about: "courting is always on offer if the body can pay for a birth: the formula judges, not a threshold",
+		apply: func(c *engine.Config) { c.CourtNeedsSurplus = false },
+	},
+	{
+		name:  "noopening",
+		about: "a blow that misses costs the swinger nothing: the world before the opening",
+		apply: func(c *engine.Config) { c.OpeningTicks = 0 },
+	},
+	{
+		name:  "wideopening",
+		about: "a miss leaves the swinger fully open for six ticks",
+		apply: func(c *engine.Config) { c.OpeningTicks, c.OpeningGuard = 6, 0 },
+	},
+	{
+		name:  "briefopening",
+		about: "a miss leaves the swinger barely open, for one tick",
+		apply: func(c *engine.Config) { c.OpeningTicks, c.OpeningGuard = 1, 0.7 },
+	},
 	// How big the other species is. The size distribution is the one thing
 	// stage 11 left undecided, and what it has to answer is whether a party
 	// of two ever beats hunting alone: the carcass grows with the budget

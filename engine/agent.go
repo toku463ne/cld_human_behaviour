@@ -262,6 +262,12 @@ type Agent struct {
 	engageStart int
 	engageLast  int
 
+	// openUntil is the tick up to which a blow that found nothing has left this
+	// agent off balance. It is bookkeeping and not a state axis: nothing reads
+	// it but the resolution of blows, it is not in the perception, and no
+	// agent can plan around it.
+	openUntil int
+
 	// hitBy remembers everybody who has landed a blow recently and when, so
 	// that a carcass can be left to the ones who brought it down rather than
 	// to whoever happens to be standing nearby. Allocated on the first blow.
@@ -371,16 +377,38 @@ func (a *Agent) recentAttackers(tick, window int) []int {
 	return out
 }
 
-// CanReproduce reports whether the agent is well enough off to spend time on
-// priority 2. Staying alive comes first: a hungry or battered agent does not
-// court, however attractive the candidate next to it. Nor does one that has
-// not finished growing up - childhood is a real span of the world's time, and
-// what it costs is the generations it holds up.
+// CanReproduce reports whether courting is open to this agent at all.
+//
+// There are two different things in here and stage 25 split them, because they
+// answer to different rules of the design.
+//
+//   - What a body cannot do. Growing up takes real time; a child costs real
+//     vitality, and one that would not survive paying cannot pay. A cooldown
+//     after a birth is the same kind of thing. None of this is a judgement,
+//     and it is why courting can be refused outright rather than merely
+//     scored badly.
+//   - What an agent judges is not worth it now. Being hungry, or battered but
+//     alive, is a reason not to court - and reasons belong in the utility
+//     comparison, not in a threshold that stops the option being considered.
+//     The design note is explicit that no hardcoded behavioural threshold
+//     should exist, and this one had been sitting under the priority rule.
+//
+// CourtNeedsSurplus keeps the old behaviour, where the judgement was made here
+// rather than in the comparison. See HISTORY.md for what each costs.
 func (a *Agent) CanReproduce(cfg *Config) bool {
-	return a.IsAdult(cfg) &&
-		a.Hunger < cfg.ReproHunger &&
-		a.Vitality >= cfg.ReproVitalityShare*a.MaxVitality(cfg) &&
-		a.CooldownTimer <= 0
+	if !a.IsAdult(cfg) || a.CooldownTimer > 0 {
+		return false
+	}
+	// The parents share the cost of the birth, so this is what one of them
+	// has to have and still be alive afterwards.
+	if a.Vitality <= cfg.BirthVitalityCost/2 {
+		return false
+	}
+	if !cfg.CourtNeedsSurplus {
+		return true
+	}
+	return a.Hunger < cfg.ReproHunger &&
+		a.Vitality >= cfg.ReproVitalityShare*a.MaxVitality(cfg)
 }
 
 // IsAdult reports whether the agent has finished growing up. It is the one

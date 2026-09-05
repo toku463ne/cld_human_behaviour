@@ -321,8 +321,18 @@ func TestSettledAgentCourtsTheBestCandidateInSight(t *testing.T) {
 // The same agent, one thing changed: it is starving. Priority 1 does not merely
 // outscore priority 2 here, it removes it from the comparison altogether, which
 // is what the trace shows: courting is never even one of the options.
-func TestStarvingAgentNeverWeighsUpCourting(t *testing.T) {
-	w := NewWorld(testConfig())
+// Life before offspring, and it is the comparison that says so (stage 25).
+//
+// This test used to assert that courting was not among the options at all,
+// which is what the threshold in CanReproduce produced. It now asserts the
+// stronger thing: courting is on the table, an agent this hungry turns it down,
+// and the reason it turns it down is in the numbers rather than in a gate. A
+// rule that only holds because the option was never offered is not a rule the
+// utility formula has.
+func TestAStarvingAgentTurnsCourtingDownOnTheNumbers(t *testing.T) {
+	cfg := testConfig()
+	cfg.CourtNeedsSurplus = false
+	w := NewWorld(cfg)
 	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 60, Hunger: 90,
 		Genome: genomeOf(50, 100, 100)})
@@ -334,9 +344,198 @@ func TestStarvingAgentNeverWeighsUpCourting(t *testing.T) {
 	if tr.Action.Kind != ActEat || tr.Action.TargetID != meal {
 		t.Fatalf("chose %s, want it to go and eat", describe(tr.Action))
 	}
+	court, eat := -1, -1
+	for i, o := range tr.Options {
+		if o.Action.Kind == ActCourt {
+			court = i
+		}
+		if o.Action.Kind == ActEat && o.Action.TargetID == meal && (eat < 0 || o.Score > tr.Options[eat].Score) {
+			eat = i
+		}
+	}
+	if court < 0 {
+		t.Fatal("courting was not even weighed up; the point is that it loses, not that it is hidden")
+	}
+	if eat < 0 {
+		t.Fatal("the meal was not weighed up")
+	}
+	if tr.Options[court].Score >= tr.Options[eat].Score {
+		t.Fatalf("courting scored %v against the meal's %v",
+			tr.Options[court].Score, tr.Options[eat].Score)
+	}
+	// And what makes it lose is the life it would cost, not merely the walk.
+	if life := tr.Options[court].Utility.Life.Score(); life >= 0 {
+		t.Fatalf("courting while starving is priced at life %v, want a penalty", life)
+	}
+}
+
+// With the old threshold switched back on, courting is not offered at all.
+// Both worlds are kept because they are a pair the measurements are taken on.
+func TestTheOldThresholdStillHidesCourting(t *testing.T) {
+	cfg := testConfig()
+	cfg.CourtNeedsSurplus = true
+	w := NewWorld(cfg)
+	subject := w.addAgent(Agent{Maturity: 1,
+		X: 200, Y: 200, Sex: Male, Vitality: 60, Hunger: 90,
+		Genome: genomeOf(50, 100, 100)})
+	w.addAgent(Agent{Maturity: 1, X: 170, Y: 200, Sex: Female, Vitality: 100, Hunger: 5, Genome: genomeOf(95, 95, 95)})
+	w.addFood(222, 200)
+	mustAgent(t, w, subject).reproReady = true
+
+	tr := decideWithTrace(t, w, subject)
 	for _, o := range tr.Options {
 		if o.Action.Kind == ActCourt {
-			t.Fatal("a starving agent weighed up courting")
+			t.Fatal("the threshold is on and courting was still weighed up")
+		}
+	}
+}
+
+// Waiting lowers what an agent will settle for; it does not remove it. Before
+// stage 26 the bar vanished past an agent's patience, and that override was the
+// one place a candidate's condition stopped counting.
+func TestPatienceLowersTheBarButNotBelowTheFloor(t *testing.T) {
+	cfg := testConfig()
+	cfg.CommitFloor = 40
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	a := mustAgent(t, w, id)
+
+	// Still comparing: only an obvious catch will do.
+	a.courtStartTick = w.tick
+	if w.willCommit(a, cfg.CommitFitness-1) {
+		t.Fatal("settled for less than an obvious catch while it still had patience")
+	}
+	if !w.willCommit(a, cfg.CommitFitness+1) {
+		t.Fatal("turned down an obvious catch")
+	}
+
+	// Out of patience: the bar is the floor, and the floor holds.
+	a.courtStartTick = w.tick - w.patienceTicks(a) - 1
+	if w.willCommit(a, cfg.CommitFloor-1) {
+		t.Fatal("a patient agent settled for somebody under the floor")
+	}
+	if !w.willCommit(a, cfg.CommitFloor+1) {
+		t.Fatal("a patient agent turned down somebody over the floor")
+	}
+
+	// And with no floor it is the world as it was: anybody at all.
+	cfg.CommitFloor = 0
+	w2 := NewWorld(cfg)
+	id2 := w2.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	b := mustAgent(t, w2, id2)
+	b.courtStartTick = w2.tick - w2.patienceTicks(b) - 1
+	if !w2.willCommit(b, 0) {
+		t.Fatal("with no floor a patient agent still turned somebody down")
+	}
+}
+
+// The comparison clock measures how long an agent has been looking for a mate,
+// not how long its latest attempt has been going. Restarting it on every fresh
+// attempt meant a rejection put the agent back at the beginning of its
+// patience: it never ran out, so it held out for an obvious catch for ever.
+func TestTheComparisonClockMeasuresTheSearch(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	other := w.addAgent(Agent{Maturity: 1, X: 260, Y: 200, Sex: Female, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	a := mustAgent(t, w, id)
+
+	// It has been looking a long while: out of patience, so the floor is what
+	// it holds out for. reproReady is already set, or the metabolism would
+	// start the clock itself this tick - which is the one place that is
+	// supposed to start it.
+	a.reproReady = true
+	a.courtStartTick = -1000
+	started := a.courtStartTick
+
+	// Taking up courting again does not put it back at the beginning.
+	w.SetController(id, fixedController{Action{Kind: ActCourt, TargetID: other, Effort: 0.6}})
+	w.Step()
+	if got := mustAgent(t, w, id).courtStartTick; got != started {
+		t.Fatalf("the clock restarted at %d, want it left at %d", got, started)
+	}
+	if !w.willCommit(mustAgent(t, w, id), cfg.CommitFloor+1) {
+		t.Fatal("still holding out for an obvious catch after all that looking")
+	}
+
+	// And the old world is still a switch away, for the pair the measurements
+	// are taken on.
+	cfg.CourtClockResets = true
+	w2 := NewWorld(cfg)
+	id2 := w2.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	o2 := w2.addAgent(Agent{Maturity: 1, X: 260, Y: 200, Sex: Female, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	mustAgent(t, w2, id2).reproReady = true
+	mustAgent(t, w2, id2).courtStartTick = -1000
+	w2.SetController(id2, fixedController{Action{Kind: ActCourt, TargetID: o2, Effort: 0.6}})
+	w2.Step()
+	if got := mustAgent(t, w2, id2).courtStartTick; got == -1000 {
+		t.Fatal("with the old rule on, the clock should have restarted")
+	}
+}
+
+// Both bodies have to be able to pay, not just the one being approached. The
+// suitor is checked when it arrives and not only when it set out, because the
+// walk costs vitality.
+func TestASuitorTooSpentToPayIsTurnedAway(t *testing.T) {
+	cfg := quietConfig()
+	w := NewWorld(cfg)
+	suitor := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	other := w.addAgent(Agent{Maturity: 1, X: 203, Y: 200, Sex: Female, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	w.SetController(suitor, fixedController{Action{Kind: ActCourt, TargetID: other, Effort: 0.6}})
+	w.SetController(other, fixedController{Action{Kind: ActRest}})
+	// Out of patience on both sides, so nothing but the ability to pay is
+	// standing between them.
+	mustAgent(t, w, suitor).courtStartTick = -1000
+	mustAgent(t, w, other).courtStartTick = -1000
+
+	// Spent on the way over: it can still stand up, but not pay for a birth.
+	mustAgent(t, w, suitor).Vitality = cfg.BirthVitalityCost/2 - 1
+	w.Step()
+	if got := mustAgent(t, w, suitor).PartnerID; got != 0 {
+		t.Fatalf("a body that cannot pay for a birth paired anyway (with #%d)", got)
+	}
+
+	// With enough left, the same pair forms.
+	mustAgent(t, w, suitor).Vitality = 90
+	mustAgent(t, w, suitor).rejected = nil
+	w.SetController(suitor, fixedController{Action{Kind: ActCourt, TargetID: other, Effort: 0.6}})
+	// Both clocks put back: being fed reset the one the metabolism keeps.
+	mustAgent(t, w, suitor).courtStartTick = -1000
+	mustAgent(t, w, other).courtStartTick = -1000
+	w.Step()
+	if mustAgent(t, w, suitor).PartnerID != other {
+		t.Fatal("a pair that should have formed did not")
+	}
+}
+
+// A body that cannot pay for a birth is refused outright, in either world.
+// That half was never a judgement.
+func TestABodyThatCannotPayForABirthIsRefused(t *testing.T) {
+	for _, gate := range []bool{false, true} {
+		cfg := testConfig()
+		cfg.CourtNeedsSurplus = gate
+		w := NewWorld(cfg)
+		a := Agent{Maturity: 1, X: 200, Y: 200, Sex: Male,
+			Vitality: cfg.BirthVitalityCost/2 - 1, Hunger: 0,
+			Genome: genomeOf(50, 100, 100)}
+		id := w.addAgent(a)
+		if mustAgent(t, w, id).CanReproduce(&cfg) {
+			t.Fatalf("gate=%v: a body with less vitality than a birth costs was allowed to court", gate)
+		}
+		mustAgent(t, w, id).Vitality = cfg.BirthVitalityCost/2 + 1
+		if gate {
+			continue // the threshold refuses it for its own reasons
+		}
+		if !mustAgent(t, w, id).CanReproduce(&cfg) {
+			t.Fatal("a body that can pay for a birth was still refused")
 		}
 	}
 }

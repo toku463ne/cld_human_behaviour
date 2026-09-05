@@ -76,6 +76,20 @@ func (a *Agent) defence(cfg *Config) float64 {
 	return cfg.DefenceCap * (a.Gene(GeneDefence) / MaxAbility) * a.mix().Defence
 }
 
+// composure is what this agent's guard and dodge are currently worth. It is 1
+// except in the ticks after a blow of its own found nothing, which is the one
+// thing in the world that costs an attacker for missing.
+//
+// It scales both channels rather than adding damage, because being off balance
+// is about not being able to answer the next blow, not about being made of
+// something softer.
+func (a *Agent) composure(cfg *Config, tick int) float64 {
+	if cfg.OpeningTicks <= 0 || a.openUntil <= tick {
+		return 1
+	}
+	return clamp(cfg.OpeningGuard, 0, 1)
+}
+
 // evasion is the chance of a blow missing entirely. Unlike defence it is all
 // or nothing, and it leans on being quick as well as on the gene: getting out
 // of the way is a matter of moving.

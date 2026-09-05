@@ -285,6 +285,17 @@ func (w *World) AgentByID(id int) (Agent, bool) {
 	return *a, true
 }
 
+// FoodByID returns a copy of the food item with the given ID. An interface that
+// has to say whether the meal somebody went after is still there needs it, and
+// walking Foods() for one item is the sort of thing that ends up in a draw loop.
+func (w *World) FoodByID(id int) (Food, bool) {
+	f := w.foodByID(id)
+	if f == nil {
+		return Food{}, false
+	}
+	return *f, true
+}
+
 // SetController installs a controller on one agent. This is the seam the game
 // will use: hand one node to a human player, and when that node dies hand the
 // same controller to one of its children.
@@ -506,7 +517,14 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 
 	switch a.Action.Kind {
 	case ActCourt:
-		if a.State != StateSeekMate {
+		// The comparison clock. It is meant to say how long this agent has
+		// been looking for a mate, and the metabolism starts it when the agent
+		// first becomes able to look (see reproReady). Restarting it here as
+		// well makes it say something else - how long this attempt has been
+		// going - and since a rejection ends the attempt, an agent that is
+		// turned down goes back to the beginning of its patience and holds out
+		// for an obvious catch for ever.
+		if w.cfg.CourtClockResets && a.State != StateSeekMate {
 			a.courtStartTick = w.tick
 		}
 		a.State = StateSeekMate
@@ -611,8 +629,11 @@ func (w *World) court(a *Agent) {
 		w.moveToward(a, o.X, o.Y, a.Action.Effort)
 		return
 	}
-	if !o.CanReproduce(&w.cfg) {
-		// Approached somebody who has themselves to look after first.
+	// Both bodies have to be able to pay for a birth, or the bond produces
+	// nothing and both of them have spent the time for it. The suitor is
+	// checked here and not only when it set out, because it has been walking
+	// since then and a walk costs vitality.
+	if !o.CanReproduce(&w.cfg) || !a.CanReproduce(&w.cfg) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}
@@ -681,13 +702,21 @@ func (w *World) resolveAttacks() {
 		damage := damagePerTick(&w.cfg, from.Attack(&w.cfg), at.effort*from.mix().Attack)
 
 		// The one being hit is meanwhile doing whatever it chose: turning the
-		// blow aside, not being there, or neither if it was eating.
+		// blow aside, not being there, or neither if it was eating - and all
+		// of it worth less if its own last blow found nothing.
 		to.noteHit(from.ID, w.tick)
-		if chance := to.evasion(&w.cfg); chance > 0 && w.rng.Float64() < chance {
+		composure := to.composure(&w.cfg, w.tick)
+		if chance := to.evasion(&w.cfg) * composure; chance > 0 && w.rng.Float64() < chance {
 			w.evaded++
+			// Swinging at somebody who was not there leaves the swinger open.
+			// Nothing sees this coming: how hard somebody is to hit is a
+			// hidden parameter, so a fight can only be found out by having it.
+			if w.cfg.OpeningTicks > 0 {
+				from.openUntil = w.tick + w.cfg.OpeningTicks
+			}
 			continue
 		}
-		damage *= 1 - to.defence(&w.cfg)
+		damage *= 1 - to.defence(&w.cfg)*composure
 		to.Vitality -= damage
 
 		// The one taking the hits remembers exactly what they cost.
@@ -1141,13 +1170,25 @@ func (w *World) patienceTicks(a *Agent) int {
 	return int(w.cfg.PatienceBase + a.Rationality(&w.cfg)*w.cfg.PatienceRationality)
 }
 
-// willCommit reports whether an agent accepts the candidate in front of it:
-// either it has compared long enough, or the candidate is an obvious catch.
+// willCommit reports whether an agent accepts the candidate in front of it.
+//
+// Waiting lowers what it will settle for, from CommitFitness to CommitFloor -
+// and CommitFloor is where the lowering stops. Before stage 26 the bar did not
+// drop, it vanished: past its patience an agent accepted anybody at all,
+// including somebody too worn out to see a birth through.
+//
+// That override was the one place a candidate's condition stopped counting,
+// and condition is a third of how good a mate looks (FitnessConditionWeight).
+// So the floor is not a new rule about health - it is what lets the rule that
+// was already there reach the agents who have been waiting.
+//
+// CommitFloor = 0 is the world as it was, exactly: every fitness clears zero.
 func (w *World) willCommit(a *Agent, candidateFitness float64) bool {
+	bar := w.cfg.CommitFitness
 	if w.tick-a.courtStartTick >= w.patienceTicks(a) {
-		return true
+		bar = w.cfg.CommitFloor
 	}
-	return candidateFitness >= w.cfg.CommitFitness
+	return candidateFitness >= bar
 }
 
 // --- neighbourhood queries -------------------------------------------------

@@ -27,9 +27,9 @@ func TestHumanOrderIsCarriedOutLikeAnyDecision(t *testing.T) {
 	subject := w.addAgent(Agent{Maturity: 1,
 		X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 40,
 		Genome: genomeOf(50, 100, 100)})
-	h := takeOver(t, w, subject)
+	takeOver(t, w, subject)
 
-	if err := h.Order(Action{Kind: ActMove, DX: 3, DY: 4, Effort: 0.5}); err != nil {
+	if err := w.OrderHuman(subject, Action{Kind: ActMove, DX: 3, DY: 4, Effort: 0.5}); err != nil {
 		t.Fatalf("refused a move with a direction: %v", err)
 	}
 	before := mustAgent(t, w, subject).X
@@ -45,6 +45,104 @@ func TestHumanOrderIsCarriedOutLikeAnyDecision(t *testing.T) {
 	}
 	if got.X <= before {
 		t.Fatal("ordered east and did not move")
+	}
+}
+
+// The complaint that started this: "it will not eat the food in front of it".
+// The engine side was never the problem - an eat order walks the node over and
+// eats - and pinning that is what says the fault was in the interface.
+func TestAnEatOrderIsCarriedAllTheWayThrough(t *testing.T) {
+	cfg := testConfig()
+	cfg.TriggerIdleTicks = 1 << 30
+	cfg.TriggerVitalityDrop = 1e9
+	w := NewWorld(cfg)
+	subject := w.addAgent(Agent{Maturity: 1,
+		X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 60,
+		Genome: genomeOf(50, 100, 100)})
+	takeOver(t, w, subject)
+	meal := w.addFood(240, 200) // forty away: a walk and then a meal
+
+	if err := w.OrderHuman(subject, Action{Kind: ActEat, TargetID: meal, Effort: 1}); err != nil {
+		t.Fatal(err)
+	}
+	hungerBefore := mustAgent(t, w, subject).Hunger
+	for i := 0; i < 200; i++ {
+		w.Step()
+		if _, ok := w.FoodByID(meal); !ok {
+			break
+		}
+	}
+	if _, ok := w.FoodByID(meal); ok {
+		a := mustAgent(t, w, subject)
+		t.Fatalf("still not eaten after 200 ticks: it is at %.0f,%.0f doing %s",
+			a.X, a.Y, a.Action.Kind)
+	}
+	if got := mustAgent(t, w, subject).Hunger; got >= hungerBefore {
+		t.Fatalf("hunger %v after the meal, was %v", got, hungerBefore)
+	}
+}
+
+// An order that has been carried out is spent, and that is told apart from one
+// that was taken away. Before this, eating the meal you asked for was recorded
+// as the meal being taken from you: the order stood, the node answered the next
+// question with the same now impossible thing, and a tick later it lapsed.
+func TestACarriedOutOrderIsSpentAndNotLapsed(t *testing.T) {
+	cfg := testConfig()
+	cfg.TriggerIdleTicks = 1 << 30
+	cfg.TriggerVitalityDrop = 1e9
+	w := NewWorld(cfg)
+	subject := w.addAgent(Agent{Maturity: 1,
+		X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 60,
+		Genome: genomeOf(50, 100, 100)})
+	h := takeOver(t, w, subject)
+	meal := w.addFood(205, 200) // within reach: one tick and it is eaten
+
+	if err := w.OrderHuman(subject, Action{Kind: ActEat, TargetID: meal, Effort: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10; i++ {
+		w.Step()
+	}
+	if _, ok := w.FoodByID(meal); ok {
+		t.Fatal("the meal was not eaten")
+	}
+	if got := h.Voided(); got != 0 {
+		t.Fatalf("%d order(s) recorded as lost, want none: it ate what it was told to", got)
+	}
+	if got := h.Finished(); got != 1 {
+		t.Fatalf("%d order(s) recorded as carried out, want 1", got)
+	}
+	if got := h.Standing(); got.Kind != ActRest || got.TargetID != 0 {
+		t.Fatalf("the standing order is still %s #%d after it was carried out",
+			got.Kind, got.TargetID)
+	}
+}
+
+// And a meal somebody else got to first is still a loss.
+func TestAMealTakenFirstIsStillLapsed(t *testing.T) {
+	cfg := testConfig()
+	cfg.TriggerIdleTicks = 1 << 30
+	cfg.TriggerVitalityDrop = 1e9
+	w := NewWorld(cfg)
+	subject := w.addAgent(Agent{Maturity: 1,
+		X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 60,
+		Genome: genomeOf(50, 100, 100)})
+	h := takeOver(t, w, subject)
+	meal := w.addFood(260, 200) // in sight, but far enough that it is still walking
+
+	if err := w.OrderHuman(subject, Action{Kind: ActEat, TargetID: meal, Effort: 1}); err != nil {
+		t.Fatal(err)
+	}
+	w.Step()
+	w.removeFoodByID(meal) // somebody else got there
+	for i := 0; i < 5; i++ {
+		w.Step()
+	}
+	if got := h.Voided(); got != 1 {
+		t.Fatalf("%d order(s) recorded as lost, want 1", got)
+	}
+	if got := h.Finished(); got != 0 {
+		t.Fatalf("%d order(s) recorded as carried out, want none", got)
 	}
 }
 
@@ -69,7 +167,7 @@ func TestOrderIsTakenUpWhenTheEngineNextAsks(t *testing.T) {
 		t.Fatalf("asked %d times after being taken over, want once", n)
 	}
 
-	if err := h.Order(Action{Kind: ActMove, DX: 1, Effort: 1}); err != nil {
+	if err := w.OrderHuman(subject, Action{Kind: ActMove, DX: 1, Effort: 1}); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 20; i++ {
@@ -110,26 +208,19 @@ func TestOrderRefusesATargetTheNodeCannotSee(t *testing.T) {
 		Genome: genomeOf(50, 0, 0)})
 	h := takeOver(t, w, subject)
 
-	// Before the first question it knows nothing, so it may aim at nothing.
-	if err := h.Order(Action{Kind: ActObserve, TargetID: near}); !errors.Is(err, ErrOrderUnseen) {
-		t.Fatalf("a target named before the node had ever looked was refused with %v, want %v",
-			err, ErrOrderUnseen)
-	}
-	w.Step()
-
-	if err := h.Order(Action{Kind: ActObserve, TargetID: near, Effort: 0.3}); err != nil {
+	if err := w.OrderHuman(subject, Action{Kind: ActObserve, TargetID: near, Effort: 0.3}); err != nil {
 		t.Fatalf("refused somebody standing next to it: %v", err)
 	}
-	if err := h.Order(Action{Kind: ActAttack, TargetID: far, Effort: 1}); !errors.Is(err, ErrOrderUnseen) {
+	if err := w.OrderHuman(subject, Action{Kind: ActAttack, TargetID: far, Effort: 1}); !errors.Is(err, ErrOrderUnseen) {
 		t.Fatalf("aiming across the world was refused with %v, want %v", err, ErrOrderUnseen)
 	}
-	if err := h.Order(Action{Kind: ActAttack, TargetID: subject}); err == nil {
+	if err := w.OrderHuman(subject, Action{Kind: ActAttack, TargetID: subject}); err == nil {
 		t.Fatal("let the node attack itself")
 	}
-	if err := h.Order(Action{Kind: ActEat}); !errors.Is(err, ErrNoOrderTarget) {
+	if err := w.OrderHuman(subject, Action{Kind: ActEat}); !errors.Is(err, ErrNoOrderTarget) {
 		t.Fatalf("eating nothing in particular was refused with %v, want %v", err, ErrNoOrderTarget)
 	}
-	if err := h.Order(Action{Kind: ActMove}); !errors.Is(err, ErrNoDirection) {
+	if err := w.OrderHuman(subject, Action{Kind: ActMove}); !errors.Is(err, ErrNoDirection) {
 		t.Fatalf("a move with no direction was refused with %v, want %v", err, ErrNoDirection)
 	}
 
@@ -137,6 +228,60 @@ func TestOrderRefusesATargetTheNodeCannotSee(t *testing.T) {
 	if got := h.Standing(); got.Kind != ActObserve || got.TargetID != near {
 		t.Fatalf("standing order is %s #%d, want the last one that was accepted",
 			got.Kind, got.TargetID)
+	}
+}
+
+// What is in sight is asked of the world, not of the copy of the perception
+// the controller is holding. The copy is as old as the last question, and a
+// player looking at the screen is looking at now: an order aimed at something
+// that turned up since then must not be refused as unseen.
+func TestOrderIsCheckedAgainstWhatIsInSightNow(t *testing.T) {
+	cfg := quietConfig()
+	cfg.TriggerIdleTicks = 1 << 30 // so the node is not asked again on its own
+	cfg.TriggerVitalityDrop = 1e9
+	w := NewWorld(cfg)
+	subject := w.addAgent(Agent{Maturity: 1,
+		X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 60,
+		Genome: genomeOf(50, 100, 100)})
+	h := takeOver(t, w, subject)
+	w.Step() // its one and only look at an empty neighbourhood
+
+	if v, _ := h.View(); len(v.Foods) != 0 {
+		t.Fatalf("the node saw %d meals in an empty world", len(v.Foods))
+	}
+
+	// A meal turns up next to it. Nobody has asked the node anything since, so
+	// it is not in the copy the controller holds - but it is in front of it.
+	meal := w.addFood(210, 205)
+	if err := w.OrderHuman(subject, Action{Kind: ActEat, TargetID: meal, Effort: 0.5}); err != nil {
+		t.Fatalf("refused the meal at its feet: %v", err)
+	}
+	if got := h.Standing(); got.Kind != ActEat || got.TargetID != meal {
+		t.Fatalf("standing order is %s #%d, want the meal", got.Kind, got.TargetID)
+	}
+
+	// The rule itself has not moved: what is out of sight is still out of
+	// bounds, however fresh.
+	beyond := w.addFood(200, 395)
+	if err := w.OrderHuman(subject, Action{Kind: ActEat, TargetID: beyond}); !errors.Is(err, ErrOrderUnseen) {
+		t.Fatalf("a meal across the world was refused with %v, want %v", err, ErrOrderUnseen)
+	}
+}
+
+// Nobody eats its own kind, so nobody can be ordered to.
+func TestOrderRefusesWhatTheNodeWillNotEat(t *testing.T) {
+	w := NewWorld(quietConfig())
+	subject := w.addAgent(Agent{Maturity: 1,
+		X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 90,
+		Genome: genomeOf(50, 100, 100)})
+	takeOver(t, w, subject)
+
+	corpse := w.addFood(210, 200)
+	f := w.foodByID(corpse)
+	f.Kind, f.From = FoodMeat, SpeciesHuman
+
+	if err := w.OrderHuman(subject, Action{Kind: ActEat, TargetID: corpse}); !errors.Is(err, ErrOrderInedible) {
+		t.Fatalf("ordering it to eat one of its own was refused with %v, want %v", err, ErrOrderInedible)
 	}
 }
 
@@ -201,8 +346,8 @@ func TestHumanDecisionIsTraced(t *testing.T) {
 	if !w.TrackDecisions(subject, true) {
 		t.Fatal("cannot follow the node")
 	}
-	h := takeOver(t, w, subject)
-	if err := h.Order(Action{Kind: ActMove, DX: 0, DY: -1, Effort: 0.4}); err != nil {
+	takeOver(t, w, subject)
+	if err := w.OrderHuman(subject, Action{Kind: ActMove, DX: 0, DY: -1, Effort: 0.4}); err != nil {
 		t.Fatal(err)
 	}
 	w.Step()
@@ -255,7 +400,7 @@ func TestHeirsAreTheGrownChildren(t *testing.T) {
 	if !w.SetController(grown, h) {
 		t.Fatal("cannot hand the controller to the heir")
 	}
-	if err := h.Order(Action{Kind: ActRest}); err != nil {
+	if err := w.OrderHuman(parent, Action{Kind: ActRest}); err != nil {
 		t.Fatal(err)
 	}
 	w.Step()
@@ -280,7 +425,7 @@ func TestTakingANodeOverLeavesTheRestOfTheWorldAlone(t *testing.T) {
 			for i := 0; i < 600; i++ {
 				w.Step()
 				if i%50 == 0 {
-					_ = h.Order(Action{Kind: ActRest})
+					_ = w.OrderHuman(id, Action{Kind: ActRest})
 					w.RequestDecision(id)
 				}
 			}
@@ -319,7 +464,7 @@ func TestOrderLapsesWhenItsTargetIsGone(t *testing.T) {
 	h := takeOver(t, w, subject)
 	w.Step()
 
-	if err := h.Order(Action{Kind: ActEat, TargetID: meal, Effort: 0.5}); err != nil {
+	if err := w.OrderHuman(subject, Action{Kind: ActEat, TargetID: meal, Effort: 0.5}); err != nil {
 		t.Fatal(err)
 	}
 	w.RequestDecision(subject)
@@ -366,7 +511,7 @@ func TestOrderDoesNotOutliveTheBody(t *testing.T) {
 
 	h := takeOver(t, w, parent)
 	w.Step()
-	if err := h.Order(Action{Kind: ActAttack, TargetID: rival, Effort: 1}); err != nil {
+	if err := w.OrderHuman(parent, Action{Kind: ActAttack, TargetID: rival, Effort: 1}); err != nil {
 		t.Fatal(err)
 	}
 	w.RequestDecision(parent)

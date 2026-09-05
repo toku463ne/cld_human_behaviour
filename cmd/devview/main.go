@@ -68,6 +68,14 @@ var speeds = []struct {
 
 const normalSpeed = 3 // index of the rate the viewer starts at
 
+// zoomLevels are how far in the camera can go. Perceived speed is relative to
+// the view: a body crossing two hundred pixels of screen looks brisk and the
+// same body crossing eight hundred looks glacial, which is most of why playing
+// felt slow.
+var zoomLevels = []float64{1, 1.6, 2.5, 4}
+
+const closeZoom = 2 // the level playing starts at
+
 var (
 	colorBackground = color.RGBA{0xfc, 0xfc, 0xfb, 0xff}
 	colorPanel      = color.RGBA{0xef, 0xef, 0xec, 0xff}
@@ -90,6 +98,8 @@ var (
 	colorHungerBar  = color.RGBA{0xc9, 0x8a, 0x20, 0xff}
 	colorTail       = color.RGBA{0x44, 0x44, 0x77, 0xb0}
 	colorPlayed     = color.RGBA{0xd9, 0x9a, 0x00, 0xff}
+	colorBubble     = color.RGBA{0x1a, 0x1a, 0x22, 0xe0}
+	colorKin        = color.RGBA{0xd9, 0x9a, 0x00, 0x90}
 	colorMark       = color.RGBA{0xd9, 0x9a, 0x00, 0xc0}
 	colorHeir       = color.RGBA{0x0c, 0xa3, 0x0c, 0xc0}
 )
@@ -110,6 +120,11 @@ type game struct {
 
 	paused bool
 	speed  int
+	// zoom is an index into zoomLevels. The camera follows the played node
+	// when there is one and the selected node otherwise, which is the whole of
+	// it: there is no free camera, because there is nothing to look at that is
+	// not one of those two.
+	zoom int
 	// tickAccum carries the fraction of a tick left over by a slow rate, so
 	// that 1/5 speed really is one tick every five frames.
 	tickAccum float64
@@ -123,14 +138,71 @@ type game struct {
 	// Stage 19: one node can be driven by whoever is at the keyboard. The
 	// controller is the engine's; everything else here is the interface's own
 	// bookkeeping, because the engine has no idea a game is being played.
+	//
+	// Stage 23 added the other way of playing: the node decides for itself and
+	// stops to ask at the turning points. Both are Controller implementations
+	// and the world cannot tell them apart, so all that is kept here is which
+	// one is installed.
+	play    playMode
 	played  int
 	human   *engine.HumanController
+	guided  *engine.GuidedController
 	effort  float64
 	stance  engine.Stance
 	mark    mark
 	heir    int // the child the line is to continue through, 0 for none
 	notice  string
 	noticed int // tick the notice was put up
+
+	// Stage 23. askedAt is the tick of the question the viewer has already
+	// stopped for, so that one question stops it once. was is the state of the
+	// played node last time round, which is all a milestone is: a change in
+	// one of the four things in it. offer is the split waiting to be made.
+	askedAt int
+	was     lifeMark
+	offer   *offer
+
+	// What the player is playing, as against what the node is optimising for
+	// (the utility formula has no term for a line continuing). lineKids is
+	// every child ever born to a body this line has occupied, which is the
+	// only way to count descendants once the parents are gone.
+	lineFrom int
+	lineAt   int
+	bodies   int
+	lineKids []int
+
+	// The answer last taken up, so that the next question can say what it
+	// bought. Without it a choice is made into a void: the world moves on and
+	// nothing ever reports back.
+	last *choiceMade
+
+	// padKey is the key the player is walking with, noKey when none. Walking
+	// is held rather than set: letting go stops the node, which is what a key
+	// held down means to a person and needs no new action - the engine already
+	// has one for "stand still".
+	padKey ebiten.Key
+
+	// walkTo is a place the node is walking to under its own steam, and the
+	// answer to running past things: an order carries a direction and nothing
+	// else, so somebody has to notice the arrival, and that somebody is the
+	// interface. lastAim is the direction last given, so that the order is
+	// only re-issued when it has drifted.
+	walkTo  mark
+	lastAim float64
+
+	// boost is whether the protagonist's body is brought up to the population's
+	// average speed, and given is how much was added to the body being played.
+	// Shown on the panel: a gift nobody is told about is indistinguishable from
+	// the world being generous, and this world is not.
+	boost bool
+	given float64
+
+	// What the protagonist has been through since the last frame, and the
+	// short lines it is saying about it. Bubbles are for the played node only:
+	// one node's news is legible, sixty nodes' news is the panel again.
+	seen    seenState
+	bubbles []bubble
+	frame   int
 }
 
 // mark is what the player last clicked: the thing an order will be aimed at.
@@ -150,17 +222,107 @@ const (
 	markSpot
 )
 
+// playMode is which of the two ways of playing is installed on the node, if
+// either. They are not settings of one thing: each is a different Controller,
+// and the difference between them is who answers the world's question.
+type playMode uint8
+
+const (
+	playOff    playMode = iota
+	playAsked           // stage 23: it decides, you answer at the turning points
+	playDriven          // stage 19: you decide, every time it is asked
+)
+
+// lifeMark is the state of the played node the last time the interface looked.
+// A milestone is a change in one of these: growing up, pairing, a child, or a
+// body handed on.
+type lifeMark struct {
+	body     int
+	adult    bool
+	partner  int
+	children int
+	known    bool
+}
+
+// choiceMade is an answer and the state of the node when it was given, so that
+// the difference can be read off later.
+type choiceMade struct {
+	tick     int
+	act      engine.Action
+	vitality float64
+	hunger   float64
+}
+
+// bet is one option picked out of the field for the kind of wager it is, not
+// for where it came in the ranking. Three kinds cover the shapes a decision
+// takes here: spend little, finish soon, or go for the most.
+type bet struct {
+	label string
+	idx   int
+}
+
+// bubble is a short line the protagonist says about something that just
+// happened to it. It is measured in frames rather than ticks so that it still
+// fades while the clock is stopped, and it is deliberately tiny: the complaint
+// it answers is not that the panel lacks the information but that nobody can
+// find one line in forty while driving.
+type bubble struct {
+	text string
+	born int // frame
+}
+
+// bubbleLife is how long one stays up, in frames. Long enough to read three
+// words, short enough that two events do not become a wall.
+const bubbleLife = 150
+
+// seenState is the protagonist as it was last frame. Every bubble comes from
+// comparing this with now: the engine emits no events and does not need to,
+// because a life is fully described by what changed in it.
+type seenState struct {
+	known    bool
+	body     int
+	partner  int
+	children int
+	voided   int
+	action   engine.ActionKind
+	target   int
+	attacker int
+	hunger   float64
+	vitality float64
+	frail    bool
+	canCourt bool
+}
+
+// offer is a split of the three preferences put to a person at a milestone.
+// The engine holds the rule (the total is what was inherited and does not
+// change); which splits are worth offering is the interface's business.
+type offer struct {
+	why   string
+	picks []offerPick
+}
+
+type offerPick struct {
+	label string
+	want  engine.Disposition
+}
+
 func (g *game) Update() error {
 	g.handleInput()
+	// Before the pause, so that bubbles go on fading while the clock is
+	// stopped and a player who paused to read is not left with a wall of them.
+	g.watchProtagonist()
 	if g.paused {
 		return nil
 	}
+	g.steerToWalkTo()
 	g.tickAccum += speeds[g.speed].ticks
 	for g.tickAccum >= 1 {
 		g.world.Step()
 		g.tickAccum--
 	}
 	g.carryTheLineOn()
+	g.followTheLine()
+	g.watchTheLife()
 	return nil
 }
 
@@ -168,8 +330,10 @@ func (g *game) handleInput() {
 	switch {
 	case inpututil.IsKeyJustPressed(ebiten.KeySpace):
 		g.paused = !g.paused
-	case inpututil.IsKeyJustPressed(ebiten.KeyRight), inpututil.IsKeyJustPressed(ebiten.KeyN):
+	case g.play != playDriven && (inpututil.IsKeyJustPressed(ebiten.KeyRight) || inpututil.IsKeyJustPressed(ebiten.KeyN)):
 		// One tick, and stay stopped: this is how a single decision gets read.
+		// While somebody is driving a node these keys walk it instead (see
+		// walkWithPad), because that is the same thing plus a step.
 		g.paused = true
 		g.tickAccum = 0
 		g.world.Step()
@@ -177,6 +341,9 @@ func (g *game) handleInput() {
 		g.speed = max(g.speed-1, 0)
 	case inpututil.IsKeyJustPressed(ebiten.KeyEqual):
 		g.speed = min(g.speed+1, len(speeds)-1)
+	case inpututil.IsKeyJustPressed(ebiten.KeyZ):
+		g.zoom = (g.zoom + 1) % len(zoomLevels)
+		g.say("zoom x%.1f", zoomLevels[g.zoom])
 	case inpututil.IsKeyJustPressed(ebiten.KeyTab):
 		g.mode = panelMode((int(g.mode) + 1) % numPanelModes)
 	case inpututil.IsKeyJustPressed(ebiten.KeyBracketLeft):
@@ -198,7 +365,10 @@ func (g *game) handleInput() {
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
 		if mx < worldWidth {
-			if g.played != 0 {
+			// Only the driven mode has an aim: answering a question is
+			// choosing between things the node already picked out, so a click
+			// goes back to being what it is everywhere else.
+			if g.play == playDriven {
 				g.aimAt(mx, my)
 			} else {
 				g.selectAgent(g.nodeAt(mx, my))
@@ -223,6 +393,10 @@ func (g *game) handlePlayInput() {
 		g.pickHeir()
 	}
 	if g.played == 0 {
+		return
+	}
+	if g.play == playAsked {
+		g.handleAskedInput()
 		return
 	}
 	switch {
@@ -257,32 +431,195 @@ func (g *game) handlePlayInput() {
 			g.say("effort %.1f (from the next order on)", g.effort)
 		}
 	}
+
+	g.walkWithPad()
 }
 
 var effortKeys = []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4, ebiten.Key5}
 
+// padWalk is one direction and the keys that mean it, laid out as the number
+// pad is: 8 is up, 2 is down, and the corners are the diagonals. 5 stands
+// still.
+//
+// Each direction takes two keys, because with num lock off the pad does not
+// send the pad: X11 turns the keys into the navigation cluster, so 6 arrives
+// as the right arrow and 9 as page up. Binding both means the layout works
+// whichever way the lock happens to be, and the arrows and Home/End/PgUp/PgDn
+// walk a node as well - the pad arrangement is only what the keys are named
+// after.
+type padWalk struct {
+	keys   []ebiten.Key
+	dx, dy float64
+}
+
+// A slice rather than a map, because two keys held at once must resolve the
+// same way every frame.
+var padWalks = []padWalk{
+	{[]ebiten.Key{ebiten.KeyNumpad7, ebiten.KeyHome}, -1, -1},
+	{[]ebiten.Key{ebiten.KeyNumpad8, ebiten.KeyUp}, 0, -1},
+	{[]ebiten.Key{ebiten.KeyNumpad9, ebiten.KeyPageUp}, 1, -1},
+	{[]ebiten.Key{ebiten.KeyNumpad4, ebiten.KeyLeft}, -1, 0},
+	{[]ebiten.Key{ebiten.KeyNumpad6, ebiten.KeyRight}, 1, 0},
+	{[]ebiten.Key{ebiten.KeyNumpad1, ebiten.KeyEnd}, -1, 1},
+	{[]ebiten.Key{ebiten.KeyNumpad2, ebiten.KeyDown}, 0, 1},
+	{[]ebiten.Key{ebiten.KeyNumpad3, ebiten.KeyPageDown}, 1, 1},
+	// Wait: let a tick pass without changing anything. With num lock off the
+	// middle of the pad sends nothing ebiten knows, so n stands in for it -
+	// which is what n did before a node could be driven at all.
+	{[]ebiten.Key{ebiten.KeyNumpad5, ebiten.KeyN}, 0, 0},
+}
+
+// arrowOf names a direction in words. The debug font has no arrows in it.
+func arrowOf(dx, dy float64) string {
+	v := ""
+	switch {
+	case dy < 0:
+		v = "north"
+	case dy > 0:
+		v = "south"
+	}
+	switch {
+	case dx < 0:
+		v += "west"
+	case dx > 0:
+		v += "east"
+	}
+	return v
+}
+
+// noKey is "no key is being held". It is not zero: zero is a real key.
+const noKey = ebiten.Key(-1)
+
+// padRepeatDelay is how long a key has to be held before it starts repeating,
+// in frames. Below it, one press is one tick, which is how a node is walked a
+// step at a time; above it the clock runs while the key is down.
+const padRepeatDelay = 15
+
+// walkWithPad moves the played node with the number pad, and advances the world
+// while a key is down.
+//
+// This is the one place the interface drives the clock as well as the node, and
+// it is worth saying why: deciding is trigger driven, so a player who orders a
+// step and then waits for the world to ask is not playing a turn, they are
+// waiting. Pressing a direction gives the order, asks for the question, and
+// lets exactly one tick happen - which together are a turn.
+//
+// Letting go stops the node. Walking is the only order held rather than set;
+// the standing kind is still there under m, which points at the mark and keeps
+// going without anybody holding anything down.
+func (g *game) walkWithPad() {
+	pressed := padWalk{}
+	held, heldKey := 0, noKey
+	for _, w := range padWalks {
+		for _, k := range w.keys {
+			if !ebiten.IsKeyPressed(k) {
+				continue
+			}
+			if d := inpututil.KeyPressDuration(k); d > held {
+				pressed, held, heldKey = w, d, k
+			}
+		}
+	}
+
+	if held == 0 {
+		if g.padKey != noKey {
+			g.padKey = noKey
+			// Only the walk's own order is put down. If the player has given
+			// another one since - gone to eat something, say - letting go of
+			// the key must not wipe it: that made every pursuit impossible to
+			// order while the clock was stopped, since the walk keys were the
+			// only thing that made time pass.
+			if g.human != nil && g.human.Standing().Kind == engine.ActMove {
+				_ = g.setOrder(engine.Action{Kind: engine.ActRest})
+				g.world.RequestDecision(g.played)
+			}
+		}
+		return
+	}
+	g.walkTo = mark{} // walking by hand cancels walking to somewhere
+
+	// A new direction: give the order, and ask for it to be taken up now
+	// rather than whenever the world next wonders.
+	if heldKey != g.padKey {
+		g.padKey = heldKey
+		if pressed.dx != 0 || pressed.dy != 0 {
+			if err := g.setOrder(engine.Action{Kind: engine.ActMove, DX: pressed.dx, DY: pressed.dy}); err != nil {
+				g.say("no: %v", err)
+			} else {
+				g.say("walking %s - hold to keep going, let go to stop", arrowOf(pressed.dx, pressed.dy))
+			}
+			g.world.RequestDecision(g.played)
+		}
+	}
+
+	// One tick for the press, then the clock runs while the key stays down.
+	if held == 1 || held > padRepeatDelay {
+		g.tickAccum = 0
+		g.world.Step()
+		g.carryTheLineOn()
+	}
+}
+
 // toggleControl takes the selected node over, or hands it back to the AI.
+// toggleControl cycles the one node between the three ways it can be run: by
+// the utility formula alone, by the formula with a person answering the
+// turning points, and by a person alone. They are three controllers, and the
+// world is told about the change the same way each time.
 func (g *game) toggleControl() {
-	if g.played != 0 {
+	switch g.play {
+	case playOff:
+		if g.selected == 0 {
+			g.say("click a node first, then press h to take it over")
+			return
+		}
+		g.human = engine.NewHumanController()
+		if !g.world.SetController(g.selected, g.human) {
+			g.human = nil
+			g.say("#%d is gone", g.selected)
+			return
+		}
+		g.play, g.played = playDriven, g.selected
+		g.mode = modePlay
+		g.zoom = closeZoom
+		g.was = lifeMark{}
+		g.askedAt = -1
+		g.lineFrom, g.lineAt = g.world.Tick(), g.world.Tick()
+		g.bodies, g.lineKids, g.last, g.walkTo = 1, nil, nil, mark{}
+		g.endowTheProtagonist()
+		g.say("you are #%d. hold an arrow or numpad key to walk it", g.played)
+
+	case playDriven:
+		// The same body, a different hand on it. Nothing about the node
+		// changes: only who answers when the world asks.
+		g.guided = engine.NewGuidedController()
+		if !g.world.SetController(g.played, g.guided) {
+			g.say("#%d is gone", g.played)
+			return
+		}
+		g.play, g.human, g.walkTo = playAsked, nil, mark{}
+		g.was = lifeMark{}
+		g.say("#%d decides for itself now and asks you at the turning points", g.played)
+		g.raiseOffer("you have handed it back its own judgement")
+
+	case playAsked:
 		id := g.played
 		g.world.SetController(id, nil) // nil is the world's own AI again
-		g.played, g.human, g.heir = 0, nil, 0
+		g.play, g.played, g.human, g.guided, g.heir, g.offer = playOff, 0, nil, nil, 0, nil
+		g.walkTo, g.lineKids = mark{}, nil
 		g.say("#%d is back on the utility formula", id)
-		return
 	}
-	if g.selected == 0 {
-		g.say("click a node first, then press h to take it over")
-		return
+}
+
+// controller is whichever of the two a person is behind, for the code that
+// only needs to install it somewhere else.
+func (g *game) controller() engine.Controller {
+	switch g.play {
+	case playAsked:
+		return g.guided
+	case playDriven:
+		return g.human
 	}
-	g.human = engine.NewHumanController()
-	if !g.world.SetController(g.selected, g.human) {
-		g.human = nil
-		g.say("#%d is gone", g.selected)
-		return
-	}
-	g.played = g.selected
-	g.mode = modePlay
-	g.say("you are #%d. it rests until told otherwise", g.played)
+	return nil
 }
 
 // pickHeir names the child the line is to continue through, cycling if there
@@ -321,38 +658,429 @@ func (g *game) carryTheLineOn() {
 		return
 	}
 	dead := g.played
-	if g.heir != 0 && g.world.SetController(g.heir, g.human) {
+	if g.heir != 0 && g.world.SetController(g.heir, g.controller()) {
 		g.played = g.heir
 		g.heir = 0
+		g.bodies++
+		g.last = nil // what the last body's answer bought died with it
+		g.endowTheProtagonist()
 		g.mark = mark{}
+		g.padKey = noKey // so a key still held walks the new body too
 		g.selectAgent(g.played)
 		g.say("#%d died. you are #%d now", dead, g.played)
 		return
 	}
-	g.played, g.human, g.heir = 0, nil, 0
+	g.play, g.played, g.human, g.guided, g.heir, g.offer = playOff, 0, nil, nil, 0, nil
+	g.lineKids = nil // the rings on its children go with it
 	g.say("#%d died with nobody named to follow it. the line ends", dead)
+}
+
+// --- what kind of bet each option is (C and D) ------------------------------
+//
+// The field arrives ranked, and a ranked list with the best one at the top is
+// not a choice: there is no reason to disagree with it, since the player knows
+// nothing the node does not. What makes it a choice is showing the options as
+// different kinds of wager and leaving the arithmetic out - the goal terms and
+// what they cost are on the panel, the total is not.
+
+// spend is what an option is expected to cost this body: the vitality it pours
+// in plus what the one it is aimed at has already cost it.
+func spend(u engine.Utility) float64 { return u.Vitality + u.Risk }
+
+// promise is everything the option is trying to win, before any of it is paid
+// for. This is the number the boldest option is bold about.
+func promise(u engine.Utility) float64 {
+	total := 0.0
+	for _, g := range u.Goals() {
+		total += g.Score()
+	}
+	return total
+}
+
+// bets picks what to put in front of a person: the two things the world
+// actually pays out on, and three ways of playing everything else.
+//
+// Eating and courting get slots of their own rather than competing on score,
+// because of what the player is playing. A line needs a body that stays alive
+// and a body that has a child, and the utility formula prices both of those
+// against the life of one node: a full belly makes eating worth little and a
+// long life left makes courting worth little. Those are exactly the moments a
+// person wants to overrule it, and an option that only appears when it also
+// tops a ranking cannot be overruled with.
+//
+// The other three are ways of wagering rather than things to want: spend
+// least, finish soonest, go for the most.
+func bets(q engine.Question) []bet {
+	of := func(k engine.ActionKind) func(engine.TracedOption) bool {
+		return func(o engine.TracedOption) bool { return o.Action.Kind == k }
+	}
+	kinds := []struct {
+		label string
+		want  func(o engine.TracedOption) bool
+		less  func(a, b engine.Utility) bool
+	}{
+		{"a meal ", of(engine.ActEat),
+			func(a, b engine.Utility) bool { return a.Life.Score() > b.Life.Score() }},
+		{"a child", of(engine.ActCourt),
+			func(a, b engine.Utility) bool { return a.Offspring.Score() > b.Offspring.Score() }},
+		{"safest ", nil, func(a, b engine.Utility) bool { return spend(a) < spend(b) }},
+		{"soonest", nil, func(a, b engine.Utility) bool { return a.Ticks < b.Ticks }},
+		{"boldest", nil, func(a, b engine.Utility) bool { return promise(a) > promise(b) }},
+	}
+	out := make([]bet, 0, len(kinds))
+	taken := map[int]bool{}
+	for _, k := range kinds {
+		best := -1
+		for i := range q.Options {
+			if taken[i] || (k.want != nil && !k.want(q.Options[i])) {
+				continue
+			}
+			if best < 0 || k.less(q.Options[i].Utility, q.Options[best].Utility) {
+				best = i
+			}
+		}
+		if best < 0 {
+			continue // nothing in sight to eat, or nobody to court
+		}
+		taken[best] = true
+		out = append(out, bet{label: k.label, idx: best})
+	}
+	return out
+}
+
+// --- what the last answer bought (B) ----------------------------------------
+
+// noteChoice remembers the state an answer was given in. The node is asked
+// again later and the difference is the only honest report there is: nothing
+// in the world knows what a choice was "for".
+func (g *game) noteChoice(act engine.Action) {
+	a, alive := g.world.AgentByID(g.played)
+	if !alive {
+		return
+	}
+	g.last = &choiceMade{tick: g.world.Tick(), act: act, vitality: a.Vitality, hunger: a.Hunger}
+}
+
+func (g *game) drawLastChoice(t *textBox) {
+	if g.last == nil {
+		return
+	}
+	a, alive := g.world.AgentByID(g.played)
+	if !alive {
+		return
+	}
+	t.line("LAST TIME you chose %s, %d ticks ago:",
+		describeAction(g.last.act), g.world.Tick()-g.last.tick)
+	t.line("  vitality %.1f -> %.1f (%+.1f)   hunger %.1f -> %.1f (%+.1f)",
+		g.last.vitality, a.Vitality, a.Vitality-g.last.vitality,
+		g.last.hunger, a.Hunger, a.Hunger-g.last.hunger)
+	if id := g.last.act.TargetID; id != 0 {
+		switch g.last.act.Kind {
+		case engine.ActEat:
+			if _, ok := g.world.FoodByID(id); ok {
+				t.line("  meal #%d is still there", id)
+			} else {
+				t.line("  meal #%d is gone", id)
+			}
+		default:
+			if _, ok := g.world.AgentByID(id); ok {
+				t.line("  #%d is still alive", id)
+			} else {
+				t.line("  #%d is dead", id)
+			}
+		}
+	}
+}
+
+// --- the line, which is what a player is actually playing (A) ---------------
+
+// followTheLine keeps the count of what this line has come to. The utility
+// formula has no term for any of it: a node is scored on its own life, and a
+// line is the thing the person at the keyboard is playing instead.
+func (g *game) followTheLine() {
+	a, alive := g.world.AgentByID(g.played)
+	if !alive {
+		return
+	}
+	g.lineAt = g.world.Tick()
+	for _, kid := range a.ChildIDs {
+		known := false
+		for _, seen := range g.lineKids {
+			if seen == kid {
+				known = true
+				break
+			}
+		}
+		if !known {
+			g.lineKids = append(g.lineKids, kid)
+		}
+	}
+}
+
+// describeKin lists the line's living children and whether the played body can
+// see each of them. Knowing you have a child is knowing about your own life;
+// knowing where it is, is not, so an unseen one is said to be unseen.
+func (g *game) describeKin() string {
+	parts := make([]string, 0, 4)
+	for _, id := range g.lineKids {
+		if _, alive := g.world.AgentByID(id); !alive {
+			continue
+		}
+		where := " (not in sight)"
+		if g.world.CanTargetAgent(g.played, id) {
+			where = ""
+		}
+		parts = append(parts, fmt.Sprintf("#%d%s", id, where))
+		if len(parts) == 4 {
+			parts = append(parts, "...")
+			break
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "children: " + strings.Join(parts, ", ")
+}
+
+// isKin reports whether this is one of the children the played line has had.
+func (g *game) isKin(id int) bool {
+	for _, kid := range g.lineKids {
+		if kid == id {
+			return true
+		}
+	}
+	return false
+}
+
+// livingKin is how many of the children this line has produced are still alive.
+func (g *game) livingKin() int {
+	n := 0
+	for _, id := range g.lineKids {
+		if _, ok := g.world.AgentByID(id); ok {
+			n++
+		}
+	}
+	return n
+}
+
+// --- being asked (stage 23) -------------------------------------------------
+//
+// Two clocks run here and they are deliberately different. A question comes at
+// the turning points of a day - a fight starting, what it was after being gone
+// - and is answered with one move. An offer comes at the milestones of a life
+// and is answered with the kind of node it is going to be. The engine raises
+// the first and knows nothing of the second: which changes count as milestones
+// is the game's business, the same way "player" and "game over" were.
+
+// choiceKeys are the number row, which is what answers both. In the driven
+// mode they set the effort instead; the two never overlap because a mode only
+// ever offers one of them.
+var choiceKeys = []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4, ebiten.Key5}
+
+// handleAskedInput reads the keys of the asked mode. A question is answered
+// before a milestone offer is, because a question goes stale and an offer does
+// not: the world is stopped for the one that is on a clock.
+func (g *game) handleAskedInput() {
+	enter := inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter)
+
+	if q, ok := g.world.Question(g.played); ok {
+		offered := bets(q)
+		for i, key := range choiceKeys {
+			if i < len(offered) && inpututil.IsKeyJustPressed(key) {
+				g.answer(offered[i].idx)
+				return
+			}
+		}
+		if enter {
+			// Not the same as taking the first option: that one is asked
+			// again, and this one is not.
+			g.world.LetItBe(g.played)
+			g.say("left to itself")
+			g.paused = false
+		}
+		return
+	}
+
+	if g.offer != nil {
+		for i, key := range choiceKeys {
+			if i < len(g.offer.picks) && inpututil.IsKeyJustPressed(key) {
+				g.takeTheOffer(i)
+				return
+			}
+		}
+		if enter {
+			// An offer never goes stale, so without a way to put it down it
+			// would sit on the number keys for the rest of the life.
+			g.offer = nil
+			g.say("left as it was raised")
+			g.paused = false
+		}
+		return
+	}
+
+	if enter {
+		// The one question a person raises themselves. Without it the only
+		// thing to do between turning points is watch.
+		if g.world.RequestDecision(g.played) {
+			g.say("asked #%d what it is thinking", g.played)
+		}
+	}
+}
+
+func (g *game) answer(i int) {
+	q, ok := g.world.Question(g.played)
+	if !ok {
+		return
+	}
+	if err := g.world.Answer(g.played, i); err != nil {
+		g.say("no: %v", err)
+		return
+	}
+	g.noteChoice(q.Options[i].Action)
+	g.say("#%d will do that next", g.played)
+	g.paused = false
+}
+
+// watchTheLife stops the clock when there is something to answer. A question
+// stops it once - the tick it was raised on - so that a player who lets it
+// stand is not stopped again on the next frame.
+func (g *game) watchTheLife() {
+	if g.play != playAsked || g.played == 0 {
+		return
+	}
+	raised := g.milestone()
+	if q, ok := g.world.Question(g.played); ok && q.Tick != g.askedAt {
+		g.askedAt = q.Tick
+		raised = true
+	}
+	if !raised {
+		return
+	}
+	g.paused = true
+	g.mode = modePlay
+}
+
+// milestone reports whether one of the four things that happen to a life just
+// happened, raising the offer if so.
+func (g *game) milestone() bool {
+	a, alive := g.world.AgentByID(g.played)
+	if !alive {
+		return false
+	}
+	cfg := g.world.Config()
+	now := lifeMark{
+		body:     a.ID,
+		adult:    a.IsAdult(&cfg),
+		partner:  a.PartnerID,
+		children: len(a.ChildIDs),
+		known:    true,
+	}
+	was := g.was
+	g.was = now
+	if !was.known || g.offer != nil {
+		return false
+	}
+	why := ""
+	switch {
+	case now.body != was.body:
+		why = "a body handed on: what it was raised as is what it has"
+	case now.adult && !was.adult:
+		why = "it has grown up"
+	case now.children > was.children:
+		why = "it has a child"
+	case now.partner != 0 && was.partner == 0:
+		why = "it has paired"
+	}
+	if why == "" {
+		return false
+	}
+	g.raiseOffer(why)
+	return true
+}
+
+// raiseOffer puts the split to the player. The three splits on offer are not
+// the only ones possible - the engine would take any proportions - but a
+// milestone is a choice, and a choice is a handful of things with names.
+func (g *game) raiseOffer(why string) {
+	d, ok := g.world.Disposition(g.played)
+	if !ok {
+		return
+	}
+	g.offer = &offer{why: why, picks: []offerPick{
+		{"cautious", engine.Disposition{Risk: 3, Competition: 1, Shock: 1}},
+		{"quick-tempered", engine.Disposition{Risk: 1, Competition: 3, Shock: 1}},
+		{"clings to life", engine.Disposition{Risk: 1, Competition: 1, Shock: 3}},
+		{"as it was raised", d},
+	}}
+	g.paused = true
+	g.mode = modePlay
+}
+
+func (g *game) takeTheOffer(i int) {
+	pick := g.offer.picks[i]
+	if err := g.world.SetDisposition(g.played, pick.want); err != nil {
+		g.say("no: %v", err)
+		return
+	}
+	g.offer = nil
+	g.say("#%d is %s", g.played, pick.label)
+	g.paused = false
+}
+
+// scaled is what a split comes to once the engine has fitted it to what this
+// node has to divide, which is what the panel shows next to each choice.
+func scaled(want engine.Disposition, total float64) engine.Disposition {
+	sum := want.Total()
+	if sum <= 0 {
+		return engine.Disposition{}
+	}
+	f := total / sum
+	return engine.Disposition{Risk: want.Risk * f, Competition: want.Competition * f, Shock: want.Shock * f}
 }
 
 // aimAt points the order at whatever was clicked: somebody, something to eat,
 // or a patch of ground to walk to.
+//
+// Clicking something the node cannot see aims at the ground where it is
+// instead, and says so. The player can see the whole world and the node cannot,
+// and the honest thing to do with the difference is to let them walk over
+// there and find out - not to let them act on it, and not to pretend the click
+// did nothing.
 func (g *game) aimAt(mx, my int) {
 	if id := g.nodeAt(mx, my); id != 0 && id != g.played {
-		g.mark = mark{kind: markAgent, id: id}
+		if g.world.CanTargetAgent(g.played, id) {
+			g.mark = mark{kind: markAgent, id: id}
+			return
+		}
+		wx, wy := g.inWorld(mx, my)
+		g.mark = mark{kind: markSpot, x: wx, y: wy}
+		g.say("#%d is outside what it can see - aiming at that ground instead", id)
 		return
 	}
 	if f, ok := g.foodAt(mx, my); ok {
-		g.mark = mark{kind: markFood, id: f.ID, x: f.X, y: f.Y}
+		if g.world.CanTargetFood(g.played, f.ID) {
+			g.mark = mark{kind: markFood, id: f.ID, x: f.X, y: f.Y}
+			return
+		}
+		g.mark = mark{kind: markSpot, x: f.X, y: f.Y}
+		g.say("meal #%d is not something it can see and eat - aiming at that ground", f.ID)
 		return
 	}
-	g.mark = mark{kind: markSpot, x: float64(mx), y: float64(my)}
+	wx, wy := g.inWorld(mx, my)
+	g.mark = mark{kind: markSpot, x: wx, y: wy}
 }
 
 // foodAt returns the food item under the cursor.
+// foodAt and nodeAt take screen coordinates and answer in world ones. The
+// radius they pick within is a screen radius - a click is a click whatever the
+// zoom - so it is divided back out rather than scaled up.
 func (g *game) foodAt(mx, my int) (engine.Food, bool) {
-	best, bestDist := engine.Food{}, pickRadius*pickRadius
+	wx, wy := g.inWorld(mx, my)
+	reach := g.pickReach()
+	best, bestDist := engine.Food{}, reach*reach
 	found := false
 	for _, f := range g.world.Foods() {
-		dx, dy := f.X-float64(mx), f.Y-float64(my)
+		dx, dy := f.X-wx, f.Y-wy
 		if d := dx*dx + dy*dy; d < bestDist {
 			bestDist, best, found = d, f, true
 		}
@@ -360,20 +1088,71 @@ func (g *game) foodAt(mx, my int) (engine.Food, bool) {
 	return best, found
 }
 
+// pickReach is how far a click reaches, in world units.
+func (g *game) pickReach() float64 {
+	scale, _, _ := g.camera()
+	return pickRadius / scale
+}
+
 // order hands the standing order to the controller and reports what came of it.
 // A refusal is worth showing rather than swallowing: it is the engine saying
 // the node could not have come up with that itself.
 func (g *game) order(a engine.Action) {
+	if a.Kind != engine.ActMove {
+		// Any other order is the player taking the wheel back.
+		g.walkTo = mark{}
+	}
 	if g.human == nil {
 		return
 	}
-	a.Effort = g.effort
-	a.Stance = g.stance
-	if err := g.human.Order(a); err != nil {
+	if err := g.setOrder(a); err != nil {
 		g.say("no: %v", err)
 		return
 	}
-	g.say("order: %s. it will do that when next asked (enter to ask now)", describeAction(g.human.Standing()))
+	// And ask the question, because pressing the key is the player doing
+	// something. The order is still only an answer - the engine decides when
+	// it is put - but a deliberate keypress is a good enough reason to put it
+	// now, and waiting for the world to wonder felt like the game ignoring
+	// you. Enter is still there for asking again without changing the order.
+	g.world.RequestDecision(g.played)
+	g.say("order: %s%s", describeAction(g.human.Standing()), g.letTimeRun())
+}
+
+// letTimeRun makes sure an order can actually be carried out, and says what it
+// did about it.
+//
+// An order is not an act: eating something seventeen paces away is a walk and
+// then a meal, and it needs the ticks for both. With the clock stopped, the one
+// thing that advanced it was the walk keys - which set a move order of their
+// own - so an order given while paused was placed, never taken up, and then
+// overwritten by the only key that made time pass. From the outside that is a
+// game that ignores you, and it is what "it will not eat the food in front of
+// it" turned out to be.
+//
+// So an order starts the clock. Stopping it again is a key away, and the walk
+// keys still step a tick at a time for anybody who wants to read the world one
+// tick at a time.
+func (g *game) letTimeRun() string {
+	if !g.paused {
+		return ""
+	}
+	g.paused = false
+	return " (and let the clock run - space stops it again)"
+}
+
+// setOrder hands the order over without saying anything about it. The walking
+// keys use this: they report themselves by moving.
+//
+// It goes through the world rather than straight to the controller, because
+// the world is what knows whether the node can see what the order names, and
+// it knows it as of now rather than as of the last question (World.OrderHuman).
+func (g *game) setOrder(a engine.Action) error {
+	if g.human == nil {
+		return nil
+	}
+	a.Effort = g.effort
+	a.Stance = g.stance
+	return g.world.OrderHuman(g.played, a)
 }
 
 // orderMove walks towards the mark, whatever kind of thing it is.
@@ -387,39 +1166,99 @@ func (g *game) orderMove() {
 		g.say("click somewhere first: a move needs a direction")
 		return
 	}
+	// Walk there and stop, rather than walk that way for ever. The engine is
+	// given an ordinary move order; the stopping is the interface noticing.
+	g.walkTo = g.mark
+	g.lastAim = math.Atan2(y-a.Y, x-a.X)
 	g.order(engine.Action{Kind: engine.ActMove, DX: x - a.X, DY: y - a.Y})
+	g.say("walking to %s - it stops when it gets there", g.describeMark())
 }
 
-// orderAt aims an action at the mark, when the mark is the right kind of thing
-// for it.
+// orderAt aims an action at the mark, or, when nothing of the right kind is
+// aimed at, at the nearest one the node can see.
+//
+// Falling back rather than refusing is the difference between a game and a
+// form: the meal three paces away is in the node's own perception, so choosing
+// it for the player tells them nothing their node did not already know. What
+// it must never do is reach past what the node can see, which is why the
+// candidates come from the view and not from the world.
 func (g *game) orderAt(kind engine.ActionKind, want markKind) {
-	if g.mark.kind != want {
-		what := "somebody"
-		if want == markFood {
-			what = "something to eat"
-		}
-		g.say("%s needs %s: click one first", kind, what)
+	if g.mark.kind == want {
+		g.order(engine.Action{Kind: kind, TargetID: g.mark.id})
 		return
 	}
-	g.order(engine.Action{Kind: kind, TargetID: g.mark.id})
+	id, dist, ok := g.nearestVisible(kind, want)
+	if !ok {
+		what := "nobody"
+		if want == markFood {
+			what = "nothing"
+		}
+		g.say("%s: it can see %s to do that to", kind, what)
+		return
+	}
+	g.mark = mark{kind: want, id: id}
+	g.walkTo = mark{} // an order of any other kind is the player taking the wheel back
+	if err := g.setOrder(engine.Action{Kind: kind, TargetID: id}); err != nil {
+		g.say("no: %v", err)
+		return
+	}
+	g.world.RequestDecision(g.played)
+	g.say("%s #%d, %.0f away - the nearest it can see%s", kind, id, dist, g.letTimeRun())
+}
+
+// nearestVisible is the closest thing of the right kind the node can see right
+// now. The world answers what is in sight (CanTargetAgent / CanTargetFood), so
+// this can never reach past what the node knows; courting looks at more than
+// distance, since somebody already paired is not a candidate.
+func (g *game) nearestVisible(kind engine.ActionKind, want markKind) (id int, dist float64, ok bool) {
+	me, live := g.world.AgentByID(g.played)
+	if !live {
+		return 0, 0, false
+	}
+	best := math.Inf(1)
+	if want == markFood {
+		for _, f := range g.world.Foods() {
+			if !g.world.CanTargetFood(g.played, f.ID) {
+				continue
+			}
+			if d := math.Hypot(f.X-me.X, f.Y-me.Y); d < best {
+				best, id, ok = d, f.ID, true
+			}
+		}
+		return id, best, ok
+	}
+	for _, o := range g.world.Agents() {
+		if !g.world.CanTargetAgent(g.played, o.ID) {
+			continue
+		}
+		if kind == engine.ActCourt && (o.Sex == me.Sex || o.PartnerID != 0) {
+			continue
+		}
+		if d := math.Hypot(o.X-me.X, o.Y-me.Y); d < best {
+			best, id, ok = d, o.ID, true
+		}
+	}
+	return id, best, ok
 }
 
 // markPos is where the mark is now. An agent moves, so its mark is followed
 // rather than remembered.
-func (g *game) markPos() (x, y float64, ok bool) {
-	switch g.mark.kind {
+func (g *game) markPos() (x, y float64, ok bool) { return g.markPosOf(g.mark) }
+
+// markPosOf is where a mark is now. A mark on somebody moves with them, which
+// is what makes walking to a stranger work as well as walking to a spot.
+func (g *game) markPosOf(m mark) (x, y float64, ok bool) {
+	switch m.kind {
 	case markAgent:
-		if a, live := g.world.AgentByID(g.mark.id); live {
+		if a, live := g.world.AgentByID(m.id); live {
 			return a.X, a.Y, true
 		}
 	case markFood:
-		for _, f := range g.world.Foods() {
-			if f.ID == g.mark.id {
-				return f.X, f.Y, true
-			}
+		if f, live := g.world.FoodByID(m.id); live {
+			return f.X, f.Y, true
 		}
 	case markSpot:
-		return g.mark.x, g.mark.y, true
+		return m.x, m.y, true
 	}
 	return 0, 0, false
 }
@@ -431,9 +1270,11 @@ func (g *game) say(format string, args ...any) {
 
 // nodeAt returns the node under the cursor, or 0.
 func (g *game) nodeAt(mx, my int) int {
-	best, bestDist := 0, pickRadius*pickRadius
+	wx, wy := g.inWorld(mx, my)
+	reach := g.pickReach()
+	best, bestDist := 0, reach*reach
 	for _, a := range g.world.Agents() {
-		dx, dy := a.X-float64(mx), a.Y-float64(my)
+		dx, dy := a.X-wx, a.Y-wy
 		if d := dx*dx + dy*dy; d < bestDist {
 			bestDist, best = d, a.ID
 		}
@@ -460,6 +1301,7 @@ func (g *game) selectAgent(id int) {
 func (g *game) Draw(screen *ebiten.Image) {
 	screen.Fill(colorBackground)
 	g.drawWorld(screen)
+	g.drawBubbles(screen)
 
 	vector.DrawFilledRect(screen, panelX, 0, panelWidth, screenHeight, colorPanel, false)
 	vector.StrokeLine(screen, panelX, 0, panelX, screenHeight, 1, colorPanelEdge, false)
@@ -468,12 +1310,369 @@ func (g *game) Draw(screen *ebiten.Image) {
 	g.drawPanel(screen)
 }
 
+// averageSpeedGene is what an ordinary grown human has spent on being quick.
+// It is read live rather than kept as a number, so it goes on meaning the same
+// thing as the population's allocations drift.
+func averageSpeedGene(w *engine.World) float64 {
+	cfg := w.Config()
+	sum, n := 0.0, 0
+	for _, a := range w.Agents() {
+		if a.Species != engine.SpeciesHuman || !a.IsAdult(&cfg) {
+			continue
+		}
+		sum, n = sum+a.Gene(engine.GeneSpeed), n+1
+	}
+	if n == 0 {
+		return 0
+	}
+	return sum / float64(n)
+}
+
+// endowTheProtagonist brings the body being played up to the average speed,
+// paying for it with new budget rather than out of its other genes.
+//
+// It is not a rule of the world and the engine never does it on its own: it is
+// the interface admitting that a body which spent five points on being quick
+// is unplayable by a person, whatever it is to the utility formula. The rest of
+// the genome is left exactly as it was inherited.
+func (g *game) endowTheProtagonist() {
+	g.given = 0
+	if !g.boost || g.played == 0 {
+		return
+	}
+	cfg := g.world.Config()
+	// Two things, and they are different in kind. Speed is what makes a body
+	// drivable; being able to pay for a birth and survive it is what makes a
+	// line possible at all, and a protagonist that cannot found one is not
+	// playing this game. Both are paid for with new budget.
+	if added, err := g.world.Endow(g.played, engine.GeneSpeed, averageSpeedGene(g.world)); err == nil {
+		g.given += added
+	}
+	if cfg.MaxVitality > 0 {
+		// The gene that puts MaxVitality at what a birth costs twice over: it
+		// can pay its half and still have as much again left.
+		need := midGene * cfg.BirthVitalityCost / cfg.MaxVitality
+		if added, err := g.world.Endow(g.played, engine.GeneVitality, need); err == nil {
+			g.given += added
+		}
+	}
+	if g.given <= 0 {
+		return
+	}
+	g.say("#%d was given %.0f to be playable (speed to the world's average, vitality enough for a birth)",
+		g.played, g.given)
+}
+
+// midGene is the gene value an ability of exactly the world's own figure comes
+// from: MaxVitality and MaxSpeed are both the config's number scaled by the
+// gene over this. It is engine.MaxAbility/2 rounded the way the engine does it.
+const midGene = 50.5
+
+// --- walking somewhere and stopping there ----------------------------------
+//
+// ActMove carries a direction, not a destination, and that is right for the
+// engine: an agent heading for something names the something (a meal, a
+// stranger), and an agent heading nowhere in particular is wandering. What it
+// leaves out is the one thing a person at a keyboard wants - "go there and
+// stop" - so the interface does it, by steering an ordinary move order and
+// noticing the arrival.
+
+// arriveRadius is how close counts as there, in world units. It is the reach
+// an order needs to act on what it walked to.
+const arriveRadius = 10
+
+func (g *game) steerToWalkTo() {
+	if g.play != playDriven || g.played == 0 || g.walkTo.kind == markNone {
+		return
+	}
+	a, alive := g.world.AgentByID(g.played)
+	if !alive {
+		g.walkTo = mark{}
+		return
+	}
+	// Somebody has given this node something else to do. Steering it would
+	// overwrite that, and the whole point of the steering is to save the
+	// player work, not to argue with them.
+	if g.human != nil && g.human.Standing().Kind != engine.ActMove {
+		g.walkTo = mark{}
+		return
+	}
+	tx, ty, ok := g.markPosOf(g.walkTo)
+	if !ok {
+		g.walkTo = mark{}
+		g.say("what it was walking to is gone")
+		_ = g.setOrder(engine.Action{Kind: engine.ActRest})
+		g.world.RequestDecision(g.played)
+		return
+	}
+	dx, dy := tx-a.X, ty-a.Y
+	if math.Hypot(dx, dy) <= arriveRadius {
+		g.walkTo = mark{}
+		_ = g.setOrder(engine.Action{Kind: engine.ActRest})
+		g.world.RequestDecision(g.played)
+		g.say("arrived")
+		return
+	}
+	// Only re-aimed when the bearing has actually drifted. Asking the world to
+	// think again on every tick is the one freedom a player has that the AI
+	// does not, and spending it on arithmetic nobody needed would be a waste
+	// of it.
+	aim := math.Atan2(dy, dx)
+	if math.Abs(angleGap(aim, g.lastAim)) < 0.08 {
+		return
+	}
+	g.lastAim = aim
+	if err := g.setOrder(engine.Action{Kind: engine.ActMove, DX: dx, DY: dy}); err != nil {
+		g.walkTo = mark{}
+		g.say("no: %v", err)
+		return
+	}
+	g.world.RequestDecision(g.played)
+}
+
+// angleGap is the shortest way round from one bearing to the other.
+func angleGap(a, b float64) float64 {
+	d := math.Mod(a-b+math.Pi, 2*math.Pi)
+	if d < 0 {
+		d += 2 * math.Pi
+	}
+	return d - math.Pi
+}
+
+// --- what the protagonist has to say ---------------------------------------
+//
+// The engine emits no events and does not need to. A life is fully described by
+// what changed in it, and everything worth saying out loud is a difference
+// between this frame's protagonist and last frame's: a partner where there was
+// none, a child more than before, an order that lapsed, somebody hitting it.
+//
+// Deriving them here rather than adding a notification to the engine is not
+// only cheaper. A game that can ask the engine to tell it things starts pulling
+// the engine towards being a game, and the one thing that has held through
+// every stage of this is that the engine does not know a game is being played.
+
+// pop puts a line above the protagonist's head.
+func (g *game) pop(format string, args ...any) {
+	if len(g.bubbles) >= 4 {
+		g.bubbles = g.bubbles[1:]
+	}
+	g.bubbles = append(g.bubbles, bubble{text: fmt.Sprintf(format, args...), born: g.frame})
+}
+
+// watchProtagonist reads the difference between now and last frame, and says
+// the parts of it a person would want to know while their hands are busy.
+func (g *game) watchProtagonist() {
+	g.frame++
+	// Expire from the front: they are in the order they were said.
+	for len(g.bubbles) > 0 && g.frame-g.bubbles[0].born > bubbleLife {
+		g.bubbles = g.bubbles[1:]
+	}
+	if g.played == 0 {
+		g.seen = seenState{}
+		return
+	}
+	a, alive := g.world.AgentByID(g.played)
+	if !alive {
+		return
+	}
+	cfg := g.world.Config()
+
+	now := seenState{
+		known:    true,
+		body:     a.ID,
+		partner:  a.PartnerID,
+		children: len(a.ChildIDs),
+		action:   a.Action.Kind,
+		target:   a.Action.TargetID,
+		hunger:   a.Hunger,
+		vitality: a.Vitality,
+		frail:    a.Vitality < a.MaxVitality(&cfg)/3,
+		canCourt: a.CanReproduce(&cfg),
+	}
+	if g.human != nil {
+		now.voided = g.human.Voided()
+		if v, ok := g.human.View(); ok && g.human.Body() == a.ID {
+			now.attacker = v.Self.AttackerID
+		}
+	} else if g.guided != nil {
+		if v, ok := g.guided.View(); ok && g.guided.Body() == a.ID {
+			now.attacker = v.Self.AttackerID
+		}
+	}
+
+	was := g.seen
+	g.seen = now
+	if !was.known {
+		return
+	}
+	if was.body != now.body {
+		g.bubbles = g.bubbles[:0]
+		g.pop("you are #%d now", now.body)
+		return
+	}
+
+	// The world doing things to it comes first: those are the ones a player
+	// needs even when they are looking somewhere else.
+	if now.attacker != 0 && now.attacker != was.attacker {
+		g.pop("#%d is hitting me", now.attacker)
+	}
+	if now.action == engine.ActAttack && (was.action != engine.ActAttack || was.target != now.target) {
+		g.pop("fighting #%d", now.target)
+	}
+	if now.action == engine.ActFlee && was.action != engine.ActFlee {
+		g.pop("running from #%d", now.target)
+	}
+
+	// Then the life: pairing, children, and the courtship that did not take.
+	switch {
+	case was.partner == 0 && now.partner != 0:
+		g.pop("paired with #%d!", now.partner)
+	case was.partner != 0 && now.partner == 0:
+		g.pop("the bond has ended")
+	}
+	if now.children > was.children {
+		g.pop("a child! #%d", a.ChildIDs[len(a.ChildIDs)-1])
+	}
+	if was.action == engine.ActCourt && now.action != engine.ActCourt && now.partner == 0 {
+		// Turned down, and not merely told to do something else. The node's
+		// own perception is what says which: a candidate it walked away from
+		// is marked as one it is not interested in comparing again just yet,
+		// and that mark is only ever set by a courtship that did not take.
+		if turned, ok := g.turnedDownBy(was.target); ok && turned {
+			g.pop("#%d turned me down", was.target)
+		}
+	}
+	if now.canCourt && !was.canCourt {
+		g.pop("ready to court")
+	}
+
+	// And the housekeeping a player would otherwise only find out by noticing
+	// that nothing is happening.
+	if now.voided > was.voided {
+		if was.action == engine.ActEat {
+			g.pop("somebody took that meal")
+		} else {
+			g.pop("what I was after is gone")
+		}
+	}
+	if now.hunger < was.hunger-5 {
+		g.pop("ate")
+	}
+	if now.frail && !was.frail {
+		g.pop("badly hurt")
+	}
+}
+
+// turnedDownBy reports whether the node's own view of somebody says it has
+// just walked away from courting them.
+func (g *game) turnedDownBy(id int) (bool, bool) {
+	var v engine.HumanView
+	var ok bool
+	switch {
+	case g.human != nil:
+		v, ok = g.human.View()
+	case g.guided != nil:
+		v, ok = g.guided.View()
+	}
+	if !ok {
+		return false, false
+	}
+	o, seen := v.AgentByID(id)
+	if !seen {
+		return false, false
+	}
+	return o.Rejected, true
+}
+
+// drawBubbles stacks what the protagonist is saying above its head, newest
+// nearest to it.
+func (g *game) drawBubbles(screen *ebiten.Image) {
+	if g.played == 0 || len(g.bubbles) == 0 {
+		return
+	}
+	a, ok := g.world.AgentByID(g.played)
+	if !ok {
+		return
+	}
+	cfg := g.world.Config()
+	x, y := g.onScreen(a.X, a.Y)
+	top := y - g.long(minRadius+a.MaxVitality(&cfg)/150*(maxRadius-minRadius)) - 8
+
+	for i := len(g.bubbles) - 1; i >= 0; i-- {
+		b := g.bubbles[i]
+		w := float32(len(b.text)*6 + 8)
+		by := top - float32((len(g.bubbles)-1-i)*(lineHeight+2))
+		bx := x - w/2
+		vector.DrawFilledRect(screen, bx, by-13, w, 15, colorBubble, true)
+		ebitenutil.DebugPrintAt(screen, b.text, int(bx)+4, int(by)-14)
+	}
+}
+
+// --- the camera ------------------------------------------------------------
+//
+// Everything the world draws is in world coordinates, and everything on the
+// screen goes through these three. Keeping the transform in one place is what
+// lets the zoom exist at all: the alternative was scaling a rendered image,
+// which turns every circle to mush at the zoom the game actually wants.
+
+// camera is the scale and the top left corner of what is on screen, in world
+// coordinates. It follows the played node, or the selected one, and stops at
+// the edges of the world so that the view is never half empty.
+func (g *game) camera() (scale, ox, oy float64) {
+	scale = zoomLevels[g.zoom]
+	if scale <= 1 {
+		return 1, 0, 0
+	}
+	viewW, viewH := worldWidth/scale, worldHeight/scale
+	cx, cy := float64(worldWidth)/2, float64(worldHeight)/2
+	follow := g.played
+	if follow == 0 {
+		follow = g.selected
+	}
+	if a, ok := g.world.AgentByID(follow); ok {
+		cx, cy = a.X, a.Y
+	}
+	ox = clamp(cx-viewW/2, 0, math.Max(worldWidth-viewW, 0))
+	oy = clamp(cy-viewH/2, 0, math.Max(worldHeight-viewH, 0))
+	return scale, ox, oy
+}
+
+// onScreen turns a point in the world into a point on the screen.
+func (g *game) onScreen(x, y float64) (float32, float32) {
+	scale, ox, oy := g.camera()
+	return float32((x - ox) * scale), float32((y - oy) * scale)
+}
+
+// long turns a length in the world into a length on the screen.
+func (g *game) long(v float64) float32 {
+	scale, _, _ := g.camera()
+	return float32(v * scale)
+}
+
+// inWorld turns a point on the screen back into a point in the world, which is
+// what every click needs.
+func (g *game) inWorld(mx, my int) (float64, float64) {
+	scale, ox, oy := g.camera()
+	return float64(mx)/scale + ox, float64(my)/scale + oy
+}
+
+func clamp(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
 func (g *game) drawWorld(screen *ebiten.Image) {
 	g.drawRegions(screen)
 	g.drawSight(screen)
 
 	for _, f := range g.world.Foods() {
-		vector.DrawFilledCircle(screen, float32(f.X), float32(f.Y), 3, colorFood, true)
+		fx, fy := g.onScreen(f.X, f.Y)
+		vector.DrawFilledCircle(screen, fx, fy, g.long(3), colorFood, true)
 	}
 
 	g.drawAim(screen)
@@ -483,14 +1682,17 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	// Bonds, drawn once per pair, and every blow being thrown.
 	for i := range agents {
 		a := &agents[i]
+		ax, ay := g.onScreen(a.X, a.Y)
 		if a.PartnerID > a.ID {
 			if p, ok := g.world.AgentByID(a.PartnerID); ok {
-				vector.StrokeLine(screen, float32(a.X), float32(a.Y), float32(p.X), float32(p.Y), 1, colorPairLink, true)
+				px, py := g.onScreen(p.X, p.Y)
+				vector.StrokeLine(screen, ax, ay, px, py, 1, colorPairLink, true)
 			}
 		}
 		if a.Action.Kind == engine.ActAttack {
 			if t, ok := g.world.AgentByID(a.Action.TargetID); ok {
-				vector.StrokeLine(screen, float32(a.X), float32(a.Y), float32(t.X), float32(t.Y), 1.5, colorFightLink, true)
+				tx, ty := g.onScreen(t.X, t.Y)
+				vector.StrokeLine(screen, ax, ay, tx, ty, 1.5, colorFightLink, true)
 			}
 		}
 	}
@@ -505,11 +1707,13 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// like a small one in good health - which is the whole difference the
 		// budget is supposed to create.
 		capacity := a.MaxVitality(&cfg)
-		radius := float32(minRadius + capacity/150*(maxRadius-minRadius))
+		radius := g.long(minRadius + capacity/150*(maxRadius-minRadius))
 		filled := radius
 		if capacity > 0 {
 			filled = radius * float32(clamp01(a.Vitality/capacity))
 		}
+		// The ring keeps its width on screen rather than in the world: it is a
+		// reading of the attack gene, not a part of the body's size.
 		ringWidth := float32(minRingSize + a.Attack(&cfg)/100*(maxRingSize-minRingSize))
 
 		fill := colorMale
@@ -517,13 +1721,13 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			fill = colorFemale
 		}
 
-		x, y := float32(a.X), float32(a.Y)
+		x, y := g.onScreen(a.X, a.Y)
 
 		// A tail behind it, as long as the agent is quick. Speed is otherwise
 		// invisible: two agents standing still look the same however much one
 		// of them spent on being fast.
 		if speed := a.MaxSpeed(&cfg); speed > 0 {
-			tail := float32(speed / cfg.MaxSpeed * 13)
+			tail := g.long(speed / cfg.MaxSpeed * 13)
 			vx, vy := float32(a.VX), float32(a.VY)
 			if l := float32(math.Hypot(float64(vx), float64(vy))); l > 1e-6 {
 				vx, vy = vx/l, vy/l
@@ -535,7 +1739,8 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		vector.StrokeCircle(screen, x, y, radius, ringWidth, stateColor(a.State), true)
 
 		if hunger := float32(a.Hunger / 100); hunger > 0.01 {
-			vector.StrokeLine(screen, x-6, y+radius+3, x-6+12*hunger, y+radius+3, 2, colorHungerBar, true)
+			bar := g.long(12)
+			vector.StrokeLine(screen, x-bar/2, y+radius+3, x-bar/2+bar*hunger, y+radius+3, 2, colorHungerBar, true)
 		}
 		if a.ID == g.selected {
 			vector.StrokeCircle(screen, x, y, radius+5, 1.5, colorSelected, true)
@@ -548,6 +1753,17 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		}
 		if a.ID == g.heir {
 			vector.StrokeCircle(screen, x, y, radius+8, 1.5, colorHeir, true)
+		}
+		// The line's own children. A birth put a bubble up and then the child
+		// was one more circle among sixty: which one it was could not be told
+		// from the screen at all.
+		//
+		// Ringing them is labelling something already drawn rather than
+		// telling the player anything new - devview has always drawn the whole
+		// world - and the rule that matters is untouched: a child outside what
+		// the node can see still cannot be aimed at.
+		if a.ID != g.played && a.ID != g.heir && g.isKin(a.ID) {
+			vector.StrokeCircle(screen, x, y, radius+12, 2, colorKin, true)
 		}
 	}
 }
@@ -589,7 +1805,8 @@ func clamp01(v float64) float64 {
 // else about a region exists: it is not a wall and no node knows it is in one.
 func (g *game) drawRegions(screen *ebiten.Image) {
 	for _, r := range g.world.Regions() {
-		w, h := float32(r.MaxX-r.MinX), float32(r.MaxY-r.MinY)
+		rx, ry := g.onScreen(r.MinX, r.MinY)
+		w, h := g.long(r.MaxX-r.MinX), g.long(r.MaxY-r.MinY)
 
 		// Fill: how well the ground grows plants. Green for better than an
 		// equal share, brown for worse, nothing at all for ordinary, so a
@@ -599,14 +1816,14 @@ func (g *game) drawRegions(screen *ebiten.Image) {
 			if r.Food < 1 {
 				fill = color.RGBA{0x80, 0x60, 0x20, shade} // thin
 			}
-			vector.DrawFilledRect(screen, float32(r.MinX), float32(r.MinY), w, h, fill, false)
+			vector.DrawFilledRect(screen, rx, ry, w, h, fill, false)
 		}
 
 		// Border: how sheltered the resting is. A thick edge is ground with
 		// its back covered.
 		if r.Shelter < 1 {
 			thick := float32(1 + clamp01((1-r.Shelter)/0.6)*3)
-			vector.StrokeRect(screen, float32(r.MinX), float32(r.MinY), w, h, thick, colorRegionEdge, false)
+			vector.StrokeRect(screen, rx, ry, w, h, thick, colorRegionEdge, false)
 		}
 	}
 }
@@ -625,8 +1842,8 @@ func (g *game) drawSight(screen *ebiten.Image) {
 		return
 	}
 	minX, minY, maxX, maxY := g.world.SightBlock(a.X, a.Y)
-	vector.StrokeRect(screen, float32(minX), float32(minY),
-		float32(maxX-minX), float32(maxY-minY), 2, colorSight, false)
+	sx, sy := g.onScreen(minX, minY)
+	vector.StrokeRect(screen, sx, sy, g.long(maxX-minX), g.long(maxY-minY), 2, colorSight, false)
 }
 
 // markTarget rings whatever the selected node is currently acting on, so that
@@ -636,12 +1853,14 @@ func (g *game) markTarget(screen *ebiten.Image, a *engine.Agent) {
 	case engine.ActEat:
 		for _, f := range g.world.Foods() {
 			if f.ID == a.Action.TargetID {
-				vector.StrokeCircle(screen, float32(f.X), float32(f.Y), 7, 1.5, colorTarget, true)
+				fx, fy := g.onScreen(f.X, f.Y)
+				vector.StrokeCircle(screen, fx, fy, g.long(7), 1.5, colorTarget, true)
 			}
 		}
 	case engine.ActAttack, engine.ActFlee, engine.ActObserve, engine.ActCourt:
 		if t, ok := g.world.AgentByID(a.Action.TargetID); ok {
-			vector.StrokeCircle(screen, float32(t.X), float32(t.Y), 14, 1.5, colorTarget, true)
+			tx, ty := g.onScreen(t.X, t.Y)
+			vector.StrokeCircle(screen, tx, ty, g.long(14), 1.5, colorTarget, true)
 		}
 	}
 }
@@ -656,7 +1875,7 @@ func (g *game) drawAim(screen *ebiten.Image) {
 	if !ok {
 		return
 	}
-	fx, fy := float32(x), float32(y)
+	fx, fy := g.onScreen(x, y)
 	vector.StrokeCircle(screen, fx, fy, 9, 1.5, colorMark, true)
 	vector.StrokeLine(screen, fx-13, fy, fx-10, fy, 1.5, colorMark, true)
 	vector.StrokeLine(screen, fx+10, fy, fx+13, fy, 1.5, colorMark, true)
@@ -696,11 +1915,27 @@ func (g *game) overlay() string {
 	b.WriteString("circle = body (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
 	b.WriteString("children are small circles: a newborn expresses 60% of its genes and grows into the rest by eating\n")
-	b.WriteString("space pause   right/n one tick   -/= slower/faster   click a node   esc clear\n")
-	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node\n")
 	if g.played != 0 {
-		fmt.Fprintf(&b, "playing #%d: click to aim   r rest  m move  e eat  a attack  f flee  o observe  c court   1-5 effort  s stance   enter ask now  k heir\n",
-			g.played)
+		b.WriteString("gold ring = you, green ring = the heir, faint gold ring = a child of your line\n")
+	}
+	switch g.play {
+	case playDriven:
+		b.WriteString("space pause   -/= slower/faster   z zoom   esc drop the aim   h let it decide for itself\n")
+	case playAsked:
+		b.WriteString("space pause   right/n one tick   -/= slower/faster   z zoom   h hand it back to the AI\n")
+	default:
+		b.WriteString("space pause   right/n one tick   -/= slower/faster   z zoom   click a node   esc clear\n")
+	}
+	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node\n")
+	switch g.play {
+	case playDriven:
+		fmt.Fprintf(&b, "playing #%d: numpad or arrows+home/end/pgup/pgdn walk it (hold to keep going)   click a spot then m walks there and stops\n", g.played)
+		b.WriteString("   click to aim   r rest  m walk to the mark  e eat  a attack  f flee  o observe  c court   1-5 effort  s stance  k heir\n")
+	case playAsked:
+		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir\n", g.played)
+	}
+	if g.play == playDriven && g.walkTo.kind != markNone {
+		fmt.Fprintf(&b, "walking to %s\n", g.describeMark())
 	}
 	if g.notice != "" {
 		fmt.Fprintf(&b, "%s (tick %d)\n", g.notice, g.noticed)
@@ -829,16 +2064,28 @@ func (g *game) drawPlay(t *textBox) {
 	if g.played == 0 {
 		t.line("nobody is being played.")
 		t.line("")
-		t.line("click a node and press h to take it over. it")
-		t.line("then answers with whatever you last ordered,")
-		t.line("the next time the world asks it anything.")
+		t.line("click a node and press h to drive it yourself.")
+		t.line("press h again to hand it its own judgement back")
+		t.line("(then it decides and only asks you at the turning")
+		t.line("points), and again to give it back to the AI.")
 		t.line("")
-		t.line("keys once you have one:")
+		t.line("z zooms the camera in on whoever you are playing.")
+		t.line("")
+		t.line("driving it yourself:")
 		t.line("  click   aim at somebody, something to eat, a spot")
 		t.line("  r rest   m move to the mark   e eat   a attack")
 		t.line("  f flee   o observe            c court")
+		t.line("  (with nothing aimed at, those take the nearest one")
+		t.line("   the node can see)")
+		t.line("  numpad 1-9 (or the arrows with home/end/pgup/pgdn)")
+		t.line("    walk it one tick per press, or hold to keep going")
 		t.line("  1-5 effort   s stance   enter think again now")
 		t.line("  k name the child to carry on   h hand back to AI")
+		return
+	}
+
+	if g.play == playAsked {
+		g.drawAsked(t)
 		return
 	}
 
@@ -847,6 +2094,7 @@ func (g *game) drawPlay(t *textBox) {
 	// belongs to the previous body until this one has been asked something.
 	fresh := g.human.Body() == g.played
 	t.line("YOU ARE #%d   effort %.1f   stance %s", g.played, g.effort, g.stance)
+	g.drawGift(t)
 	switch {
 	case !fresh:
 		t.line("standing order: none. an heir starts with none")
@@ -859,10 +2107,15 @@ func (g *game) drawPlay(t *textBox) {
 		t.line("asked %d times, last on tick %d (%d ago); it answered %s",
 			asked, at, g.world.Tick()-at, describeAction(g.human.LastAnswer()))
 	}
-	if v := g.human.Voided(); v > 0 {
-		t.line("%d order(s) lapsed: what they were aimed at was gone", v)
+	if v, d := g.human.Voided(), g.human.Finished(); v > 0 || d > 0 {
+		t.line("%d order(s) carried out, %d lapsed (what they were aimed at was gone)", d, v)
 	}
 	t.line("aim: %s", g.describeMark())
+	t.line("YOUR LINE: %d bod(ies), %d ticks, %d born, %d alive",
+		g.bodies, g.lineAt-g.lineFrom, len(g.lineKids), g.livingKin())
+	if kin := g.describeKin(); kin != "" {
+		t.line("  %s", kin)
+	}
 	if g.heir != 0 {
 		t.line("line continues through #%d", g.heir)
 	} else {
@@ -881,6 +2134,14 @@ func (g *game) drawPlay(t *textBox) {
 		return
 	}
 
+	g.drawWhatItKnows(t, view)
+}
+
+// drawWhatItKnows prints the perception the node was last handed, and nothing
+// else. It is shared by both ways of playing because the promise is the same
+// one: a player who could read the true power of the stranger in front of them
+// would be playing a different game from the one the AI plays.
+func (g *game) drawWhatItKnows(t *textBox, view engine.HumanView) {
 	// What the node knows about itself. This is the whole of what a decision
 	// has to go on, which is the question this stage exists to answer.
 	self := view.Self
@@ -896,17 +2157,48 @@ func (g *game) drawPlay(t *textBox) {
 			self.BetterGroundX, self.BetterGroundY, self.BetterGround)
 	}
 	if !self.CanReproduce {
-		t.line("  not in a state to court")
+		// Why, not merely that. The three conditions are the node's own rule
+		// read off its own state, and a player who is not told which one is
+		// failing cannot do anything about it.
+		cfg := g.world.Config()
+		want := []string{}
+		// What a body cannot do comes first, because it is the only part that
+		// is a refusal rather than a judgement.
+		if floor := cfg.BirthVitalityCost / 2; self.Vitality <= floor {
+			want = append(want, fmt.Sprintf("vitality %.1f -> over %.1f, which is what a birth costs it",
+				self.Vitality, floor))
+		}
+		if cfg.CourtNeedsSurplus {
+			if self.Hunger >= cfg.ReproHunger {
+				want = append(want, fmt.Sprintf("hunger %.1f -> under %.0f", self.Hunger, cfg.ReproHunger))
+			}
+			if floor := cfg.ReproVitalityShare * self.MaxVitality; self.Vitality < floor {
+				want = append(want, fmt.Sprintf("vitality %.1f -> over %.1f", self.Vitality, floor))
+			}
+		}
+		if len(want) == 0 {
+			want = append(want, "it is still growing up, or has just had a child")
+		}
+		t.line("  CANNOT COURT: %s", strings.Join(want, "; "))
+	} else {
+		t.line("  it can court: feed it and it will be asked when it sees somebody")
 	}
 	t.line("")
 
-	if len(view.Others) == 0 {
+	// Nearest first. The perception is in no particular order, and what a
+	// player wants to know first is what is close enough to act on.
+	others := append([]engine.AgentView(nil), view.Others...)
+	sort.Slice(others, func(i, j int) bool { return others[i].Dist < others[j].Dist })
+	meals := append([]engine.FoodView(nil), view.Foods...)
+	sort.Slice(meals, func(i, j int) bool { return meals[i].Dist < meals[j].Dist })
+
+	if len(others) == 0 {
 		t.line("SEES NOBODY")
 	} else {
-		t.line("SEES %d (strength is its guess, never the truth):", len(view.Others))
-		for i, o := range view.Others {
+		t.line("SEES %d (strength is its guess, never the truth):", len(others))
+		for i, o := range others {
 			if i >= 6 || t.roomLeft() < 8 {
-				t.line("  ... and %d more", len(view.Others)-i)
+				t.line("  ... and %d more", len(others)-i)
 				break
 			}
 			tag := ""
@@ -926,14 +2218,14 @@ func (g *game) drawPlay(t *textBox) {
 	}
 	t.line("")
 
-	if len(view.Foods) == 0 {
+	if len(meals) == 0 {
 		t.line("SEES NOTHING TO EAT")
 		return
 	}
-	t.line("SEES %d meals:", len(view.Foods))
-	for i, f := range view.Foods {
+	t.line("SEES %d meals:", len(meals))
+	for i, f := range meals {
 		if i >= 5 || t.roomLeft() < 2 {
-			t.line("  ... and %d more", len(view.Foods)-i)
+			t.line("  ... and %d more", len(meals)-i)
 			break
 		}
 		rival := ""
@@ -942,6 +2234,136 @@ func (g *game) drawPlay(t *textBox) {
 		}
 		t.line("  #%-4d %3.0f away  worth x%.2f%s", f.ID, f.Dist, f.Nutrition, rival)
 	}
+}
+
+// drawAsked is the panel of the way of playing where the node decides and a
+// person answers. What is on it is the comparison the node actually made: the
+// options are its own, ranked the way it ranks them, with the misjudgement its
+// intelligence put on each one already in the score. A player driving a dull
+// node is offered a dull node's ranking, which is the point.
+func (g *game) drawAsked(t *textBox) {
+	asked, at, answered := g.guided.Asked()
+	fresh := g.guided.Body() == g.played
+	t.line("YOU ARE #%d   it decides, you answer", g.played)
+	if a, alive := g.world.AgentByID(g.played); alive {
+		t.line("it is %s (%s)   vit %.1f  hunger %.1f",
+			a.State, describeAction(a.Action), a.Vitality, a.Hunger)
+	}
+	if g.selected != g.played {
+		// The block at the top of the panel is whatever was last clicked, and
+		// while playing that is often somebody else entirely.
+		t.line("(the block above is #%d, which you clicked. esc drops it)", g.selected)
+	}
+	if !fresh {
+		t.line("not asked as #%d yet (the line has been asked %d times)", g.played, asked)
+	} else {
+		t.line("asked %d times, you answered %d   last on tick %d (%d ago)",
+			asked, answered, at, g.world.Tick()-at)
+	}
+	g.drawGift(t)
+	if d, ok := g.world.Disposition(g.played); ok {
+		t.line("disposed: wary %.2f  rivalrous %.2f  fearful %.2f  (of %.2f)",
+			d.Risk, d.Competition, d.Shock, d.Total())
+	}
+	// What the player is playing. None of it is in the utility formula: a node
+	// is scored on its own life, and a line is the thing that outlives it. It
+	// is the one thing a person has that the node does not, which is what
+	// makes disagreeing with the node's own ranking a real thing to do.
+	t.line("YOUR LINE: %d bod(ies), %d ticks, %d born, %d of them alive",
+		g.bodies, g.lineAt-g.lineFrom, len(g.lineKids), g.livingKin())
+	if kin := g.describeKin(); kin != "" {
+		t.line("  %s", kin)
+	}
+	if g.heir != 0 {
+		t.line("  it goes on through #%d", g.heir)
+	} else {
+		t.line("  no heir named (k). the line ends when this body does")
+	}
+	t.line("")
+	g.drawLastChoice(t)
+
+	// The question first: it is the one on a clock, and an offer that hid it
+	// would stop the world for a reason the panel was not showing.
+	if _, ok := g.world.Question(g.played); ok || g.offer == nil {
+		g.drawQuestion(t)
+		if g.offer != nil {
+			t.line("(a milestone is waiting behind this)")
+		}
+	} else {
+		g.drawOffer(t)
+	}
+	t.line("")
+
+	view, ok := g.guided.View()
+	if !ok || !fresh {
+		t.line("it has not been asked anything yet, so it has")
+		t.line("nothing to tell you.")
+		return
+	}
+	g.drawWhatItKnows(t, view)
+}
+
+// drawGift says what this body was given for being the one that is played.
+// Everything else on the panel is the world; this line is not, and saying so is
+// the whole reason it is a line rather than a silent adjustment.
+func (g *game) drawGift(t *textBox) {
+	if g.given <= 0 {
+		return
+	}
+	a, ok := g.world.AgentByID(g.played)
+	if !ok {
+		return
+	}
+	cfg := g.world.Config()
+	t.line("GIVEN +%.0f to be playable: speed %.0f, vitality %.0f/%.0f. not the world's doing",
+		g.given, a.Gene(engine.GeneSpeed), a.MaxVitality(&cfg), cfg.BirthVitalityCost)
+}
+
+// drawQuestion prints the choice standing, if one is.
+func (g *game) drawQuestion(t *textBox) {
+	q, ok := g.world.Question(g.played)
+	if !ok {
+		t.line("NOTHING ASKED. it is getting on with it.")
+		t.line("it stops and asks when something turns - or press")
+		t.line("enter to ask it what it is thinking right now.")
+		return
+	}
+	t.line("ASKED ON TICK %d: %s", q.Tick, q.Trigger)
+	for i, b := range bets(q) {
+		if i >= len(choiceKeys) || t.roomLeft() < 4 {
+			break
+		}
+		o := q.Options[b.idx]
+		t.line("  [%d] %s  %s", i+1, b.label, describeAction(o.Action))
+		t.line("      for   %s", goalTerms(o.Utility))
+		cost := fmt.Sprintf("costs %.1f vit over %.0f ticks", o.Utility.Vitality, o.Utility.Ticks)
+		if o.Utility.Risk != 0 {
+			cost += fmt.Sprintf("; it has cost you %.1f before", o.Utility.Risk)
+		}
+		t.line("      %s", cost)
+	}
+	t.line("  [enter] leave it to itself (it has already started)")
+	// No total, on purpose. The node's own ranking is still there for anyone
+	// who wants it - that is what leaving it to itself is - but a list with
+	// "best" written next to one line is not a decision a person makes.
+}
+
+// drawOffer prints the split waiting to be made at a milestone.
+func (g *game) drawOffer(t *textBox) {
+	d, _ := g.world.Disposition(g.played)
+	total := d.Total()
+	t.line("A MILESTONE: %s", g.offer.why)
+	t.line("what it wants out of life, in %.2f shares between three.", total)
+	t.line("more care has to come out of the other two.")
+	for i, p := range g.offer.picks {
+		if i >= len(choiceKeys) {
+			break
+		}
+		got := scaled(p.want, total)
+		t.line("  [%d] %-17s wary %.2f  rivalrous %.2f  fearful %.2f",
+			i+1, p.label, got.Risk, got.Competition, got.Shock)
+	}
+	t.line("  [enter] leave it as it is")
 }
 
 // describeMark says what an order would be aimed at.
@@ -1133,19 +2555,122 @@ func max(a, b int) int {
 	return b
 }
 
+// quickestBody is the node a game starts on when nobody named one.
+//
+// It used to be whichever agent happened to be first in the list, and that is
+// how a player ended up driving a body that had spent five per cent of its
+// budget on being quick - a quarter of what an ordinary one spends - and
+// concluded that the world was slow. Speed is the gene a player feels every
+// second of a game, so the default body is a quick one.
+//
+// Quick, but not merely the quickest. The budget is fixed, so the very fastest
+// body in a population is usually the one that bought its speed with
+// everything else, and the first one picked that way died in ninety-six ticks.
+// So: the quickest of the sounder half. That is two ranks and no thresholds,
+// which is what keeps it working as the population's allocations drift - there
+// is always a sounder half, and always a quickest in it.
+//
+// Two requirements sit in front of the ranks, and both are the game's own
+// rather than invented numbers.
+//
+//   - It has to be able to pay for a birth and still be alive. The first pick
+//     that ignored this had a vitality of twenty against a birth costing
+//     twenty, so two fifths of its life it could not court at all, and the
+//     line it was supposed to carry could never start.
+//   - Somebody has to be willing to have it. Nearly two thirds of how good a
+//     mate an agent looks is a gene, and a body picked for speed and budget
+//     can easily have almost none of it: the second pick courted two hundred
+//     times and was accepted three. So the looks have to be at least the
+//     population's own middle.
+//
+// Both are ranks or thresholds read off the world, not constants: the median
+// moves with the population, and what a birth costs is a rule.
+func quickestBody(w *engine.World) int {
+	cfg := w.Config()
+	var grown []engine.Agent
+	for _, a := range w.Agents() {
+		if a.Species != engine.SpeciesHuman || !a.IsAdult(&cfg) {
+			continue
+		}
+		grown = append(grown, a)
+	}
+	if len(grown) == 0 {
+		if agents := w.Agents(); len(agents) > 0 {
+			return agents[0].ID
+		}
+		return 0
+	}
+	middling := medianLooks(grown)
+
+	// Each filter is dropped rather than allowed to leave nothing.
+	pool := filterAgents(grown, func(a *engine.Agent) bool {
+		return a.MaxVitality(&cfg) >= cfg.BirthVitalityCost
+	})
+	if len(pool) == 0 {
+		pool = grown
+	}
+	if better := filterAgents(pool, func(a *engine.Agent) bool {
+		return a.Gene(engine.GeneAttractiveness) >= middling
+	}); len(better) > 0 {
+		pool = better
+	}
+
+	sort.Slice(pool, func(i, j int) bool { return pool[i].Budget() > pool[j].Budget() })
+	sound := pool[:max(len(pool)/2, 1)]
+	best, bestSpeed := sound[0].ID, -1.0
+	for i := range sound {
+		if s := sound[i].MaxSpeed(&cfg); s > bestSpeed {
+			best, bestSpeed = sound[i].ID, s
+		}
+	}
+	return best
+}
+
+func filterAgents(in []engine.Agent, keep func(*engine.Agent) bool) []engine.Agent {
+	out := make([]engine.Agent, 0, len(in))
+	for i := range in {
+		if keep(&in[i]) {
+			out = append(out, in[i])
+		}
+	}
+	return out
+}
+
+// medianLooks is the middle of what the population has spent on being worth
+// looking at. Read live, so it goes on meaning the same thing as the gene
+// drifts.
+func medianLooks(in []engine.Agent) float64 {
+	v := make([]float64, len(in))
+	for i := range in {
+		v[i] = in[i].Gene(engine.GeneAttractiveness)
+	}
+	sort.Float64s(v)
+	if len(v) == 0 {
+		return 0
+	}
+	return v[len(v)/2]
+}
+
 func main() {
 	follow := flag.Int("follow", 0, "node ID to follow from the start (0 for none; nodes can also be clicked)")
 	seed := flag.Int64("seed", engine.DefaultConfig().Seed, "simulation seed")
 	slow := flag.Bool("slow", false, "start at 1/5 speed, for following a single node")
 	beliefs := flag.Bool("beliefs", false, "start on the beliefs panel rather than the decision one (tab switches)")
-	play := flag.Bool("play", false, "drive the followed node yourself from the start (same as pressing h)")
+	play := flag.Bool("play", false, "play a node yourself: -follow picks it, otherwise the quickest body in the world (same as pressing h)")
+	ask := flag.Bool("ask", false, "play it the other way: the node decides for itself and asks you at the turning points (h twice)")
+	boost := flag.Bool("boost", true, "bring the played body up to the world's average speed, paid for with new budget (a gift, shown on the panel)")
 	flag.Parse()
 
 	cfg := engine.DefaultConfig()
 	cfg.Width, cfg.Height = worldWidth, worldHeight
 	cfg.Seed = *seed
 
-	g := &game{world: engine.NewWorld(cfg), speed: normalSpeed, effort: 0.6}
+	// Effort 1.0 to start with. Walking flat out costs MoveCost per tick and
+	// empties an ordinary body in about half a minute of it, so it is a real
+	// choice rather than a free setting - but starting below it only made the
+	// game feel slow for a reason no player could see.
+	g := &game{world: engine.NewWorld(cfg), speed: normalSpeed, effort: 1.0, padKey: noKey}
+	g.boost = *boost
 	if *slow {
 		g.speed = 1
 	}
@@ -1153,14 +2678,14 @@ func main() {
 	if *beliefs {
 		g.mode = modeBeliefs
 	}
-	if *play {
+	if *play || *ask {
 		if g.selected == 0 {
-			// Somebody has to be picked, and the first node is as good as any.
-			if agents := g.world.Agents(); len(agents) > 0 {
-				g.selectAgent(agents[0].ID)
-			}
+			g.selectAgent(quickestBody(g.world))
 		}
 		g.toggleControl()
+		if *ask {
+			g.toggleControl()
+		}
 	}
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)

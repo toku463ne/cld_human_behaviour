@@ -39,6 +39,9 @@ var (
 	ErrOrderUnseen = errors.New("this node cannot see that")
 	// ErrNoDirection is a move with nowhere to go.
 	ErrNoDirection = errors.New("a move needs a direction")
+	// ErrOrderInedible is an order to eat something this node will not eat:
+	// its own kind's carcass, or somebody else's kill while the claim stands.
+	ErrOrderInedible = errors.New("it will not eat that")
 )
 
 // HumanView is a copy of the last perception a human controller was handed.
@@ -92,6 +95,7 @@ type HumanController struct {
 	askedAt    int
 	lastAnswer Action
 	voided     int
+	finished   int
 	body       int
 }
 
@@ -134,6 +138,19 @@ func (h *HumanController) Decide(p *Perception) Action {
 		h.order = Action{Kind: ActRest}
 		h.voided++
 	}
+	// Carried out, which is not the same as lost. An order aimed at something
+	// is spent the moment the something has been done: the meal has been
+	// eaten, the stranger has been sized up, the pursuer has been left behind.
+	//
+	// Without this the order stands, the node answers the next question with
+	// the same impossible thing, and a tick later it lapses - so eating the
+	// meal you asked for was recorded as the meal being taken from you. The
+	// distinction matters to a player, and the world already knows which of
+	// the two happened: it is the trigger it asked with.
+	if p.Trigger == TriggerGoalReached && h.order.TargetID != 0 {
+		h.order = Action{Kind: ActRest}
+		h.finished++
+	}
 	h.asked++
 	h.askedAt = p.Tick
 	h.lastAnswer = h.order
@@ -142,21 +159,47 @@ func (h *HumanController) Decide(p *Perception) Action {
 
 // snapshot copies the perception, since the world reuses its buffer.
 func (h *HumanController) snapshot(p *Perception) {
-	h.view.Tick = p.Tick
-	h.view.Self = p.Self
-	h.view.Foods = append(h.view.Foods[:0], p.Foods...)
-	h.view.Others = append(h.view.Others[:0], p.Others...)
+	h.view.copyOf(p)
 	h.haveView = true
 }
 
-// Order puts a standing order in, refusing one the node could not have come up
-// with itself. What it checks is knowledge, not wisdom: a player is free to
-// walk into a fight they will lose, and is not free to aim at somebody their
-// node cannot see.
+// copyOf takes the perception into a view of one's own. Both controllers a
+// person can be behind keep one, which is why it lives on the view rather than
+// on either of them.
+func (v *HumanView) copyOf(p *Perception) {
+	v.Tick = p.Tick
+	v.Self = p.Self
+	v.Foods = append(v.Foods[:0], p.Foods...)
+	v.Others = append(v.Others[:0], p.Others...)
+}
+
+// set is the raw setter. Everything that decides whether an order is allowed
+// lives in World.OrderHuman, because that is where the answer is known.
+func (h *HumanController) set(a Action) { h.order = a }
+
+// OrderHuman puts a standing order on an agent a person is driving, refusing
+// one the node could not have come up with itself.
 //
-// Effort is clamped rather than refused, and a move direction is normalised, so
+// The world does the checking rather than the controller, and that is the
+// whole reason this is a method on World: only the world knows what is in
+// sight now. A controller's copy of the perception is as old as the last
+// question it was asked, while the player is looking at a screen drawn this
+// frame - so a meal that came into view since then is right in front of them,
+// and checking against the copy would refuse it as unseen.
+//
+// What it checks is knowledge, not wisdom: a player is free to walk into a
+// fight they will lose, and is not free to aim at somebody their node cannot
+// see. Effort is clamped rather than refused and a direction is normalised, so
 // that an interface does not have to do arithmetic to be correct.
-func (h *HumanController) Order(a Action) error {
+func (w *World) OrderHuman(id int, a Action) error {
+	agent := w.agentByID(id)
+	if agent == nil || !agent.Alive {
+		return fmt.Errorf("node #%d is gone", id)
+	}
+	h, ok := agent.controller.(*HumanController)
+	if !ok {
+		return fmt.Errorf("node #%d is not being driven by a person", id)
+	}
 	if a.Kind >= numActionKinds {
 		return fmt.Errorf("no such action (%d)", a.Kind)
 	}
@@ -167,6 +210,8 @@ func (h *HumanController) Order(a Action) error {
 		a.TargetID, a.DX, a.DY = 0, 0, 0
 
 	case ActMove:
+		// A direction, not a place: walking a way is something an agent can do
+		// without knowing what is over there.
 		l := math.Hypot(a.DX, a.DY)
 		if l < 1e-9 {
 			return ErrNoDirection
@@ -178,30 +223,52 @@ func (h *HumanController) Order(a Action) error {
 		if a.TargetID == 0 {
 			return ErrNoOrderTarget
 		}
-		if !h.haveView {
-			return ErrOrderUnseen
-		}
-		if _, ok := h.view.FoodByID(a.TargetID); !ok {
-			return fmt.Errorf("food #%d: %w", a.TargetID, ErrOrderUnseen)
+		if !w.CanTargetFood(id, a.TargetID) {
+			f := w.foodByID(a.TargetID)
+			if f != nil && w.canSee(agent.X, agent.Y, f.X, f.Y) {
+				return ErrOrderInedible
+			}
+			return fmt.Errorf("meal #%d: %w", a.TargetID, ErrOrderUnseen)
 		}
 
 	default: // attack, flee, observe, court
 		if a.TargetID == 0 {
 			return ErrNoOrderTarget
 		}
-		if !h.haveView {
-			return ErrOrderUnseen
-		}
-		if a.TargetID == h.view.Self.ID {
+		if a.TargetID == id {
 			return errors.New("a node cannot do that to itself")
 		}
-		if _, ok := h.view.AgentByID(a.TargetID); !ok {
+		if !w.CanTargetAgent(id, a.TargetID) {
 			return fmt.Errorf("node #%d: %w", a.TargetID, ErrOrderUnseen)
 		}
 	}
 
-	h.order = a
+	h.set(a)
 	return nil
+}
+
+// CanTargetAgent reports whether one agent can see another right now. It is
+// the same rule the perception is built from, minus everything that makes a
+// perception expensive: no memory is touched and no random number is drawn, so
+// an interface may ask it as often as it likes without moving the world.
+func (w *World) CanTargetAgent(id, otherID int) bool {
+	a, o := w.agentByID(id), w.agentByID(otherID)
+	if a == nil || o == nil || !a.Alive || !o.Alive || a.ID == o.ID {
+		return false
+	}
+	return w.canSee(a.X, a.Y, o.X, o.Y)
+}
+
+// CanTargetFood reports whether an agent can see an item and would eat it. The
+// second half matters as much as the first: a carcass of its own kind is not
+// food to it, and somebody else's kill is not yet.
+func (w *World) CanTargetFood(id, foodID int) bool {
+	a := w.agentByID(id)
+	f := w.foodByID(foodID)
+	if a == nil || f == nil || !a.Alive {
+		return false
+	}
+	return w.canSee(a.X, a.Y, f.X, f.Y) && w.canEat(a, f)
 }
 
 // Standing is the order the node will answer with the next time it is asked.
@@ -226,6 +293,11 @@ func (h *HumanController) LastAnswer() Action { return h.lastAnswer }
 // they differ between a handover and the first question put to the new body,
 // and everything in the view still belongs to the old one until then.
 func (h *HumanController) Body() int { return h.body }
+
+// Finished is how many orders have been carried out to completion. Told apart
+// from Voided on purpose: one of them is the world taking something away and
+// the other is the node doing what it was told.
+func (h *HumanController) Finished() int { return h.finished }
 
 // Voided is how many orders have been dropped because what they were aimed at
 // was gone. An interface shows it so that a player is told their order lapsed

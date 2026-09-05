@@ -533,11 +533,25 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	ticks := o.Dist/speedAt(p.Self.MaxSpeed, effort) + 1
 	cost := moveCostAt(cfg, effort) * ticks
 
+	// What a child costs the body that has one: the parents share the birth,
+	// and it is only paid if the courtship is accepted (stage 25).
+	//
+	// Until this was here, courting looked as though it cost a walk. What
+	// stood in for the missing term was a threshold that stopped a hungry
+	// agent courting at all - a hardcoded behavioural gate of exactly the kind
+	// the design says not to write. Priced properly, an agent that cannot
+	// afford a child turns one down on the numbers.
+	birth := cfg.BirthVitalityCost / 2 * s.AcceptChance
+	drain := projectedDrain(cfg, s.HungerRate, s.Hunger) + c.incomingDmg
+	now := pressure(cfg, s, s.Vitality, drain)
+	after := pressure(cfg, s, s.Vitality-cost-birth, drain)
+
 	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, Utility{
 		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance},
-		Vitality:     cost,
+		Life:         Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
+		Vitality:     cost + birth,
 		Ticks:        ticks,
-		VitalityCost: cost * cfg.VitalityWeight,
+		VitalityCost: (cost + birth) * cfg.VitalityWeight,
 		TimeCost:     ticks * cfg.TimeCost,
 	})
 }

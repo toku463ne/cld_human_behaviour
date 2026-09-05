@@ -23,7 +23,13 @@ import (
 // arrive first rather than on who was nearer (the groundwork for terrain), and
 // again when sight stopped being a circle and became a block of cells
 // (stage 13), and again when the world got regions that differ in how sheltered
-// resting in them is (stage 14).
+// resting in them is (stage 14), and again when a blow that finds nothing
+// started leaving the one who threw it off balance (stage 24), and again when
+// courting stopped being gated by a hunger threshold and started being priced
+// in the comparison like everything else (stage 25), and again when patience
+// stopped removing the bar a candidate has to clear and started only lowering
+// it (stage 26), and again when the comparison clock stopped restarting on
+// every fresh attempt at courting (stage 28).
 //
 // Stage 7a is a change of how the neighbours are found, not of what happens,
 // and its completion condition is that the same seed gives the same run. That
@@ -41,9 +47,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 35, births: 13, deaths: 60, kills: 39, aging: 0, fights: 3452, gen: 2, power: 36.343632, vitality: 76.782622, hunger: 22.971672},
-	{seed: 2, pop: 30, births: 20, deaths: 72, kills: 56, aging: 0, fights: 6556, gen: 2, power: 38.382564, vitality: 80.043564, hunger: 16.752121},
-	{seed: 3, pop: 30, births: 12, deaths: 64, kills: 46, aging: 0, fights: 3333, gen: 3, power: 51.393526, vitality: 88.761080, hunger: 21.938254},
+	{seed: 1, pop: 39, births: 22, deaths: 65, kills: 42, aging: 0, fights: 3161, gen: 2, power: 32.316423, vitality: 79.194465, hunger: 17.572593},
+	{seed: 2, pop: 35, births: 25, deaths: 72, kills: 53, aging: 0, fights: 3985, gen: 3, power: 37.201701, vitality: 88.121707, hunger: 23.322783},
+	{seed: 3, pop: 35, births: 20, deaths: 67, kills: 48, aging: 0, fights: 3424, gen: 2, power: 37.787791, vitality: 102.961217, hunger: 28.675320},
 }
 
 const goldenTicks = 5000

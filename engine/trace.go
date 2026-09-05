@@ -29,6 +29,10 @@ const (
 	TriggerBondEnded                    // its pair broke up
 	TriggerControllerSet                // a different controller took it over
 	TriggerRequested                    // asked for without a stated reason
+
+	// numTriggers is how many there are, for the code that has to keep one
+	// flag per trigger (stage 23). It is not a trigger.
+	numTriggers
 )
 
 func (t Trigger) String() string {
