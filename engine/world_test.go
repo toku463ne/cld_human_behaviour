@@ -2232,6 +2232,35 @@ func TestClusterGapsRelativeOfARandomLayout(t *testing.T) {
 	}
 }
 
+// The other end of the same scale. A structureless layout reads 1, but a
+// number is only a target if the scale can reach it: criterion E asks for 1.2,
+// and that has to mean something the arrangement of groups could actually be.
+// Groups on a lattice are as far from each other as that many groups can get,
+// and they read close to 2 - so 1.2 is well inside the range and a run that
+// sits at 0.85 is saying something about the world, not about the measure.
+func TestClusterGapsRelativeOfAnAvoidingLayout(t *testing.T) {
+	w := NewWorld(testConfig())
+	w.cfg.Width, w.cfg.Height = 800, 600
+	// Twelve groups of four on a 4x3 lattice, which is the shape the default
+	// world reports at the tail of a run.
+	for i := 0; i < 4; i++ {
+		for j := 0; j < 3; j++ {
+			cx, cy := 100+float64(i)*200, 100+float64(j)*200
+			for k := 0; k < 4; k++ {
+				w.addAgent(Agent{Maturity: 1, X: cx + float64(k%2)*8, Y: cy + float64(k/2)*8,
+					Vitality: 100, Genome: genomeOf(50, 0, 0)})
+			}
+		}
+	}
+
+	got := w.ClusterGaps(DefaultClusterLinkDist)
+	t.Logf("relative gap of a lattice: %.3f", got.Relative)
+	if got.Relative < 1.5 {
+		t.Fatalf("relative gap of a lattice = %.3f, want well above the 1.2 the "+
+			"criterion asks for: the top of the scale has to be reachable", got.Relative)
+	}
+}
+
 // A sighting trigger fires when something comes into view, not on every tick it
 // is in view. The difference is not a detail: an agent crossing a place with
 // food in it sees food on every tick of the crossing, and asking it to think
