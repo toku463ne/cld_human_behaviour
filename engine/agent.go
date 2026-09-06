@@ -299,6 +299,12 @@ type Agent struct {
 	memoryTick int
 	memoryUsed int
 
+	// lastCourt is how the last courtship this one walked up to came out. It
+	// is bookkeeping for whoever is watching - no rule reads it - and it is
+	// kept here rather than worked out afterwards because by the time anybody
+	// looks, the two answers and the numbers behind them are gone.
+	lastCourt CourtView
+
 	// rejected holds candidates recently passed over, mapped to the tick at
 	// which they become interesting again. Also lazily allocated.
 	rejected map[int]int

@@ -1734,7 +1734,20 @@ func (g *game) watchProtagonist() {
 		// is marked as one it is not interested in comparing again just yet,
 		// and that mark is only ever set by a courtship that did not take.
 		if turned, ok := g.turnedDownBy(was.target); ok && turned {
-			g.pop("#%d turned me down", was.target)
+			// Which side said no. "#12 turned me down" was said whoever had
+			// refused, and half the time it was this node itself holding out
+			// for somebody better - the same kind of lie the lapsed-order
+			// count used to tell.
+			switch c, ok := g.lastCourtship(was.target); {
+			case !ok:
+				g.pop("#%d and I did not pair", was.target)
+			case c.Accepted && !c.TheyAccepted:
+				g.pop("#%d turned me down", was.target)
+			case !c.Accepted && c.TheyAccepted:
+				g.pop("I turned #%d down", was.target)
+			default:
+				g.pop("#%d and I both said no", was.target)
+			}
 		}
 	}
 	if now.canCourt && !was.canCourt {
@@ -1761,14 +1774,7 @@ func (g *game) watchProtagonist() {
 // turnedDownBy reports whether the node's own view of somebody says it has
 // just walked away from courting them.
 func (g *game) turnedDownBy(id int) (bool, bool) {
-	var v engine.HumanView
-	var ok bool
-	switch {
-	case g.human != nil:
-		v, ok = g.human.View()
-	case g.guided != nil:
-		v, ok = g.guided.View()
-	}
+	v, ok := g.view()
 	if !ok {
 		return false, false
 	}
@@ -1777,6 +1783,27 @@ func (g *game) turnedDownBy(id int) (bool, bool) {
 		return false, false
 	}
 	return o.Rejected, true
+}
+
+// lastCourtship is how the node's last courtship went, if it was with this
+// candidate and not with somebody since.
+func (g *game) lastCourtship(id int) (engine.CourtView, bool) {
+	v, ok := g.view()
+	if !ok || v.Self.LastCourt.TargetID != id || id == 0 {
+		return engine.CourtView{}, false
+	}
+	return v.Self.LastCourt, true
+}
+
+// view is whatever the node was last handed, whichever hand is on it.
+func (g *game) view() (engine.HumanView, bool) {
+	switch {
+	case g.human != nil:
+		return g.human.View()
+	case g.guided != nil:
+		return g.guided.View()
+	}
+	return engine.HumanView{}, false
 }
 
 // drawBubbles stacks what the protagonist is saying above its head, newest
@@ -2346,6 +2373,12 @@ func (g *game) drawPlay(t *textBox) {
 	} else {
 		t.line("no heir named (k). the line ends when this body does")
 	}
+	if v, ok := g.human.View(); ok && fresh {
+		// High up, because "why did that one turn me down" is a question a
+		// player asks while it is happening, and the bottom of the panel is
+		// where the lines that get cut off live.
+		g.drawCourting(t, v)
+	}
 	t.line("")
 
 	view, ok := g.human.View()
@@ -2506,6 +2539,9 @@ func (g *game) drawAsked(t *textBox) {
 	} else {
 		t.line("  no heir named (k). the line ends when this body does")
 	}
+	if v, ok := g.guided.View(); ok && fresh {
+		g.drawCourting(t, v)
+	}
 	t.line("")
 	g.drawLastChoice(t)
 
@@ -2552,6 +2588,39 @@ func (g *game) drawSuccession(t *textBox) {
 	t.line("expresses only part of what it inherited, and the")
 	t.line("parent it kept close to is the one that just died.")
 	t.line("it is a poor hand, not an impossible one.")
+}
+
+// drawCourting says what this body is worth to a mate and what it is holding
+// out for, and how the last proposal went.
+//
+// Every figure here is the node's own: what others can see of its build and
+// the shape it is in (which is all MateValue is made of), its own rule for
+// accepting, and the two answers of a courtship it was standing in. What a
+// candidate privately made of it is not here - that is their misjudgement, not
+// its knowledge - which is why a refusal can still be a surprise.
+func (g *game) drawCourting(t *textBox, view engine.HumanView) {
+	cfg := g.world.Config()
+	t.line("AS A MATE you are worth %.0f, and want %.0f; everybody wants %.0f",
+		view.Self.MateValue, view.Self.MateBar, cfg.CommitFitness)
+	t.line("  until their own patience runs out, then %.0f", cfg.CommitFloor)
+
+	c := view.Self.LastCourt
+	if c.TargetID == 0 {
+		return
+	}
+	who := ""
+	switch {
+	case c.Accepted && c.TheyAccepted:
+		who = "you both agreed"
+	case c.Accepted && !c.TheyAccepted:
+		who = "THEY said no"
+	case !c.Accepted && c.TheyAccepted:
+		who = "YOU said no"
+	default:
+		who = "you both said no"
+	}
+	t.line("LAST PROPOSAL #%d, %d ago: %s (you made them %.0f, wanted %.0f)",
+		c.TargetID, view.Tick-c.Tick, who, c.Fitness, c.Bar)
 }
 
 // drawGift says what this body was given for being the one that is played.

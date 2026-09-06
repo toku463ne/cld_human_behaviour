@@ -815,3 +815,45 @@ func TestAFasterAgentRatesItsChancesFromFurtherAway(t *testing.T) {
 		t.Fatalf("an average agent rated the race %v by time and %v by distance, want them equal", ordinary, slowOld)
 	}
 }
+
+// Both sides of a courtship that came to a head remember how it went, and
+// which of them said no. Nothing reads it back: it exists so that whoever is
+// watching does not have to guess.
+func TestBothSidesRememberHowTheCourtshipWent(t *testing.T) {
+	cfg := testConfig()
+	cfg.JudgementNoise = 0 // so the two answers are the rule, not the draw
+	w := NewWorld(cfg)
+
+	// A plain suitor and a catch: the catch is worth more than CommitFitness,
+	// the suitor is worth less, and neither has been looking long enough for
+	// patience to lower anything.
+	suitor := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	catch := w.addAgent(Agent{Maturity: 1, X: 202, Y: 200, Sex: Female, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 100, 100)})
+	sa, ca := mustAgent(t, w, suitor), mustAgent(t, w, catch)
+	sa.Genome[GeneAttractiveness] = 10  // worth little to look at
+	ca.Genome[GeneAttractiveness] = 100 // and worth a lot
+	sa.courtStartTick, ca.courtStartTick = w.tick, w.tick
+	sa.Action = Action{Kind: ActCourt, TargetID: catch, Effort: 1}
+
+	w.court(sa)
+
+	mine, theirs := mustAgent(t, w, suitor).lastCourt, mustAgent(t, w, catch).lastCourt
+	if mine.TargetID == 0 || theirs.TargetID == 0 {
+		t.Fatalf("the courtship was not remembered: %+v / %+v", mine, theirs)
+	}
+	if mine.TargetID != catch || theirs.TargetID != suitor {
+		t.Fatalf("remembered the wrong candidate: %+v / %+v", mine, theirs)
+	}
+	if !mine.Accepted || mine.TheyAccepted {
+		t.Fatalf("the suitor's side reads %+v, want it willing and them not", mine)
+	}
+	// And the same event from the other side, the other way round.
+	if theirs.Accepted || !theirs.TheyAccepted {
+		t.Fatalf("the catch's side reads %+v, want it refusing and them willing", theirs)
+	}
+	if mine.Bar != cfg.CommitFitness {
+		t.Fatalf("the suitor was holding out for %v, want %v", mine.Bar, cfg.CommitFitness)
+	}
+}

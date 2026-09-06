@@ -99,6 +99,42 @@ type SelfView struct {
 	// half of the perception: an agent can feel whether its back is covered
 	// where it is, and cannot see whether it would be covered over there.
 	Shelter float64
+
+	// What this agent is worth as a mate and what it is holding out for.
+	//
+	// Both are its own. MateValue is built out of two things it knows about
+	// itself - what others can see of its build, and the shape it is in -
+	// though what a candidate makes of it will be that figure plus their own
+	// misjudgement. MateBar is its own rule for accepting somebody, and it
+	// comes down to CommitFloor once it has been looking long enough.
+	MateValue float64
+	MateBar   float64
+
+	// LastCourt is what came of the last courtship this agent walked all the
+	// way up to. Nothing here is new knowledge: the world already teaches the
+	// suitor whether the other side agreed (that is what AcceptChance is
+	// learned from), and the rest is this agent's own answer and its own
+	// judgement of the candidate.
+	LastCourt CourtView
+}
+
+// CourtView is one courtship that came to a head: who it was with, when, which
+// side said no, and the two numbers this agent's own answer was made of.
+//
+// Both sides get one, so an agent that was courted knows it turned somebody
+// down as surely as one that was turned down knows it.
+type CourtView struct {
+	TargetID int // who it was with, 0 if this agent has never got that far
+	Tick     int // when it came to a head
+
+	Accepted     bool // this agent's own answer
+	TheyAccepted bool // and the other side's
+
+	// Fitness is what this agent made of the candidate (its own estimate,
+	// including its own misjudgement), and Bar what it was holding out for at
+	// that moment.
+	Fitness float64
+	Bar     float64
 }
 
 // FoodView is one food item as an agent sees it.
@@ -251,6 +287,9 @@ func (w *World) perceive(a *Agent) *Perception {
 		ShockRisk:         a.lore.shockRisk,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
+		MateValue:         fitness(a, &w.cfg),
+		MateBar:           w.commitBar(a),
+		LastCourt:         a.lastCourt,
 		RestRate:          w.restRate(a),
 		Nutrition:         w.mealValues(a),
 	}

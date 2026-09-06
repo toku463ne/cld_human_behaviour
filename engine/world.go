@@ -642,8 +642,18 @@ func (w *World) court(a *Agent) {
 	// because only one of them is news about the world: whether the other side
 	// agreed. The suitor changing its own mind teaches it nothing about how
 	// often a proposal is accepted, so that is not what it learns from.
-	mine := w.willCommit(a, w.perceivedFitness(a, o))
-	theirs := w.willCommit(o, w.perceivedFitness(o, a))
+	sawInThem, sawInIt := w.perceivedFitness(a, o), w.perceivedFitness(o, a)
+	mine := w.willCommit(a, sawInThem)
+	theirs := w.willCommit(o, sawInIt)
+	// Both sides remember how it went. This is not new knowledge on either
+	// side: the world already teaches the suitor whether the other agreed
+	// (noteCourtship, which is where AcceptChance comes from), and its own
+	// answer was its own. Nothing reads it back - it is for whoever is
+	// watching, which until now had to guess which side had said no.
+	a.lastCourt = CourtView{TargetID: o.ID, Tick: w.tick,
+		Accepted: mine, TheyAccepted: theirs, Fitness: sawInThem, Bar: w.commitBar(a)}
+	o.lastCourt = CourtView{TargetID: a.ID, Tick: w.tick,
+		Accepted: theirs, TheyAccepted: mine, Fitness: sawInIt, Bar: w.commitBar(o)}
 	w.noteCourtship(a, theirs)
 	if mine && theirs {
 		w.bond(a, o)
@@ -1216,11 +1226,16 @@ func (w *World) patienceTicks(a *Agent) int {
 //
 // CommitFloor = 0 is the world as it was, exactly: every fitness clears zero.
 func (w *World) willCommit(a *Agent, candidateFitness float64) bool {
-	bar := w.cfg.CommitFitness
+	return candidateFitness >= w.commitBar(a)
+}
+
+// commitBar is what this agent is holding out for right now: the full figure
+// while it is still comparing, the floor once its patience has run out.
+func (w *World) commitBar(a *Agent) float64 {
 	if w.tick-a.courtStartTick >= w.patienceTicks(a) {
-		bar = w.cfg.CommitFloor
+		return w.cfg.CommitFloor
 	}
-	return candidateFitness >= bar
+	return w.cfg.CommitFitness
 }
 
 // --- neighbourhood queries -------------------------------------------------
