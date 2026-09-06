@@ -15,6 +15,7 @@ import (
 	"image/color"
 	"log"
 	"math"
+	"os"
 	"sort"
 	"strings"
 
@@ -381,6 +382,8 @@ func (g *game) handleInput() {
 	case inpututil.IsKeyJustPressed(ebiten.KeyZ):
 		g.zoom = (g.zoom + 1) % len(zoomLevels)
 		g.say("zoom x%.1f", zoomLevels[g.zoom])
+	case inpututil.IsKeyJustPressed(ebiten.KeyF2):
+		g.saveWorld()
 	case inpututil.IsKeyJustPressed(ebiten.KeyTab):
 		g.mode = panelMode((int(g.mode) + 1) % numPanelModes)
 	case inpututil.IsKeyJustPressed(ebiten.KeyBracketLeft):
@@ -2380,7 +2383,7 @@ func (g *game) overlay() string {
 	default:
 		b.WriteString("space pause   right/n one tick   -/= slower/faster   z zoom   click a node   esc clear\n")
 	}
-	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node\n")
+	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node   F2 save this world\n")
 	switch g.play {
 	case playDriven:
 		fmt.Fprintf(&b, "playing #%d: numpad or arrows+home/end/pgup/pgdn walk it (hold to keep going)   click a spot then m walks there and stops\n", g.played)
@@ -3311,6 +3314,67 @@ var testMaps = map[string][]string{
 	},
 }
 
+// startWorld builds the world this run is about: a new one, one read back from
+// a file, or a new one with somebody else's population in it (stage 21).
+//
+// A loaded world brings its own Config with it - the ground it was laid out
+// on, the rules it was run under - so the flags that describe a world are
+// ignored when one is read from a file. Saying otherwise would let a world be
+// loaded into rules it was never run under and call the result the same world.
+func startWorld(cfg engine.Config, load, nodes string) (*engine.World, error) {
+	if load != "" {
+		f, err := os.Open(load)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		w, err := engine.Load(f)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", load, err)
+		}
+		log.Printf("loaded %s at tick %d with %d bodies", load, w.Tick(), w.Stats().Population)
+		return w, nil
+	}
+	w := engine.NewWorld(cfg)
+	if nodes != "" {
+		f, err := os.Open(nodes)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		people, err := engine.LoadNodes(f)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", nodes, err)
+		}
+		log.Printf("put %d bodies from %s into a fresh world", w.Repopulate(people), nodes)
+	}
+	return w, nil
+}
+
+// saveWorld writes the world out, and the population beside it. Two files
+// because they answer different questions: one is "this world, going on from
+// here", the other is "these bodies, wherever they end up".
+func (g *game) saveWorld() {
+	name := fmt.Sprintf("world-%d.json", g.world.Tick())
+	f, err := os.Create(name)
+	if err != nil {
+		g.say("could not save: %v", err)
+		return
+	}
+	err = g.world.Save(f)
+	f.Close()
+	if err != nil {
+		g.say("could not save: %v", err)
+		return
+	}
+	people := fmt.Sprintf("nodes-%d.json", g.world.Tick())
+	if pf, err := os.Create(people); err == nil {
+		engine.SaveNodes(pf, g.world.Nodes())
+		pf.Close()
+	}
+	g.say("saved %s and %s", name, people)
+}
+
 func main() {
 	follow := flag.Int("follow", 0, "node ID to follow from the start (0 for none; nodes can also be clicked)")
 	seed := flag.Int64("seed", engine.DefaultConfig().Seed, "simulation seed")
@@ -3320,6 +3384,8 @@ func main() {
 	ask := flag.Bool("ask", false, "play it the other way: the node decides for itself and asks you at the turning points (h twice)")
 	boost := flag.Bool("boost", true, "bring the played body up to the world's average speed, paid for with new budget (a gift, shown on the panel)")
 	land := flag.String("terrain", "", "lay the world out on a piece of country: none (default, flat), rough, river, plateau or country (stage 20)")
+	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
+	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
 	flag.Parse()
 
 	cfg := engine.DefaultConfig()
@@ -3347,7 +3413,11 @@ func main() {
 	// empties an ordinary body in about half a minute of it, so it is a real
 	// choice rather than a free setting - but starting below it only made the
 	// game feel slow for a reason no player could see.
-	g := &game{world: engine.NewWorld(cfg), speed: normalSpeed, effort: 1.0, padKey: noKey}
+	world, err := startWorld(cfg, *load, *nodes)
+	if err != nil {
+		log.Fatal(err)
+	}
+	g := &game{world: world, speed: normalSpeed, effort: 1.0, padKey: noKey}
 	g.boost = *boost
 	if *slow {
 		g.speed = 1

@@ -120,7 +120,13 @@ type World struct {
 	// rng is the single source of randomness of the simulation. Everything,
 	// including the controllers, draws from it, so a given seed always
 	// reproduces the same run.
-	rng *rand.Rand
+	//
+	// draws is the same generator's counter (save.go). The state of Go's
+	// source cannot be written out, so what a snapshot stores is the seed and
+	// how many numbers have come out of it; counting is what makes that
+	// possible, and it forwards the stream unchanged.
+	rng   *rand.Rand
+	draws *countingSource
 
 	agents []Agent
 	foods  []Food
@@ -243,7 +249,6 @@ type World struct {
 func NewWorld(cfg Config) *World {
 	w := &World{
 		cfg:         cfg,
-		rng:         rand.New(rand.NewSource(cfg.Seed)),
 		agents:      make([]Agent, 0, cfg.InitialPopulation),
 		foods:       make([]Food, 0, cfg.InitialFoodItems),
 		index:       make(map[int]int, cfg.InitialPopulation),
@@ -252,6 +257,7 @@ func NewWorld(cfg Config) *World {
 		nextAgentID: 1,
 		nextFoodID:  1,
 	}
+	w.rng, w.draws = newCountingRand(cfg.Seed)
 	// Before anybody is put in it, because what the ground is like is not
 	// something the population decides.
 	w.ground = buildTerrain(&w.cfg)

@@ -2,3 +2,7 @@
 /devview
 /experiment
 /snapshot
+
+# worlds and populations written by cmd/devview (F2)
+/world-*.json
+/nodes-*.json
