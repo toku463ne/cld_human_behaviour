@@ -194,3 +194,183 @@ func TestAGoodMemoryHoldsTheCountryLongerWithoutCrowdingOutPeople(t *testing.T) 
 		t.Fatalf("learning the ground took up %d of its memory of people", len(good.opinions))
 	}
 }
+
+// --- how hard the going is (stage 29) ---------------------------------------
+
+// costCountryConfig is a still world split east and west: open ground on the
+// left, country that costs three times as much on the right. The region grid
+// is 4x3, so the western two columns of regions are entirely open and the
+// eastern two entirely rough.
+func costCountryConfig() Config {
+	cfg := quietConfig()
+	cfg.RegionNoise = 0
+	cfg.Width, cfg.Height = 800, 600
+	cfg.RoughMoveCost = 3
+	cfg.TerrainMap = []string{
+		"....::::",
+		"....::::",
+		"....::::",
+	}
+	return cfg
+}
+
+// An agent learns the going of the ground it stands on, and nothing about the
+// ground it has not.
+func TestAnAgentLearnsHowHardTheGroundItStandsOnIs(t *testing.T) {
+	cfg := costCountryConfig()
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 500, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+
+	here := w.regionIndexAt(a.X, a.Y)
+	for i := 0; i < 30; i++ {
+		w.noteRegion(a, 3)
+	}
+	cost, known := w.regionCostEstimate(a, here)
+	if !known {
+		t.Fatal("stood on hard going thirty times and learned nothing about it")
+	}
+	if math.Abs(cost-cfg.RoughMoveCost) > 0.3 {
+		t.Fatalf("reckons the going here is x%.2f, want about x%.1f", cost, cfg.RoughMoveCost)
+	}
+	for r := range w.regions {
+		if r == here {
+			continue
+		}
+		if _, known := w.regionCostEstimate(a, r); known {
+			t.Fatalf("has a view of the going in region %d without ever being there", r)
+		}
+	}
+}
+
+// Hard going makes a region worth less to go to. Two regions with the same
+// food, one of them rough: the open one is what the agent heads for.
+func TestHardGoingMakesAPlaceWorthLess(t *testing.T) {
+	cfg := costCountryConfig()
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 300, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+
+	// Been in three places: here (middling), somewhere open with more food,
+	// and somewhere rough with the same amount more.
+	openIdx := w.regionIndexAt(100, 100)
+	roughIdx := w.regionIndexAt(700, 100)
+	hereIdx := w.regionIndexAt(a.X, a.Y)
+	a.regions = make([]regionView, len(w.regions))
+	for _, c := range []struct {
+		i    int
+		seen float64
+		cost float64
+	}{
+		{hereIdx, 2, 1},
+		{openIdx, 6, 1},
+		{roughIdx, 6, cfg.RoughMoveCost},
+	} {
+		a.regions[c.i].setSeen(c.seen, 10, w.tick)
+		a.regions[c.i].cost = c.cost
+	}
+
+	best, gain, ok := w.bestKnownRegion(a)
+	if !ok {
+		t.Fatal("knows nowhere better than here")
+	}
+	if best != openIdx {
+		t.Fatalf("heads for region %d, want the open one (%d) over the rough one (%d)",
+			best, openIdx, roughIdx)
+	}
+	// And the pull is smaller than it would be with the going ignored.
+	cfg.RegionCostWeight = 0
+	flat := NewWorld(cfg)
+	flat.agents = w.agents
+	flat.index = w.index
+	if _, flatGain, _ := flat.bestKnownRegion(mustAgent(t, flat, a.ID)); !(gain <= flatGain) {
+		t.Fatalf("the going cost nothing: gain %v with it, %v without", gain, flatGain)
+	}
+}
+
+// With the weight at zero the stage is not there: the ranking is stage 15b's.
+func TestWithNoWeightTheGoingIsIgnored(t *testing.T) {
+	cfg := costCountryConfig()
+	cfg.RegionCostWeight = 0
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 300, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+
+	openIdx, roughIdx := w.regionIndexAt(100, 100), w.regionIndexAt(700, 100)
+	a.regions = make([]regionView, len(w.regions))
+	a.regions[w.regionIndexAt(a.X, a.Y)].setSeen(2, 10, w.tick)
+	a.regions[openIdx].setSeen(6, 10, w.tick)
+	a.regions[openIdx].cost = 1
+	a.regions[roughIdx].setSeen(7, 10, w.tick)
+	a.regions[roughIdx].cost = cfg.RoughMoveCost
+
+	if best, _, _ := w.bestKnownRegion(a); best != roughIdx {
+		t.Fatalf("heads for region %d, want the one with the most food (%d) when the going is not weighed",
+			best, roughIdx)
+	}
+}
+
+// The going is handed on like everything else two agents trade: somewhere you
+// have never been is somewhere you can only hear about.
+func TestTheGoingIsHandedOn(t *testing.T) {
+	cfg := costCountryConfig()
+	w := NewWorld(cfg)
+	walker := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 700, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+	stayer := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+
+	rough := w.regionIndexAt(700, 100)
+	for i := 0; i < 30; i++ {
+		w.noteRegion(walker, 3)
+	}
+	w.noteRegion(stayer, 3)
+	if _, known := w.regionCostEstimate(stayer, rough); known {
+		t.Fatal("knows the going somewhere it has never been, before being told")
+	}
+
+	w.exchangeLore(stayer, walker)
+	cost, known := w.regionCostEstimate(stayer, rough)
+	if !known {
+		t.Fatal("was told nothing about the going over there")
+	}
+	if math.Abs(cost-cfg.RoughMoveCost) > 0.5 {
+		t.Fatalf("was told the going is x%.2f, want about x%.1f", cost, cfg.RoughMoveCost)
+	}
+
+	// And with the telling off, it stays ignorant (29a without 29b).
+	cfg.RegionCostTold = false
+	w2 := NewWorld(cfg)
+	w1 := mustAgent(t, w2, w2.addAgent(Agent{Maturity: 1, X: 700, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+	s2 := mustAgent(t, w2, w2.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+	for i := 0; i < 30; i++ {
+		w2.noteRegion(w1, 3)
+	}
+	w2.noteRegion(s2, 3)
+	w2.exchangeLore(s2, w1)
+	if _, known := w2.regionCostEstimate(s2, w2.regionIndexAt(700, 100)); known {
+		t.Fatal("heard about the going with the telling turned off")
+	}
+}
+
+// A world with no map has nothing to learn about the going, so the stage is
+// invisible in it - which is what keeps every earlier measurement comparable.
+func TestAFlatWorldLearnsNothingAboutTheGoing(t *testing.T) {
+	cfg := quietConfig()
+	cfg.RegionNoise = 0
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+	for i := 0; i < 20; i++ {
+		w.noteRegion(a, 4)
+	}
+	cost, _ := w.regionCostEstimate(a, w.regionIndexAt(a.X, a.Y))
+	if math.Abs(cost-1) > 1e-9 {
+		t.Fatalf("reckons flat ground costs x%v", cost)
+	}
+	if got := w.worthOfRegion(a, w.regionIndexAt(a.X, a.Y), 4); math.Abs(got-4) > 1e-9 {
+		t.Fatalf("a region is worth %v rather than the %v it sees, on flat ground", got, 4.0)
+	}
+}

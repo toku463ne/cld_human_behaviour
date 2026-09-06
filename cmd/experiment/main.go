@@ -1001,6 +1001,40 @@ var variants = []variant{
 		about: "sweep: the same broken country at four times the cost",
 		apply: func(c *engine.Config) { c.TerrainMap, c.RoughMoveCost = mapRough, 4 },
 	},
+	// Stage 29: the going, learned and handed on. The arms are all on the
+	// rough map, because a belief about the going says nothing in a world
+	// where all the going is the same - the question is whether knowing it
+	// changes where the population stands (onDear) and what that is worth.
+	{
+		name:  "roughlore",
+		about: "rough country, and agents learn and tell each other how hard it is",
+		apply: func(c *engine.Config) { c.TerrainMap = mapRough },
+	},
+	{
+		name:  "roughnolore",
+		about: "control: the same country, and the going is learned but never weighed (29 off)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionCostWeight = mapRough, 0 },
+	},
+	{
+		name:  "roughnotold",
+		about: "control: the going is weighed but never handed on (29a without 29b)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionCostTold = mapRough, false },
+	},
+	{
+		name:  "roughmildlore",
+		about: "sweep: the going weighed at half (one multiple of cost = one food in sight)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionCostWeight = mapRough, 1 },
+	},
+	{
+		name:  "roughhardlore",
+		about: "sweep: the going weighed at double",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionCostWeight = mapRough, 4 },
+	},
+	{
+		name:  "countrylore",
+		about: "the whole country (rough, river, plateau) with the going learned and told",
+		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
+	},
 	// The birth bug found on 2026-09-06: a bond that had run its course only
 	// produced a child when the loop reached the lower-numbered partner
 	// first. This arm is the world every measurement before that date was
@@ -1164,7 +1198,7 @@ var metricNames = []string{
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
-	"regionKnown", "regionTold", "regionRank", "regionSpread",
+	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
 	"speedHigh", "speedLow", "highGap",
@@ -1254,6 +1288,7 @@ type sample struct {
 	// than walked, how well the views line up with the truth, and how much
 	// agents disagree about the same place.
 	regionKnown, regionTold, regionRank, regionSpread float64
+	regionCostRank                                    float64
 
 	// Where the population stands on the map, and who stands where (stage
 	// 20). speedOpen and speedDear are the mean share of the budget spent on
@@ -1404,7 +1439,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			restShelter: shelter.Resting, shelterAll: shelter.All,
 			humanRich: rich.Humans, enemyRich: rich.Enemies, allRich: rich.All,
 			regionKnown: known.Known, regionTold: known.Told,
-			regionRank: known.Rank, regionSpread: known.Spread,
+			regionCostRank: known.CostRank,
+			regionRank:     known.Rank, regionSpread: known.Spread,
 			dietVariety: diet.Variety, dietDiscount: diet.Discount,
 			speedOpen: ground.open, speedDear: ground.dear, speedGap: ground.gap,
 			onDear: ground.dearShare, onHigh: ground.highShare,
@@ -1647,10 +1683,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// What the population has made of the ground. regionRank is the one
 		// that says whether any of it is true: the correlation between what
 		// agents believe about a region and how well it actually grows.
-		"regionKnown":  tail.regionKnown,
-		"regionTold":   tail.regionTold,
-		"regionRank":   tail.regionRank,
-		"regionSpread": tail.regionSpread,
+		"regionKnown":    tail.regionKnown,
+		"regionCostRank": tail.regionCostRank,
+		"regionTold":     tail.regionTold,
+		"regionRank":     tail.regionRank,
+		"regionSpread":   tail.regionSpread,
 		// What the population lives on. dietDiscount at one is a rule that
 		// never fires; dietVariety at zero is a world with nothing to vary.
 		"speedOpen": tail.speedOpen,
@@ -1783,6 +1820,7 @@ func tailAverage(series []sample) sample {
 		out.enemyRich += s.enemyRich
 		out.allRich += s.allRich
 		out.regionKnown += s.regionKnown
+		out.regionCostRank += s.regionCostRank
 		out.regionTold += s.regionTold
 		out.regionRank += s.regionRank
 		out.regionSpread += s.regionSpread
@@ -1864,6 +1902,7 @@ func tailAverage(series []sample) sample {
 	out.enemyRich /= d
 	out.allRich /= d
 	out.regionKnown /= d
+	out.regionCostRank /= d
 	out.regionTold /= d
 	out.regionRank /= d
 	out.regionSpread /= d

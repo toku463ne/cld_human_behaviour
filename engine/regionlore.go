@@ -33,6 +33,20 @@ type regionView struct {
 	seen float64
 	n    float64
 
+	// cost is what it remembers the ground there taking out of it, as the same
+	// multiplier the terrain carries: 1 is level open country (stage 29).
+	//
+	// One number for the whole of what the ground does. Rough, water and
+	// height are not three beliefs - an agent that has been somewhere knows it
+	// was hard going, not which of three reasons it was hard for - and the
+	// same call that decides this decided not to give plants a poison belief
+	// apart from their warning.
+	//
+	// It rides in the same record as seen, so it is averaged over the same
+	// visits and carries the same n. What it does not share is fading: the
+	// ground does not move while an agent is away (see regionCostEstimate).
+	cost float64
+
 	// logN is log(n), kept because the test for "has this faded to nothing"
 	// is read far more often than it is written - twelve regions on every
 	// perception - and n * exp(-rate * elapsed) < 1 is the same question as
@@ -49,6 +63,16 @@ type regionView struct {
 func (v *regionView) setSeen(seen, n float64, tick int) {
 	v.seen, v.n, v.lastTick = seen, n, tick
 	v.logN = math.Log(n)
+}
+
+// costOrOrdinary is what this view says the ground costs, with "never been"
+// and "never learned" both reading as ordinary. Ordinary is the right prior:
+// an agent with no reason to think the country ahead is hard does not.
+func (v *regionView) costOrOrdinary() float64 {
+	if v.cost <= 0 {
+		return 1
+	}
+	return v.cost
 }
 
 // faded reports whether this view has been away from long enough to be worth
@@ -99,6 +123,16 @@ func (w *World) noteRegion(a *Agent, foodInSight int) {
 	// has changed.
 	scale := a.MemoryScale(cfg)
 	n := math.Min(v.n+1, cfg.RegionMemory*scale)
+
+	// What the ground here took out of it (stage 29), folded in the same way
+	// and over the same visits. No misreading is added: an agent feels the
+	// ground under its own feet exactly (Perception.Self.Ground), and what it
+	// is unsure of is how much of the region is like this spot - which is what
+	// averaging over visits is for.
+	ground := w.terrainAt(a.X, a.Y).Cost
+	cost := v.costOrOrdinary()
+	v.cost = cost + (ground-cost)*cfg.RegionLearnRate/n
+
 	v.setSeen(v.seen+(reading-v.seen)*cfg.RegionLearnRate/n, n, w.tick)
 }
 
@@ -128,6 +162,46 @@ func (w *World) regionEstimate(a *Agent, i int) (float64, bool) {
 	return v.seen, true
 }
 
+// regionCostEstimate is what an agent believes the ground of a region costs to
+// cross, or false if it has never been there.
+//
+// It fades at its own rate, which is zero by default: the country does not
+// change while an agent is away, so a memory of hard going is as good in a
+// year as it was on the day. The fading is written anyway, through the same
+// function the food view uses, so that a world where the ground does move -
+// erosion, or an administrator redrawing the map in stage 22 - only has to
+// set the rate.
+func (w *World) regionCostEstimate(a *Agent, i int) (float64, bool) {
+	if i < 0 || i >= len(a.regions) {
+		return 1, false
+	}
+	v := &a.regions[i]
+	if v.n <= 0 || v.cost <= 0 {
+		return 1, false
+	}
+	if rate := w.cfg.RegionCostForgetPerTick / math.Max(a.MemoryScale(&w.cfg), 1e-9); rate > 0 &&
+		v.faded(rate, w.tick) {
+		return 1, false
+	}
+	return v.cost, true
+}
+
+// worthOfRegion is what an agent makes of a piece of country all told: what it
+// remembers finding there, less what the ground there takes out of whoever
+// crosses it (stage 29).
+//
+// The two are put in the same units by RegionCostWeight, which says what one
+// extra multiple of crossing cost is worth in food-in-sight. With the weight
+// at zero, or in a world with no map, this is exactly the figure stage 15b
+// used - every cost is 1, so nothing is subtracted.
+func (w *World) worthOfRegion(a *Agent, i int, seen float64) float64 {
+	if w.cfg.RegionCostWeight <= 0 {
+		return seen
+	}
+	cost, _ := w.regionCostEstimate(a, i)
+	return seen - w.cfg.RegionCostWeight*(cost-1)
+}
+
 // bestKnownRegion is the ground this agent thinks best of, and how much better
 // than where it is standing. It returns false when it knows nowhere better.
 func (w *World) bestKnownRegion(a *Agent) (idx int, gain float64, ok bool) {
@@ -141,12 +215,21 @@ func (w *World) bestKnownRegion(a *Agent) (idx int, gain float64, ok bool) {
 		// does not know where it is. It will in a moment: it is standing there.
 		return 0, 0, false
 	}
-	here := a.regions[hereIdx].seen
+	here := w.worthOfRegion(a, hereIdx, a.regions[hereIdx].seen)
 
 	best, bestSeen := -1, here
 	for i := range a.regions {
-		if v := &a.regions[i]; v.seen > bestSeen && !v.faded(rate, tick) {
-			best, bestSeen = i, v.seen
+		v := &a.regions[i]
+		if v.faded(rate, tick) {
+			continue
+		}
+		// Whether a region is still worth considering is the food view's
+		// freshness, as it was before this stage: somewhere an agent has not
+		// been in a long time drops out of its plans whatever it remembers of
+		// the going. What the cost belief changes is the ranking of the ones
+		// it does consider.
+		if worth := w.worthOfRegion(a, i, v.seen); worth > bestSeen {
+			best, bestSeen = i, worth
 		}
 	}
 	if best < 0 {
@@ -194,12 +277,15 @@ func (w *World) exchangeRegions(a, o *Agent) float64 {
 			a.regions[i].seen += step
 			o.regions[i].seen -= step
 			moved += 2 * abs(step)
+			moved += w.exchangeRegionCost(a, o, i)
 		case theyKnow && cfg.RegionToldCount > 0:
 			a.regions[i].setSeen(theirs, cfg.RegionToldCount, w.tick)
 			moved += abs(theirs)
+			moved += w.exchangeRegionCost(a, o, i)
 		case iKnow && cfg.RegionToldCount > 0:
 			o.regions[i].setSeen(mine, cfg.RegionToldCount, w.tick)
 			moved += abs(mine)
+			moved += w.exchangeRegionCost(a, o, i)
 		}
 	}
 	// In the same units the rest of a trade is measured in: a share of the
@@ -208,6 +294,36 @@ func (w *World) exchangeRegions(a, o *Agent) float64 {
 		moved /= cfg.RegionPrior
 	}
 	return moved
+}
+
+// exchangeRegionCost hands on what the two of them make of the going in one
+// region (stage 29b), and reports how far the pair moved.
+//
+// The same three cases as the food view above, for the same reasons: where
+// both have been they meet in the middle, and where one has been and the other
+// has not the other takes it whole, because there is nothing to average
+// against. Hearing that the far side of the river is hard going is the only
+// way to know it without wading across.
+func (w *World) exchangeRegionCost(a, o *Agent, i int) float64 {
+	if !w.cfg.RegionCostTold {
+		return 0
+	}
+	mine, iKnow := w.regionCostEstimate(a, i)
+	theirs, theyKnow := w.regionCostEstimate(o, i)
+	switch {
+	case iKnow && theyKnow:
+		step := (theirs - mine) * w.cfg.LoreExchangeRate
+		a.regions[i].cost += step
+		o.regions[i].cost -= step
+		return 2 * abs(step)
+	case theyKnow:
+		a.regions[i].cost = theirs
+		return abs(theirs - 1)
+	case iKnow:
+		o.regions[i].cost = mine
+		return abs(mine - 1)
+	}
+	return 0
 }
 
 // --- reading it out ---------------------------------------------------------
@@ -229,6 +345,17 @@ func (w *World) CountryKnownBy(id int) (known, total int, gain float64) {
 	return known, len(w.regions), gain
 }
 
+// GoingKnownBy is what one agent makes of the country it is standing in: how
+// hard it believes the going is here, and whether it has any view at all. For
+// the viewer; read only.
+func (w *World) GoingKnownBy(id int) (cost float64, known bool) {
+	a := w.agentByID(id)
+	if a == nil {
+		return 1, false
+	}
+	return w.regionCostEstimate(a, w.regionIndexAt(a.X, a.Y))
+}
+
 // RegionKnowledge is what the population has made of the ground.
 type RegionKnowledge struct {
 	// Known is how many regions the average agent has a view of, and Told the
@@ -241,6 +368,12 @@ type RegionKnowledge struct {
 	// grows plants, over every agent-region pair anybody has a view on. One is
 	// perfect, zero is knowing nothing.
 	Rank float64
+
+	// CostRank is the same correlation for how hard the going is (stage 29),
+	// against the real mean cost of crossing that region. It is the reading
+	// that says whether the belief is about the world at all: everything else
+	// this stage does rests on it being above zero.
+	CostRank float64
 
 	// Spread is how much agents disagree about the same region, averaged over
 	// regions. It is what says whether a population has come to share a view
@@ -260,6 +393,14 @@ func (w *World) RegionKnowledge() RegionKnowledge {
 	// Sums for the correlation between belief and truth, and per region for
 	// the spread.
 	var sx, sy, sxx, syy, sxy float64
+	// The same sums for the going (stage 29), over the pairs where the agent
+	// has a view of the cost - which is not quite the same set, since a cost
+	// belief does not fade with the food view it rides in.
+	var cn, cx, cy, cxx, cyy, cxy float64
+	truthCost := make([]float64, len(w.regions))
+	for r := range w.regions {
+		truthCost[r] = w.regionMeanCost(r)
+	}
 	sum := make([]float64, len(w.regions))
 	sumSq := make([]float64, len(w.regions))
 	count := make([]float64, len(w.regions))
@@ -278,6 +419,15 @@ func (w *World) RegionKnowledge() RegionKnowledge {
 			views++
 			if a.regions[r].n <= w.cfg.RegionToldCount {
 				told++
+			}
+			if belief, ok := w.regionCostEstimate(a, r); ok {
+				t := truthCost[r]
+				cn++
+				cx += belief
+				cy += t
+				cxx += belief * belief
+				cyy += t * t
+				cxy += belief * t
 			}
 			truth := w.regions[r].Food
 			sx += seen
@@ -302,6 +452,13 @@ func (w *World) RegionKnowledge() RegionKnowledge {
 		den := math.Sqrt((views*sxx - sx*sx) * (views*syy - sy*sy))
 		if den > 0 {
 			out.Rank = num / den
+		}
+	}
+	if cn > 1 {
+		num := cn*cxy - cx*cy
+		den := math.Sqrt((cn*cxx - cx*cx) * (cn*cyy - cy*cy))
+		if den > 0 {
+			out.CostRank = num / den
 		}
 	}
 	regions := 0.0

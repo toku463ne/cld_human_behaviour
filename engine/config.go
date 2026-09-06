@@ -157,6 +157,26 @@ type Config struct {
 	// anything else.
 	RegionPrior float64
 
+	// What an agent makes of how hard a region is to cross (stage 29).
+	//
+	// RegionCostWeight puts the going and the food in the same units: what one
+	// extra multiple of crossing cost is worth in food-in-sight. Zero is the
+	// world before stage 29 - the belief is still formed, and nothing reads
+	// it. In a world with no map every cost is 1, so no weight changes
+	// anything: a flat world is bit for bit what it was.
+	//
+	// RegionCostForgetPerTick is how fast the belief fades, and it is zero
+	// because the ground does not move while an agent is away. It exists so
+	// that a world where the ground does move - erosion, an administrator
+	// redrawing the map - only has to set a rate rather than grow a mechanism.
+	//
+	// RegionCostTold is whether the going is handed on with everything else
+	// two agents trade. False is stage 29a without 29b, which is the control
+	// that says what hearing about it is worth.
+	RegionCostWeight        float64
+	RegionCostForgetPerTick float64
+	RegionCostTold          bool
+
 	// RegionDrawValue is what heading for better ground is worth, per unit of
 	// how much better it is believed to be. Zero leaves agents knowing about
 	// the country and never acting on it, which separates knowing from
@@ -1003,7 +1023,13 @@ func DefaultConfig() Config {
 		RegionNoise:         2.0,
 		RegionToldCount:     2,
 		RegionPrior:         3,
-		RegionDrawValue:     4,
+
+		// Two food items in sight is worth about as much as ground that costs
+		// twice as much to cross. A first guess, to be swept (stage 29).
+		RegionCostWeight:        2.0,
+		RegionCostForgetPerTick: 0, // the country does not move
+		RegionCostTold:          true,
+		RegionDrawValue:         4,
 
 		// Small on purpose. This rule has almost nothing to bite on yet - a
 		// human's food is plants, near enough always - so it is set where it

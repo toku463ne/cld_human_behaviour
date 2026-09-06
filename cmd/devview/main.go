@@ -2528,6 +2528,12 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 				where = fmt.Sprintf("reckons somewhere is %.1f better", gain)
 			}
 			t.line("country: knows %d of %d regions, %s", known, total, where)
+			// What it makes of the going here, which is a belief about the
+			// region rather than the cell under its feet (stage 29): the
+			// second is exact and in the panel above as the ground it feels.
+			if cost, ok := g.world.GoingKnownBy(a.ID); ok {
+				t.line("  and reckons the going hereabouts is x%.2f", cost)
+			}
 		}
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)

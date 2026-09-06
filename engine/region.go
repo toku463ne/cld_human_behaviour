@@ -262,3 +262,29 @@ func (w *World) Shelter() ShelterUse {
 	}
 	return out
 }
+
+// regionMeanCost is what crossing this block really costs on average, sampled
+// over the terrain under it (stage 29). One in a world with no map.
+//
+// For the measurement rather than for the agents: an agent learns the going by
+// walking it, and this is what its belief is scored against.
+func (w *World) regionMeanCost(i int) float64 {
+	if w.ground == nil {
+		return 1
+	}
+	minX, minY, maxX, maxY := w.regionBounds(i)
+	const steps = 8
+	sum, n := 0.0, 0.0
+	for sx := 0; sx < steps; sx++ {
+		for sy := 0; sy < steps; sy++ {
+			x := minX + (maxX-minX)*(float64(sx)+0.5)/steps
+			y := minY + (maxY-minY)*(float64(sy)+0.5)/steps
+			sum += w.terrainAt(x, y).Cost
+			n++
+		}
+	}
+	if n == 0 {
+		return 1
+	}
+	return sum / n
+}
