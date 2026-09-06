@@ -213,3 +213,62 @@ func TestStayingPutLeavesEverythingAsItWas(t *testing.T) {
 		t.Fatal("the parent lost its controller by being asked about")
 	}
 }
+
+// The editor paints the world and nothing else moves: the same tick, the same
+// bodies. It is a mode of the viewer, so the check is that opening it stops
+// the clock and closing it gives it back.
+func TestTheEditorPaintsWithoutRunningTheWorld(t *testing.T) {
+	w := engine.NewWorld(engine.DefaultConfig())
+	for i := 0; i < 200; i++ {
+		w.Step()
+	}
+	g := &game{world: w, padKey: noKey, effort: 1}
+
+	g.toggleEditor()
+	if !g.editing || !g.paused {
+		t.Fatalf("editing=%v paused=%v after opening the editor", g.editing, g.paused)
+	}
+	if cols, rows, _, _ := w.TerrainSize(); cols == 0 || rows == 0 {
+		t.Fatal("a flat world got no map to draw on")
+	}
+
+	tick, pop := w.Tick(), w.Stats().Population
+	g.brush = brushRough
+	g.paintCell(50, 50)
+	if got := w.TerrainAt(50, 50); got.Kind != engine.GroundRough {
+		t.Fatalf("the painted cell is %v", got.Kind)
+	}
+	if w.Tick() != tick || w.Stats().Population != pop {
+		t.Fatal("painting moved the world on")
+	}
+
+	// Raising and ramping are the same brush set, and a ramp belongs to the
+	// level it leads up to.
+	g.brush = brushRaise
+	g.paintCell(400, 300)
+	if got := w.TerrainAt(400, 300); got.Height != 1 {
+		t.Fatalf("raising made height %d", got.Height)
+	}
+	g.brush = brushRamp
+	g.paintCell(400, 300)
+	if got := w.TerrainAt(400, 300); !got.Slope || got.Height != 1 {
+		t.Fatalf("the ramp reads %+v", got)
+	}
+
+	// Regions are the other map, and painting one does not touch the ground.
+	g.brush = brushRicher
+	before := w.Regions()[w.RegionAt(50, 50)].Food
+	g.paintRegion(50, 50)
+	if w.Regions()[w.RegionAt(50, 50)].Food <= before {
+		t.Fatal("the region did not get richer")
+	}
+	if got := w.TerrainAt(50, 50); got.Kind != engine.GroundRough {
+		t.Fatal("painting a region changed the ground under it")
+	}
+
+	g.toggleEditor()
+	if g.editing || g.paused {
+		t.Fatalf("editing=%v paused=%v after closing the editor on a running world",
+			g.editing, g.paused)
+	}
+}

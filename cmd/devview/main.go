@@ -65,6 +65,13 @@ var speeds = []struct {
 	{"1/2", 1},
 	{"normal", 2},
 	{"fast", 8},
+	// The clock and the picture come apart here: sixty of these a second is a
+	// world running four thousand ticks while thirty pictures are drawn of it.
+	// It is the same accumulator the slow rates use, read the other way, and
+	// it is the shape the server's decimation will take - the world runs at
+	// whatever rate it likes and what goes out is sampled from it, rather than
+	// a frame being owed to every tick.
+	{"headlong", 64},
 }
 
 const normalSpeed = 3 // index of the rate the viewer starts at
@@ -215,12 +222,48 @@ type game struct {
 	boost bool
 	given float64
 
+	// Stage 22: laying a world out rather than watching one. The editor is a
+	// mode of this viewer rather than a second program, because everything it
+	// needs - the drawing, the camera, the world - is already here, and a
+	// separate binary would be a second copy of all of it.
+	editing bool
+	brush   brush
+	tune    int  // which of the short list of rules the panel is on
+	wasRun  bool // whether the clock was running when the editor was opened
+
 	// What the protagonist has been through since the last frame, and the
 	// short lines it is saying about it. Bubbles are for the played node only:
 	// one node's news is legible, sixty nodes' news is the panel again.
 	seen    seenState
 	bubbles []bubble
 	frame   int
+}
+
+// brush is what a click lays down in the editor.
+//
+// The two kinds are the two maps a world is laid out on and they are
+// deliberately not merged: terrain is what movement costs (a cell), a region
+// is what the world provides (a block of cells). Painting one never changes
+// the other.
+type brush uint8
+
+const (
+	brushOpen brush = iota
+	brushRough
+	brushWater
+	brushRaise
+	brushLower
+	brushRamp
+	brushRicher
+	brushPoorer
+	brushShelter
+	brushExposed
+	numBrushes
+)
+
+var brushNames = [numBrushes]string{
+	"open ground", "rough", "water", "raise a level", "lower a level", "ramp",
+	"richer ground", "poorer ground", "more sheltered", "more exposed",
 }
 
 // mark is what the player last clicked: the thing an order will be aimed at.
@@ -364,6 +407,14 @@ func (g *game) Update() error {
 }
 
 func (g *game) handleInput() {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF3) {
+		g.toggleEditor()
+		return
+	}
+	if g.editing {
+		g.handleEditorInput()
+		return
+	}
 	switch {
 	case inpututil.IsKeyJustPressed(ebiten.KeySpace):
 		g.paused = !g.paused
@@ -415,6 +466,196 @@ func (g *game) handleInput() {
 			}
 		}
 	}
+}
+
+// --- laying a world out (stage 22) ------------------------------------------
+
+// toggleEditor opens and closes the editor. The clock stops while it is open
+// and goes back to what it was doing afterwards: a world being drawn on is a
+// world nobody is watching run.
+func (g *game) toggleEditor() {
+	g.editing = !g.editing
+	if g.editing {
+		g.wasRun, g.paused = !g.paused, true
+		if len(g.world.Terrain()) == 0 {
+			// Nothing to paint on yet. A flat world gets a map the size the
+			// test maps use, all of it open ground, which changes nothing
+			// about how it runs until something is painted on it.
+			blank := make([]string, 12)
+			for i := range blank {
+				blank[i] = strings.Repeat(".", 16)
+			}
+			g.world.SetTerrain(blank)
+			g.say("a blank map to draw on. F3 to close, click to paint")
+			return
+		}
+		g.say("editing: click to paint, 1-0 pick a brush, F3 to close")
+		return
+	}
+	g.paused = !g.wasRun
+	g.say("done editing")
+}
+
+// handleEditorInput reads the keys the editor has, and nothing else: while it
+// is open the number keys are brushes rather than answers or efforts.
+func (g *game) handleEditorInput() {
+	for i, key := range []ebiten.Key{
+		ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4, ebiten.Key5,
+		ebiten.Key6, ebiten.Key7, ebiten.Key8, ebiten.Key9, ebiten.Key0,
+	} {
+		if brush(i) < numBrushes && inpututil.IsKeyJustPressed(key) {
+			g.brush = brush(i)
+			g.say("brush: %s", brushNames[g.brush])
+		}
+	}
+	switch {
+	case inpututil.IsKeyJustPressed(ebiten.KeyZ):
+		g.zoom = (g.zoom + 1) % len(zoomLevels)
+	case inpututil.IsKeyJustPressed(ebiten.KeyF2):
+		g.saveWorld()
+	case inpututil.IsKeyJustPressed(ebiten.KeyTab):
+		g.tune = (g.tune + 1) % len(g.world.Tunables())
+	case inpututil.IsKeyJustPressed(ebiten.KeyEqual), inpututil.IsKeyJustPressed(ebiten.KeyUp):
+		g.nudgeTunable(+1)
+	case inpututil.IsKeyJustPressed(ebiten.KeyMinus), inpututil.IsKeyJustPressed(ebiten.KeyDown):
+		g.nudgeTunable(-1)
+	case inpututil.IsKeyJustPressed(ebiten.KeyD):
+		g.cycleDifficulty()
+	case inpututil.IsKeyJustPressed(ebiten.KeySpace), inpututil.IsKeyJustPressed(ebiten.KeyRight):
+		// One tick, to see what the change did. The editor does not run the
+		// world; it lets it move one step at a time.
+		g.world.Step()
+	}
+	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+		mx, my := ebiten.CursorPosition()
+		if mx < worldWidth {
+			g.paint(mx, my)
+		}
+	}
+}
+
+// paint lays the current brush on whatever is under the cursor.
+func (g *game) paint(mx, my int) {
+	wx, wy := g.inWorld(mx, my)
+	switch g.brush {
+	case brushRicher, brushPoorer, brushShelter, brushExposed:
+		g.paintRegion(wx, wy)
+	default:
+		g.paintCell(wx, wy)
+	}
+}
+
+// paintCell rewrites one cell of the terrain map. The map is a slice of
+// strings, which is exactly what the editor wants: what is on screen and what
+// is in the file are the same thing.
+func (g *game) paintCell(wx, wy float64) {
+	rows := g.world.Terrain()
+	cols, rowN, cw, ch := g.world.TerrainSize()
+	if cols == 0 || rowN == 0 {
+		return
+	}
+	col, row := int(wx/cw), int(wy/ch)
+	if col < 0 || row < 0 || col >= cols || row >= rowN {
+		return
+	}
+	line := []rune(rows[row])
+	for len(line) <= col {
+		line = append(line, '.')
+	}
+	here := g.world.TerrainAt(wx, wy)
+	switch g.brush {
+	case brushOpen:
+		line[col] = runeForHeight(here.Height)
+	case brushRough:
+		line[col] = ':'
+	case brushWater:
+		line[col] = '~'
+	case brushRaise:
+		line[col] = runeForHeight(min(here.Height+1, 9))
+	case brushLower:
+		line[col] = runeForHeight(max(here.Height-1, 0))
+	case brushRamp:
+		// A ramp belongs to the level it leads up to, so painting one on the
+		// flat makes the way up to the first level.
+		line[col] = rune('A' + max(here.Height, 1) - 1)
+	}
+	rows[row] = string(line)
+	g.world.SetTerrain(rows)
+}
+
+// runeForHeight is how a level of open ground is spelled on the map.
+func runeForHeight(h int) rune {
+	if h <= 0 {
+		return '.'
+	}
+	return rune('0' + min(h, 9))
+}
+
+// paintRegion changes what the block under the cursor provides. The step is
+// small so that holding the button is how a region is moved a long way, which
+// is also what stops a click doing something drastic.
+func (g *game) paintRegion(wx, wy float64) {
+	i := g.world.RegionAt(wx, wy)
+	regions := g.world.Regions()
+	if i < 0 || i >= len(regions) {
+		return
+	}
+	r := regions[i]
+	shelter, food := r.Shelter, r.Food
+	switch g.brush {
+	case brushRicher:
+		food += 0.01
+	case brushPoorer:
+		food -= 0.01
+	case brushShelter:
+		shelter -= 0.01 // less exposed is a smaller number
+	case brushExposed:
+		shelter += 0.01
+	}
+	g.world.SetRegion(i, shelter, food)
+}
+
+// nudgeTunable moves the rule the panel is on by a twentieth of its measured
+// range, so that a keypress is a nudge rather than a leap.
+func (g *game) nudgeTunable(dir float64) {
+	list := g.world.Tunables()
+	if g.tune >= len(list) {
+		return
+	}
+	t := list[g.tune]
+	step := (t.Hig - t.Low) / 20
+	if step <= 0 {
+		step = 0.01
+	}
+	safe, err := g.world.Tune(engine.Tunable(g.tune), t.Value+dir*step)
+	if err != nil {
+		g.say("no: %v", err)
+		return
+	}
+	now := g.world.Tunables()[g.tune]
+	if safe {
+		g.say("%s = %.3f", now.Name, now.Value)
+		return
+	}
+	g.say("%s = %.3f - OUTSIDE the measured range (%.2f to %.2f)",
+		now.Name, now.Value, now.Low, now.Hig)
+}
+
+// cycleDifficulty steps through the presets. Difficulty is the budget and
+// nothing else, so this never moves a rule a measurement was taken on.
+func (g *game) cycleDifficulty() {
+	list := engine.Difficulties
+	cfg := g.world.Config()
+	at := 0
+	for i, d := range list {
+		if d.Budget == cfg.GeneBudgetMean {
+			at = (i + 1) % len(list)
+			break
+		}
+	}
+	d := list[at]
+	g.world.SetDifficulty(d.Name)
+	g.say("difficulty: %s - %s (it takes effect on the next body born)", d.Name, d.AboutInOne)
 }
 
 // --- playing a node (stage 19) ---------------------------------------------
@@ -2318,6 +2559,41 @@ func (g *game) markTarget(screen *ebiten.Image, a *engine.Agent) {
 	}
 }
 
+// drawBrushCell outlines whatever the editor's brush is over, so that a click
+// is not a guess about which cell the cursor is in.
+func (g *game) drawBrushCell(screen *ebiten.Image) {
+	if !g.editing {
+		return
+	}
+	mx, my := ebiten.CursorPosition()
+	if mx >= worldWidth {
+		return
+	}
+	wx, wy := g.inWorld(mx, my)
+	switch g.brush {
+	case brushRicher, brushPoorer, brushShelter, brushExposed:
+		for i, r := range g.world.Regions() {
+			if i != g.world.RegionAt(wx, wy) {
+				continue
+			}
+			x, y := g.onScreen(r.MinX, r.MinY)
+			vector.StrokeRect(screen, x, y, g.long(r.MaxX-r.MinX), g.long(r.MaxY-r.MinY),
+				2, colorSelected, false)
+		}
+		return
+	}
+	cols, rows, cw, ch := g.world.TerrainSize()
+	if cols == 0 {
+		return
+	}
+	col, row := int(wx/cw), int(wy/ch)
+	if col < 0 || row < 0 || col >= cols || row >= rows {
+		return
+	}
+	x, y := g.onScreen(float64(col)*cw, float64(row)*ch)
+	vector.StrokeRect(screen, x, y, g.long(cw), g.long(ch), 2, colorSelected, false)
+}
+
 // drawAim shows where an order would be pointed. It is a cursor and nothing
 // more: the node knows nothing about it until an order names it.
 func (g *game) drawAim(screen *ebiten.Image) {
@@ -2383,7 +2659,7 @@ func (g *game) overlay() string {
 	default:
 		b.WriteString("space pause   right/n one tick   -/= slower/faster   z zoom   click a node   esc clear\n")
 	}
-	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node   F2 save this world\n")
+	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node   F2 save this world   F3 lay one out\n")
 	switch g.play {
 	case playDriven:
 		fmt.Fprintf(&b, "playing #%d: numpad or arrows+home/end/pgup/pgdn walk it (hold to keep going)   click a spot then m walks there and stops\n", g.played)
@@ -2455,6 +2731,13 @@ func (t *textBox) roomLeft() int {
 
 func (g *game) drawPanel(screen *ebiten.Image) {
 	t := &textBox{screen: screen, y: 8}
+
+	// Laying a world out beats everything: while the editor is open the panel
+	// is the editor's, whatever is selected or being played.
+	if g.editing {
+		g.drawEditor(t)
+		return
+	}
 
 	// Playing beats following. Clicking bare ground or pressing escape drops
 	// the selection, and while a node was being played that took the game off
@@ -2821,6 +3104,63 @@ func (g *game) drawAsked(t *textBox) {
 		return
 	}
 	g.drawWhatItKnows(t, view)
+}
+
+// drawEditor is the panel for laying a world out: what the brush is, what the
+// short list of rules stands at, and which of them are outside the range they
+// have been measured in.
+func (g *game) drawEditor(t *textBox) {
+	t.line("LAYING THE WORLD OUT (F3 closes it)")
+	t.line("")
+	t.line("click paints. the clock is stopped; space or right")
+	t.line("runs one tick, so a change can be watched.")
+	t.line("")
+	t.line("BRUSH: %s", brushNames[g.brush])
+	for i := 0; i < int(numBrushes); i++ {
+		mark := "  "
+		if brush(i) == g.brush {
+			mark = "> "
+		}
+		t.line("%s[%d] %s", mark, (i+1)%10, brushNames[i])
+	}
+	t.line("")
+	cols, rows, cw, ch := g.world.TerrainSize()
+	t.line("map %d x %d cells of %.0f x %.0f", cols, rows, cw, ch)
+	t.line("regions %d - the food is a share, so raising one", len(g.world.Regions()))
+	t.line("  lowers what the rest are worth of the same total")
+	t.line("")
+
+	t.line("RULES (tab picks, -/= nudges):")
+	list := g.world.Tunables()
+	for i, tn := range list {
+		mark := "  "
+		if i == g.tune {
+			mark = "> "
+		}
+		warn := ""
+		if !tn.Safe {
+			warn = " !! outside what was measured"
+		}
+		t.line("%s%-11s %7.3f (%.2f-%.2f)%s", mark, tn.Name, tn.Value, tn.Low, tn.Hig, warn)
+	}
+	if g.tune < len(list) {
+		t.line("   %s", list[g.tune].About)
+	}
+	t.line("")
+	name := "not one of the presets"
+	for _, d := range engine.Difficulties {
+		if d.Budget == g.world.Config().GeneBudgetMean {
+			name = d.Name
+		}
+	}
+	t.line("DIFFICULTY (d cycles): %s", name)
+	t.line("  the budget and nothing else, so the rules a")
+	t.line("  measurement was taken on stay where they are.")
+	t.line("")
+	t.line("F2 saves the world and its population. what you")
+	t.line("paint is what the file carries: the map is rows of")
+	t.line("characters and the regions are numbers, so there")
+	t.line("is no editor format of its own (stage 21).")
 }
 
 // drawSuccession prints the choice of who to be next - put by a death, or by
