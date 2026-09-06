@@ -165,3 +165,51 @@ func TestTakingANodeUpMeansAnsweringItsProposals(t *testing.T) {
 		t.Fatalf("after the player said no the controller answers %v", got)
 	}
 }
+
+// The line can be followed forward while the parent is still alive: the child
+// is taken up, and the parent goes back to the world's own AI rather than
+// dying or being left with a controller nobody is behind.
+func TestMovingOnToAChildWhileTheParentLives(t *testing.T) {
+	w, parent, kid := aWorldWithFamilies(t)
+	g := &game{world: w, play: playAsked, guided: engine.NewGuidedController(),
+		played: parent, lineKids: []int{kid}, padKey: noKey}
+	w.SetController(parent, g.guided)
+
+	g.moveOnToAChild()
+	if g.succession == nil || g.succession.dead {
+		t.Fatalf("no living-body handover was raised: %+v", g.succession)
+	}
+	if !g.paused {
+		t.Fatal("the world is still running behind the question")
+	}
+
+	g.goOnAs(kid)
+	if g.played != kid || g.bodies != 1 {
+		t.Fatalf("playing #%d after moving on, bodies %d", g.played, g.bodies)
+	}
+	if a, alive := w.AgentByID(parent); !alive {
+		t.Fatal("the parent died of being left")
+	} else if a.Controller() != nil {
+		t.Fatalf("the parent is still on %T rather than the world's own AI", a.Controller())
+	}
+	if a, _ := w.AgentByID(kid); a.Controller() == nil {
+		t.Fatal("the child was not taken up")
+	}
+}
+
+// Staying is an answer too, and it changes nothing.
+func TestStayingPutLeavesEverythingAsItWas(t *testing.T) {
+	w, parent, kid := aWorldWithFamilies(t)
+	g := &game{world: w, play: playAsked, guided: engine.NewGuidedController(),
+		played: parent, lineKids: []int{kid}, padKey: noKey}
+	w.SetController(parent, g.guided)
+
+	g.moveOnToAChild()
+	g.succession = nil // what pressing enter does, minus the key
+	if g.played != parent {
+		t.Fatalf("playing #%d, want the parent #%d", g.played, parent)
+	}
+	if a, _ := w.AgentByID(parent); a.Controller() == nil {
+		t.Fatal("the parent lost its controller by being asked about")
+	}
+}

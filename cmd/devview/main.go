@@ -319,7 +319,12 @@ type offerPick struct {
 // playing dies, and successionPick is one of the line's living children with a
 // word about what taking it over would be like.
 type succession struct {
-	dead  int
+	// from is the body being left and dead says whether it is being left
+	// because it died. The same question either way - which of the line to be
+	// next - and two different answers to "none of them": the line ends, or
+	// nothing happens and the body carries on being played.
+	from  int
+	dead  bool
 	picks []successionPick
 }
 
@@ -423,6 +428,8 @@ func (g *game) handlePlayInput() {
 		g.toggleControl()
 	case inpututil.IsKeyJustPressed(ebiten.KeyK):
 		g.pickHeir()
+	case inpututil.IsKeyJustPressed(ebiten.KeyT):
+		g.moveOnToAChild()
 	}
 	if g.played == 0 {
 		return
@@ -767,12 +774,13 @@ func (g *game) carryTheLineOn() {
 	}
 	dead := g.played
 	if g.heir != 0 && g.world.SetController(g.heir, g.controller()) {
+		heir := g.heir
 		g.heir = 0
-		g.takeOver(dead, g.played)
+		g.takeOver(dead, heir, true)
 		return
 	}
 	if picks := g.survivors(dead); len(picks) > 0 {
-		g.succession = &succession{dead: dead, picks: picks}
+		g.succession = &succession{from: dead, dead: true, picks: picks}
 		g.paused = true
 		g.mode = modePlay
 		g.say("#%d died. 1-%d go on as one of its line, enter to stop here", dead, len(picks))
@@ -837,6 +845,34 @@ func (g *game) survivors(dead int) []successionPick {
 	return picks
 }
 
+// moveOnToAChild puts the same question a death puts, while the body is still
+// alive: which of the line to be next.
+//
+// The engine has always allowed this - a controller is installed on an agent
+// and can be installed on another one - and only the interface tied it to
+// dying. A line is what a person plays, and being able to follow it forward
+// while the parent is still out there is what makes it a line rather than a
+// queue of bodies.
+//
+// The body left behind goes back to the utility formula and carries on living.
+// It is not abandoned in any sense the world knows about: it was always being
+// run by something, and it goes back to being run by the same thing every
+// other node is.
+func (g *game) moveOnToAChild() {
+	if g.played == 0 || g.succession != nil {
+		return
+	}
+	picks := g.survivors(g.played)
+	if len(picks) == 0 {
+		g.say("no living children to move on to yet")
+		return
+	}
+	g.succession = &succession{from: g.played, picks: picks}
+	g.paused = true
+	g.mode = modePlay
+	g.say("move on from #%d? 1-%d to take one up, enter to stay", g.played, len(picks))
+}
+
 // handleSuccessionInput answers the question the death raised. Nothing else a
 // player can press means anything while it stands: there is no node to drive
 // and no question for one to answer.
@@ -849,36 +885,52 @@ func (g *game) handleSuccessionInput() {
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter) ||
 		inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		dead := g.succession.dead
+		from, dead := g.succession.from, g.succession.dead
 		g.succession = nil
-		g.endTheLine("#%d died and the line was not carried on. it ends", dead)
+		if !dead {
+			g.paused = false
+			g.say("staying as #%d", from)
+			return
+		}
+		g.endTheLine("#%d died and the line was not carried on. it ends", from)
 	}
 }
 
 // goOnAs installs the same controller on the chosen body.
 func (g *game) goOnAs(id int) {
-	dead := g.succession.dead
+	from, dead := g.succession.from, g.succession.dead
 	if !g.world.SetController(id, g.controller()) {
 		// It died while the question was up. The rest of the offer still
 		// stands, so the question is asked again rather than ended for it.
 		g.say("#%d is gone too", id)
-		if picks := g.survivors(dead); len(picks) > 0 {
+		if picks := g.survivors(from); len(picks) > 0 {
 			g.succession.picks = picks
 			return
 		}
 		g.succession = nil
-		g.endTheLine("#%d died with nobody left to follow it. the line ends", dead)
+		if !dead {
+			g.paused = false
+			g.say("staying as #%d", from)
+			return
+		}
+		g.endTheLine("#%d died with nobody left to follow it. the line ends", from)
 		return
+	}
+	if !dead {
+		// The one being left goes back to the world's own AI. Handing it to
+		// nobody would leave a controller on two bodies, and the same standing
+		// order with it.
+		g.world.SetController(from, nil)
 	}
 	g.succession = nil
 	g.heir = 0
-	g.takeOver(dead, id)
+	g.takeOver(from, id, dead)
 	g.paused = false
 }
 
 // takeOver is the bookkeeping either way in: the controller is already on the
 // new body, and everything reset here belonged to the old one.
-func (g *game) takeOver(dead, id int) {
+func (g *game) takeOver(from, id int, dead bool) {
 	g.played = id
 	g.bodies++
 	g.last = nil // what the last body's answer bought died with it
@@ -887,7 +939,11 @@ func (g *game) takeOver(dead, id int) {
 	g.walkTo = mark{}
 	g.padKey = noKey // so a key still held walks the new body too
 	g.selectAgent(id)
-	g.say("#%d died. you are #%d now", dead, id)
+	if dead {
+		g.say("#%d died. you are #%d now", from, id)
+		return
+	}
+	g.say("you are #%d now. #%d is back on the utility formula", id, from)
 }
 
 // endTheLine puts everything down. A line that is over is over: the rings on
@@ -2252,9 +2308,9 @@ func (g *game) overlay() string {
 	case playDriven:
 		fmt.Fprintf(&b, "playing #%d: numpad or arrows+home/end/pgup/pgdn walk it (hold to keep going)   click a spot then m walks there and stops\n", g.played)
 		b.WriteString("   click to aim   r rest  m walk to the mark  e eat  a attack  f flee  o observe  c court   1-5 effort  s stance  k heir\n")
-		b.WriteString("   y / n answer somebody who has walked up and proposed\n")
+		b.WriteString("   y / n answer somebody who has walked up and proposed   t move on to one of your children\n")
 	case playAsked:
-		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir, y/n a proposal\n", g.played)
+		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir, t move on, y/n a proposal\n", g.played)
 		b.WriteString("   the pad does not walk it in this mode - it walks itself. press h to take the reins\n")
 	}
 	if who, left := g.proposer(); who != 0 {
@@ -2262,8 +2318,13 @@ func (g *game) overlay() string {
 			who, left, g.played)
 	}
 	if g.succession != nil {
-		fmt.Fprintf(&b, "#%d is dead: 1-%d go on as one of its line, enter to stop here (see the panel)\n",
-			g.succession.dead, len(g.succession.picks))
+		if g.succession.dead {
+			fmt.Fprintf(&b, "#%d is dead: 1-%d go on as one of its line, enter to stop here (see the panel)\n",
+				g.succession.from, len(g.succession.picks))
+		} else {
+			fmt.Fprintf(&b, "move on from #%d: 1-%d take one of its line up, enter to stay (see the panel)\n",
+				g.succession.from, len(g.succession.picks))
+		}
 	}
 	// Why the clock is stopped, where the player is already looking. "PAUSED"
 	// on its own is indistinguishable from a game that has stopped working,
@@ -2437,7 +2498,8 @@ func (g *game) drawPlay(t *textBox) {
 		t.line("    walk it one tick per press, or hold to keep going")
 		t.line("  1-5 effort   s stance   enter think again now")
 		t.line("  y / n        accept or refuse somebody proposing")
-		t.line("  k name the child to carry on   h hand back to AI")
+		t.line("  k name the child to carry on   t move to one now")
+		t.line("  h hand back to AI")
 		return
 	}
 
@@ -2675,11 +2737,16 @@ func (g *game) drawAsked(t *textBox) {
 	g.drawWhatItKnows(t, view)
 }
 
-// drawSuccession prints the choice of body left by a death. What is shown of
-// each one is what that body knows about itself - how far grown it is and what
-// is left in it - because a player who takes it over is about to be it.
+// drawSuccession prints the choice of who to be next - put by a death, or by
+// the player asking for it while the body is alive. What is shown of each one
+// is what that body knows about itself, because whoever takes it up is about
+// to be it.
 func (g *game) drawSuccession(t *textBox) {
-	t.line("#%d IS DEAD.", g.succession.dead)
+	if g.succession.dead {
+		t.line("#%d IS DEAD.", g.succession.from)
+	} else {
+		t.line("MOVE ON FROM #%d?", g.succession.from)
+	}
 	t.line("")
 	t.line("YOUR LINE: %d bod(ies), %d ticks, %d born, %d alive",
 		g.bodies, g.lineAt-g.lineFrom, len(g.lineKids), g.livingKin())
@@ -2691,12 +2758,21 @@ func (g *game) drawSuccession(t *textBox) {
 		}
 		t.line("  [%d] #%-5d %s", i+1, p.id, p.about)
 	}
-	t.line("  [enter] stop here: the line ends")
+	if g.succession.dead {
+		t.line("  [enter] stop here: the line ends")
+	} else {
+		t.line("  [enter] stay as #%d", g.succession.from)
+	}
 	t.line("")
 	t.line("a child that is still growing cannot court and")
-	t.line("expresses only part of what it inherited, and the")
-	t.line("parent it kept close to is the one that just died.")
-	t.line("it is a poor hand, not an impossible one.")
+	t.line("expresses only part of what it inherited.")
+	if g.succession.dead {
+		t.line("the parent it kept close to is the one that just died.")
+		t.line("it is a poor hand, not an impossible one.")
+		return
+	}
+	t.line("#%d does not die of this: it goes back to the", g.succession.from)
+	t.line("utility formula and gets on with its own life.")
 }
 
 // drawCourting says what this body is worth to a mate and what it is holding
