@@ -97,13 +97,32 @@ type HumanController struct {
 	voided     int
 	finished   int
 	body       int
+
+	// A person is behind every decision this controller makes, so they answer
+	// proposals too (courtship.go).
+	court courtDesk
+}
+
+// AnswerCourt is the world asking whether the proposal standing in front of
+// this node is accepted. It waits until the player has said, and the world
+// falls back to the node's own rule if they never do.
+func (h *HumanController) AnswerCourt(suitorID int) CourtAnswer {
+	return h.court.answerCourt(suitorID)
+}
+
+// AnswerProposal is the interface passing on what the player said. The suitor
+// is named so that an answer cannot be applied to somebody who turned up after
+// it was given.
+func (h *HumanController) AnswerProposal(suitorID int, accept bool) {
+	h.court.answerProposal(suitorID, accept)
 }
 
 // NewHumanController returns a controller whose standing order is to rest.
 // Resting is the one action that needs nothing of the world, so a node that has
 // just been taken over does something harmless until it is told otherwise.
 func NewHumanController() *HumanController {
-	return &HumanController{order: Action{Kind: ActRest}}
+	return &HumanController{order: Action{Kind: ActRest},
+		court: courtDesk{answering: true}}
 }
 
 // Decide hands back the standing order. It is the whole of the controller: the

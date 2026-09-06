@@ -139,3 +139,29 @@ func TestPressingHEscalatesControlAndLeavesTheNodeSelected(t *testing.T) {
 		t.Fatalf("fourth press: play %v played %d, want the same node taken up again", g.play, g.played)
 	}
 }
+
+// Taking a node up puts a person behind its proposals: an unattended guided
+// controller answers with the node's own rule, and one a player is behind
+// waits for them.
+func TestTakingANodeUpMeansAnsweringItsProposals(t *testing.T) {
+	w := engine.NewWorld(engine.DefaultConfig())
+	for i := 0; i < 200; i++ {
+		w.Step()
+	}
+	id := w.Agents()[0].ID
+
+	if got := engine.NewGuidedController().AnswerCourt(7); got != engine.CourtLeaveIt {
+		t.Fatalf("a guided controller nobody is behind answers %v, want it left to the node", got)
+	}
+
+	g := &game{world: w, padKey: noKey, effort: 1}
+	g.selectAgent(id)
+	g.toggleControl() // the asked mode, which is where a person arrives first
+	if got := g.guided.AnswerCourt(7); got != engine.CourtWaiting {
+		t.Fatalf("a played node answers %v, want it to wait for the player", got)
+	}
+	g.guided.AnswerProposal(7, false)
+	if got := g.guided.AnswerCourt(7); got != engine.CourtRefuse {
+		t.Fatalf("after the player said no the controller answers %v", got)
+	}
+}

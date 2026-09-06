@@ -417,6 +417,7 @@ func (w *World) Step() {
 			w.perform(a)
 		}
 		a.pruneRejected(w.tick)
+		w.forgetProposalIfGone(a)
 		w.keepInBounds(a)
 	}
 
@@ -644,7 +645,13 @@ func (w *World) court(a *Agent) {
 	// often a proposal is accepted, so that is not what it learns from.
 	sawInThem, sawInIt := w.perceivedFitness(a, o), w.perceivedFitness(o, a)
 	mine := w.willCommit(a, sawInThem)
-	theirs := w.willCommit(o, sawInIt)
+	// The other side's answer is the other side's to give: their own rule
+	// unless their controller takes the question (courtship.go). Until it is
+	// answered the suitor stands here, which costs it time and nothing else.
+	theirs, answered := w.askAboutCourtship(o, a, sawInIt)
+	if !answered {
+		return
+	}
 	// Both sides remember how it went. This is not new knowledge on either
 	// side: the world already teaches the suitor whether the other agreed
 	// (noteCourtship, which is where AcceptChance comes from), and its own

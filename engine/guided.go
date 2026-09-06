@@ -105,6 +105,29 @@ type GuidedController struct {
 	body           int
 	asked, askedAt int
 	answered       int
+
+	// Whether a person is there to answer proposals, and what they last said
+	// (courtship.go). Off by default: an unattended guided node has to be
+	// indistinguishable from an AI one, and a proposal nobody answers holds
+	// the suitor still for a while.
+	court courtDesk
+}
+
+// AnswerProposals says whether somebody is there to answer when another agent
+// walks up and proposes. With it off - which is how one of these starts - the
+// answer is the node's own rule, given on the spot, exactly as it is for a node
+// the AI is running.
+func (c *GuidedController) AnswerProposals(on bool) { c.court.answering = on }
+
+// AnswerCourt is the world asking whether the proposal in front of this node is
+// accepted.
+func (c *GuidedController) AnswerCourt(suitorID int) CourtAnswer {
+	return c.court.answerCourt(suitorID)
+}
+
+// AnswerProposal is the interface passing on what the person said.
+func (c *GuidedController) AnswerProposal(suitorID int, accept bool) {
+	c.court.answerProposal(suitorID, accept)
 }
 
 // NewGuidedController returns a controller that asks about the turning points:

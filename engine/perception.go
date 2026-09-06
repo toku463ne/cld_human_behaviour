@@ -110,6 +110,13 @@ type SelfView struct {
 	MateValue float64
 	MateBar   float64
 
+	// CourtedBy is whoever is standing here proposing and waiting for an
+	// answer, 0 for nobody, and CourtedTicksLeft how long they will wait
+	// before the agent's own rule answers for it. Only an agent whose
+	// controller answers proposals ever sees these filled in.
+	CourtedBy        int
+	CourtedTicksLeft int
+
 	// LastCourt is what came of the last courtship this agent walked all the
 	// way up to. Nothing here is new knowledge: the world already teaches the
 	// suitor whether the other side agreed (that is what AcceptChance is
@@ -299,6 +306,8 @@ func (w *World) perceive(a *Agent) *Perception {
 		ShockRisk:         a.lore.shockRisk,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
+		CourtedBy:         a.courtedBy,
+		CourtedTicksLeft:  w.courtAnswerLeft(a),
 		MateValue:         fitness(a, &w.cfg),
 		MateBar:           w.commitBar(a),
 		LastCourt:         a.lastCourt,

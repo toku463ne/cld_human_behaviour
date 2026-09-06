@@ -713,6 +713,12 @@ type Config struct {
 	ChildRearingTicks int
 	RearingRadius     float64
 
+	// CourtAnswerTicks is how long a suitor stands and waits when the one it
+	// has proposed to answers proposals for itself (a person, that is: no AI
+	// controller does). When it runs out the agent's own rule answers, which
+	// is what would have happened straight away otherwise.
+	CourtAnswerTicks int
+
 	// BirthNeedsLowerIDFirst restores the bug fixed on 2026-09-06: a bond that
 	// had run its course only produced a child when the loop happened to
 	// reach the lower-numbered of the two partners first, which was about half
@@ -1140,6 +1146,11 @@ func DefaultConfig() Config {
 		ChildRearingTicks: 1000, // the two years of childhood
 
 		BirthNeedsLowerIDFirst: false, // see HISTORY.md, 2026-09-06
+
+		// Long enough to read the proposal and decide, short enough that a
+		// player who has walked away does not hold a stranger in place. The
+		// same sixty ticks a question in the asked mode stands for.
+		CourtAnswerTicks: 60,
 
 		// Zero: see HISTORY.md, 2026-09-06.
 		ParentFeedShare:  0,

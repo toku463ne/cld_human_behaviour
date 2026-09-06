@@ -299,6 +299,7 @@ type seenState struct {
 	vitality float64
 	frail    bool
 	canCourt bool
+	courted  int
 }
 
 // offer is a split of the three preferences put to a person at a milestone.
@@ -351,7 +352,7 @@ func (g *game) handleInput() {
 	switch {
 	case inpututil.IsKeyJustPressed(ebiten.KeySpace):
 		g.paused = !g.paused
-	case g.succession == nil && g.play != playDriven &&
+	case g.succession == nil && !g.beingCourted() && g.play != playDriven &&
 		(inpututil.IsKeyJustPressed(ebiten.KeyRight) || inpututil.IsKeyJustPressed(ebiten.KeyN)):
 		// One tick, and stay stopped: this is how a single decision gets read.
 		// While somebody is driving a node these keys walk it instead (see
@@ -408,6 +409,9 @@ func (g *game) handleInput() {
 
 // handlePlayInput reads the keys that only mean something to a player.
 func (g *game) handlePlayInput() {
+	if g.answerProposal() {
+		return
+	}
 	if g.succession != nil {
 		// Nothing else means anything: there is no body to drive until this
 		// is answered, and the clock is stopped behind it.
@@ -608,6 +612,7 @@ func (g *game) toggleControl() {
 			return
 		}
 		g.guided = engine.NewGuidedController()
+		g.guided.AnswerProposals(true) // somebody is here to answer them
 		if !g.world.SetController(g.selected, g.guided) {
 			g.guided = nil
 			g.say("#%d is gone", g.selected)
@@ -654,6 +659,60 @@ func (g *game) toggleControl() {
 		g.selectAgent(id)
 		g.say("#%d is back on the utility formula (h takes it up again)", id)
 	}
+}
+
+// --- being courted ----------------------------------------------------------
+
+// proposer is whoever is standing in front of the played node waiting for an
+// answer, 0 for nobody, and how long they will wait. It comes out of the
+// node's own perception, like everything else on the panel.
+func (g *game) proposer() (int, int) {
+	v, ok := g.view()
+	if !ok || v.Self.CourtedBy == 0 {
+		return 0, 0
+	}
+	return v.Self.CourtedBy, v.Self.CourtedTicksLeft
+}
+
+// beingCourted says whether a proposal is standing, for the keys that mean
+// something else while one is (n steps a tick everywhere else).
+func (g *game) beingCourted() bool {
+	who, _ := g.proposer()
+	return who != 0
+}
+
+// answerProposal reads the two keys that answer a proposal, and reports
+// whether one is standing at all - while it is, y and n mean this and nothing
+// else.
+//
+// Saying nothing is also an answer: the suitor waits its sixty ticks and then
+// the node's own rule decides, which is what would have happened immediately
+// if nobody had been playing it.
+func (g *game) answerProposal() bool {
+	who, _ := g.proposer()
+	if who == 0 {
+		return false
+	}
+	yes := inpututil.IsKeyJustPressed(ebiten.KeyY)
+	no := inpututil.IsKeyJustPressed(ebiten.KeyN)
+	if !yes && !no {
+		return true
+	}
+	switch {
+	case g.human != nil:
+		g.human.AnswerProposal(who, yes)
+	case g.guided != nil:
+		g.guided.AnswerProposal(who, yes)
+	default:
+		return false
+	}
+	if yes {
+		g.say("you said yes to #%d", who)
+	} else {
+		g.say("you turned #%d down", who)
+	}
+	g.paused = false
+	return true
 }
 
 // controller is whichever of the two a person is behind, for the code that
@@ -1145,6 +1204,13 @@ func (g *game) watchTheLife() {
 		return
 	}
 	raised := g.milestone()
+	if who, _ := g.proposer(); who != 0 {
+		// Being proposed to is on a clock like a question, so the clock stops
+		// for it. Unlike a question it cannot go stale unanswered - the
+		// node's own rule takes over - but a proposal that scrolled past
+		// while the world ran is a choice the player never got.
+		raised = true
+	}
 	if q, ok := g.world.Question(g.played); ok && q.Tick != g.askedAt {
 		g.askedAt = q.Tick
 		raised = true
@@ -1685,6 +1751,10 @@ func (g *game) watchProtagonist() {
 		frail:    a.Vitality < a.MaxVitality(&cfg)/3,
 		canCourt: a.CanReproduce(&cfg),
 	}
+	// Who is standing there waiting for an answer. Read from the node's own
+	// perception rather than from the world, like everything else a player is
+	// shown while playing.
+	now.courted, _ = g.proposer()
 	if g.human != nil {
 		now.voided = g.human.Voided()
 		if v, ok := g.human.View(); ok && g.human.Body() == a.ID {
@@ -1765,6 +1835,9 @@ func (g *game) watchProtagonist() {
 	}
 	if now.canCourt && !was.canCourt {
 		g.pop("ready to court")
+	}
+	if now.courted != 0 && now.courted != was.courted {
+		g.pop("#%d is proposing", now.courted)
 	}
 
 	// And the housekeeping a player would otherwise only find out by noticing
@@ -2179,9 +2252,14 @@ func (g *game) overlay() string {
 	case playDriven:
 		fmt.Fprintf(&b, "playing #%d: numpad or arrows+home/end/pgup/pgdn walk it (hold to keep going)   click a spot then m walks there and stops\n", g.played)
 		b.WriteString("   click to aim   r rest  m walk to the mark  e eat  a attack  f flee  o observe  c court   1-5 effort  s stance  k heir\n")
+		b.WriteString("   y / n answer somebody who has walked up and proposed\n")
 	case playAsked:
-		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir\n", g.played)
+		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir, y/n a proposal\n", g.played)
 		b.WriteString("   the pad does not walk it in this mode - it walks itself. press h to take the reins\n")
+	}
+	if who, left := g.proposer(); who != 0 {
+		fmt.Fprintf(&b, "#%d is proposing to you: [y] accept  [n] refuse  (%d ticks, then #%d decides for itself)\n",
+			who, left, g.played)
 	}
 	if g.succession != nil {
 		fmt.Fprintf(&b, "#%d is dead: 1-%d go on as one of its line, enter to stop here (see the panel)\n",
@@ -2358,6 +2436,7 @@ func (g *game) drawPlay(t *textBox) {
 		t.line("  numpad 1-9 (or the arrows with home/end/pgup/pgdn)")
 		t.line("    walk it one tick per press, or hold to keep going")
 		t.line("  1-5 effort   s stance   enter think again now")
+		t.line("  y / n        accept or refuse somebody proposing")
 		t.line("  k name the child to carry on   h hand back to AI")
 		return
 	}
@@ -2630,6 +2709,15 @@ func (g *game) drawSuccession(t *textBox) {
 // its knowledge - which is why a refusal can still be a surprise.
 func (g *game) drawCourting(t *textBox, view engine.HumanView) {
 	cfg := g.world.Config()
+	if c := view.Self.CourtedBy; c != 0 {
+		t.line("#%d IS PROPOSING - [y] accept  [n] refuse  (%d ticks, then it",
+			c, view.Self.CourtedTicksLeft)
+		t.line("  decides for itself)")
+		if o, ok := view.AgentByID(c); ok {
+			t.line("  #%d: %s, %.0f away, looks worth %.0f to you",
+				o.ID, o.Sex, o.Dist, o.Fitness)
+		}
+	}
 	t.line("AS A MATE you are worth %.0f, and want %.0f; everybody wants %.0f",
 		view.Self.MateValue, view.Self.MateBar, cfg.CommitFitness)
 	t.line("  until their own patience runs out, then %.0f", cfg.CommitFloor)

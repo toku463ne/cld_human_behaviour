@@ -299,6 +299,13 @@ type Agent struct {
 	memoryTick int
 	memoryUsed int
 
+	// courtedBy is whoever is standing here waiting for an answer, and
+	// courtedTick when they arrived. Only an agent whose controller answers
+	// proposals for itself ever has one: for everybody else the answer is the
+	// agent's own rule and is given on the spot (courtship.go).
+	courtedBy   int
+	courtedTick int
+
 	// lastCourt is how the last courtship this one walked up to came out. It
 	// is bookkeeping for whoever is watching - no rule reads it - and it is
 	// kept here rather than worked out afterwards because by the time anybody
