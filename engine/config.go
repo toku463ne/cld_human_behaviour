@@ -713,6 +713,21 @@ type Config struct {
 	ChildRearingTicks int
 	RearingRadius     float64
 
+	// --- the ground (stage 20) ---
+	//
+	// TerrainMap is the country the world is laid out on, one string per row
+	// and one rune per cell (terrain.go says which rune is what). Empty is a
+	// flat world, which is what every measurement before this stage was taken
+	// in and still the default: ground is something a map gives a world, not
+	// something the world has by nature.
+	//
+	// The three costs are multipliers on what a tick of movement takes out of
+	// a body. They are costs and not speeds on purpose - see terrain.go.
+	TerrainMap    []string
+	RoughMoveCost float64
+	WaterMoveCost float64
+	SlopeMoveCost float64
+
 	// CourtAnswerTicks is how long a suitor stands and waits when the one it
 	// has proposed to answers proposals for itself (a person, that is: no AI
 	// controller does). When it runs out the agent's own rule answers, which
@@ -1146,6 +1161,13 @@ func DefaultConfig() Config {
 		ChildRearingTicks: 1000, // the two years of childhood
 
 		BirthNeedsLowerIDFirst: false, // see HISTORY.md, 2026-09-06
+
+		// No map: a flat world, exactly as it was. The costs are what the
+		// runes mean when a map does turn up.
+		TerrainMap:    nil,
+		RoughMoveCost: 2.0,
+		WaterMoveCost: 3.0,
+		SlopeMoveCost: 2.0,
 
 		// Long enough to read the proposal and decide, short enough that a
 		// player who has walked away does not hold a stranger in place. The

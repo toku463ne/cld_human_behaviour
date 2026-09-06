@@ -28,6 +28,83 @@ import (
 	"github.com/toku463ne/cld_human_behaviour/engine"
 )
 
+// The test maps of stage 20. They are laid out by hand rather than generated,
+// because the point of the first measurement is to know exactly what country
+// the world is and to be able to look at it in cmd/devview.
+//
+// Sixteen columns by twelve rows over 800 by 600 is a cell of 50.
+var (
+	// Broken country over the western half: a body crossing it pays twice.
+	// Split east and west rather than scattered, so that "live in the open"
+	// and "live in the rough" are places an agent can actually stay in.
+	mapRough = []string{
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+	}
+
+	// A river north to south, two cells wide, with no bridge: crossing is
+	// dear, not impossible, which is the difference between a cost and an
+	// obstacle.
+	mapRiver = []string{
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+	}
+
+	// High ground in the north-east, stacked: a first level with two ramps up
+	// to it, and a second level on top of it with one ramp of its own. The
+	// only ways in are the ramps.
+	mapPlateau = []string{
+		"..........111111",
+		"..........122221",
+		"..........1B2221",
+		"..........122221",
+		"..........111111",
+		"..........A.....",
+		"................",
+		"................",
+		"..........A11111",
+		"..........111111",
+		"..........111111",
+		"..........111111",
+	}
+
+	// All three at once, which is the arm a world would actually be played on.
+	mapCountry = []string{
+		"::::...~~.111111",
+		"::::...~~.122221",
+		"::::...~~.1B2221",
+		"::::...~~.122221",
+		"::::...~~.111111",
+		"::::...~~.A.....",
+		"::::...~~.......",
+		"::::...~~.......",
+		"::::...~~.A11111",
+		"::::...~~.111111",
+		"::::...~~.111111",
+		"::::...~~.111111",
+	}
+)
+
 // A variant is one arm of an experiment: a name, why it exists, and what it
 // changes about the default configuration.
 type variant struct {
@@ -885,6 +962,45 @@ var variants = []variant{
 		about: "children do not keep to a parent",
 		apply: func(c *engine.Config) { c.ChildRearingTicks = 0 },
 	},
+	// Stage 20: the ground. One kind of country at a time, because "add
+	// terrain" is four different rules wearing one word - dear ground acts on
+	// speed, an obstacle on route finding, a narrow place on defence, cover on
+	// evasion (PLAN.md). These arms are the first of those, plus the height
+	// that makes high ground and ramps out of the same map.
+	//
+	// The maps are 16 by 12 over the 800 by 600 world, so a cell is 50 by 50 -
+	// a little under half the 130 an agent can see, which keeps a patch big
+	// enough to live in and small enough that several fit in the world.
+	{
+		name:  "rough",
+		about: "half the world is broken country that costs twice as much to cross",
+		apply: func(c *engine.Config) { c.TerrainMap = mapRough },
+	},
+	{
+		name:  "river",
+		about: "a river down the middle: crossable, and three times the cost",
+		apply: func(c *engine.Config) { c.TerrainMap = mapRiver },
+	},
+	{
+		name:  "plateau",
+		about: "high ground in one corner, reachable only by its two ramps",
+		apply: func(c *engine.Config) { c.TerrainMap = mapPlateau },
+	},
+	{
+		name:  "country",
+		about: "all three at once: rough ground, a river, and a stacked plateau",
+		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
+	},
+	{
+		name:  "softrough",
+		about: "sweep: the same broken country at half the penalty",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RoughMoveCost = mapRough, 1.5 },
+	},
+	{
+		name:  "hardrough",
+		about: "sweep: the same broken country at four times the cost",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RoughMoveCost = mapRough, 4 },
+	},
 	// The birth bug found on 2026-09-06: a bond that had run its course only
 	// produced a child when the loop reached the lower-numbered partner
 	// first. This arm is the world every measurement before that date was
@@ -1050,6 +1166,8 @@ var metricNames = []string{
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
 	"regionKnown", "regionTold", "regionRank", "regionSpread",
 	"dietVariety", "dietDiscount",
+	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
+	"speedHigh", "speedLow", "highGap",
 	"plantSpread", "plantRegrow", "plantClump", "plantEmpty", "seedsCarried",
 	"plantPoison", "plantSignal", "plantHonesty",
 	"allAsleep", "clockSpread",
@@ -1136,6 +1254,17 @@ type sample struct {
 	// than walked, how well the views line up with the truth, and how much
 	// agents disagree about the same place.
 	regionKnown, regionTold, regionRank, regionSpread float64
+
+	// Where the population stands on the map, and who stands where (stage
+	// 20). speedOpen and speedDear are the mean share of the budget spent on
+	// speed by the agents standing on cheap and on dear ground; the gap
+	// between them is the completion condition, because a fall in the
+	// population-wide correlation is equally well explained by more variance.
+	// onDear is the share of the population out on the dear ground at all -
+	// a gap measured over nobody says nothing - and onHigh the share up on a
+	// level above the bottom.
+	speedOpen, speedDear, speedGap, onDear, onHigh float64
+	speedHigh, speedLow, highGap                   float64
 
 	// What the population is living on: how mixed the average diet is, and
 	// what the average mouthful is actually worth after the discount for
@@ -1269,6 +1398,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		plants := w.Plants()
 		vig := w.Vigilance(engine.DefaultClusterLinkDist)
 		looks := w.LooksSignal()
+		ground := whoStandsWhere(w)
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
@@ -1276,6 +1406,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			regionKnown: known.Known, regionTold: known.Told,
 			regionRank: known.Rank, regionSpread: known.Spread,
 			dietVariety: diet.Variety, dietDiscount: diet.Discount,
+			speedOpen: ground.open, speedDear: ground.dear, speedGap: ground.gap,
+			onDear: ground.dearShare, onHigh: ground.highShare,
+			speedHigh: ground.high, speedLow: ground.low, highGap: ground.highSpeedGap,
 			plantSpread: plants.Spread, plantRegrow: plants.Regrow,
 			plantClump: plants.Clumping, plantEmpty: plants.Empty,
 			seedsCarried: plants.Carried,
@@ -1520,6 +1653,15 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"regionSpread": tail.regionSpread,
 		// What the population lives on. dietDiscount at one is a rule that
 		// never fires; dietVariety at zero is a world with nothing to vary.
+		"speedOpen": tail.speedOpen,
+		"speedDear": tail.speedDear,
+		"speedGap":  tail.speedGap,
+		"onDear":    tail.onDear,
+		"onHigh":    tail.onHigh,
+		"speedHigh": tail.speedHigh,
+		"speedLow":  tail.speedLow,
+		"highGap":   tail.highGap,
+
 		"dietVariety":  tail.dietVariety,
 		"dietDiscount": tail.dietDiscount,
 		// What the plants have become. plantEmpty is the one to watch: a
@@ -1644,6 +1786,14 @@ func tailAverage(series []sample) sample {
 		out.regionTold += s.regionTold
 		out.regionRank += s.regionRank
 		out.regionSpread += s.regionSpread
+		out.speedOpen += s.speedOpen
+		out.speedDear += s.speedDear
+		out.speedGap += s.speedGap
+		out.onDear += s.onDear
+		out.onHigh += s.onHigh
+		out.speedHigh += s.speedHigh
+		out.speedLow += s.speedLow
+		out.highGap += s.highGap
 		out.dietVariety += s.dietVariety
 		out.dietDiscount += s.dietDiscount
 		out.plantSpread += s.plantSpread
@@ -1717,6 +1867,14 @@ func tailAverage(series []sample) sample {
 	out.regionTold /= d
 	out.regionRank /= d
 	out.regionSpread /= d
+	out.speedOpen /= d
+	out.speedDear /= d
+	out.speedGap /= d
+	out.onDear /= d
+	out.onHigh /= d
+	out.speedHigh /= d
+	out.speedLow /= d
+	out.highGap /= d
 	out.dietVariety /= d
 	out.dietDiscount /= d
 	out.plantSpread /= d
@@ -1798,6 +1956,76 @@ func budgetSplit(w *engine.World) (mean, sd float64, shares [engine.NumGenes]flo
 		shares[g] /= n
 	}
 	return mean, sd, shares
+}
+
+// groundSplit is who is standing on what (stage 20): the mean share of the
+// budget spent on speed by the agents on cheap ground and by those on dear
+// ground, the difference, and how much of the population is out on the dear
+// ground and up on a level at all.
+type groundSplit struct {
+	open, dear, gap      float64
+	dearShare, highShare float64
+
+	// The same split by height rather than by cost. High ground is the one
+	// piece of country the population demonstrably does sort itself over -
+	// the ramps are a choice in a way that dear ground is not - so whether
+	// the ones up there are a different sort of body is the question.
+	high, low, highSpeedGap float64
+}
+
+// whoStandsWhere is the measurement the terrain stage turns on.
+//
+// A fall in the population-wide correlation between speed and vitality is not
+// enough to call a niche: more variance looks the same. What says "the fast
+// live in the open and the tough live in the rough" is the two means measured
+// apart, with the share standing on each next to them - a gap measured over
+// two agents is noise wearing a number.
+func whoStandsWhere(w *engine.World) groundSplit {
+	var out groundSplit
+	agents := w.Agents()
+	var nOpen, nDear, nHigh float64
+	for i := range agents {
+		a := &agents[i]
+		b := a.Budget()
+		if b <= 0 {
+			continue
+		}
+		share := a.Gene(engine.GeneSpeed) / b
+		g := w.TerrainAt(a.X, a.Y)
+		if g.Height > 0 {
+			nHigh++
+			out.high += share
+		} else {
+			out.low += share
+		}
+		if g.Cost > 1 {
+			out.dear += share
+			nDear++
+			continue
+		}
+		out.open += share
+		nOpen++
+	}
+	if n := nOpen + nDear; n > 0 {
+		out.dearShare, out.highShare = nDear/n, nHigh/n
+	}
+	if nOpen > 0 {
+		out.open /= nOpen
+	}
+	if nDear > 0 {
+		out.dear /= nDear
+	}
+	if nOpen > 0 && nDear > 0 {
+		out.gap = out.open - out.dear
+	}
+	if n := nOpen + nDear; n > nHigh && nHigh > 0 {
+		out.high /= nHigh
+		out.low /= n - nHigh
+		out.highSpeedGap = out.high - out.low
+	} else {
+		out.high, out.low = 0, 0
+	}
+	return out
 }
 
 // share is what fraction of the deaths were killings. It is the headline

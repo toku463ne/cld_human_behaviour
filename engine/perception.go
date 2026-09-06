@@ -110,6 +110,17 @@ type SelfView struct {
 	MateValue float64
 	MateBar   float64
 
+	// Ground is what a tick of movement costs where this agent is standing,
+	// as a multiplier on the flat figure (stage 20). One is level open
+	// ground, which is the whole of a world with no map.
+	//
+	// It is the ground underfoot and nothing else: an agent feels what it is
+	// standing on and assumes the country ahead is like it. Nothing here says
+	// what is over there, which is why terrain is something to be found out by
+	// paying for it rather than a straight line with a different price on it.
+	// A player is shown the same figure and no more (stage 19).
+	Ground float64
+
 	// CourtedBy is whoever is standing here proposing and waiting for an
 	// answer, 0 for nobody, and CourtedTicksLeft how long they will wait
 	// before the agent's own rule answers for it. Only an agent whose
@@ -306,6 +317,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		ShockRisk:         a.lore.shockRisk,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
+		Ground:            w.terrainAt(a.X, a.Y).Cost,
 		CourtedBy:         a.courtedBy,
 		CourtedTicksLeft:  w.courtAnswerLeft(a),
 		MateValue:         fitness(a, &w.cfg),

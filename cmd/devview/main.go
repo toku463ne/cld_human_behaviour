@@ -92,6 +92,15 @@ var (
 	colorPairLink   = color.RGBA{0x0b, 0x0b, 0x0b, 0x30}
 	colorFightLink  = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
 	colorCourtLink  = color.RGBA{0xf0, 0x8c, 0x00, 0xd0}
+	// The ground (stage 20). These are premultiplied, like every colour the
+	// vector calls take: each channel is the colour already faded by its own
+	// alpha, and a channel brighter than the alpha does not draw at all
+	// (which is how the first version of this came out invisible).
+	colorWater      = color.RGBA{0x17, 0x26, 0x3f, 0x50}
+	colorRough      = color.RGBA{0x28, 0x20, 0x10, 0x40}
+	colorSlope      = color.RGBA{0x54, 0x48, 0x18, 0x60}
+	colorSlopeEdge  = color.RGBA{0x51, 0x48, 0x1b, 0x90}
+	colorCliff      = color.RGBA{0x44, 0x36, 0x18, 0xc0}
 	colorSelected   = color.RGBA{0x11, 0x11, 0x11, 0xff}
 	colorSight      = color.RGBA{0x33, 0x88, 0xcc, 0xa0}
 	colorRegionEdge = color.RGBA{0x30, 0x60, 0x30, 0x50}
@@ -2031,7 +2040,11 @@ func clamp(v, lo, hi float64) float64 {
 }
 
 func (g *game) drawWorld(screen *ebiten.Image) {
+	// Regions first, terrain over them: one is what the ground provides and
+	// the other is what it costs to cross, and the second is the structural
+	// one - a river you cannot see is worse than a rich patch you cannot see.
 	g.drawRegions(screen)
+	g.drawTerrain(screen)
 	g.drawSight(screen)
 
 	for _, f := range g.world.Foods() {
@@ -2179,6 +2192,67 @@ func clamp01(v float64) float64 {
 // (stage 14). Darker is ground with its back covered, where lying down among
 // strangers costs less. Nothing else about a region is visible, because nothing
 // else about a region exists: it is not a wall and no node knows it is in one.
+// drawTerrain paints the country under everything else (stage 20): what the
+// ground is made of and how high it is.
+//
+// It is drawn from World.TerrainAt rather than from anything an agent knows,
+// like the regions above it - the viewer sees the map, the bodies feel the
+// cell they are standing on. A world with no map draws nothing at all, which
+// is what every measurement before stage 20 ran on.
+func (g *game) drawTerrain(screen *ebiten.Image) {
+	cols, rows, cw, ch := g.world.TerrainSize()
+	if cols == 0 {
+		return
+	}
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			x, y := (float64(col)+0.5)*cw, (float64(row)+0.5)*ch
+			t := g.world.TerrainAt(x, y)
+			sx, sy := g.onScreen(float64(col)*cw, float64(row)*ch)
+			w, h := g.long(cw), g.long(ch)
+
+			// Height first, as a wash that gets stronger with every level:
+			// what is up is lighter, the way ground in the sun is.
+			if t.Height > 0 {
+				a := min(int(t.Height), 4) * 34
+				wash := color.RGBA{uint8(0x99 * a / 255), uint8(0x88 * a / 255), uint8(0x55 * a / 255), uint8(a)}
+				vector.DrawFilledRect(screen, sx, sy, w, h, wash, false)
+			}
+			switch t.Kind {
+			case engine.GroundWater:
+				vector.DrawFilledRect(screen, sx, sy, w, h, colorWater, false)
+			case engine.GroundRough:
+				vector.DrawFilledRect(screen, sx, sy, w, h, colorRough, false)
+			case engine.GroundSlope:
+				// A ramp is the only way between two levels, so it is drawn
+				// as a way through rather than as a kind of ground.
+				vector.DrawFilledRect(screen, sx, sy, w, h, colorSlope, false)
+				vector.StrokeRect(screen, sx, sy, w, h, 1, colorSlopeEdge, false)
+			}
+		}
+	}
+	// The lines between levels: where a body cannot simply walk. Drawn on the
+	// higher side of each pair, which is the side that refuses the step.
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			x, y := (float64(col)+0.5)*cw, (float64(row)+0.5)*ch
+			here := g.world.TerrainAt(x, y)
+			sx, sy := g.onScreen(float64(col)*cw, float64(row)*ch)
+			w, h := g.long(cw), g.long(ch)
+			if col > 0 {
+				if west := g.world.TerrainAt(x-cw, y); west.Height != here.Height && !west.Slope && !here.Slope {
+					vector.StrokeLine(screen, sx, sy, sx, sy+h, 2, colorCliff, false)
+				}
+			}
+			if row > 0 {
+				if north := g.world.TerrainAt(x, y-ch); north.Height != here.Height && !north.Slope && !here.Slope {
+					vector.StrokeLine(screen, sx, sy, sx+w, sy, 2, colorCliff, false)
+				}
+			}
+		}
+	}
+}
+
 func (g *game) drawRegions(screen *ebiten.Image) {
 	for _, r := range g.world.Regions() {
 		rx, ry := g.onScreen(r.MinX, r.MinY)
@@ -2291,6 +2365,9 @@ func (g *game) overlay() string {
 	b.WriteString("circle = body (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
 	b.WriteString("a line between two: red = one is coming for the other, orange = one is courting the other, faint = a pair\n")
+	if cols, _, _, _ := g.world.TerrainSize(); cols > 0 {
+		b.WriteString("ground: blue = water, brown = rough (both cost more to cross), pale = higher, yellow = a ramp, dark line = a cliff\n")
+	}
 	b.WriteString("children are small circles: a newborn expresses 60% of its genes and grows into the rest by eating\n")
 	if g.played != 0 {
 		b.WriteString("gold ring = you, green ring = the heir, faint gold ring = a child of your line\n")
@@ -3165,6 +3242,69 @@ func medianLooks(in []engine.Agent) float64 {
 	return v[len(v)/2]
 }
 
+// testMaps are the same pieces of country cmd/experiment measures on, so that
+// a number and a picture are of the same world. They live in both because they
+// are test fixtures rather than part of the engine: the world gets its country
+// from whoever starts it, and stage 22 will get it from an editor.
+var testMaps = map[string][]string{
+	"rough": {
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+		"::::::::........",
+	},
+	"river": {
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+		".......~~.......",
+	},
+	"plateau": {
+		"..........111111",
+		"..........122221",
+		"..........1B2221",
+		"..........122221",
+		"..........111111",
+		"..........A.....",
+		"................",
+		"................",
+		"..........A11111",
+		"..........111111",
+		"..........111111",
+		"..........111111",
+	},
+	"country": {
+		"::::...~~.111111",
+		"::::...~~.122221",
+		"::::...~~.1B2221",
+		"::::...~~.122221",
+		"::::...~~.111111",
+		"::::...~~.A.....",
+		"::::...~~.......",
+		"::::...~~.......",
+		"::::...~~.A11111",
+		"::::...~~.111111",
+		"::::...~~.111111",
+		"::::...~~.111111",
+	},
+}
+
 func main() {
 	follow := flag.Int("follow", 0, "node ID to follow from the start (0 for none; nodes can also be clicked)")
 	seed := flag.Int64("seed", engine.DefaultConfig().Seed, "simulation seed")
@@ -3173,11 +3313,17 @@ func main() {
 	play := flag.Bool("play", false, "play a node yourself: -follow picks it, otherwise the quickest body in the world (same as pressing h)")
 	ask := flag.Bool("ask", false, "play it the other way: the node decides for itself and asks you at the turning points (h twice)")
 	boost := flag.Bool("boost", true, "bring the played body up to the world's average speed, paid for with new budget (a gift, shown on the panel)")
+	land := flag.String("terrain", "", "lay the world out on a piece of country: none (default, flat), rough, river, plateau or country (stage 20)")
 	flag.Parse()
 
 	cfg := engine.DefaultConfig()
 	cfg.Width, cfg.Height = worldWidth, worldHeight
 	cfg.Seed = *seed
+	if m, ok := testMaps[*land]; ok {
+		cfg.TerrainMap = m
+	} else if *land != "" {
+		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
+	}
 
 	// Effort 1.0 to start with. Walking flat out costs MoveCost per tick and
 	// empties an ordinary body in about half a minute of it, so it is a real

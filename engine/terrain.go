@@ -1,33 +1,50 @@
 package engine
 
-// This file is where the ground an agent is standing on will go.
-//
-// Nothing here does anything yet: every query returns flat ground, and the
-// simulation runs exactly as it did without it. It is here for the same reason
-// the Species label was put in before there was a second species - so that the
-// place the rule will live is already decided, and adding it later is a change
-// to one function rather than to every caller.
+import "math"
+
+// The ground an agent is standing on (stage 20).
 //
 // What it is for. Speed is the most bought gene there is (0.230 of the budget)
-// and it still does not trade against anything: being fast is simply good, so
-// there is no "fast and frail against slow and tough" to be found. What is
-// missing is somewhere that being fast does not help. Ground that costs more
-// to cross is the cheapest way to make one, and it is the only one that acts
-// on speed rather than on judgement (an obstacle is a question about route
-// finding, which is intelligence; a narrow place is a question about being
-// cornered, which is defence - see PLAN.md).
+// and until now it did not trade against anything: being fast was simply good,
+// so "fast and frail against slow and tough" never appeared. What was missing
+// was somewhere that being fast does not help. Ground that costs more to cross
+// is the cheapest way to make one, and it is the only kind of terrain that
+// acts on speed rather than on judgement (an obstacle is a question about
+// route finding, which is intelligence; a narrow place is a question about
+// being cornered, which is defence - see PLAN.md).
 //
-// Deliberately not a region. Stage 14 gives the world regions - blocks that
-// hold how good the resting is and how well the plants grow - and terrain is
-// not one of those. A region is a unit of what the world provides; terrain is
-// a map of what movement costs. They will overlap on the ground and stay
-// separate in the code.
+// Two decisions were left to this stage, and here they are.
+//
+// Height is an axis on the plane, not a second layer. Every cell carries how
+// high it is, so a plateau is a patch of larger numbers and a plateau on a
+// plateau is larger ones still. The alternative - keeping levels as separate
+// maps - would make every other rule in the world say which level it meant
+// (where food grew, who could see whom, who was within reach), and nothing
+// else in the world is layered. A step that changes level is only allowed
+// through a slope, which is the whole of "you can only get up there by the
+// ramp" and needs no new concept: a slope is a cell, like every other cell.
+//
+// Perception carries the ground underfoot and nothing else, and it carries the
+// same thing for a player as for the AI (stage 19's promise). An agent knows
+// what it is standing on - that is its own body against its own ground - and
+// assumes the country ahead is like it. That assumption is wrong exactly as
+// often as the world is varied, which is the point: terrain is a cost you find
+// out about by paying it, not a re-priced straight line. Giving the AI a map
+// it could plan over would be giving it route finding, and route finding is a
+// different stage with a different gene behind it.
+
+// Ground is what a cell is made of. It is not what it costs - two kinds can
+// cost the same - but what an interface draws and what a map file spells.
+type Ground uint8
+
+const (
+	GroundOpen  Ground = iota // level, cheap, the whole world before this stage
+	GroundRough               // broken country: crossing it costs more
+	GroundWater               // a river: crossable, and dear
+	GroundSlope               // a ramp: the only way between two levels
+)
 
 // terrain is what the ground does to an agent crossing it.
-//
-// One field for now. Whatever is added later (what it does to sight, whether
-// it can be crossed at all) belongs here, so that the callers keep asking one
-// question rather than growing a new one each time.
 type terrain struct {
 	// Cost multiplies what a tick of movement takes out of an agent. 1 is
 	// level open ground; above 1 is ground that punishes crossing it.
@@ -39,30 +56,167 @@ type terrain struct {
 	// opposite sides for the first time: crossing rough country quickly is
 	// exactly the trade a fast, frail body loses and a slow, tough one wins.
 	Cost float64
+
+	// Height is how many levels above the bottom this cell sits, and Slope
+	// says it may be entered from the level below. A step between cells of
+	// different height is allowed only when the higher of the two is a slope,
+	// which makes a ramp the only way up and the only way down.
+	Height int8
+	Slope  bool
+
+	Kind Ground
 }
 
-// flatGround is what the whole world is made of today.
-var flatGround = terrain{Cost: 1}
+// flatGround is what a world with no map is made of, and what every cell off
+// the edge of a map is.
+var flatGround = terrain{Cost: 1, Kind: GroundOpen}
+
+// terrainGrid is the map: cells of equal size laid over the world.
+//
+// The size of a cell comes from the map itself - a map of 20 by 15 over an 800
+// by 600 world gives cells of 40 - so that the same file describes the same
+// country whatever the world's dimensions are.
+type terrainGrid struct {
+	cols, rows   int
+	cellW, cellH float64
+	cells        []terrain
+}
+
+func (g *terrainGrid) at(x, y float64) terrain {
+	if g == nil || g.cols == 0 || g.rows == 0 {
+		return flatGround
+	}
+	cx := int(math.Floor(x / g.cellW))
+	cy := int(math.Floor(y / g.cellH))
+	if cx < 0 || cy < 0 || cx >= g.cols || cy >= g.rows {
+		return flatGround
+	}
+	return g.cells[cy*g.cols+cx]
+}
+
+// buildTerrain reads a map into a grid. Each string is a row and each rune a
+// cell:
+//
+//	.       open ground at the bottom level
+//	:       rough country: the cost of crossing it is RoughMoveCost
+//	~       water: WaterMoveCost, and still crossable - a river is dear, not
+//	        a wall, because a wall is an obstacle and obstacles are about route
+//	        finding rather than about speed
+//	1 - 9   open ground that many levels up
+//	A - I   a slope up to that many levels (A is level 1), SlopeMoveCost
+//
+// Anything else is read as open ground, and a nil or empty map is a flat
+// world - which is the default, so a world that says nothing about its ground
+// runs exactly as it did before this stage.
+func buildTerrain(cfg *Config) *terrainGrid {
+	rows := cfg.TerrainMap
+	if len(rows) == 0 {
+		return nil
+	}
+	cols := 0
+	for _, r := range rows {
+		if n := len([]rune(r)); n > cols {
+			cols = n
+		}
+	}
+	if cols == 0 {
+		return nil
+	}
+	g := &terrainGrid{
+		cols: cols, rows: len(rows),
+		cellW: cfg.Width / float64(cols), cellH: cfg.Height / float64(len(rows)),
+		cells: make([]terrain, cols*len(rows)),
+	}
+	for y, row := range rows {
+		runes := []rune(row)
+		for x := 0; x < cols; x++ {
+			c := '.'
+			if x < len(runes) {
+				c = runes[x]
+			}
+			g.cells[y*cols+x] = cellFor(c, cfg)
+		}
+	}
+	return g
+}
+
+func cellFor(c rune, cfg *Config) terrain {
+	switch {
+	case c == ':':
+		return terrain{Cost: cfg.RoughMoveCost, Kind: GroundRough}
+	case c == '~':
+		return terrain{Cost: cfg.WaterMoveCost, Kind: GroundWater}
+	case c >= '1' && c <= '9':
+		return terrain{Cost: 1, Height: int8(c - '0'), Kind: GroundOpen}
+	case c >= 'A' && c <= 'I':
+		return terrain{Cost: cfg.SlopeMoveCost, Height: int8(c-'A') + 1, Slope: true, Kind: GroundSlope}
+	default:
+		return flatGround
+	}
+}
 
 // terrainAt is the one place the ground is asked about. Everything that moves
-// goes through it, so that giving the world hills is a change here and nowhere
-// else.
-//
-// It takes a position it does not use yet. That is the point: a version that
-// took no arguments would have to be found and changed at every call site the
-// day the ground stops being uniform.
+// goes through it.
 func (w *World) terrainAt(x, y float64) terrain {
-	_, _ = x, y
-	return flatGround
+	return w.ground.at(x, y)
 }
 
 // moveCostOn is what a tick of movement at this effort costs on this ground.
-// The controller works its plans out with moveCostAt, which knows nothing
-// about the ground: an agent plans as though the country ahead were as easy as
-// the country it has crossed, and finds out otherwise by paying. When terrain
-// arrives that gap becomes a real thing agents can be wrong about, and closing
-// it - if it should be closed - means putting the ground into Perception,
-// which is the terrain stage's job and not this groundwork's.
 func (w *World) moveCostOn(x, y, effort float64) float64 {
 	return moveCostAt(&w.cfg, effort) * w.terrainAt(x, y).Cost
+}
+
+// canStep says whether a body standing on one spot may put itself on another.
+//
+// Level ground is always passable, whatever it is made of: water is dear, not
+// forbidden. What is forbidden is a change of level anywhere but a ramp, and
+// more than one level at a time anywhere at all. That one rule gives high
+// ground its edge (there are only so many ways in), gives slopes their job,
+// and stacks: getting to the third level means finding a ramp on the second.
+func (w *World) canStep(fromX, fromY, toX, toY float64) bool {
+	if w.ground == nil {
+		return true
+	}
+	from, to := w.terrainAt(fromX, fromY), w.terrainAt(toX, toY)
+	if from.Height == to.Height {
+		return true
+	}
+	if diff := int(from.Height) - int(to.Height); diff > 1 || diff < -1 {
+		return false
+	}
+	if from.Height > to.Height {
+		return from.Slope
+	}
+	return to.Slope
+}
+
+// GroundView is what an interface or a measurement may read about one spot.
+// The agents get the cost and nothing else (Perception.Self.Ground); this is
+// for whoever is drawing the world or counting who stands where.
+type GroundView struct {
+	Kind   Ground
+	Cost   float64
+	Height int
+	Slope  bool
+}
+
+// TerrainAt reports what the country is at a position. Read only.
+//
+// Named for the terrain rather than the ground because World.GroundAt was
+// already taken by the region's answer to a different question - how sheltered
+// the resting is here and how well the plants grow (region.go). The two maps
+// are deliberately separate: a region is a unit of what the world provides, a
+// terrain cell is what movement costs.
+func (w *World) TerrainAt(x, y float64) GroundView {
+	t := w.terrainAt(x, y)
+	return GroundView{Kind: t.Kind, Cost: t.Cost, Height: int(t.Height), Slope: t.Slope}
+}
+
+// TerrainSize is how many cells the map has, and how big one is. Zero when the
+// world is flat.
+func (w *World) TerrainSize() (cols, rows int, cellW, cellH float64) {
+	if w.ground == nil {
+		return 0, 0, 0, 0
+	}
+	return w.ground.cols, w.ground.rows, w.ground.cellW, w.ground.cellH
 }

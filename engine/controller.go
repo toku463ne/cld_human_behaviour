@@ -191,6 +191,21 @@ func moveCostAt(cfg *Config, effort float64) float64 {
 	return cfg.MoveCost * effort
 }
 
+// moveCost is what the agent doing the reckoning expects a tick of movement to
+// cost: the flat figure, times the ground under its own feet (stage 20).
+//
+// It assumes the country ahead is like the country it is standing on, which is
+// the most an animal can do without a map. On level open ground - the whole
+// world before terrain, and the default still - Ground is 1 and this is the
+// flat figure exactly, so nothing about a flat world changed when this arrived.
+func moveCost(cfg *Config, s *SelfView, effort float64) float64 {
+	g := s.Ground
+	if g <= 0 {
+		g = 1
+	}
+	return moveCostAt(cfg, effort) * g
+}
+
 // damagePerTick is what an attacker of the given power does at the given
 // effort. Power is the efficiency of the vitality poured in, nothing else.
 func damagePerTick(cfg *Config, power, effort float64) float64 {
@@ -266,7 +281,7 @@ func (c *AIController) addExplore(p *Perception) {
 		dx, dy = math.Cos(angle), math.Sin(angle)
 	}
 	effort := 0.4
-	cost := moveCostAt(cfg, effort)
+	cost := moveCost(cfg, s, effort)
 	c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, Utility{
 		Explore:      Goal{Value: cfg.ExploreValue, Chance: hungry},
 		Vitality:     cost,
@@ -339,7 +354,7 @@ func (c *AIController) addFood(p *Perception) {
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 
-			cost := moveCostAt(cfg, effort) * ticks
+			cost := moveCost(cfg, s, effort) * ticks
 			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*f.Nutrition)
 			vitAfter := s.Vitality - cost
 			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
@@ -439,7 +454,7 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		travel := o.Dist / speedAt(s.MaxSpeed, effort)
 		ticks := exchange + travel
 
-		cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCostAt(cfg, effort)
+		cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCost(cfg, s, effort)
 
 		drain := projectedDrain(cfg, s.HungerRate, s.Hunger+s.HungerRate*ticks)
 		now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incomingDmg)
@@ -510,7 +525,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	// hit. This is the only option that gets the incoming damage out of the
 	// picture, which is why running away wins exactly when the damage is what
 	// is about to kill the agent, and loses whenever it is not.
-	cost := moveCostAt(cfg, cfg.FleeEffort)*fleeExposureTicks + incoming*fleeExposureTicks*0.4
+	cost := moveCost(cfg, s, cfg.FleeEffort)*fleeExposureTicks + incoming*fleeExposureTicks*0.4
 	pEscape := clamp(s.Vitality/(s.Vitality+o.Vitality+1e-9), 0.15, 0.9)
 	fled := pressure(cfg, s, s.Vitality-cost, drain)
 
@@ -531,7 +546,7 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 
 	effort := 0.6
 	ticks := o.Dist/speedAt(p.Self.MaxSpeed, effort) + 1
-	cost := moveCostAt(cfg, effort) * ticks
+	cost := moveCost(cfg, s, effort) * ticks
 
 	// What a child costs the body that has one: the parents share the birth,
 	// and it is only paid if the courtship is accepted (stage 25).

@@ -125,6 +125,11 @@ type World struct {
 	agents []Agent
 	foods  []Food
 
+	// ground is the country the world is laid out on (terrain.go), nil for a
+	// flat world. Drawn once from the config and never changed by the
+	// simulation: agents cross it, nothing reshapes it.
+	ground *terrainGrid
+
 	// regions is the world's own coarse division of itself (region.go). It is
 	// drawn once and never changes; foodWeight is the sum of what the blocks
 	// grow, kept so that drawing a place for a plant does not add them up
@@ -249,6 +254,7 @@ func NewWorld(cfg Config) *World {
 	}
 	// Before anybody is put in it, because what the ground is like is not
 	// something the population decides.
+	w.ground = buildTerrain(&w.cfg)
 	w.buildRegions()
 	for i := 0; i < cfg.InitialPopulation; i++ {
 		w.addAgent(w.randomAgent(SpeciesHuman))
@@ -1342,11 +1348,30 @@ func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 	}
 	effort = clamp(effort, 0, 1)
 	speed := speedAt(a.MaxSpeed(&w.cfg), effort)
-	a.X += dx / d * speed
-	a.Y += dy / d * speed
+	stepX, stepY := dx/d*speed, dy/d*speed
 	a.VX, a.VY = dx/d, dy/d
-	// Charged for the ground it is leaving, which is the ground it spent the
-	// tick on. Flat everywhere today; see terrain.go.
+
+	// Where the ground lets it go. A step that would climb or drop a level
+	// anywhere but a ramp is refused, and a body refused head-on tries the two
+	// halves of the step in turn - which is what walking along the foot of a
+	// cliff looks like, and what stops one becoming flypaper. A body that can
+	// go nowhere stands still and pays nothing; nothing is asked of it, and
+	// the idle trigger will get round to it like any other agent with nothing
+	// happening (terrain.go).
+	moved := false
+	switch {
+	case w.canStep(a.X, a.Y, a.X+stepX, a.Y+stepY):
+		a.X, a.Y, moved = a.X+stepX, a.Y+stepY, true
+	case stepX != 0 && w.canStep(a.X, a.Y, a.X+stepX, a.Y):
+		a.X, moved = a.X+stepX, true
+	case stepY != 0 && w.canStep(a.X, a.Y, a.X, a.Y+stepY):
+		a.Y, moved = a.Y+stepY, true
+	}
+	if !moved {
+		return
+	}
+	// Charged for the ground it is standing on at the end of the step, which
+	// is the ground it spent the tick crossing.
 	a.Vitality -= w.moveCostOn(a.X, a.Y, effort)
 	a.effortSpent = math.Max(a.effortSpent, effort)
 	w.invalidateIndex()
