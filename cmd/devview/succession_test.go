@@ -104,3 +104,38 @@ func TestTheNearestOfKinIsOfferedFirst(t *testing.T) {
 		t.Fatalf("offered #%d first, want the dead one's own child #%d", picks[0].id, kid)
 	}
 }
+
+// h escalates: the AI has it, then you answer at the turning points, then you
+// drive it, then the AI has it again - and the node it let go of is still
+// selected, because h is how it is taken up again.
+func TestPressingHEscalatesControlAndLeavesTheNodeSelected(t *testing.T) {
+	w := engine.NewWorld(engine.DefaultConfig())
+	for i := 0; i < 200; i++ {
+		w.Step()
+	}
+	id := w.Agents()[0].ID
+
+	g := &game{world: w, padKey: noKey, effort: 1}
+	g.selectAgent(id)
+
+	g.toggleControl()
+	if g.play != playAsked || g.played != id || g.guided == nil {
+		t.Fatalf("first press: play %v played %d guided %v", g.play, g.played, g.guided != nil)
+	}
+	g.toggleControl()
+	if g.play != playDriven || g.played != id || g.human == nil || g.guided != nil {
+		t.Fatalf("second press: play %v played %d human %v", g.play, g.played, g.human != nil)
+	}
+	g.toggleControl()
+	if g.play != playOff || g.played != 0 {
+		t.Fatalf("third press: play %v played %d", g.play, g.played)
+	}
+	if g.selected != id {
+		t.Fatalf("selection is #%d after letting go of #%d: h could not take it up again",
+			g.selected, id)
+	}
+	g.toggleControl()
+	if g.play != playAsked || g.played != id {
+		t.Fatalf("fourth press: play %v played %d, want the same node taken up again", g.play, g.played)
+	}
+}

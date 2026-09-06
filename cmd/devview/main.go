@@ -587,11 +587,18 @@ func (g *game) walkWithPad() {
 	}
 }
 
-// toggleControl takes the selected node over, or hands it back to the AI.
 // toggleControl cycles the one node between the three ways it can be run: by
 // the utility formula alone, by the formula with a person answering the
 // turning points, and by a person alone. They are three controllers, and the
 // world is told about the change the same way each time.
+//
+// The order is the amount of control taken, in one direction: the AI has it,
+// then you answer at the turning points, then you drive. It ran the other way
+// round until 2026-09-06, and the second step was a trap - a player in the
+// asked mode who wanted the reins pressed h and got the AI instead, and then h
+// again did nothing at all because dropping a node also dropped the selection
+// the next take-over needed. Both halves of that are fixed here: the cycle
+// escalates, and letting a node go leaves it selected.
 func (g *game) toggleControl() {
 	switch g.play {
 	case playOff:
@@ -599,13 +606,13 @@ func (g *game) toggleControl() {
 			g.say("click a node first, then press h to take it over")
 			return
 		}
-		g.human = engine.NewHumanController()
-		if !g.world.SetController(g.selected, g.human) {
-			g.human = nil
+		g.guided = engine.NewGuidedController()
+		if !g.world.SetController(g.selected, g.guided) {
+			g.guided = nil
 			g.say("#%d is gone", g.selected)
 			return
 		}
-		g.play, g.played = playDriven, g.selected
+		g.play, g.played = playAsked, g.selected
 		g.mode = modePlay
 		g.zoom = closeZoom
 		g.was = lifeMark{}
@@ -613,27 +620,38 @@ func (g *game) toggleControl() {
 		g.lineFrom, g.lineAt = g.world.Tick(), g.world.Tick()
 		g.bodies, g.lineKids, g.last, g.walkTo = 1, nil, nil, mark{}
 		g.endowTheProtagonist()
-		g.say("you are #%d. hold an arrow or numpad key to walk it", g.played)
+		g.say("#%d decides for itself and asks you at the turning points. h again to drive it", g.played)
+		g.raiseOffer("you have taken up its life")
 
-	case playDriven:
+	case playAsked:
 		// The same body, a different hand on it. Nothing about the node
 		// changes: only who answers when the world asks.
-		g.guided = engine.NewGuidedController()
-		if !g.world.SetController(g.played, g.guided) {
+		g.human = engine.NewHumanController()
+		if !g.world.SetController(g.played, g.human) {
+			g.human = nil
 			g.say("#%d is gone", g.played)
 			return
 		}
-		g.play, g.human, g.walkTo = playAsked, nil, mark{}
+		g.play, g.guided = playDriven, nil
+		if g.offer != nil {
+			// The clock was stopped for a milestone that belongs to the mode
+			// being left. Taking the reins is the answer to it, so the world
+			// starts again rather than sitting on a menu nobody can reach.
+			g.offer, g.paused = nil, false
+		}
 		g.was = lifeMark{}
-		g.say("#%d decides for itself now and asks you at the turning points", g.played)
-		g.raiseOffer("you have handed it back its own judgement")
+		g.padKey = noKey // a key held through the change walks the node now
+		g.say("you are #%d. hold an arrow or numpad key to walk it", g.played)
 
-	case playAsked:
+	case playDriven:
 		id := g.played
 		g.world.SetController(id, nil) // nil is the world's own AI again
 		g.play, g.played, g.human, g.guided, g.heir, g.offer = playOff, 0, nil, nil, 0, nil
 		g.walkTo, g.lineKids = mark{}, nil
-		g.say("#%d is back on the utility formula", id)
+		// Left selected on purpose: h is how it is taken up again, and it
+		// needs something selected to take up.
+		g.selectAgent(id)
+		g.say("#%d is back on the utility formula (h takes it up again)", id)
 	}
 }
 
@@ -1027,6 +1045,7 @@ var choiceKeys = []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4
 // before a milestone offer is, because a question goes stale and an offer does
 // not: the world is stopped for the one that is on a clock.
 func (g *game) handleAskedInput() {
+	g.sayWalkingIsNotYours()
 	enter := inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyKPEnter)
 
 	if q, ok := g.world.Question(g.played); ok {
@@ -1069,6 +1088,36 @@ func (g *game) handleAskedInput() {
 		// thing to do between turning points is watch.
 		if g.world.RequestDecision(g.played) {
 			g.say("asked #%d what it is thinking", g.played)
+		}
+	}
+
+}
+
+// sayWalkingIsNotYours answers the walk keys in the mode that does not have
+// them. The node is driving itself here, so the pad does nothing - and doing
+// nothing silently reads as the game being broken rather than as the node
+// deciding for itself.
+//
+// The two keys that already mean something in this mode (right and n advance a
+// tick) are left alone: they are not the ones a puzzled player is pressing.
+func (g *game) sayWalkingIsNotYours() {
+	// Not in the first frames: X reports the keyboard state as the window
+	// opens, and an arrow or two comes through as "just pressed" without
+	// anybody having touched anything (seen under WSLg: ArrowUp and ArrowLeft
+	// on frame one). A hint that fires before the player has done anything
+	// teaches them to ignore the notice line.
+	if g.frame < 30 {
+		return
+	}
+	for _, w := range padWalks {
+		for _, k := range w.keys {
+			if k == ebiten.KeyRight || k == ebiten.KeyN {
+				continue
+			}
+			if inpututil.IsKeyJustPressed(k) {
+				g.say("#%d walks itself in this mode - press h to take the reins", g.played)
+				return
+			}
 		}
 	}
 }
@@ -2066,9 +2115,9 @@ func (g *game) overlay() string {
 	}
 	switch g.play {
 	case playDriven:
-		b.WriteString("space pause   -/= slower/faster   z zoom   esc drop the aim   h let it decide for itself\n")
+		b.WriteString("space pause   -/= slower/faster   z zoom   esc drop the aim   h hand it back to the AI\n")
 	case playAsked:
-		b.WriteString("space pause   right/n one tick   -/= slower/faster   z zoom   h hand it back to the AI\n")
+		b.WriteString("space pause   right/n one tick   -/= slower/faster   z zoom   h take the reins (the pad walks it)\n")
 	default:
 		b.WriteString("space pause   right/n one tick   -/= slower/faster   z zoom   click a node   esc clear\n")
 	}
@@ -2079,10 +2128,23 @@ func (g *game) overlay() string {
 		b.WriteString("   click to aim   r rest  m walk to the mark  e eat  a attack  f flee  o observe  c court   1-5 effort  s stance  k heir\n")
 	case playAsked:
 		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir\n", g.played)
+		b.WriteString("   the pad does not walk it in this mode - it walks itself. press h to take the reins\n")
 	}
 	if g.succession != nil {
 		fmt.Fprintf(&b, "#%d is dead: 1-%d go on as one of its line, enter to stop here (see the panel)\n",
 			g.succession.dead, len(g.succession.picks))
+	}
+	// Why the clock is stopped, where the player is already looking. "PAUSED"
+	// on its own is indistinguishable from a game that has stopped working,
+	// which is exactly what a stopped world plus keys that do nothing reads as.
+	if g.play == playAsked && g.succession == nil {
+		if q, ok := g.world.Question(g.played); ok {
+			fmt.Fprintf(&b, "waiting on you: %s. answer 1-%d on the panel, or enter to leave it to itself\n",
+				q.Trigger, len(bets(q)))
+		} else if g.offer != nil {
+			fmt.Fprintf(&b, "waiting on you: %s. answer 1-%d on the panel, or enter to leave it as it is\n",
+				g.offer.why, len(g.offer.picks))
+		}
 	}
 	if g.play == playDriven && g.walkTo.kind != markNone {
 		fmt.Fprintf(&b, "walking to %s\n", g.describeMark())
@@ -2121,6 +2183,15 @@ func (t *textBox) roomLeft() int {
 
 func (g *game) drawPanel(screen *ebiten.Image) {
 	t := &textBox{screen: screen, y: 8}
+
+	// Playing beats following. Clicking bare ground or pressing escape drops
+	// the selection, and while a node was being played that took the game off
+	// the panel with it - including the question the world had stopped for, so
+	// the clock was waiting for an answer to something nobody could read.
+	if g.play != playOff && g.selected == 0 {
+		g.drawPlay(t)
+		return
+	}
 
 	if g.selected == 0 {
 		t.line("no node selected")
@@ -2218,10 +2289,10 @@ func (g *game) drawPlay(t *textBox) {
 	if g.played == 0 {
 		t.line("nobody is being played.")
 		t.line("")
-		t.line("click a node and press h to drive it yourself.")
-		t.line("press h again to hand it its own judgement back")
-		t.line("(then it decides and only asks you at the turning")
-		t.line("points), and again to give it back to the AI.")
+		t.line("click a node and press h to take it up: it decides")
+		t.line("for itself and stops to ask you at the turning")
+		t.line("points. press h again to drive it yourself (the")
+		t.line("pad walks it), and again to give it back to the AI.")
 		t.line("")
 		t.line("z zooms the camera in on whoever you are playing.")
 		t.line("")
@@ -2403,9 +2474,11 @@ func (g *game) drawAsked(t *textBox) {
 		t.line("it is %s (%s)   vit %.1f  hunger %.1f",
 			a.State, describeAction(a.Action), a.Vitality, a.Hunger)
 	}
-	if g.selected != g.played {
+	if g.selected != g.played && g.selected != 0 {
 		// The block at the top of the panel is whatever was last clicked, and
-		// while playing that is often somebody else entirely.
+		// while playing that is often somebody else entirely. With nothing
+		// selected there is no block above this at all - the panel opens on
+		// the game.
 		t.line("(the block above is #%d, which you clicked. esc drops it)", g.selected)
 	}
 	if !fresh {
@@ -2860,9 +2933,9 @@ func main() {
 		if g.selected == 0 {
 			g.selectAgent(quickestBody(g.world))
 		}
-		g.toggleControl()
-		if *ask {
-			g.toggleControl()
+		g.toggleControl() // the first press is the asked mode
+		if *play {
+			g.toggleControl() // and the second takes the reins
 		}
 	}
 
