@@ -1159,15 +1159,19 @@ func (w *World) eat(a *Agent, foodID int) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}
+	// Part of it goes to the children it is rearing, if the rule is on
+	// (provision.go). What is divided is the mouthful, not the item: nothing
+	// about owning, racing for or fighting over food changes.
+	kept := w.share(a, f)
 	// Worth less if it is the same as everything else it has been living on
 	// (stage 16). Nothing else changes: hunger falls by less, and everything
 	// downstream of hunger follows from that on its own.
-	a.Hunger = math.Max(0, a.Hunger-w.cfg.FoodNutrition*w.dietValue(a, f.Kind))
+	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind))
 	// And whatever it was defended with (stage 17b). The plant's poison is a
 	// hidden parameter: this is where an agent finds out what it actually ate,
 	// as against what the warning said.
 	if w.cfg.PlantDefence && f.Kind == FoodPlant {
-		a.Vitality -= f.Genes.Poison * w.cfg.PoisonDamage
+		a.Vitality -= kept * f.Genes.Poison * w.cfg.PoisonDamage
 	}
 	w.noteEaten(a, f.Kind)
 	// Some of what it swallows lives through the journey (stage 17c).

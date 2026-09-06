@@ -713,6 +713,31 @@ type Config struct {
 	ChildRearingTicks int
 	RearingRadius     float64
 
+	// ParentFeedShare is how much of every mouthful goes to the children this
+	// agent is still rearing instead of into itself. Nobody chooses it and
+	// nobody can refuse: an agent that eats with a child of its own beside it
+	// simply gets less of the meal (provision.go). What is divided is the
+	// mouthful, not the item, so nothing about owning or racing for food
+	// changes; and the parent is told, so its perception is of half meals.
+	//
+	// Zero is childcare as it was before 2026-09-06: the child does the
+	// staying and the parent is asked for nothing.
+	ParentFeedShare float64
+
+	// The two controls the rule is measured against, because it does two
+	// things at once and they have to be told apart.
+	//
+	// ParentFeedWasted throws the child's share away instead of giving it to
+	// the child: the parent pays exactly the same and nobody is fed, which is
+	// what says how much of any change is the cost rather than the feeding.
+	//
+	// ParentFeedKnown is whether the parent's own perception says its meals
+	// are half meals. True is honest and is the default; false leaves it
+	// planning as though it ate the lot, which is the arm that says whether
+	// knowing is worth anything.
+	ParentFeedWasted bool
+	ParentFeedKnown  bool
+
 	// RearingUntilGrown ties the leash to the child rather than to the clock:
 	// it keeps to the parent until it has finished growing, however long that
 	// takes, instead of for ChildRearingTicks. The two are not the same length
@@ -1106,6 +1131,11 @@ func DefaultConfig() Config {
 		FrailLifespanRate:  0.2,
 
 		ChildRearingTicks: 1000, // the two years of childhood
+
+		// Zero: see HISTORY.md, 2026-09-06.
+		ParentFeedShare:  0,
+		ParentFeedWasted: false,
+		ParentFeedKnown:  true,
 
 		// False: see HISTORY.md, 2026-09-06. Tying the leash to growing up
 		// instead costs the world population without buying the cohesion it

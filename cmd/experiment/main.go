@@ -885,6 +885,36 @@ var variants = []variant{
 		about: "children do not keep to a parent",
 		apply: func(c *engine.Config) { c.ChildRearingTicks = 0 },
 	},
+	// Feeding a child (2026-09-06). The rule does two things at once - it
+	// costs the parent and it feeds the child - so the two controls take one
+	// of them away each: "feedwaste" charges the parent and feeds nobody,
+	// "feedblind" feeds the child but does not let the parent see that its
+	// meals are half meals.
+	{
+		name:  "feedhalf",
+		about: "half of every mouthful goes to the children the eater is rearing",
+		apply: func(c *engine.Config) { c.ParentFeedShare = 0.5 },
+	},
+	{
+		name:  "feedquarter",
+		about: "sweep: a quarter of every mouthful goes to the children",
+		apply: func(c *engine.Config) { c.ParentFeedShare = 0.25 },
+	},
+	{
+		name:  "feedall",
+		about: "sweep: the whole mouthful goes to the children while there are any to feed",
+		apply: func(c *engine.Config) { c.ParentFeedShare = 1 },
+	},
+	{
+		name:  "feedwaste",
+		about: "control: the parent loses half of every mouthful and no child is fed",
+		apply: func(c *engine.Config) { c.ParentFeedShare, c.ParentFeedWasted = 0.5, true },
+	},
+	{
+		name:  "feedblind",
+		about: "control: the children are fed, but the parent plans as though it ate the lot",
+		apply: func(c *engine.Config) { c.ParentFeedShare, c.ParentFeedKnown = 0.5, false },
+	},
 	// Stage 7d's leash, asked the other way round: childcare that ends when
 	// the child has grown up rather than when a count runs out. Growing is
 	// bought with food, so the two are different lengths as well as different

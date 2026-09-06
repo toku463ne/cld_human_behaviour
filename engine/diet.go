@@ -134,3 +134,26 @@ func (w *World) Diet() DietUse {
 	out.Discount /= n * float64(NumFoodKinds)
 	return out
 }
+
+// mealValues is what one of each kind is worth to this agent as it stands: what
+// the diet ledger says it is worth, less whatever goes to a child it is feeding
+// (provision.go).
+//
+// This is the figure Perception carries, and the two discounts are kept apart
+// on purpose. The sameness penalty is about the food; the parent's share is
+// about the body eating it, and one of them is a rule the world only sometimes
+// has. What they have in common is that both are honest: an agent whose meals
+// are half meals is looking for twice as many of them, which it cannot do if
+// its own perception says otherwise.
+func (w *World) mealValues(a *Agent) [NumFoodKinds]float64 {
+	out := w.dietValues(a)
+	if !w.cfg.ParentFeedKnown {
+		return out
+	}
+	if kept := w.keptShare(a); kept != 1 {
+		for k := range out {
+			out[k] *= kept
+		}
+	}
+	return out
+}

@@ -252,7 +252,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		RestRate:          w.restRate(a),
-		Nutrition:         w.dietValues(a),
+		Nutrition:         w.mealValues(a),
 	}
 
 	// The index narrows the world down to the cells sight could possibly reach;
