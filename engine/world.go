@@ -678,9 +678,27 @@ func (w *World) stepPaired(a *Agent) {
 	// have paid for a step the other never took.
 	a.PairTimer--
 	if a.PairTimer <= 0 {
-		// The lower ID of the pair performs the birth, so it happens once.
-		if a.ID < partner.ID {
+		// Whichever of the two the tick reached first is standing here, and
+		// the birth belongs to the bond rather than to that one: releasing
+		// both is what makes it happen once (the other is no longer paired
+		// when the loop gets to it, so it never comes back through here).
+		//
+		// It used to be written as "the lower ID performs the birth", which
+		// looked like the same thing and was not: both partners run down the
+		// same clock, so when the higher ID was reached first it hit zero
+		// first, skipped the birth on the ID test, and released the pair.
+		// About half of all bonds ended in nothing at all, and the numbers
+		// still went up and down enough that nobody looked (2026-09-06).
+		//
+		// The arguments stay in ID order so that which parent is "the first"
+		// - whose position the child is born at, whose lore it takes first,
+		// which one it keeps to - does not depend on the loop either.
+		if w.cfg.BirthNeedsLowerIDFirst && a.ID > partner.ID {
+			// The world as it was, for measuring against.
+		} else if a.ID < partner.ID {
 			w.tryBirth(a, partner)
+		} else {
+			w.tryBirth(partner, a)
 		}
 		w.releaseFromBond(a, w.cfg.MatingCooldown)
 		w.releaseFromBond(partner, w.cfg.MatingCooldown)

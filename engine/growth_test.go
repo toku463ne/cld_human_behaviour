@@ -342,3 +342,72 @@ func TestNoRearingTicksMeansNoLeashEvenWhenItIsTiedToGrowingUp(t *testing.T) {
 		t.Fatalf("newborn keeps to #%d with childcare off", child.GuardianID)
 	}
 }
+
+// A bond that has run its course produces exactly one child, whichever of the
+// two partners the tick reaches first.
+//
+// It used to produce one only when the lower-numbered partner was reached
+// first, because both partners run down the same clock and the birth was
+// hung on an ID test. About half of all bonds ended in nothing.
+func TestABondThatRunsItsCourseProducesAChildEitherWayRound(t *testing.T) {
+	for _, firstIsLower := range []bool{true, false} {
+		cfg := growthConfig()
+		w := NewWorld(cfg)
+
+		// Two agents, paired, one tick left on the clock.
+		a := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+			Genome: genomeOf(50, 50, 50)})
+		b := w.addAgent(Agent{Maturity: 1, X: 202, Y: 200, Sex: Female, Vitality: 90, Hunger: 5,
+			Genome: genomeOf(50, 50, 50)})
+		pa, pb := mustAgent(t, w, a), mustAgent(t, w, b)
+		w.bond(pa, pb)
+		pa.PairTimer, pb.PairTimer = 1, 1
+
+		// Which of them the loop reaches first is the whole test, and the loop
+		// walks the agents in the order they sit in.
+		if !firstIsLower {
+			w.agents[0], w.agents[1] = w.agents[1], w.agents[0]
+			for i := range w.agents {
+				w.index[w.agents[i].ID] = i
+			}
+		}
+
+		before := len(w.Agents())
+		w.Step()
+		if got := len(w.Agents()) - before; got != 1 {
+			t.Fatalf("lower ID first = %v: %d agents were born, want 1", firstIsLower, got)
+		}
+		// And the child is the same child either way round: whose position it
+		// is born at and whose it keeps to must not depend on the loop.
+		child := findChild(t, w, a, b)
+		if child.ParentIDs != [2]int{a, b} {
+			t.Fatalf("lower ID first = %v: the child's parents read %v, want %v",
+				firstIsLower, child.ParentIDs, [2]int{a, b})
+		}
+	}
+}
+
+// And the old behaviour is still reachable, because every measurement taken
+// before 2026-09-06 was taken in it.
+func TestTheOldBirthRuleStillMissesHalfOfThem(t *testing.T) {
+	cfg := growthConfig()
+	cfg.BirthNeedsLowerIDFirst = true
+	w := NewWorld(cfg)
+	a := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 50, 50)})
+	b := w.addAgent(Agent{Maturity: 1, X: 202, Y: 200, Sex: Female, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 50, 50)})
+	pa, pb := mustAgent(t, w, a), mustAgent(t, w, b)
+	w.bond(pa, pb)
+	pa.PairTimer, pb.PairTimer = 1, 1
+	w.agents[0], w.agents[1] = w.agents[1], w.agents[0] // the higher ID first
+	for i := range w.agents {
+		w.index[w.agents[i].ID] = i
+	}
+
+	before := len(w.Agents())
+	w.Step()
+	if got := len(w.Agents()) - before; got != 0 {
+		t.Fatalf("%d agents were born, want the old rule to lose this one", got)
+	}
+}

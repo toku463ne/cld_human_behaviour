@@ -29,7 +29,10 @@ import (
 // in the comparison like everything else (stage 25), and again when patience
 // stopped removing the bar a candidate has to clear and started only lowering
 // it (stage 26), and again when the comparison clock stopped restarting on
-// every fresh attempt at courting (stage 28).
+// every fresh attempt at courting (stage 28), and again when a bond that had
+// run its course stopped only producing a child if the loop happened to reach
+// the lower-numbered of the two partners first (2026-09-06, a bug: about half
+// of all bonds had been ending in nothing).
 //
 // Stage 7a is a change of how the neighbours are found, not of what happens,
 // and its completion condition is that the same seed gives the same run. That
@@ -47,9 +50,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 39, births: 22, deaths: 65, kills: 42, aging: 0, fights: 3161, gen: 2, power: 32.316423, vitality: 79.194465, hunger: 17.572593},
-	{seed: 2, pop: 35, births: 25, deaths: 72, kills: 53, aging: 0, fights: 3985, gen: 3, power: 37.201701, vitality: 88.121707, hunger: 23.322783},
-	{seed: 3, pop: 35, births: 20, deaths: 67, kills: 48, aging: 0, fights: 3424, gen: 2, power: 37.787791, vitality: 102.961217, hunger: 28.675320},
+	{seed: 1, pop: 57, births: 47, deaths: 68, kills: 40, aging: 0, fights: 3397, gen: 3, power: 35.999942, vitality: 62.160429, hunger: 22.471078},
+	{seed: 2, pop: 33, births: 28, deaths: 77, kills: 61, aging: 0, fights: 6301, gen: 3, power: 32.869838, vitality: 70.519226, hunger: 14.134146},
+	{seed: 3, pop: 36, births: 24, deaths: 70, kills: 51, aging: 0, fights: 4643, gen: 3, power: 27.320301, vitality: 85.507666, hunger: 22.431841},
 }
 
 const goldenTicks = 5000

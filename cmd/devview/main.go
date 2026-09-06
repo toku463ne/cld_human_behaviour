@@ -1723,7 +1723,19 @@ func (g *game) watchProtagonist() {
 	case was.partner == 0 && now.partner != 0:
 		g.pop("paired with #%d!", now.partner)
 	case was.partner != 0 && now.partner == 0:
-		g.pop("the bond has ended")
+		// A bond ends in one of three ways, and until 2026-09-06 they all
+		// read as the same four words. Nearly all of them end in a child now;
+		// the other two are worth saying out loud precisely because they are
+		// rare, and because "the bond has ended" over and over with nothing
+		// to show for it is what a broken world looks like.
+		switch _, there := g.world.AgentByID(was.partner); {
+		case now.children > was.children:
+			g.pop("the bond has ended") // the next line says a child came of it
+		case !there:
+			g.pop("#%d is gone: no child", was.partner)
+		default:
+			g.pop("the bond ended with no child")
+		}
 	}
 	if now.children > was.children {
 		g.pop("a child! #%d", a.ChildIDs[len(a.ChildIDs)-1])

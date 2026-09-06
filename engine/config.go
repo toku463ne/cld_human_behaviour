@@ -713,6 +713,13 @@ type Config struct {
 	ChildRearingTicks int
 	RearingRadius     float64
 
+	// BirthNeedsLowerIDFirst restores the bug fixed on 2026-09-06: a bond that
+	// had run its course only produced a child when the loop happened to
+	// reach the lower-numbered of the two partners first, which was about half
+	// the time. False is the fixed world; true is every measurement taken
+	// before that date, and is the only way to compare against them.
+	BirthNeedsLowerIDFirst bool
+
 	// ParentFeedShare is how much of every mouthful goes to the children this
 	// agent is still rearing instead of into itself. Nobody chooses it and
 	// nobody can refuse: an agent that eats with a child of its own beside it
@@ -1131,6 +1138,8 @@ func DefaultConfig() Config {
 		FrailLifespanRate:  0.2,
 
 		ChildRearingTicks: 1000, // the two years of childhood
+
+		BirthNeedsLowerIDFirst: false, // see HISTORY.md, 2026-09-06
 
 		// Zero: see HISTORY.md, 2026-09-06.
 		ParentFeedShare:  0,

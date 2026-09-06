@@ -885,6 +885,15 @@ var variants = []variant{
 		about: "children do not keep to a parent",
 		apply: func(c *engine.Config) { c.ChildRearingTicks = 0 },
 	},
+	// The birth bug found on 2026-09-06: a bond that had run its course only
+	// produced a child when the loop reached the lower-numbered partner
+	// first. This arm is the world every measurement before that date was
+	// taken in.
+	{
+		name:  "oldbirth",
+		about: "half of all completed bonds produce nothing: the world before the birth fix",
+		apply: func(c *engine.Config) { c.BirthNeedsLowerIDFirst = true },
+	},
 	// Feeding a child (2026-09-06). The rule does two things at once - it
 	// costs the parent and it feeds the child - so the two controls take one
 	// of them away each: "feedwaste" charges the parent and feeds nobody,
