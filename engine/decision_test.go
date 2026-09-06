@@ -857,3 +857,40 @@ func TestBothSidesRememberHowTheCourtshipWent(t *testing.T) {
 		t.Fatalf("the suitor was holding out for %v, want %v", mine.Bar, cfg.CommitFitness)
 	}
 }
+
+// Somebody crossing the ground towards you is either a fight or a courtship,
+// and which it is is visible before the first blow. Neither flag is set by an
+// agent that has picked nobody out.
+func TestApproachingWithIntentIsVisibleToWhoeverItIsAimedAt(t *testing.T) {
+	cfg := testConfig()
+	w := NewWorld(cfg)
+	subject := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Female, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 50, 50)})
+	suitor := w.addAgent(Agent{Maturity: 1, X: 240, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 50, 50)})
+	brute := w.addAgent(Agent{Maturity: 1, X: 160, Y: 200, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 50, 50)})
+	passer := w.addAgent(Agent{Maturity: 1, X: 200, Y: 240, Sex: Male, Vitality: 90, Hunger: 5,
+		Genome: genomeOf(50, 50, 50)})
+
+	// Far enough away that none of them has landed anything: these are
+	// intentions on the way over, which is when it matters.
+	mustAgent(t, w, suitor).Action = Action{Kind: ActCourt, TargetID: subject, Effort: 1}
+	mustAgent(t, w, brute).Action = Action{Kind: ActAttack, TargetID: subject, Effort: 1}
+	mustAgent(t, w, passer).Action = Action{Kind: ActMove, DX: 1, Effort: 1}
+
+	p := w.perceive(mustAgent(t, w, subject))
+	seen := map[int]AgentView{}
+	for _, o := range p.Others {
+		seen[o.ID] = o
+	}
+	if o := seen[suitor]; !o.CourtingMe || o.AttackingMe {
+		t.Fatalf("the suitor reads courting=%v attacking=%v", o.CourtingMe, o.AttackingMe)
+	}
+	if o := seen[brute]; !o.AttackingMe || o.CourtingMe {
+		t.Fatalf("the attacker reads courting=%v attacking=%v", o.CourtingMe, o.AttackingMe)
+	}
+	if o := seen[passer]; o.CourtingMe || o.AttackingMe {
+		t.Fatalf("somebody who picked nobody out reads courting=%v attacking=%v", o.CourtingMe, o.AttackingMe)
+	}
+}

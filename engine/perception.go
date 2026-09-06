@@ -190,10 +190,22 @@ type AgentView struct {
 	Prey bool
 	Meat float64
 
-	Paired      bool
-	Seeking     bool // looks like it is after a mate
-	Resting     bool // lying down, which is visible and matters (stage 18)
+	Paired  bool
+	Seeking bool // looks like it is after a mate, though not of whom
+	Resting bool // lying down, which is visible and matters (stage 18)
+
+	// What this one is doing about the observer in particular. Seeking says
+	// somebody is after a mate; these two say they are coming here, and the
+	// difference between them is the difference between a courtship and a
+	// fight - which is not something to be worked out after the first blow.
+	//
+	// Both are the same kind of fact: an animal walking straight at you is
+	// doing something visible, and nothing here reveals an ability or a
+	// decision that has not been taken yet. An agent crossing the ground with
+	// no target picked out shows neither flag, because there is nothing to
+	// show: it has not decided anything about anybody.
 	AttackingMe bool
+	CourtingMe  bool
 	// Rejected is set for a candidate this agent recently walked away from and
 	// is not interested in comparing again just yet.
 	Rejected bool
@@ -394,6 +406,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Resting:     o.Action.Kind == ActRest,
 			Rejected:    a.isRejected(o.ID),
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
+			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
 			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
 			Uncertainty: variance,
 			Risk:        risk,

@@ -91,6 +91,7 @@ var (
 	colorResting    = color.RGBA{0x6c, 0x9c, 0xc4, 0xff}
 	colorPairLink   = color.RGBA{0x0b, 0x0b, 0x0b, 0x30}
 	colorFightLink  = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
+	colorCourtLink  = color.RGBA{0xf0, 0x8c, 0x00, 0xd0}
 	colorSelected   = color.RGBA{0x11, 0x11, 0x11, 0xff}
 	colorSight      = color.RGBA{0x33, 0x88, 0xcc, 0xa0}
 	colorRegionEdge = color.RGBA{0x30, 0x60, 0x30, 0x50}
@@ -1923,10 +1924,22 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 				vector.StrokeLine(screen, ax, ay, px, py, 1, colorPairLink, true)
 			}
 		}
-		if a.Action.Kind == engine.ActAttack {
+		// Who is coming for whom, and what for. The red line was already
+		// here; the orange one answers the question it left open - somebody
+		// crossing the ground towards you is either a fight or a courtship,
+		// and waiting for the first blow is a poor way to find out. Both are
+		// drawn from the same thing (an action aimed at somebody), and both
+		// are in the target's own perception (AttackingMe, CourtingMe), so
+		// neither tells a player anything their node does not know.
+		switch a.Action.Kind {
+		case engine.ActAttack, engine.ActCourt:
 			if t, ok := g.world.AgentByID(a.Action.TargetID); ok {
 				tx, ty := g.onScreen(t.X, t.Y)
-				vector.StrokeLine(screen, ax, ay, tx, ty, 1.5, colorFightLink, true)
+				line := colorFightLink
+				if a.Action.Kind == engine.ActCourt {
+					line = colorCourtLink
+				}
+				vector.StrokeLine(screen, ax, ay, tx, ty, 1.5, line, true)
 			}
 		}
 	}
@@ -2148,6 +2161,7 @@ func (g *game) overlay() string {
 		s.AvgPower, s.AvgRationality, s.AvgIntelligence, s.AvgVitality, s.AvgHunger)
 	b.WriteString("circle = body (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
+	b.WriteString("a line between two: red = one is coming for the other, orange = one is courting the other, faint = a pair\n")
 	b.WriteString("children are small circles: a newborn expresses 60% of its genes and grows into the rest by eating\n")
 	if g.played != 0 {
 		b.WriteString("gold ring = you, green ring = the heir, faint gold ring = a child of your line\n")
@@ -2474,7 +2488,11 @@ func (g *game) drawWhatItKnows(t *textBox, view engine.HumanView) {
 			tag := ""
 			switch {
 			case o.AttackingMe:
-				tag = " HITTING IT"
+				tag = " COMING FOR YOU"
+			case o.CourtingMe:
+				tag = " COURTING YOU"
+			case o.Seeking:
+				tag = " after a mate"
 			case o.Prey:
 				tag = " prey"
 			case o.Resting:
