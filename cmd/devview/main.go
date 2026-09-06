@@ -230,6 +230,9 @@ type game struct {
 	brush   brush
 	tune    int  // which of the short list of rules the panel is on
 	wasRun  bool // whether the clock was running when the editor was opened
+	wasZoom int  // ... and how close the camera was, since the two want
+	//              different things: an editor wants the whole map in view
+	//              and a game wants to be near the body being played
 
 	// What the protagonist has been through since the last frame, and the
 	// short lines it is saying about it. Bubbles are for the played node only:
@@ -477,6 +480,12 @@ func (g *game) toggleEditor() {
 	g.editing = !g.editing
 	if g.editing {
 		g.wasRun, g.paused = !g.paused, true
+		// Out to the whole map. Painting what you cannot see is not painting,
+		// and the camera the game wants (close, following a body) is the
+		// wrong one for laying country out. It is put back on the way out,
+		// because a player who zoomed out to draw and came back to a world
+		// where their own node is a dot in a corner has lost it.
+		g.wasZoom, g.zoom = g.zoom, 0
 		if len(g.world.Terrain()) == 0 {
 			// Nothing to paint on yet. A flat world gets a map the size the
 			// test maps use, all of it open ground, which changes nothing
@@ -493,6 +502,17 @@ func (g *game) toggleEditor() {
 		return
 	}
 	g.paused = !g.wasRun
+	g.zoom = g.wasZoom
+	if g.played != 0 && zoomLevels[g.zoom] <= 1 {
+		// Nothing to go back to: whoever is playing was watching the whole
+		// world before they opened the editor, and the camera only follows
+		// once it is closer than that. Put them next to their own body.
+		g.zoom = closeZoom
+	}
+	if g.played != 0 {
+		g.say("done editing. you are #%d", g.played)
+		return
+	}
 	g.say("done editing")
 }
 
@@ -2382,7 +2402,13 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// The body a person is driving, and the child the line is to carry on
 		// through. Neither is anything to the engine.
 		if a.ID == g.played {
+			// Two rings rather than one. At the close zoom the inner one is
+			// the marker; zoomed out to the whole world a body is four pixels
+			// across and one thin ring around it is not something a person
+			// finds - the outer one is a fixed size on screen, so it stays
+			// findable however far out the camera is.
 			vector.StrokeCircle(screen, x, y, radius+8, 2, colorPlayed, true)
+			vector.StrokeCircle(screen, x, y, 18, 1.5, colorPlayed, true)
 		}
 		if a.ID == g.heir {
 			vector.StrokeCircle(screen, x, y, radius+8, 1.5, colorHeir, true)

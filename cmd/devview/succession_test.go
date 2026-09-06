@@ -272,3 +272,41 @@ func TestTheEditorPaintsWithoutRunningTheWorld(t *testing.T) {
 			g.editing, g.paused)
 	}
 }
+
+// The editor and the game want different cameras, and closing the editor gives
+// the game's back: a player who zoomed out to draw must not come back to a
+// world where their own body is a dot in a corner.
+func TestTheEditorGivesTheCameraBack(t *testing.T) {
+	w := engine.NewWorld(engine.DefaultConfig())
+	for i := 0; i < 100; i++ {
+		w.Step()
+	}
+	g := &game{world: w, padKey: noKey, effort: 1}
+	g.selectAgent(w.Agents()[0].ID)
+	g.toggleControl() // playing: the camera is close
+	close := g.zoom
+	if zoomLevels[close] <= 1 {
+		t.Fatalf("taking a node up left the camera at x%v", zoomLevels[close])
+	}
+
+	g.toggleEditor()
+	if zoomLevels[g.zoom] != 1 {
+		t.Fatalf("the editor opened at x%v, want the whole map", zoomLevels[g.zoom])
+	}
+	g.zoom = 2 // and the player moves it about while drawing
+	g.toggleEditor()
+	if g.zoom != close {
+		t.Fatalf("came back at x%v, want the x%v it was playing at",
+			zoomLevels[g.zoom], zoomLevels[close])
+	}
+
+	// And when there was nothing to go back to - watching the whole world
+	// before the editor was opened - a played body still gets a camera that
+	// follows it.
+	g.zoom = 0
+	g.toggleEditor()
+	g.toggleEditor()
+	if zoomLevels[g.zoom] <= 1 {
+		t.Fatalf("left the player at x%v with a camera that does not follow", zoomLevels[g.zoom])
+	}
+}
