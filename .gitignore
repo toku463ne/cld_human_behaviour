@@ -1,0 +1,4 @@
+# built binaries from "go build ./cmd/..." in the repo root
+/devview
+/experiment
+/snapshot
