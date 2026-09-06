@@ -157,6 +157,20 @@ type Config struct {
 	// anything else.
 	RegionPrior float64
 
+	// TerrainFoodCorrelation ties where the plants come up to how hard the
+	// ground is to cross (stage 33). Positive is the ordinary reading of a
+	// landscape - broken country is also poor country - and negative is the
+	// other bargain, where the hard ground is where the food is.
+	//
+	// Zero is the world before this stage. So is any value in a world with no
+	// map: every region costs the same, so nothing is above or below the
+	// average and no region's share moves.
+	//
+	// It changes where the food grows and not how much of it there is: the
+	// regions are scaled back to the total they had (region.go), for the same
+	// reason stage 15a did.
+	TerrainFoodCorrelation float64
+
 	// What an agent makes of how hard a region is to cross (stage 29).
 	//
 	// RegionCostWeight puts the going and the food in the same units: what one
@@ -1023,6 +1037,10 @@ func DefaultConfig() Config {
 		RegionNoise:         2.0,
 		RegionToldCount:     2,
 		RegionPrior:         3,
+
+		// Zero: the ground and the food are drawn independently, which is
+		// what every measurement before stage 33 was taken in.
+		TerrainFoodCorrelation: 0,
 
 		// Two food items in sight is worth about as much as ground that costs
 		// twice as much to cross. A first guess, to be swept (stage 29).

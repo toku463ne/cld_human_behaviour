@@ -3327,6 +3327,12 @@ func main() {
 	cfg.Seed = *seed
 	if m, ok := testMaps[*land]; ok {
 		cfg.TerrainMap = m
+		// A hand-made world gets a coherent landscape: broken country is also
+		// poor country (stage 33). The measurements keep the two apart -
+		// cmd/experiment sets the tie per arm - but a world somebody plays on
+		// is one where the ground and what grows on it belong together, and it
+		// measured better on every count than laying them out independently.
+		cfg.TerrainFoodCorrelation = 1
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
 	}

@@ -64,9 +64,72 @@ func (w *World) buildRegions() {
 			w.regions[i].Food = clamp(w.randRange(1-cfg.FoodSpread, 1+cfg.FoodSpread), 0, 2)
 		}
 	}
+	w.tieFoodToTheGround()
+
 	w.foodWeight = 0
 	for i := range w.regions {
 		w.foodWeight += w.regions[i].Food
+	}
+}
+
+// tieFoodToTheGround makes where the plants come up depend on how hard the
+// ground is to cross (stage 33).
+//
+// Why the world does this rather than the agents. Stage 29 gave agents a
+// belief about the going and a belief about the food, and they still walked
+// into rough country: avoiding it always meant giving up the food that grows
+// there, because the two were laid out independently. Nothing in an agent
+// needs to change to fix that - correlate the world's own two figures and the
+// comparison they already run finds the relationship on its own. There is no
+// third belief to learn and nothing new to hand on.
+//
+// Two things it deliberately does not do.
+//
+//   - It does not change how much food the world grows. Every region is
+//     scaled back to the total the draw above produced, because FoodSpawnRate
+//     is the most selection-sensitive number in the world and a rule that
+//     quietly moved the total would be measuring something else (stage 15a's
+//     rule, and the test that pins it).
+//   - It does not read the map more finely than a region. What an agent can
+//     hold about the country is one figure per region (#53), so a relationship
+//     drawn at any finer grain would be one no agent could ever act on.
+//
+// A world with no map comes out untouched: every region costs the same, so
+// every deviation is zero whatever the correlation is set to.
+func (w *World) tieFoodToTheGround() {
+	if w.cfg.TerrainFoodCorrelation == 0 || w.ground == nil || len(w.regions) == 0 {
+		return
+	}
+	cost := make([]float64, len(w.regions))
+	mean := 0.0
+	for i := range w.regions {
+		cost[i] = w.regionMeanCost(i)
+		mean += cost[i]
+	}
+	mean /= float64(len(w.regions))
+	if mean <= 0 {
+		return
+	}
+
+	before := 0.0
+	for i := range w.regions {
+		before += w.regions[i].Food
+	}
+
+	// Positive: ground that is dearer than the world's average grows less.
+	// The deviation is relative, so the rule says the same thing whatever
+	// units the map's costs happen to be in.
+	after := 0.0
+	for i := range w.regions {
+		dev := (cost[i] - mean) / mean
+		w.regions[i].Food = clamp(w.regions[i].Food*(1-w.cfg.TerrainFoodCorrelation*dev), 0, 2)
+		after += w.regions[i].Food
+	}
+	if after <= 0 || before <= 0 {
+		return
+	}
+	for i := range w.regions {
+		w.regions[i].Food = clamp(w.regions[i].Food*before/after, 0, 2)
 	}
 }
 

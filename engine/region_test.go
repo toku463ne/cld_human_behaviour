@@ -240,3 +240,80 @@ func TestRichnessOfAKindThatIsNotThereIsNotZero(t *testing.T) {
 		}
 	}
 }
+
+// --- where the food grows against the ground it grows on (stage 33) ---------
+
+// linkedConfig lays a rough west and an open east under the region grid, so
+// that whole regions are dear or cheap.
+func linkedConfig(correlation float64) Config {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 600
+	cfg.FoodSpread = 0 // the draw off, so what moves is this rule and not chance
+	cfg.RoughMoveCost = 3
+	cfg.TerrainFoodCorrelation = correlation
+	cfg.TerrainMap = []string{
+		"....::::",
+		"....::::",
+		"....::::",
+	}
+	return cfg
+}
+
+// With a positive correlation the dear ground grows less, and the cheap ground
+// grows more by exactly as much: the world grows what it always did.
+func TestHardGroundGrowsLessAndTheTotalIsUnchanged(t *testing.T) {
+	flat := NewWorld(linkedConfig(0))
+	tied := NewWorld(linkedConfig(1))
+
+	var flatTotal, tiedTotal float64
+	for i := range flat.regions {
+		flatTotal += flat.regions[i].Food
+		tiedTotal += tied.regions[i].Food
+	}
+	if math.Abs(flatTotal-tiedTotal) > 1e-9 {
+		t.Fatalf("the world grows %v with the rule and %v without it", tiedTotal, flatTotal)
+	}
+
+	// West is open, east is rough.
+	west := tied.regionIndexAt(100, 300)
+	east := tied.regionIndexAt(700, 300)
+	if !(tied.regions[east].Food < tied.regions[west].Food) {
+		t.Fatalf("the rough ground grows %v and the open %v, want the rough to grow less",
+			tied.regions[east].Food, tied.regions[west].Food)
+	}
+	// And the untied world has them level, which is what the rule is against.
+	if math.Abs(flat.regions[east].Food-flat.regions[west].Food) > 1e-9 {
+		t.Fatalf("without the rule the two differ: %v against %v",
+			flat.regions[east].Food, flat.regions[west].Food)
+	}
+}
+
+// The other sign says the other thing: the hard ground is where the food is.
+func TestANegativeCorrelationPutsTheFoodOnTheHardGround(t *testing.T) {
+	w := NewWorld(linkedConfig(-1))
+	west, east := w.regionIndexAt(100, 300), w.regionIndexAt(700, 300)
+	if !(w.regions[east].Food > w.regions[west].Food) {
+		t.Fatalf("the rough ground grows %v and the open %v, want the rough to grow more",
+			w.regions[east].Food, w.regions[west].Food)
+	}
+}
+
+// A world with no map is untouched at any correlation: nothing is above or
+// below the average when everywhere costs the same.
+func TestAFlatWorldIsUntouchedByTheCorrelation(t *testing.T) {
+	cfg := quietConfig()
+	cfg.FoodSpread = 0.6
+	plain := NewWorld(cfg)
+	cfg.TerrainFoodCorrelation = 1
+	tied := NewWorld(cfg)
+
+	for i := range plain.regions {
+		if plain.regions[i].Food != tied.regions[i].Food {
+			t.Fatalf("region %d grows %v with the rule and %v without, in a world with no map",
+				i, tied.regions[i].Food, plain.regions[i].Food)
+		}
+	}
+	if plain.foodWeight != tied.foodWeight {
+		t.Fatalf("the world's total is %v with the rule and %v without", tied.foodWeight, plain.foodWeight)
+	}
+}

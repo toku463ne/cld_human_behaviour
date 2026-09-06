@@ -1035,6 +1035,32 @@ var variants = []variant{
 		about: "the whole country (rough, river, plateau) with the going learned and told",
 		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
 	},
+	// Stage 33: the food and the ground on the same map. Measured against
+	// "roughlore" (stage 29 as it stands, where the two are laid out
+	// independently), which is what says whether stage 29's ceiling was the
+	// confound or a real limit.
+	{
+		name:  "roughlink",
+		about: "rough country that is also poor country: food follows the going",
+		apply: func(c *engine.Config) { c.TerrainMap, c.TerrainFoodCorrelation = mapRough, 1 },
+	},
+	{
+		name:  "roughlinkhalf",
+		about: "sweep: the same tie at half strength",
+		apply: func(c *engine.Config) { c.TerrainMap, c.TerrainFoodCorrelation = mapRough, 0.5 },
+	},
+	{
+		name:  "roughlinknolore",
+		about: "control: food follows the going, and nobody weighs the going (is the tie enough on its own?)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.RegionCostWeight = mapRough, 1, 0
+		},
+	},
+	{
+		name:  "countrylink",
+		about: "the whole country with the food following the going",
+		apply: func(c *engine.Config) { c.TerrainMap, c.TerrainFoodCorrelation = mapCountry, 1 },
+	},
 	// The birth bug found on 2026-09-06: a bond that had run its course only
 	// produced a child when the loop reached the lower-numbered partner
 	// first. This arm is the world every measurement before that date was
