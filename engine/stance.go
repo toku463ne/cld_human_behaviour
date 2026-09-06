@@ -101,9 +101,60 @@ func (a *Agent) evasion(cfg *Config) float64 {
 	return clamp(cfg.EvasionCap*(a.Gene(GeneEvasion)/MaxAbility)*a.mix().Evasion*quick, 0, cfg.EvasionCap)
 }
 
+// cover is what the ground is worth to whoever is being swung at (stage 30):
+// a body a level or more above the one attacking it is harder to reach, and
+// the bank gives it an evade chance of its own.
+//
+// It is a floor and not a multiplier, and the first version of it was the
+// multiplier. That version could not fire: evasion is a stance channel rather
+// than a property of a body, and a body only has a stance while it is fighting
+// or running (15.7% of agent-ticks; evasive in 7.7%), so what the rule
+// multiplied was almost always zero. Counting how often the *situation* arose
+// - 28% of blows are thrown across a height difference - said nothing about
+// how often the *quantity being multiplied* was anything at all. A floor works
+// on the eating, the resting and the courting alike, which is what "behind a
+// bank" ought to mean.
+//
+// It acts on evasion rather than on damage on purpose. Height does not armour
+// anybody - it makes them hard to get at, which is what evasion already means
+// (stance.go's third channel); armouring them would be defence, and defence is
+// what a narrow place would give (PLAN.md's table).
+//
+// This is the first rule in the world that reads the ground under two bodies
+// rather than under one. Everything terrain has done until now - what a step
+// costs, whether a step is allowed - was a property of a cell; being above
+// somebody is not a property of anywhere, it is a relation.
+//
+// One step of advantage is all of it. Being two levels up is not twice as hard
+// to reach as being one level up: what a level buys is the edge itself, and a
+// rule that kept paying would make a stack of plateaus a fortress nobody could
+// ever be dislodged from.
+func (w *World) cover(defender, attacker *Agent) float64 {
+	if w.cfg.HighGroundCover <= 0 || w.ground == nil {
+		return 0
+	}
+	if w.terrainAt(defender.X, defender.Y).Height <= w.terrainAt(attacker.X, attacker.Y).Height {
+		return 0
+	}
+	return w.cfg.HighGroundCover
+}
+
 // stanceCost is the vitality a tick of this stance costs, before anything is
 // spent on moving: each channel at what it is used at, priced separately.
 func stanceCost(cfg *Config, s Stance) float64 {
 	m := stanceMix[s%Stance(NumStances)]
 	return cfg.AttackCost*m.Attack + cfg.DefenceCost*m.Defence + cfg.EvasionCost*m.Evasion
+}
+
+// coveredFromAttacker says whether the one currently hitting this agent is
+// hitting it from below (stage 30). False when nobody is.
+func (w *World) coveredFromAttacker(a *Agent) bool {
+	if a.attackerID == 0 {
+		return false
+	}
+	from := w.agentByID(a.attackerID)
+	if from == nil || !from.Alive {
+		return false
+	}
+	return w.cover(a, from) > 0
 }

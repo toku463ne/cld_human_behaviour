@@ -444,6 +444,13 @@ func (c *AIController) addAttack(p *Perception, o *AgentView) {
 		// not fight back expects the next one not to either, and is wrong
 		// about the one that does.
 		mine := damagePerTick(cfg, s.Attack, effort*m.Attack)
+		if o.Uphill && cfg.HighGroundCover > 0 {
+			// Swinging up a bank at somebody: what they can do about it is
+			// their own hidden business, but that the bank is there is not.
+			// The figure is the world's ordinary evasion, since how well this
+			// one in particular gets out of the way is not knowable.
+			mine *= 1 - clamp(cfg.HighGroundCover, 0, cfg.EvasionCap)
+		}
 		theirs := damagePerTick(cfg, o.EstStrength, s.Retaliation) *
 			(1 - s.Defence*m.Defence) * (1 - s.Evasion*m.Evasion)
 
@@ -614,6 +621,14 @@ func (c *AIController) survey(p *Perception) {
 		o := &p.Others[i]
 		threat := damagePerTick(cfg, o.EstStrength, 1)
 		if o.ID == attacker {
+			// What the ground is worth, if this one is swinging uphill
+			// (stage 30). The agent knows it is standing above its attacker -
+			// that is what it can see - and it knows its own evasion, so what
+			// it works out here is its own body on its own ground.
+			if p.Self.Covered && cfg.HighGroundCover > 0 {
+				dodge := clamp(math.Max(p.Self.Evasion, cfg.HighGroundCover), 0, cfg.EvasionCap)
+				threat *= 1 - dodge
+			}
 			c.incomingDmg, known = threat, true
 		}
 		if cfg.RestExposureWeight <= 0 {

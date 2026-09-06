@@ -3333,6 +3333,12 @@ func main() {
 		// is one where the ground and what grows on it belong together, and it
 		// measured better on every count than laying them out independently.
 		cfg.TerrainFoodCorrelation = 1
+		// And high ground is worth standing on (stage 30): a blow thrown up
+		// at somebody misses three times in ten. Measured as mildly good
+		// (generations +0.71 *, starving -0.39 *) and, like the tie above,
+		// something a hand-made world should have rather than a default of
+		// the physics.
+		cfg.HighGroundCover = 0.3
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
 	}

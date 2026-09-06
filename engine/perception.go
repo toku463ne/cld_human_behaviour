@@ -121,6 +121,12 @@ type SelfView struct {
 	// A player is shown the same figure and no more (stage 19).
 	Ground float64
 
+	// Covered is set when whoever is currently hitting this agent is hitting
+	// it from below (stage 30), so that the estimate of what the next few
+	// ticks will cost knows the ground is helping. Nothing when nobody is
+	// hitting it: this is about the fight it is in, not about the view.
+	Covered bool
+
 	// CourtedBy is whoever is standing here proposing and waiting for an
 	// answer, 0 for nobody, and CourtedTicksLeft how long they will wait
 	// before the agent's own rule answers for it. Only an agent whose
@@ -224,6 +230,13 @@ type AgentView struct {
 	// show: it has not decided anything about anybody.
 	AttackingMe bool
 	CourtingMe  bool
+
+	// Uphill is set when this agent is standing a level or more above the one
+	// looking at it (stage 30), which is what makes it harder to hit. It is a
+	// relation and not a property - the first thing in this perception that
+	// depends on where both bodies are - and it is visible in the plainest
+	// sense: an animal can see that the one in front of it is up a bank.
+	Uphill bool
 	// Rejected is set for a candidate this agent recently walked away from and
 	// is not interested in comparing again just yet.
 	Rejected bool
@@ -309,6 +322,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		Evasion:      w.cfg.EvasionCap * a.Gene(GeneEvasion) / MaxAbility * clamp(a.MaxSpeed(&w.cfg)/w.cfg.MaxSpeed, 0, 2),
 		CanReproduce: a.CanReproduce(&w.cfg),
 		AttackerID:   a.attackerID,
+		Covered:      w.coveredFromAttacker(a),
 
 		Retaliation:       a.lore.retaliation.mean,
 		AcceptChance:      a.lore.accept.mean,
@@ -428,6 +442,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Rejected:    a.isRejected(o.ID),
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
 			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
+			Uphill:      w.terrainAt(o.X, o.Y).Height > w.terrainAt(a.X, a.Y).Height,
 			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
 			Uncertainty: variance,
 			Risk:        risk,

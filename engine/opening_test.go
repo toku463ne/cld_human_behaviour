@@ -109,3 +109,134 @@ func TestAnOpenAgentGuardsForLess(t *testing.T) {
 		t.Fatalf("an open guard lost %v to the same blow, a composed one %v", open, composed)
 	}
 }
+
+// --- high ground (stage 30) --------------------------------------------------
+
+// coverConfig puts a step in the middle of the world: level ground on the
+// west, one level up on the east, with a ramp between so a body can get there.
+func coverConfig() Config {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 600
+	cfg.HighGroundCover = 0.3
+	cfg.EvasionCap = 0.6
+	cfg.TerrainMap = []string{
+		"....A111",
+		"....A111",
+		"....A111",
+	}
+	return cfg
+}
+
+// A body a level above the one swinging at it is harder to hit; the same two
+// bodies on the same level are not.
+func TestHighGroundIsHarderToHit(t *testing.T) {
+	cfg := coverConfig()
+	w := NewWorld(cfg)
+	low := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 300, Y: 300, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)}))
+	high := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 700, Y: 300, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)}))
+	level := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 200, Y: 300, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)}))
+
+	if got := w.cover(high, low); got != cfg.HighGroundCover {
+		t.Fatalf("the one up the bank gets %v, want %v", got, cfg.HighGroundCover)
+	}
+	if got := w.cover(low, high); got != 0 {
+		t.Fatalf("the one at the bottom gets %v of cover, want none", got)
+	}
+	if got := w.cover(level, low); got != 0 {
+		t.Fatalf("two bodies on the same ground: %v, want none", got)
+	}
+	// Two levels up is the same edge as one: an edge, not a slope.
+	high.X = 700
+	if got := w.cover(high, low); got != cfg.HighGroundCover {
+		t.Fatalf("cover from two levels up is %v, want the same %v", got, cfg.HighGroundCover)
+	}
+}
+
+// And it shows in the fighting: the same blows land less often uphill.
+func TestBlowsUphillLandLessOften(t *testing.T) {
+	hits := func(coverOn bool) int {
+		cfg := coverConfig()
+		if !coverOn {
+			cfg.HighGroundCover = 0
+		}
+		cfg.Seed = 7
+		w := NewWorld(cfg)
+		// The one swinging is on the flat (west of the ramp), the one being
+		// swung at is up the bank. resolveAttacks does not care how far apart
+		// they are - the reach is checked where the action is taken up.
+		low := w.addAgent(Agent{Maturity: 1, X: 300, Y: 300, Vitality: 1e6, Sex: Male,
+			Genome: genomeOf(50, 50, 50)})
+		high := w.addAgent(Agent{Maturity: 1, X: 700, Y: 300, Vitality: 1e6, Sex: Male,
+			Genome: genomeOf(50, 50, 50)})
+		// Evading is what the stance decides, and the stance rides on the
+		// action: a body has a guard up only while it is fighting.
+		// A stance rides on an action: a body that is not fighting is neither
+		// swinging nor guarding, so both of them need one.
+		mustAgent(t, w, high).Action = Action{Kind: ActAttack, TargetID: low, Effort: 1, Stance: StanceEvasive}
+		mustAgent(t, w, low).Action = Action{Kind: ActAttack, TargetID: high, Effort: 1, Stance: StanceAggressive}
+		landed := 0
+		for i := 0; i < 400; i++ {
+			before := mustAgent(t, w, high).Vitality
+			w.attacks = w.attacks[:0]
+			w.attacks = append(w.attacks, attack{fromID: low, toID: high, effort: 1})
+			w.resolveAttacks()
+			if mustAgent(t, w, high).Vitality < before {
+				landed++
+			}
+			w.tick++
+		}
+		return landed
+	}
+	with, without := hits(true), hits(false)
+	if !(with < without) {
+		t.Fatalf("%d of 400 blows landed uphill against %d on the level: want fewer uphill",
+			with, without)
+	}
+}
+
+// The agent knows the ground is helping: what it expects the next few ticks to
+// cost is lower when it is being attacked from below.
+func TestABodyOnHighGroundExpectsLessDamage(t *testing.T) {
+	cfg := coverConfig()
+	w := NewWorld(cfg)
+	low := w.addAgent(Agent{Maturity: 1, X: 300, Y: 300, Vitality: 90, Genome: genomeOf(50, 50, 50)})
+	high := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 700, Y: 300, Vitality: 90,
+		Genome: genomeOf(80, 50, 50)}))
+	high.Action = Action{Kind: ActAttack, TargetID: low, Effort: 1, Stance: StanceEvasive}
+	high.attackerID = low
+
+	p := w.perceive(high)
+	if !p.Self.Covered {
+		t.Fatal("does not know it is being come at from below")
+	}
+	var c AIController
+	c.survey(p)
+	covered := c.incomingDmg
+
+	// The same fight on the level.
+	high.X = 200
+	p = w.perceive(high)
+	if p.Self.Covered {
+		t.Fatal("reckons the ground is helping when both are on it")
+	}
+	c.survey(p)
+	if !(covered < c.incomingDmg) {
+		t.Fatalf("expects %v uphill and %v on the level: want less uphill", covered, c.incomingDmg)
+	}
+}
+
+// A world with no map never has anybody above anybody, so the rule is
+// invisible in it whatever the figure is set to.
+func TestCoverDoesNothingInAFlatWorld(t *testing.T) {
+	cfg := quietConfig()
+	cfg.HighGroundCover = 0.3
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90, Genome: genomeOf(50, 50, 50)}))
+	b := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 700, Y: 500, Vitality: 90, Genome: genomeOf(50, 50, 50)}))
+	if got := w.cover(a, b); got != 0 {
+		t.Fatalf("cover in a flat world is %v", got)
+	}
+}

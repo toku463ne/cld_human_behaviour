@@ -1061,6 +1061,42 @@ var variants = []variant{
 		about: "the whole country with the food following the going",
 		apply: func(c *engine.Config) { c.TerrainMap, c.TerrainFoodCorrelation = mapCountry, 1 },
 	},
+	// Stage 30a: high ground as cover. Measured on the two maps that have any
+	// height in them, against the same maps without it.
+	//
+	// Two firing rates were counted first, and the second is the one that
+	// mattered. 28% of attacker-ticks on the plateau map are thrown across a
+	// difference in height - plenty of situation - but the first version of
+	// the rule multiplied the target's evasion, and a body has an evasion only
+	// while it is fighting or running (15.7% of ticks, evasive in 7.7%). It
+	// measured as nothing at all, because it was multiplying zero. Cover is a
+	// floor now: the bank helps whoever is behind it, guarding or not.
+	{
+		name:  "plateaucover",
+		about: "high ground is harder to hit from below (0.3 of blows miss), on the plateau map",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.HighGroundCover = mapPlateau, 1, 0.3
+		},
+	},
+	{
+		name:  "plateaulink",
+		about: "control: the same plateau world with no cover",
+		apply: func(c *engine.Config) { c.TerrainMap, c.TerrainFoodCorrelation = mapPlateau, 1 },
+	},
+	{
+		name:  "countrycover",
+		about: "the whole country, with high ground as cover",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.HighGroundCover = mapCountry, 1, 0.3
+		},
+	},
+	{
+		name:  "plateauhardcover",
+		about: "sweep: cover at 0.6",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.HighGroundCover = mapPlateau, 1, 0.6
+		},
+	},
 	// The birth bug found on 2026-09-06: a bond that had run its course only
 	// produced a child when the loop reached the lower-numbered partner
 	// first. This arm is the world every measurement before that date was

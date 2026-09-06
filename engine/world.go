@@ -747,7 +747,11 @@ func (w *World) resolveAttacks() {
 		// of it worth less if its own last blow found nothing.
 		to.noteHit(from.ID, w.tick)
 		composure := to.composure(&w.cfg, w.tick)
-		if chance := to.evasion(&w.cfg) * composure; chance > 0 && w.rng.Float64() < chance {
+		// And the ground it is standing on, if it is standing above the one
+		// swinging at it (stage 30). Capped with everything else at
+		// EvasionCap: high ground is an edge, not a place nothing reaches.
+		chance := clamp(math.Max(to.evasion(&w.cfg)*composure, w.cover(to, from)), 0, w.cfg.EvasionCap)
+		if chance > 0 && w.rng.Float64() < chance {
 			w.evaded++
 			// Swinging at somebody who was not there leaves the swinger open.
 			// Nothing sees this coming: how hard somebody is to hit is a

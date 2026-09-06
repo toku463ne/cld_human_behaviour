@@ -157,6 +157,22 @@ type Config struct {
 	// anything else.
 	RegionPrior float64
 
+	// HighGroundCover is the chance a blow thrown up at somebody misses
+	// because of the ground rather than because of what they did (stage 30).
+	// Zero is off, and a world with no map comes to zero whatever it is set
+	// to, since nothing there is above anything.
+	//
+	// A floor rather than a multiplier on the body's own evasion, because
+	// evasion is a stance channel: a body has one only while it is fighting or
+	// running, so a multiplier would be multiplying zero for the six ticks in
+	// seven that it is doing something else. Being behind a bank helps the
+	// one eating as much as the one guarding.
+	//
+	// Capped with everything else at EvasionCap, and a step rather than a
+	// slope - two levels up is not twice as hard to reach as one - because
+	// what a level buys is the advantage itself.
+	HighGroundCover float64
+
 	// TerrainFoodCorrelation ties where the plants come up to how hard the
 	// ground is to cross (stage 33). Positive is the ordinary reading of a
 	// landscape - broken country is also poor country - and negative is the
@@ -1037,6 +1053,10 @@ func DefaultConfig() Config {
 		RegionNoise:         2.0,
 		RegionToldCount:     2,
 		RegionPrior:         3,
+
+		// Off. Turned on for the terrain arms and measured there (stage 30);
+		// in a flat world the figure never applies.
+		HighGroundCover: 0,
 
 		// Zero: the ground and the food are drawn independently, which is
 		// what every measurement before stage 33 was taken in.
