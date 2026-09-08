@@ -247,6 +247,14 @@ func (w *World) exchangeLore(a, o *Agent) {
 	// into an agent that paid for somewhere to put one (stage 12c).
 	moved += float64(w.exchangeHints(a, o)+w.exchangeHints(o, a)) * cfg.HintTradeWorth
 
+	// A skill is a number on a line, so unlike an idea it can be compared -
+	// and what spreads by watching is the better of the two figures (stage
+	// 38a). This is the one place the copying differs from stage 12c's, and
+	// it is the whole of what makes a neighbourhood better at something than
+	// any of its members started out.
+	w.teachSkill(a, o)
+	w.teachSkill(o, a)
+
 	// And what each of them has made of the country (stage 15c). It rides here
 	// rather than getting a path of its own, and there is no "tell" action:
 	// what a parent passes to its child is the same trade, run often because

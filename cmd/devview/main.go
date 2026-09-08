@@ -2830,6 +2830,16 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		if hints, slots := a.Hints(); slots > 0 {
 			t.line("hunches: %d of %d rooms used", len(hints), slots)
 			for _, h := range hints {
+				// A room holds either a rule of thumb or a skill, and the
+				// two say different things: one is an opinion about a move,
+				// the other is something the body can do. What is shown for
+				// a skill is both figures, because the gap between them is
+				// this node's own legs (stage 38a).
+				if h.Skill != engine.SkillNone {
+					t.line("   %-11s    knows %.2f, can use %.2f",
+						h.Skill, h.Mastery, g.world.SkillOf(a.ID, h.Skill))
+					continue
+				}
 				t.line("   %-11s -> %-8s %+5.1f", h.Feature, h.Act, h.Weight)
 			}
 		}
@@ -3815,6 +3825,12 @@ func main() {
 		// going in more and drowning more for a world that is easier all the
 		// same (death rate -0.27 *, starving -0.24 *).
 		cfg.WatersideFood = 1
+		// And a body born in broken country knows something about crossing
+		// it (stage 38a). Like the three above, it is a thing a hand-made
+		// world has rather than a default of the physics: it needs terrain to
+		// mean anything at all, and turning it on by default would re-base
+		// every measurement taken on rough, river and country.
+		cfg.SkillBirthplace = 0.5
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
 	}

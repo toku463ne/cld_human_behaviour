@@ -803,6 +803,58 @@ type Config struct {
 	// number towards each other, which is why it is not simply 1.
 	HintTradeWorth float64
 
+	// --- skills (stage 38a) ---
+
+	// SkillRoughRelief is how much of the extra cost of broken country a
+	// fully mastered, fully suited body is spared. Zero takes skills out of
+	// the world - nothing is drawn, learned or copied - which is the arm the
+	// stage is measured against.
+	//
+	// It applies to the excess over level ground and not to the cost itself,
+	// so no amount of skill makes crossing rough country cheaper than
+	// crossing a field: what is learned is how not to be slowed by it, not
+	// how to walk for free.
+	SkillRoughRelief float64
+
+	// SkillBirthplace is how much of the country a body was born into it
+	// knows by having been born there: the share of that region which is hard
+	// going, times this. It is the only one of the three paths to a skill
+	// that needs nobody to have known it first, so at zero no skill ever
+	// enters the world and nothing else about skills can fire.
+	//
+	// Zero is the default, and that is the same call stages 30a, 33 and 36
+	// made: a rule that only means anything where there is terrain is
+	// something the map's author turns on, not something the physics does.
+	// It keeps every measurement taken on rough, river and country before
+	// this stage readable, and cmd/devview -terrain passes 0.5 like it passes
+	// the other three.
+	SkillBirthplace float64
+
+	// SkillAptitude is the gene a skill's realised value is capped by: how
+	// much of a nominal figure this body can support.
+	//
+	// Speed by default, because crossing ground is what speed is for. The
+	// field exists because the choice is a real fork rather than an obvious
+	// one: capping it with a gene that competes with speed would make broken
+	// country the place where slow, tough bodies do well - the niche stage 20
+	// went looking for and did not find - and whether that is what happens is
+	// a question for the measurement rather than for the design.
+	SkillAptitude Gene
+
+	// SkillGeniusJump is how much further than its line a genius child goes
+	// at something the line already does (GeniusRate, world.go). It reuses
+	// the event the world already has for a rare, large change rather than
+	// inventing a second one, and it cannot invent a category: where there is
+	// no rough country there is nothing to be a genius at crossing.
+	SkillGeniusJump float64
+
+	// SkillsSpread is whether a skill can be copied by watching somebody who
+	// has it, the way an idea can (HintsSpread). It is separate because the
+	// copying is not the same copying: an idea goes into an empty slot only,
+	// a mastery is compared and may overwrite a worse one, and that
+	// difference is the whole of what the stage claims about diffusion.
+	SkillsSpread bool
+
 	// HintsSpread is whether an idea can be copied from one agent to another
 	// at all. True by default; false leaves hints existing, costing the same
 	// and being inherited the same, but only ever passed down a bloodline.
@@ -1538,11 +1590,16 @@ func DefaultConfig() Config {
 		// is inside the noise (+1.5) while the ideas still have to be paid
 		// for out of the same budget as the body. Free would have been
 		// simpler and would have removed the trade the stage is about.
-		HintSlots:      4,
-		HintSlotCost:   5,
-		HintWeightStd:  6,
-		HintWeightMax:  20,
-		HintTradeWorth: 0.5,
-		HintsSpread:    true,
+		HintSlots:        4,
+		SkillRoughRelief: 0.6,
+		SkillBirthplace:  0,
+		SkillGeniusJump:  0.4,
+		SkillAptitude:    GeneSpeed,
+		SkillsSpread:     true,
+		HintSlotCost:     5,
+		HintWeightStd:    6,
+		HintWeightMax:    20,
+		HintTradeWorth:   0.5,
+		HintsSpread:      true,
 	}
 }

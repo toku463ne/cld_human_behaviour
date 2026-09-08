@@ -28,7 +28,7 @@ func TestMovementIsChargedThroughTheGround(t *testing.T) {
 
 	for _, effort := range []float64{0.4, 1} {
 		want := moveCostAt(&cfg, effort)
-		if got := w.moveCostOn(100, 100, effort); got != want {
+		if got := w.moveCostOn(nil, 100, 100, effort); got != want {
 			t.Fatalf("crossing level ground at effort %.1f cost %v, want the flat %v", effort, got, want)
 		}
 	}
@@ -101,9 +101,9 @@ func TestDearGroundCostsMoreToCross(t *testing.T) {
 	cfg := terrainConfig()
 	w := NewWorld(cfg)
 
-	open := w.moveCostOn(50, 100, 1)
-	rough := w.moveCostOn(250, 100, 1)
-	water := w.moveCostOn(450, 100, 1)
+	open := w.moveCostOn(nil, 50, 100, 1)
+	rough := w.moveCostOn(nil, 250, 100, 1)
+	water := w.moveCostOn(nil, 450, 100, 1)
 	if !(open < rough && rough < water) {
 		t.Fatalf("open %v, rough %v, water %v: want each dearer than the last", open, rough, water)
 	}

@@ -72,7 +72,17 @@ type Hint struct {
 	Feature HintFeature
 	Act     ActionKind
 	Weight  float64
+
+	// Or a skill, and then the three above mean nothing (stage 38a, skill.go).
+	// One slot, two things it may hold: what the room costs is the same
+	// either way, and what an agent chooses to keep in it is the trade the
+	// stage is about. SkillNone is a slot holding a rule of thumb.
+	Skill   SkillKind
+	Mastery float64
 }
+
+// isSkill reports which of the two a slot is holding.
+func (h *Hint) isSkill() bool { return h.Skill != SkillNone }
 
 // hintFeatures is the situation as the hints read it, filled in once per
 // decision for the parts that are about the agent and once per candidate for
@@ -112,7 +122,9 @@ func (f *hintFeatures) readTarget(p *Perception, o *AgentView) {
 func (f *hintFeatures) score(hints []Hint, kind ActionKind) float64 {
 	total := 0.0
 	for i := range hints {
-		if h := &hints[i]; h.Act == kind {
+		// A skill is not an opinion about a move: what it does, it does to
+		// the world (the cost of crossing ground), not to the comparison.
+		if h := &hints[i]; !h.isSkill() && h.Act == kind {
 			total += h.Weight * f[h.Feature]
 		}
 	}

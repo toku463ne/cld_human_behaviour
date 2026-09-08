@@ -83,6 +83,13 @@ type Stats struct {
 	KillLessons     int
 	Observes        int
 
+	// SkillsLearned is how many times somebody took on or improved a skill,
+	// and SkillsCopied how many of those came from watching (stage 38a).
+	SkillsLearned int
+	SkillsCopied  int
+	SkillsBorn    int
+	SkillsLeapt   int
+
 	// Calls is how many decisions were an invitation, and Joins how many
 	// attacks were aimed at something another agent had already declared for
 	// (stage 32).
@@ -271,6 +278,15 @@ type World struct {
 	// the crowd, whatever it was just seen doing.
 	killLessons int
 
+	// skillsLearned is how many times a skill was taken on or improved on,
+	// and skillsCopied how many of those came from watching somebody rather
+	// than from a parent or a birthplace. A rule that spreads has to be shown
+	// to spread.
+	skillsLearned int
+	skillsCopied  int
+	skillsBorn    int
+	skillsLeapt   int
+
 	// calls is how many decisions were "come and help me bring this down"
 	// (stage 32), and joins how many attacks were on something somebody else
 	// had already declared for. The second is the one the stage turns on: a
@@ -422,6 +438,10 @@ func (w *World) Stats() Stats {
 		KillLessons:            w.killLessons,
 		AvengeWitnesses:        w.avengeWitnesses,
 		Observes:               w.observes,
+		SkillsLearned:          w.skillsLearned,
+		SkillsCopied:           w.skillsCopied,
+		SkillsBorn:             w.skillsBorn,
+		SkillsLeapt:            w.skillsLeapt,
 		Calls:                  w.calls,
 		Joins:                  w.joins,
 		Decisions:              w.decisions,
@@ -1288,6 +1308,16 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.lore = w.inheritLore(pa, pb)
 	child.chronotype = w.inheritChronotype(pa, pb)
 	child.hintSlots, child.hints = slots, hints
+	// What it knows for having been born where it was, merged with what it
+	// inherited by the one comparison there is (skill.go). A genius child
+	// goes further with what it already holds - a leap is about something the
+	// line already does, not a category nobody has ever seen.
+	if w.learnSkill(&child, SkillRough, w.skillFromBirthplace(child.X, child.Y)) {
+		w.skillsBorn++
+	}
+	if genius {
+		w.leapSkill(&child)
+	}
 
 	// It starts as a small thing that keeps to one of the two. Which one does
 	// not matter to any rule; taking the first keeps it deterministic. Zero
@@ -1521,7 +1551,7 @@ func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 	}
 	// Charged for the ground it is standing on at the end of the step, which
 	// is the ground it spent the tick crossing.
-	a.Vitality -= w.moveCostOn(a.X, a.Y, effort)
+	a.Vitality -= w.moveCostOn(a, a.X, a.Y, effort)
 	a.effortSpent = math.Max(a.effortSpent, effort)
 	w.invalidateIndex()
 }
@@ -1587,6 +1617,12 @@ func (w *World) randomAgent(species Species) Agent {
 	a.chronotype = w.drawChronotype()
 	a.hintSlots = w.drawHintSlots()
 	a.hints = w.drawHints(a.hintSlots)
+	// And whatever the country it arrived in has to teach (stage 38a). The
+	// same rule a newborn gets, applied to where the world put it: nobody
+	// draws a skill out of nothing, so a flat world never contains one.
+	if w.learnSkill(&a, SkillRough, w.skillFromBirthplace(a.X, a.Y)) {
+		w.skillsBorn++
+	}
 	// Room for ideas comes out of the same budget the body does, for founders
 	// as for everybody else.
 	fitBudget(a.Genome, a.Budget()-w.hintCost(a.hintSlots))

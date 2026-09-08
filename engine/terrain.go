@@ -171,9 +171,31 @@ func (w *World) terrainAt(x, y float64) terrain {
 	return w.ground.at(x, y)
 }
 
-// moveCostOn is what a tick of movement at this effort costs on this ground.
-func (w *World) moveCostOn(x, y, effort float64) float64 {
-	return moveCostAt(&w.cfg, effort) * w.terrainAt(x, y).Cost
+// moveCostOn is what a tick of movement at this effort costs one body on this
+// ground.
+//
+// The body is in here because of stage 38a: what broken country takes out of
+// somebody who knows how to cross it is less than what it takes out of
+// somebody who does not. The multiplication is the same one that was already
+// here - the skill lowers the ground's figure, it does not add a factor of its
+// own to the agent.
+func (w *World) moveCostOn(a *Agent, x, y, effort float64) float64 {
+	return moveCostAt(&w.cfg, effort) * w.groundCostFor(a, w.terrainAt(x, y))
+}
+
+// groundCostFor is what this ground costs this body: the terrain's own figure,
+// less whatever the body knows about crossing it.
+//
+// Only the excess over level ground is relieved, so no amount of skill makes
+// broken country cheaper than a field. A body with no skill, or a world with
+// the rule off, gets the terrain's figure unchanged, which is why a world
+// without skills runs exactly as it did.
+func (w *World) groundCostFor(a *Agent, t terrain) float64 {
+	if t.Cost <= 1 || w.cfg.SkillRoughRelief <= 0 || a == nil {
+		return t.Cost
+	}
+	relief := clamp(a.skillAt(&w.cfg, SkillRough)*w.cfg.SkillRoughRelief, 0, 1)
+	return 1 + (t.Cost-1)*(1-relief)
 }
 
 // canStep says whether a body standing on one spot may put itself on another.

@@ -1196,6 +1196,66 @@ var variants = []variant{
 		about: "sweep: an ally is worth half what trust says (nobody is ever fully counted on)",
 		apply: func(c *engine.Config) { c.AllyTrustWeight = 0.5 },
 	},
+	// Stage 38a: the first skill. It only means anything where there is
+	// broken country, so every arm here is laid on one - rough for the clean
+	// reading, country for the map a world would be played on. The controls
+	// take the three parts apart: no skill at all, a skill that is learned
+	// and takes room but does nothing, and one that cannot be copied.
+	{
+		name:  "roughskill",
+		about: "broken country, with knowing how to cross it (38a)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.SkillBirthplace = mapRough, 0.5 },
+	},
+	{
+		name:  "roughnoskill",
+		about: "control: the same country, and nobody ever learns anything about crossing it (the default)",
+		apply: func(c *engine.Config) { c.TerrainMap = mapRough },
+	},
+	{
+		name:  "roughdeadskill",
+		about: "control: the skill is learned and takes the room, and does nothing (the cost alone)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.SkillRoughRelief = mapRough, 0.5, 0
+		},
+	},
+	{
+		name:  "roughnoteach",
+		about: "control: a skill can be born with and inherited, but not caught from anybody",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.SkillsSpread = mapRough, 0.5, false
+		},
+	},
+	{
+		name:  "roughnoleap",
+		about: "control: no genius goes further at it than its line does",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.SkillGeniusJump = mapRough, 0.5, 0
+		},
+	},
+	{
+		name:  "skillstrong",
+		about: "sweep: knowing the ground takes all of the extra cost out of it",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.SkillRoughRelief = mapRough, 0.5, 1
+		},
+	},
+	{
+		name:  "skilltough",
+		about: "sweep: what a body gets out of knowing the ground is capped by how tough it is, not how fast",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.SkillAptitude = mapRough, 0.5, engine.GeneVitality
+		},
+	},
+	{
+		name:  "countryskill",
+		about: "the whole country with skills (the map a world would be played on)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.SkillBirthplace = mapCountry, 0.5 },
+	},
+	{
+		name:  "countrynoskill",
+		about: "control for countryskill: nobody learns the ground (the default)",
+		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
+	},
 	// Stage 31: what a killing leaves with the people who saw it. The base
 	// is baseline - the rule is on by default - so the arms here are the
 	// controls: each half off, both off, and the reading half at weights
@@ -1605,6 +1665,8 @@ var metricNames = []string{
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
+	"skillHeld", "skillNominal", "skillReal", "skillSlots", "skillGap",
+	"skillBornRate", "skillCopyRate", "skillLeaps",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"extinct",
 }
@@ -1754,6 +1816,12 @@ type sample struct {
 	// stage is on the hook for - a population can carry plenty of hints and
 	// have them all be the same one.
 	hintSlots, hintsHeld, hintKinds, hintEntropy float64
+
+	// What the population knows how to do (stage 38a): the share carrying the
+	// skill, the figure they hold, what their bodies actually get out of it,
+	// how much of the room they bought is spent on it, and the gap between
+	// the ones standing on dear ground and the rest.
+	skillHeld, skillNominal, skillReal, skillSlots, skillGap float64
 }
 
 // perAgentLifetime converts a count of events into a rate per ten thousand
@@ -1848,6 +1916,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		lore := w.Lore()
 		teach := w.Teaching()
 		hints := w.HintUse()
+		skills := w.Skills(engine.SkillRough)
 		shelter := w.Shelter()
 		rich := w.Richness()
 		known := w.RegionKnowledge()
@@ -1881,7 +1950,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			allAsleep:    vig.AllResting, clockSpread: vig.Spread,
 			looksCorr: looks.All, looksCorrHuman: looks.Within,
 			looksCeiling: looks.Ceiling,
-			hintSlots:    hints.Slots, hintsHeld: hints.Held,
+			skillHeld:    skills.Held, skillNominal: skills.Nominal,
+			skillReal: skills.Realised, skillSlots: skills.Slots,
+			skillGap:  skills.Dear - skills.Open,
+			hintSlots: hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
 			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
@@ -2059,11 +2131,22 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// What the population is making of its rules of thumb. The last two
 		// are the ones the stage is on the hook for: a population can carry
 		// plenty of hints and have them all be the same one.
-		"hintSlots":      tail.hintSlots,
-		"hintsHeld":      tail.hintsHeld,
-		"hintKinds":      tail.hintKinds,
-		"hintEntropy":    tail.hintEntropy,
-		"hintCopyRate":   perAgentLifetime(end.HintsCopied-tailStart.HintsCopied, personTicks),
+		"hintSlots":    tail.hintSlots,
+		"hintsHeld":    tail.hintsHeld,
+		"hintKinds":    tail.hintKinds,
+		"hintEntropy":  tail.hintEntropy,
+		"hintCopyRate": perAgentLifetime(end.HintsCopied-tailStart.HintsCopied, personTicks),
+		// What the population knows how to do, and where it came from (stage
+		// 38a). A skill that nobody holds explains nothing, and one that
+		// spreads only down a line is not the diffusion the stage claims.
+		"skillHeld":      tail.skillHeld,
+		"skillNominal":   tail.skillNominal,
+		"skillReal":      tail.skillReal,
+		"skillSlots":     tail.skillSlots,
+		"skillGap":       tail.skillGap,
+		"skillBornRate":  perAgentLifetime(end.SkillsBorn-tailStart.SkillsBorn, personTicks),
+		"skillCopyRate":  perAgentLifetime(end.SkillsCopied-tailStart.SkillsCopied, personTicks),
+		"skillLeaps":     float64(end.SkillsLeapt),
 		"power":          tail.power,
 		"rationality":    tail.rat,
 		"intelligence":   tail.intel,
@@ -2328,6 +2411,11 @@ func tailAverage(series []sample) sample {
 		out.looksCorr += s.looksCorr
 		out.looksCorrHuman += s.looksCorrHuman
 		out.looksCeiling += s.looksCeiling
+		out.skillHeld += s.skillHeld
+		out.skillNominal += s.skillNominal
+		out.skillReal += s.skillReal
+		out.skillSlots += s.skillSlots
+		out.skillGap += s.skillGap
 		out.hintSlots += s.hintSlots
 		out.hintsHeld += s.hintsHeld
 		out.hintKinds += s.hintKinds
@@ -2419,6 +2507,11 @@ func tailAverage(series []sample) sample {
 	out.looksCorr /= d
 	out.looksCorrHuman /= d
 	out.looksCeiling /= d
+	out.skillHeld /= d
+	out.skillNominal /= d
+	out.skillReal /= d
+	out.skillSlots /= d
+	out.skillGap /= d
 	out.hintSlots /= d
 	out.hintsHeld /= d
 	out.hintKinds /= d

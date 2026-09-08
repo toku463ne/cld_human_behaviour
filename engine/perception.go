@@ -351,7 +351,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		ShockRisk:         a.lore.shockRisk,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
-		Ground:            ground.Cost,
+		Ground:            w.groundCostFor(a, ground),
 		Drown:             drownFelt(&w.cfg, ground),
 		CourtedBy:         a.courtedBy,
 		CourtedTicksLeft:  w.courtAnswerLeft(a),

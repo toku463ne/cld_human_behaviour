@@ -129,6 +129,8 @@ type counterSnap struct {
 	KillWitnesses, AvengeWitnesses, Observes     int
 	KillLessons                                  int
 	Calls, Joins                                 int
+	SkillsLearned, SkillsCopied                  int
+	SkillsBorn, SkillsLeapt                      int
 	Matured, ChildDeaths, Fights                 int
 	MaxGeneration                                int
 	BlowsSeen, BlowsAnswered                     int
@@ -255,6 +257,8 @@ func (w *World) Save(out io.Writer) error {
 			KillWitnesses: w.killWitnesses, AvengeWitnesses: w.avengeWitnesses,
 			KillLessons: w.killLessons,
 			Calls:       w.calls, Joins: w.joins,
+			SkillsLearned: w.skillsLearned, SkillsCopied: w.skillsCopied,
+			SkillsBorn: w.skillsBorn, SkillsLeapt: w.skillsLeapt,
 			Observes: w.observes,
 			Matured:  w.matured, ChildDeaths: w.childDeaths, Fights: w.fights,
 			MaxGeneration: w.maxGeneration,
@@ -397,6 +401,8 @@ func Load(in io.Reader) (*World, error) {
 	w.killWitnesses, w.avengeWitnesses = c.KillWitnesses, c.AvengeWitnesses
 	w.killLessons = c.KillLessons
 	w.calls, w.joins = c.Calls, c.Joins
+	w.skillsLearned, w.skillsCopied = c.SkillsLearned, c.SkillsCopied
+	w.skillsBorn, w.skillsLeapt = c.SkillsBorn, c.SkillsLeapt
 	w.observes = c.Observes
 	w.matured, w.childDeaths, w.fights = c.Matured, c.ChildDeaths, c.Fights
 	w.maxGeneration = c.MaxGeneration
