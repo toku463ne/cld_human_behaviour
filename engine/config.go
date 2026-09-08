@@ -851,6 +851,14 @@ type Config struct {
 	// the arm that separates what it costs from what it buys.
 	SkillForageRelief float64
 
+	// SkillSwimRelief is how much of the chance that a tick in the water is
+	// the last one (stage 34) a fully mastered, fully suited body escapes.
+	//
+	// The gene behind it is vitality, because what stage 34 found decides who
+	// comes out of a river is how long a body stays in it rather than how
+	// fast it crosses. Zero is the same kind of arm as the one above.
+	SkillSwimRelief float64
+
 	// SkillGeniusJump is how much further than its line a genius child goes
 	// at something the line already does (GeniusRate, world.go). It reuses
 	// the event the world already has for a rare, large change rather than
@@ -1607,8 +1615,10 @@ func DefaultConfig() Config {
 		SkillAptitude: [NumSkillKinds]Gene{
 			SkillRough:  GeneSpeed,
 			SkillForage: GeneMemory,
+			SkillSwim:   GeneVitality,
 		},
 		SkillForageRelief: 1,
+		SkillSwimRelief:   1,
 		SkillsSpread:      true,
 		HintSlotCost:      5,
 		HintWeightStd:     6,

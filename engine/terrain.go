@@ -256,6 +256,21 @@ func (w *World) TerrainSize() (cols, rows int, cellW, cellH float64) {
 
 // --- what the ground kills (stage 34) ---------------------------------------
 
+// drownChanceFor is what this water may do to this body: the ground's own
+// figure, less whatever the body knows about being in it (stage 38b).
+//
+// It is the hazard that is relieved and not the cost of crossing, for the
+// reason stage 34 gave: what decides who comes out is how many ticks are spent
+// in there, and a body that knows the water spends them at a lower rate rather
+// than getting across sooner.
+func (w *World) drownChanceFor(a *Agent, t terrain) float64 {
+	if t.Drown <= 0 || w.cfg.SkillSwimRelief <= 0 || a == nil {
+		return t.Drown
+	}
+	relief := clamp(a.skillAt(&w.cfg, SkillSwim)*w.cfg.SkillSwimRelief, 0, 1)
+	return t.Drown * (1 - relief)
+}
+
 // drownings is the whole of the rule. Every body standing in the water at the
 // end of a tick throws once, and the ones that lose are simply gone.
 //
@@ -280,7 +295,7 @@ func (w *World) drownings() {
 		if !a.Alive {
 			continue
 		}
-		p := w.terrainAt(a.X, a.Y).Drown
+		p := w.drownChanceFor(a, w.terrainAt(a.X, a.Y))
 		if p <= 0 {
 			continue
 		}

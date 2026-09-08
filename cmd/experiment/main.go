@@ -1284,6 +1284,35 @@ var variants = []variant{
 			c.SkillAptitude[engine.SkillForage] = engine.GeneSpeed
 		},
 	},
+	// Stage 38b, the third skill: swimming. The river is the map it means
+	// anything on, and the base to read it against is river - stages 34 to 36
+	// as they stand, with nobody knowing anything.
+	{
+		name:  "riverswim",
+		about: "the river, and a body born by it knows how to be in it (38b)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5 },
+	},
+	{
+		name:  "swimdead",
+		about: "control: the skill is learned and takes the room, and the water is as deadly as ever",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.SkillSwimRelief = mapRiver, 0.5, 0
+		},
+	},
+	{
+		name:  "swimnoteach",
+		about: "control: swimming can be born with and inherited, not caught",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.SkillsSpread = mapRiver, 0.5, false
+		},
+	},
+	{
+		name:  "swimfed",
+		about: "the river bank rich as well (36 on): does knowing the water change where bodies stand when the food is there?",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WatersideFood = mapRiver, 0.5, 1
+		},
+	},
 	// Stage 31: what a killing leaves with the people who saw it. The base
 	// is baseline - the rule is on by default - so the arms here are the
 	// controls: each half off, both off, and the reading half at weights
@@ -1696,6 +1725,7 @@ var metricNames = []string{
 	"skillHeld", "skillNominal", "skillReal", "skillSlots", "skillGap",
 	"skillBornRate", "skillCopyRate", "skillLeaps",
 	"forageHeld", "forageNominal", "forageReal",
+	"swimHeld", "swimNominal", "swimReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"extinct",
 }
@@ -1852,6 +1882,7 @@ type sample struct {
 	// the ones standing on dear ground and the rest.
 	skillHeld, skillNominal, skillReal, skillSlots, skillGap float64
 	forageHeld, forageNominal, forageReal                    float64
+	swimHeld, swimNominal, swimReal                          float64
 }
 
 // perAgentLifetime converts a count of events into a rate per ten thousand
@@ -1948,6 +1979,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		hints := w.HintUse()
 		skills := w.Skills(engine.SkillRough)
 		forage := w.Skills(engine.SkillForage)
+		swim := w.Skills(engine.SkillSwim)
 		shelter := w.Shelter()
 		rich := w.Richness()
 		known := w.RegionKnowledge()
@@ -1981,7 +2013,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			allAsleep:    vig.AllResting, clockSpread: vig.Spread,
 			looksCorr: looks.All, looksCorrHuman: looks.Within,
 			looksCeiling: looks.Ceiling,
-			forageHeld:   forage.Held, forageNominal: forage.Nominal,
+			swimHeld:     swim.Held, swimNominal: swim.Nominal,
+			swimReal:   swim.Realised,
+			forageHeld: forage.Held, forageNominal: forage.Nominal,
 			forageReal: forage.Realised,
 			skillHeld:  skills.Held, skillNominal: skills.Nominal,
 			skillReal: skills.Realised, skillSlots: skills.Slots,
@@ -2176,6 +2210,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// And the second skill (stage 38b), which is capped by a different
 		// gene and seeded by what the ground provides rather than by what it
 		// is made of.
+		"swimHeld":       tail.swimHeld,
+		"swimNominal":    tail.swimNominal,
+		"swimReal":       tail.swimReal,
 		"forageHeld":     tail.forageHeld,
 		"forageNominal":  tail.forageNominal,
 		"forageReal":     tail.forageReal,
@@ -2450,6 +2487,9 @@ func tailAverage(series []sample) sample {
 		out.looksCorr += s.looksCorr
 		out.looksCorrHuman += s.looksCorrHuman
 		out.looksCeiling += s.looksCeiling
+		out.swimHeld += s.swimHeld
+		out.swimNominal += s.swimNominal
+		out.swimReal += s.swimReal
 		out.forageHeld += s.forageHeld
 		out.forageNominal += s.forageNominal
 		out.forageReal += s.forageReal
@@ -2549,6 +2589,9 @@ func tailAverage(series []sample) sample {
 	out.looksCorr /= d
 	out.looksCorrHuman /= d
 	out.looksCeiling /= d
+	out.swimHeld /= d
+	out.swimNominal /= d
+	out.swimReal /= d
 	out.forageHeld /= d
 	out.forageNominal /= d
 	out.forageReal /= d

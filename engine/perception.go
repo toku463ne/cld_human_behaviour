@@ -352,7 +352,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),
-		Drown:             drownFelt(&w.cfg, ground),
+		Drown:             w.drownFelt(a, ground),
 		CourtedBy:         a.courtedBy,
 		CourtedTicksLeft:  w.courtAnswerLeft(a),
 		MateValue:         fitness(a, &w.cfg),
@@ -523,9 +523,12 @@ func (w *World) noise(unit, scale float64) float64 {
 // drownFelt is what an agent makes of how dangerous its footing is: the truth,
 // or nothing at all in the arm that takes the feeling away and leaves the
 // water exactly as deadly (stage 34).
-func drownFelt(cfg *Config, ground terrain) float64 {
-	if !cfg.DrownKnown {
+// It is this body's own figure: a body that knows the water is in less danger
+// in it, and knows that about itself the way it knows its own legs (stage 38b,
+// and the same call Self.Ground makes).
+func (w *World) drownFelt(a *Agent, ground terrain) float64 {
+	if !w.cfg.DrownKnown {
 		return 0
 	}
-	return ground.Drown
+	return w.drownChanceFor(a, ground)
 }

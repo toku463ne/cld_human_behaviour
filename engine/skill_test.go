@@ -269,3 +269,64 @@ func TestEachSkillIsCappedByItsOwnGene(t *testing.T) {
 		t.Fatalf("foraging realised %v, want the memory's 0.20", got)
 	}
 }
+
+// --- the third skill (stage 38b) --------------------------------------------
+
+// swimWorld is a still world with a river down the middle.
+func swimWorld(t *testing.T) *World {
+	t.Helper()
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 600
+	cfg.TerrainMap = []string{
+		"...~~...",
+		"...~~...",
+		"...~~...",
+	}
+	cfg.SkillBirthplace = 0.5
+	return NewWorld(cfg)
+}
+
+// Knowing the water lowers what a tick in it may cost, and the body knows that
+// about itself - the same call Self.Ground makes about its legs.
+func TestKnowingTheWaterLowersWhatItMayCost(t *testing.T) {
+	w := swimWorld(t)
+	green := skilled(t, w, 400, 300, 90, 0)
+	adept := skilled(t, w, 400, 300, 90, 0)
+	for _, a := range []*Agent{green, adept} {
+		a.Genome[GeneVitality] = 100
+	}
+	w.learnSkill(adept, SkillSwim, 1)
+
+	water := w.terrainAt(400, 300)
+	if water.Drown <= 0 {
+		t.Fatal("the middle of the map is not water")
+	}
+	dry, wet := w.drownChanceFor(adept, water), w.drownChanceFor(green, water)
+	if !(dry < wet) {
+		t.Fatalf("a tick in the river may cost the swimmer %v and anybody else %v", dry, wet)
+	}
+	// What it believes about its footing is its own figure, not the ground's.
+	if got := w.perceive(adept).Self.Drown; got != dry {
+		t.Fatalf("the swimmer feels %v of a danger that is %v to it", got, dry)
+	}
+	// And with the rule off it is in exactly as much danger as anybody.
+	w.cfg.SkillSwimRelief = 0
+	if got := w.drownChanceFor(adept, water); got != wet {
+		t.Fatalf("with the rule off the swimmer's chance is %v, want the plain %v", got, wet)
+	}
+}
+
+// Being born by the river is what teaches it, and the two skills a river could
+// seed are seeded from different cells: water is not counted as rough country.
+func TestTheRiverTeachesSwimmingAndNotRoughGoing(t *testing.T) {
+	w := swimWorld(t)
+	if got := w.skillFromBirthplace(SkillSwim, 400, 300); got <= 0 {
+		t.Fatalf("born on the river and knowing %v about it", got)
+	}
+	if got := w.skillFromBirthplace(SkillSwim, 60, 300); got != 0 {
+		t.Fatalf("born on dry land and knowing %v about the water", got)
+	}
+	if got := w.skillFromBirthplace(SkillRough, 400, 300); got != 0 {
+		t.Fatalf("the river taught %v about crossing broken country: water is its own skill", got)
+	}
+}

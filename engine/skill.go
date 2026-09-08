@@ -48,6 +48,17 @@ const (
 	// the food supply goes down rather than up.
 	SkillForage
 
+	// SkillSwim is knowing how to be in water: the third. What it does is
+	// lower the chance that a tick spent in the river is the last one (stage
+	// 34, terrain.go).
+	//
+	// It acts on the hazard and not on the cost of crossing, because stage 34
+	// found what actually decides who comes out: not how fast a body crosses
+	// but how long it stays, and agents here do not cross rivers - they live
+	// in them (14.5% of all ticks, an average stay of 127). A skill that made
+	// the crossing cheaper would be a skill about a thing nobody does.
+	SkillSwim
+
 	NumSkillKinds
 )
 
@@ -57,6 +68,8 @@ func (s SkillKind) String() string {
 		return "rough going"
 	case SkillForage:
 		return "foraging"
+	case SkillSwim:
+		return "swimming"
 	}
 	return "none"
 }
@@ -187,15 +200,19 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 	share := 0.0
 	switch kind {
 	case SkillRough:
-		// The share of the region that is dear to cross, read off the same
-		// map the region's mean cost is read off (region.go). One is a region
-		// that is nothing but rough - and a world with no map is nothing but
-		// level, so no such skill ever appears in one.
+		// The share of the region that is dear to cross and is not water,
+		// read off the same map the region's mean cost is read off
+		// (region.go). Water is left out because being in water is a
+		// different skill with a different gene behind it, and counting the
+		// river twice would seed both from the same cells.
+		//
+		// A world with no map is nothing but level, so no such skill ever
+		// appears in one.
 		if w.ground == nil {
 			return 0
 		}
 		share = w.regionMean(i, func(t terrain) float64 {
-			if t.Cost > 1 {
+			if t.Cost > 1 && t.Kind != GroundWater {
 				return 1
 			}
 			return 0
@@ -210,6 +227,14 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 		// thing about what the ground provides, so a world with no map can
 		// have it.
 		share = clamp(1-w.regions[i].Food, 0, 1)
+	case SkillSwim:
+		// How much of the region is water. The same reading stage 36 uses to
+		// decide where the bank is rich: a body born by the river is a body
+		// that grew up in it.
+		if w.ground == nil {
+			return 0
+		}
+		share = w.regionWaterShare(i)
 	}
 	return clamp(share*w.cfg.SkillBirthplace, 0, 1)
 }
