@@ -32,29 +32,49 @@ type SkillKind uint8
 const (
 	SkillNone SkillKind = iota
 
-	// SkillRough is knowing how to cross broken country: the first and, for
-	// now, the only one. What it does is take the sting out of ground that
-	// costs more to cross (terrain.go).
+	// SkillRough is knowing how to cross broken country: the first one. What
+	// it does is take the sting out of ground that costs more to cross
+	// (terrain.go).
 	SkillRough
+
+	// SkillForage is knowing how to get the most out of what grows: the
+	// second. What it does is soften the discount on eating the same thing
+	// over and over (diet.go, stage 16).
+	//
+	// Yield and not a race (#64). A skill that helped an agent reach food
+	// first, or win it off somebody, would let whoever had it take the
+	// plants; one that means the same mouthful goes further has no such
+	// room - a good forager needs *less* of what there is, so the pressure on
+	// the food supply goes down rather than up.
+	SkillForage
 
 	NumSkillKinds
 )
 
 func (s SkillKind) String() string {
-	if s == SkillRough {
+	switch s {
+	case SkillRough:
 		return "rough going"
+	case SkillForage:
+		return "foraging"
 	}
 	return "none"
 }
 
 // skillAptitude is how much of a nominal mastery this body can actually
-// realise, from 0 to 1.
+// realise at one skill, from 0 to 1.
 //
-// Which gene is Config.SkillAptitude, and it is speed by default because
-// crossing ground is what speed is for. Pairing it instead with a gene that
-// competes with speed would manufacture the niche stage 20 failed to find
-// (fast and frail against slow and tough) by choosing the answer before the
-// measurement - so the alternative is an arm rather than the default.
+// Each skill names the gene that limits it (Config.SkillAptitude), and the
+// rule for choosing is the same both times: the gene the doing already belongs
+// to. Crossing ground is legs, so rough going is capped by speed. Getting more
+// out of what has been found is a matter of what the body keeps of what it has
+// learned about it, so foraging is capped by memory - which has never bought
+// anything measurable in this world, and this is the first rule that asks it
+// to.
+//
+// Pairing a skill instead with a gene chosen for the result it would produce -
+// capping rough going with toughness to manufacture stage 20's missing niche -
+// is choosing the answer before the measurement, so that lives in an arm.
 //
 // This is the cap that makes the whole thing behave. A nominal figure can be
 // inherited or copied from anybody, but what it is worth is the holder's own
@@ -63,8 +83,11 @@ func (s SkillKind) String() string {
 // the generations - the nominal number need never fall for the realised one to
 // return to what the line's genes support - and why the agent that was taught
 // can end up better at it than the one that taught it.
-func (a *Agent) skillAptitude(cfg *Config) float64 {
-	return clamp(a.Gene(cfg.SkillAptitude)/MaxAbility, 0, 1)
+func (a *Agent) skillAptitude(cfg *Config, kind SkillKind) float64 {
+	if int(kind) >= len(cfg.SkillAptitude) {
+		return 0
+	}
+	return clamp(a.Gene(cfg.SkillAptitude[kind])/MaxAbility, 0, 1)
 }
 
 // skillAt is what this agent can actually do at something: the figure it
@@ -88,7 +111,7 @@ func (a *Agent) skillAt(cfg *Config, kind SkillKind) float64 {
 	if best <= 0 {
 		return 0
 	}
-	return math.Min(best, a.skillAptitude(cfg))
+	return math.Min(best, a.skillAptitude(cfg, kind))
 }
 
 // nominalSkill is the figure the agent holds, before its body has anything to
@@ -153,24 +176,55 @@ func (w *World) learnSkill(a *Agent, kind SkillKind, mastery float64) bool {
 // which is the only one of the three paths that does not need somebody else to
 // have known it first - and so the only one that can start a skill from
 // nothing in a line that never had it.
-func (w *World) skillFromBirthplace(x, y float64) float64 {
-	if w.cfg.SkillBirthplace <= 0 || w.ground == nil {
+func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
+	if w.cfg.SkillBirthplace <= 0 {
 		return 0
 	}
 	i := w.regionIndexAt(x, y)
-	if i < 0 {
+	if i < 0 || i >= len(w.regions) {
 		return 0
 	}
-	// The share of the region that is dear to cross, read off the same map
-	// the region's mean cost is read off (region.go). One is a region that is
-	// nothing but rough.
-	rough := w.regionMean(i, func(t terrain) float64 {
-		if t.Cost > 1 {
-			return 1
+	share := 0.0
+	switch kind {
+	case SkillRough:
+		// The share of the region that is dear to cross, read off the same
+		// map the region's mean cost is read off (region.go). One is a region
+		// that is nothing but rough - and a world with no map is nothing but
+		// level, so no such skill ever appears in one.
+		if w.ground == nil {
+			return 0
 		}
-		return 0
-	})
-	return clamp(rough*w.cfg.SkillBirthplace, 0, 1)
+		share = w.regionMean(i, func(t terrain) float64 {
+			if t.Cost > 1 {
+				return 1
+			}
+			return 0
+		})
+	case SkillForage:
+		// How little grows there. Necessity is what teaches this one: a body
+		// born where the plants are thin is a body that learns to make a
+		// mouthful go further, and one born in plenty never has to.
+		//
+		// It needs no terrain at all, which is the difference the second
+		// skill makes: the first was a thing about the ground, and this is a
+		// thing about what the ground provides, so a world with no map can
+		// have it.
+		share = clamp(1-w.regions[i].Food, 0, 1)
+	}
+	return clamp(share*w.cfg.SkillBirthplace, 0, 1)
+}
+
+// learnFromBirthplace hands a new body whatever the country it arrived in has
+// to teach, one skill at a time and each through the same comparison.
+func (w *World) learnFromBirthplace(a *Agent) {
+	if w.cfg.SkillBirthplace <= 0 {
+		return
+	}
+	for kind := SkillKind(1); kind < NumSkillKinds; kind++ {
+		if w.learnSkill(a, kind, w.skillFromBirthplace(kind, a.X, a.Y)) {
+			w.skillsBorn++
+		}
+	}
 }
 
 // teachSkill is the copying half, and it is where the diffusion this stage is
@@ -209,14 +263,30 @@ func (w *World) leapSkill(a *Agent) {
 	if w.cfg.SkillGeniusJump <= 0 {
 		return
 	}
+	// Whichever of the ones it holds: with two skills in the world, always
+	// leaping the first would be a rule about the order of the slots.
+	held := 0
+	for i := range a.hints {
+		if a.hints[i].Skill != SkillNone {
+			held++
+		}
+	}
+	if held == 0 {
+		return
+	}
+	pick := w.rng.Intn(held)
 	for i := range a.hints {
 		h := &a.hints[i]
-		if h.Skill != SkillNone {
+		if h.Skill == SkillNone {
+			continue
+		}
+		if pick == 0 {
 			if w.learnSkill(a, h.Skill, h.Mastery+w.cfg.SkillGeniusJump) {
 				w.skillsLeapt++
 			}
 			return
 		}
+		pick--
 	}
 }
 

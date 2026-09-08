@@ -1312,9 +1312,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	// inherited by the one comparison there is (skill.go). A genius child
 	// goes further with what it already holds - a leap is about something the
 	// line already does, not a category nobody has ever seen.
-	if w.learnSkill(&child, SkillRough, w.skillFromBirthplace(child.X, child.Y)) {
-		w.skillsBorn++
-	}
+	w.learnFromBirthplace(&child)
 	if genius {
 		w.leapSkill(&child)
 	}
@@ -1620,9 +1618,7 @@ func (w *World) randomAgent(species Species) Agent {
 	// And whatever the country it arrived in has to teach (stage 38a). The
 	// same rule a newborn gets, applied to where the world put it: nobody
 	// draws a skill out of nothing, so a flat world never contains one.
-	if w.learnSkill(&a, SkillRough, w.skillFromBirthplace(a.X, a.Y)) {
-		w.skillsBorn++
-	}
+	w.learnFromBirthplace(&a)
 	// Room for ideas comes out of the same budget the body does, for founders
 	// as for everybody else.
 	fitBudget(a.Genome, a.Budget()-w.hintCost(a.hintSlots))

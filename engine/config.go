@@ -830,16 +830,26 @@ type Config struct {
 	// the other three.
 	SkillBirthplace float64
 
-	// SkillAptitude is the gene a skill's realised value is capped by: how
-	// much of a nominal figure this body can support.
+	// SkillAptitude is, for each skill, the gene its realised value is capped
+	// by: how much of a nominal figure this body can support.
 	//
-	// Speed by default, because crossing ground is what speed is for. The
-	// field exists because the choice is a real fork rather than an obvious
-	// one: capping it with a gene that competes with speed would make broken
-	// country the place where slow, tough bodies do well - the niche stage 20
-	// went looking for and did not find - and whether that is what happens is
-	// a question for the measurement rather than for the design.
-	SkillAptitude Gene
+	// The rule for choosing is the gene the doing already belongs to. Crossing
+	// ground is legs (speed); getting more out of what has been found is what
+	// the body keeps of what it has learned about it (memory), which is the
+	// first thing in this world to ask anything of that gene.
+	//
+	// It is a table and not a constant because the choice is a real fork:
+	// capping rough going with toughness instead would make broken country
+	// the place where slow, tough bodies do well - the niche stage 20 went
+	// looking for and did not find - and whether that happens is a question
+	// for a measurement rather than for the design.
+	SkillAptitude [NumSkillKinds]Gene
+
+	// SkillForageRelief is how much of the discount for eating the same thing
+	// over and over (stage 16) a fully mastered, fully suited body escapes.
+	// Zero leaves the skill able to be learned and worth nothing, which is
+	// the arm that separates what it costs from what it buys.
+	SkillForageRelief float64
 
 	// SkillGeniusJump is how much further than its line a genius child goes
 	// at something the line already does (GeniusRate, world.go). It reuses
@@ -1594,12 +1604,16 @@ func DefaultConfig() Config {
 		SkillRoughRelief: 0.6,
 		SkillBirthplace:  0,
 		SkillGeniusJump:  0.4,
-		SkillAptitude:    GeneSpeed,
-		SkillsSpread:     true,
-		HintSlotCost:     5,
-		HintWeightStd:    6,
-		HintWeightMax:    20,
-		HintTradeWorth:   0.5,
-		HintsSpread:      true,
+		SkillAptitude: [NumSkillKinds]Gene{
+			SkillRough:  GeneSpeed,
+			SkillForage: GeneMemory,
+		},
+		SkillForageRelief: 1,
+		SkillsSpread:      true,
+		HintSlotCost:      5,
+		HintWeightStd:     6,
+		HintWeightMax:     20,
+		HintTradeWorth:    0.5,
+		HintsSpread:       true,
 	}
 }

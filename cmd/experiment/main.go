@@ -1203,7 +1203,7 @@ var variants = []variant{
 	// and takes room but does nothing, and one that cannot be copied.
 	{
 		name:  "roughskill",
-		about: "broken country, with knowing how to cross it (38a)",
+		about: "broken country, with knowing how to cross it and how to live off it (38a and 38b together: both skills compete for the same room)",
 		apply: func(c *engine.Config) { c.TerrainMap, c.SkillBirthplace = mapRough, 0.5 },
 	},
 	{
@@ -1243,7 +1243,8 @@ var variants = []variant{
 		name:  "skilltough",
 		about: "sweep: what a body gets out of knowing the ground is capped by how tough it is, not how fast",
 		apply: func(c *engine.Config) {
-			c.TerrainMap, c.SkillBirthplace, c.SkillAptitude = mapRough, 0.5, engine.GeneVitality
+			c.TerrainMap, c.SkillBirthplace = mapRough, 0.5
+			c.SkillAptitude[engine.SkillRough] = engine.GeneVitality
 		},
 	},
 	{
@@ -1255,6 +1256,33 @@ var variants = []variant{
 		name:  "countrynoskill",
 		about: "control for countryskill: nobody learns the ground (the default)",
 		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
+	},
+	// Stage 38b: the second skill. Foraging is seeded by what the ground
+	// provides rather than by what it is made of, so unlike the first it
+	// needs no terrain - which makes the flat world the clean arm for it, and
+	// the rough map the one where the two skills compete for the same room.
+	{
+		name:  "forageskill",
+		about: "a flat world where a body born on thin ground learns to make a mouthful go further (38b)",
+		apply: func(c *engine.Config) { c.SkillBirthplace = 0.5 },
+	},
+	{
+		name:  "foragedead",
+		about: "control: the skill is learned and takes the room, and the mouthful is worth what it always was",
+		apply: func(c *engine.Config) { c.SkillBirthplace, c.SkillForageRelief = 0.5, 0 },
+	},
+	{
+		name:  "foragenoteach",
+		about: "control: foraging can be born with and inherited, not caught",
+		apply: func(c *engine.Config) { c.SkillBirthplace, c.SkillsSpread = 0.5, false },
+	},
+	{
+		name:  "foragelegs",
+		about: "sweep: what a body gets out of foraging is capped by its legs, not its memory",
+		apply: func(c *engine.Config) {
+			c.SkillBirthplace = 0.5
+			c.SkillAptitude[engine.SkillForage] = engine.GeneSpeed
+		},
 	},
 	// Stage 31: what a killing leaves with the people who saw it. The base
 	// is baseline - the rule is on by default - so the arms here are the
@@ -1667,6 +1695,7 @@ var metricNames = []string{
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
 	"skillHeld", "skillNominal", "skillReal", "skillSlots", "skillGap",
 	"skillBornRate", "skillCopyRate", "skillLeaps",
+	"forageHeld", "forageNominal", "forageReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"extinct",
 }
@@ -1822,6 +1851,7 @@ type sample struct {
 	// how much of the room they bought is spent on it, and the gap between
 	// the ones standing on dear ground and the rest.
 	skillHeld, skillNominal, skillReal, skillSlots, skillGap float64
+	forageHeld, forageNominal, forageReal                    float64
 }
 
 // perAgentLifetime converts a count of events into a rate per ten thousand
@@ -1917,6 +1947,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		teach := w.Teaching()
 		hints := w.HintUse()
 		skills := w.Skills(engine.SkillRough)
+		forage := w.Skills(engine.SkillForage)
 		shelter := w.Shelter()
 		rich := w.Richness()
 		known := w.RegionKnowledge()
@@ -1950,7 +1981,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			allAsleep:    vig.AllResting, clockSpread: vig.Spread,
 			looksCorr: looks.All, looksCorrHuman: looks.Within,
 			looksCeiling: looks.Ceiling,
-			skillHeld:    skills.Held, skillNominal: skills.Nominal,
+			forageHeld:   forage.Held, forageNominal: forage.Nominal,
+			forageReal: forage.Realised,
+			skillHeld:  skills.Held, skillNominal: skills.Nominal,
 			skillReal: skills.Realised, skillSlots: skills.Slots,
 			skillGap:  skills.Dear - skills.Open,
 			hintSlots: hints.Slots, hintsHeld: hints.Held,
@@ -2139,7 +2172,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// What the population knows how to do, and where it came from (stage
 		// 38a). A skill that nobody holds explains nothing, and one that
 		// spreads only down a line is not the diffusion the stage claims.
-		"skillHeld":      tail.skillHeld,
+		"skillHeld": tail.skillHeld,
+		// And the second skill (stage 38b), which is capped by a different
+		// gene and seeded by what the ground provides rather than by what it
+		// is made of.
+		"forageHeld":     tail.forageHeld,
+		"forageNominal":  tail.forageNominal,
+		"forageReal":     tail.forageReal,
 		"skillNominal":   tail.skillNominal,
 		"skillReal":      tail.skillReal,
 		"skillSlots":     tail.skillSlots,
@@ -2411,6 +2450,9 @@ func tailAverage(series []sample) sample {
 		out.looksCorr += s.looksCorr
 		out.looksCorrHuman += s.looksCorrHuman
 		out.looksCeiling += s.looksCeiling
+		out.forageHeld += s.forageHeld
+		out.forageNominal += s.forageNominal
+		out.forageReal += s.forageReal
 		out.skillHeld += s.skillHeld
 		out.skillNominal += s.skillNominal
 		out.skillReal += s.skillReal
@@ -2507,6 +2549,9 @@ func tailAverage(series []sample) sample {
 	out.looksCorr /= d
 	out.looksCorrHuman /= d
 	out.looksCeiling /= d
+	out.forageHeld /= d
+	out.forageNominal /= d
+	out.forageReal /= d
 	out.skillHeld /= d
 	out.skillNominal /= d
 	out.skillReal /= d

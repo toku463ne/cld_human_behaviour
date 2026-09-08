@@ -113,23 +113,23 @@ func TestASkillIsTakenOnlyWhenItIsBetter(t *testing.T) {
 // as it always did.
 func TestWhereABodyIsBornIsWhatItKnows(t *testing.T) {
 	w := skillWorld(t)
-	if got := w.skillFromBirthplace(100, 100); got <= 0 {
+	if got := w.skillFromBirthplace(SkillRough, 100, 100); got <= 0 {
 		t.Fatalf("born in broken country and knowing %v of it", got)
 	}
-	if rough, open := w.skillFromBirthplace(100, 100), w.skillFromBirthplace(700, 100); rough <= open {
+	if rough, open := w.skillFromBirthplace(SkillRough, 100, 100), w.skillFromBirthplace(SkillRough, 700, 100); rough <= open {
 		t.Fatalf("the rough taught %v and the open %v", rough, open)
 	}
 
 	flat := quietConfig()
 	flat.SkillBirthplace = 0.5
-	if got := NewWorld(flat).skillFromBirthplace(100, 100); got != 0 {
+	if got := NewWorld(flat).skillFromBirthplace(SkillRough, 100, 100); got != 0 {
 		t.Fatalf("a world with no map taught %v", got)
 	}
 	// And with the rule off, neither does broken country: no skill enters a
 	// world whose author did not ask for one.
 	off := w.cfg
 	off.SkillBirthplace = 0
-	if got := NewWorld(off).skillFromBirthplace(100, 100); got != 0 {
+	if got := NewWorld(off).skillFromBirthplace(SkillRough, 100, 100); got != 0 {
 		t.Fatalf("with the rule off the rough taught %v", got)
 	}
 }
@@ -177,5 +177,95 @@ func TestASkillSaysNothingAboutWhichMoveToMake(t *testing.T) {
 		if got := f.score(held, kind); math.Abs(got-want) > 1e-9 {
 			t.Fatalf("a skill and an idea together scored %v for %s, want %v", got, kind, want)
 		}
+	}
+}
+
+// --- the second skill (stage 38b) -------------------------------------------
+
+// Knowing how to forage is a yield and not a race: the same mouthful goes
+// further for whoever has it, and nothing about who reaches the plant first
+// changes.
+func TestForagingMakesTheSameMouthfulGoFurther(t *testing.T) {
+	cfg := quietConfig()
+	cfg.SkillBirthplace = 0.5
+	w := NewWorld(cfg)
+
+	green := skilled(t, w, 100, 100, 90, 0)
+	adept := skilled(t, w, 100, 100, 90, 0)
+	for _, a := range []*Agent{green, adept} {
+		a.Genome[GeneMemory] = 100 // so the ceiling is not what is being tested
+	}
+	w.learnSkill(adept, SkillForage, 1)
+
+	// Both have been living on the same thing.
+	for i := 0; i < 10; i++ {
+		w.noteEaten(green, FoodPlant)
+		w.noteEaten(adept, FoodPlant)
+	}
+	dull, sharp := w.dietValue(green, FoodPlant), w.dietValue(adept, FoodPlant)
+	if !(sharp > dull) {
+		t.Fatalf("a monotonous meal is worth %v to the forager and %v to anybody else", sharp, dull)
+	}
+	if sharp > 1+1e-9 {
+		t.Fatalf("the meal is worth %v: no skill makes food worth more than food", sharp)
+	}
+	// And with the rule off it is worth exactly what everybody else's is.
+	w.cfg.SkillForageRelief = 0
+	if got := w.dietValue(adept, FoodPlant); math.Abs(got-dull) > 1e-9 {
+		t.Fatalf("with the rule off the forager's meal is worth %v, want the plain %v", got, dull)
+	}
+}
+
+// The second skill is seeded by what the country provides rather than by what
+// it is made of, so a world with no map can have it - and it is thin ground
+// that teaches it.
+func TestForagingIsTaughtByThinGround(t *testing.T) {
+	cfg := quietConfig()
+	cfg.SkillBirthplace = 0.5
+	w := NewWorld(cfg)
+	if len(w.regions) < 2 {
+		t.Fatal("the world has no regions to differ")
+	}
+	// Two regions, one rich and one thin, and the same body born in each.
+	rich, thin := 0, 1
+	w.regions[rich].Food, w.regions[thin].Food = 1.6, 0.2
+	rx, ry := regionCentre(w, rich)
+	tx, ty := regionCentre(w, thin)
+
+	if got := w.skillFromBirthplace(SkillForage, rx, ry); got > 0.001 {
+		t.Fatalf("born in plenty and knowing %v about making it last", got)
+	}
+	if got := w.skillFromBirthplace(SkillForage, tx, ty); got <= 0 {
+		t.Fatalf("born on thin ground and knowing %v", got)
+	}
+	// A world with no map has none of the first skill and can still have this
+	// one: what it reads is what the ground provides, not what it is made of.
+	if got := w.skillFromBirthplace(SkillRough, tx, ty); got != 0 {
+		t.Fatalf("a flat world taught %v about crossing broken country", got)
+	}
+}
+
+func regionCentre(w *World, i int) (float64, float64) {
+	minX, minY, maxX, maxY := w.regionBounds(i)
+	return (minX + maxX) / 2, (minY + maxY) / 2
+}
+
+// Each skill is capped by its own gene: legs for the ground, memory for making
+// what is found go further.
+func TestEachSkillIsCappedByItsOwnGene(t *testing.T) {
+	cfg := quietConfig()
+	cfg.SkillBirthplace = 0.5
+	w := NewWorld(cfg)
+	a := skilled(t, w, 100, 100, 80, 0)
+	a.hintSlots = 2
+	a.Genome[GeneMemory] = 20
+	w.learnSkill(a, SkillRough, 1)
+	w.learnSkill(a, SkillForage, 1)
+
+	if got := a.skillAt(&w.cfg, SkillRough); math.Abs(got-0.8) > 1e-9 {
+		t.Fatalf("rough going realised %v, want the legs' 0.80", got)
+	}
+	if got := a.skillAt(&w.cfg, SkillForage); math.Abs(got-0.2) > 1e-9 {
+		t.Fatalf("foraging realised %v, want the memory's 0.20", got)
 	}
 }

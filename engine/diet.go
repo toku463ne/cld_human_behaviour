@@ -59,7 +59,15 @@ func (w *World) dietValue(a *Agent, kind FoodKind) float64 {
 	// Saturating rather than linear: the first few of a thing are the same as
 	// each other and the twentieth is no worse than the tenth.
 	share := had / (had + cfg.DietSatiety)
-	return 1 - clamp(cfg.SamenessPenalty, 0, 1)*share
+	// And what this body knows about making the most of what it finds (stage
+	// 38b). It is a yield and not a race: a good forager needs less of what
+	// there is, so nothing about who gets to the plant first changes, and the
+	// pressure on the food supply goes down rather than up (#64).
+	penalty := clamp(cfg.SamenessPenalty, 0, 1)
+	if cfg.SkillForageRelief > 0 {
+		penalty *= 1 - clamp(a.skillAt(cfg, SkillForage)*cfg.SkillForageRelief, 0, 1)
+	}
+	return 1 - penalty*share
 }
 
 // dietValues is what every kind is worth to this agent now, for Perception.
