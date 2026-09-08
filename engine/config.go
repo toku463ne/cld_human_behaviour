@@ -374,6 +374,37 @@ type Config struct {
 	PoisonDamage float64
 	SignalNoise  float64
 
+	// The two prices that were missing when stage 17b was first measured, and
+	// the reason it was left off (2026-09-08).
+	//
+	// PlantPoisonSaves is the chance, in proportion to how poisonous it is,
+	// that a plant survives being bitten: the eater takes the dose and gets
+	// nothing, and the plant is still standing. Without it poison cannot be
+	// selected for at all - an eaten plant is gone whatever it was carrying,
+	// so what a plant passes on has nothing to do with what it was defended
+	// with, and the gene can only drift. It was drifting: 0.55 after twenty
+	// thousand ticks, from a starting mean of 0.5.
+	//
+	// PlantSignalCost is what being conspicuous costs in seed. Without it
+	// shouting is a benefit with no price: loud plants are avoided, avoided
+	// plants stand, and the whole crop ends up shouting - which at a dose
+	// that matters is a population that starves beside its food. It is the
+	// plant-side price PARAMETERS.md named as the condition for reviving this
+	// stage.
+	//
+	// PlantPoisonCost is what being poisonous costs in seed, the same way
+	// PlantSignalCost is what being loud costs. Poison with a benefit and no
+	// price wins outright - measured at 0.75 of the maximum, with three
+	// bites in four coming to nothing and the population starving beside a
+	// full field - so a defence that saves a plant has to be paid for in the
+	// only currency a plant has.
+	//
+	// All three are zero by default, which is the world stage 17b was
+	// measured in.
+	PlantPoisonSaves float64
+	PlantSignalCost  float64
+	PlantPoisonCost  float64
+
 	// --- the world's day, and who keeps which hours (stage 18, clock.go) ---
 	//
 	// TicksPerDay gives the world a cycle. Zero is a world with no clock,
@@ -850,6 +881,18 @@ type Config struct {
 	// Zero leaves the skill able to be learned and worth nothing, which is
 	// the arm that separates what it costs from what it buys.
 	SkillForageRelief float64
+
+	// SkillPoisonRelief is how much of a plant's dose a fully mastered, fully
+	// suited body escapes - and, because a body knows its own stomach, how
+	// much less it prices the warning at when deciding whether to eat.
+	//
+	// The second half is the point. Counted before it was written: at a dose
+	// of 2 the poison itself takes 2.1% of what a body recovers, which is
+	// less than the discount foraging failed to move. What the crop actually
+	// costs the population is the avoiding - starving is up 66% and the
+	// population down 17% - so a defence worth having is one that makes a
+	// body willing to eat, not one that makes the mouthful cheaper.
+	SkillPoisonRelief float64
 
 	// SkillSwimRelief is how much of the chance that a tick in the water is
 	// the last one (stage 34) a fully mastered, fully suited body escapes.
@@ -1616,9 +1659,11 @@ func DefaultConfig() Config {
 			SkillRough:  GeneSpeed,
 			SkillForage: GeneMemory,
 			SkillSwim:   GeneVitality,
+			SkillPoison: GeneVitality,
 		},
 		SkillForageRelief: 1,
 		SkillSwimRelief:   1,
+		SkillPoisonRelief: 1,
 		SkillsSpread:      true,
 		HintSlotCost:      5,
 		HintWeightStd:     6,

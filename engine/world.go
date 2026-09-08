@@ -90,6 +90,12 @@ type Stats struct {
 	SkillsBorn    int
 	SkillsLeapt   int
 
+	// PlantsSpat is how many bites came to nothing because the plant was
+	// poisonous enough to be dropped (stage 17b), and PoisonLoss all the
+	// vitality the crop has taken off the population.
+	PlantsSpat int
+	PoisonLoss float64
+
 	// Calls is how many decisions were an invitation, and Joins how many
 	// attacks were aimed at something another agent had already declared for
 	// (stage 32).
@@ -287,6 +293,15 @@ type World struct {
 	skillsBorn    int
 	skillsLeapt   int
 
+	// plantsSpat is how many bites failed because what was bitten was
+	// poisonous enough to be dropped (stage 17b, 2026-09-08).
+	plantsSpat int
+
+	// poisonLoss is all the vitality the crop has taken off the population.
+	// Counted so that a skill against it can be weighed before it is written:
+	// what a rule undoes is the ceiling on what undoing it is worth.
+	poisonLoss float64
+
 	// calls is how many decisions were "come and help me bring this down"
 	// (stage 32), and joins how many attacks were on something somebody else
 	// had already declared for. The second is the one the stage turns on: a
@@ -442,6 +457,8 @@ func (w *World) Stats() Stats {
 		SkillsCopied:           w.skillsCopied,
 		SkillsBorn:             w.skillsBorn,
 		SkillsLeapt:            w.skillsLeapt,
+		PlantsSpat:             w.plantsSpat,
+		PoisonLoss:             w.poisonLoss,
 		Calls:                  w.calls,
 		Joins:                  w.joins,
 		Decisions:              w.decisions,
@@ -1381,6 +1398,7 @@ func (w *World) eat(a *Agent, foodID int) {
 	// (provision.go). What is divided is the mouthful, not the item: nothing
 	// about owning, racing for or fighting over food changes.
 	kept := w.share(a, f)
+	hungerBefore := a.Hunger
 	// Worth less if it is the same as everything else it has been living on
 	// (stage 16). Nothing else changes: hunger falls by less, and everything
 	// downstream of hunger follows from that on its own.
@@ -1389,7 +1407,23 @@ func (w *World) eat(a *Agent, foodID int) {
 	// hidden parameter: this is where an agent finds out what it actually ate,
 	// as against what the warning said.
 	if w.cfg.PlantDefence && f.Kind == FoodPlant {
-		a.Vitality -= kept * f.Genes.Poison * w.cfg.PoisonDamage
+		dose := kept * f.Genes.Poison * w.cfg.PoisonDamage * (1 - w.poisonResist(a))
+		a.Vitality -= dose
+		w.poisonLoss += dose
+		// And whether the bite failed: a poisonous plant may be spat out and
+		// left standing (2026-09-08). The eater has taken the dose and got
+		// nothing for it, and nothing is added to the world's food - the
+		// plant that is still there is the one that was already there.
+		//
+		// This is the only way poison can be selected for. Before it, an
+		// eaten plant was gone whatever it carried, so being poisonous did
+		// nothing for the plant and the gene drifted.
+		if w.cfg.PlantPoisonSaves > 0 &&
+			w.rng.Float64() < f.Genes.Poison*w.cfg.PlantPoisonSaves {
+			a.Hunger = hungerBefore
+			w.plantsSpat++
+			return
+		}
 	}
 	w.noteEaten(a, f.Kind)
 	// Some of what it swallows lives through the journey (stage 17c).

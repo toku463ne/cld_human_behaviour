@@ -131,6 +131,8 @@ type counterSnap struct {
 	Calls, Joins                                 int
 	SkillsLearned, SkillsCopied                  int
 	SkillsBorn, SkillsLeapt                      int
+	PlantsSpat                                   int
+	PoisonLoss                                   float64
 	Matured, ChildDeaths, Fights                 int
 	MaxGeneration                                int
 	BlowsSeen, BlowsAnswered                     int
@@ -259,6 +261,7 @@ func (w *World) Save(out io.Writer) error {
 			Calls:       w.calls, Joins: w.joins,
 			SkillsLearned: w.skillsLearned, SkillsCopied: w.skillsCopied,
 			SkillsBorn: w.skillsBorn, SkillsLeapt: w.skillsLeapt,
+			PlantsSpat: w.plantsSpat, PoisonLoss: w.poisonLoss,
 			Observes: w.observes,
 			Matured:  w.matured, ChildDeaths: w.childDeaths, Fights: w.fights,
 			MaxGeneration: w.maxGeneration,
@@ -403,6 +406,8 @@ func Load(in io.Reader) (*World, error) {
 	w.calls, w.joins = c.Calls, c.Joins
 	w.skillsLearned, w.skillsCopied = c.SkillsLearned, c.SkillsCopied
 	w.skillsBorn, w.skillsLeapt = c.SkillsBorn, c.SkillsLeapt
+	w.plantsSpat = c.PlantsSpat
+	w.poisonLoss = c.PoisonLoss
 	w.observes = c.Observes
 	w.matured, w.childDeaths, w.fights = c.Matured, c.ChildDeaths, c.Fights
 	w.maxGeneration = c.MaxGeneration

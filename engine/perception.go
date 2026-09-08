@@ -121,6 +121,13 @@ type SelfView struct {
 	// A player is shown the same figure and no more (stage 19).
 	Ground float64
 
+	// PoisonResist is how much of a plant's dose this body turns aside (stage
+	// 38b). It is here rather than folded into each plant's Danger because
+	// the two are different things: Danger is what the warning says, which is
+	// a reading of the world, and this is what the body would make of it,
+	// which is a fact about itself - the same split as Defence against a blow.
+	PoisonResist float64
+
 	// Drown is the chance this ground ends the agent within the tick (stage
 	// 34). Its own footing again, and nothing about the country ahead: an
 	// agent feels the current it is standing in, and finds out about the next
@@ -352,6 +359,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),
+		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
 		CourtedBy:         a.courtedBy,
 		CourtedTicksLeft:  w.courtAnswerLeft(a),

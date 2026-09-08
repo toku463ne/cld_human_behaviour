@@ -330,3 +330,48 @@ func TestTheRiverTeachesSwimmingAndNotRoughGoing(t *testing.T) {
 		t.Fatalf("the river taught %v about crossing broken country: water is its own skill", got)
 	}
 }
+
+// --- the fourth skill (stage 38b) -------------------------------------------
+
+// What a body can stomach turns aside part of the dose, and part of what it
+// makes of the warning - and the two are the same figure.
+func TestWhatABodyCanStomachCutsBothTheDoseAndTheFear(t *testing.T) {
+	cfg := quietConfig()
+	cfg.PlantDefence, cfg.PoisonDamage = true, 2
+	cfg.SkillBirthplace = 0.5
+	w := NewWorld(cfg)
+
+	green := skilled(t, w, 100, 100, 90, 0)
+	adept := skilled(t, w, 100, 100, 90, 0)
+	for _, a := range []*Agent{green, adept} {
+		a.Genome[GeneVitality] = 100
+	}
+	w.learnSkill(adept, SkillPoison, 1)
+
+	if got := w.poisonResist(adept); got != 1 {
+		t.Fatalf("a fully suited adept turns aside %v of a dose, want all of it", got)
+	}
+	if got := w.poisonResist(green); got != 0 {
+		t.Fatalf("somebody who knows nothing turns aside %v", got)
+	}
+	// And the body knows it about itself, which is what the fear is priced on.
+	if got := w.perceive(adept).Self.PoisonResist; got != 1 {
+		t.Fatalf("the adept believes it can stomach %v of what it can stomach", got)
+	}
+	// The warning itself is unchanged: reading is one thing, resisting another.
+	f := &Food{Kind: FoodPlant, Genes: plantGenes{Signal: 1}}
+	if a, b := w.dangerOf(adept, f), w.dangerOf(green, f); a <= 0 || b <= 0 {
+		t.Fatalf("the warning reads %v and %v: resisting is not reading", a, b)
+	}
+}
+
+// Nothing teaches it in a world whose plants carry nothing, the same way no
+// world without terrain teaches how to cross broken country.
+func TestACropWithNoDefencesTeachesNothingAboutPoison(t *testing.T) {
+	cfg := quietConfig()
+	cfg.SkillBirthplace = 0.5
+	plain := NewWorld(cfg)
+	if got := plain.skillFromBirthplace(SkillPoison, 100, 100); got != 0 {
+		t.Fatalf("a crop with no poison in it taught %v about poison", got)
+	}
+}

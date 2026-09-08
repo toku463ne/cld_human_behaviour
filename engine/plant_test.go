@@ -317,3 +317,83 @@ func TestPoisonAndWarningAreDrawnAndMutatedIndependently(t *testing.T) {
 		t.Fatalf("mutations move the two genes %v together, want them independent", moved)
 	}
 }
+
+// --- the two prices a plant can pay (stage 17b revived, 2026-09-08) ---------
+
+// Being loud costs seed: a plant that shouts writes less of the next
+// generation's defences. Without it the signal is a benefit with no price and
+// runs to the top.
+func TestShoutingCostsAPlantItsSeed(t *testing.T) {
+	cfg := testConfig()
+	cfg.PlantDefence = true
+	cfg.PlantSignalCost = 0.8
+	w := NewWorld(cfg)
+
+	quiet := &Food{Kind: FoodPlant, Genes: plantGenes{Signal: 0}}
+	loud := &Food{Kind: FoodPlant, Genes: plantGenes{Signal: 1}}
+	if !(w.defenceWeight(loud) < w.defenceWeight(quiet)) {
+		t.Fatalf("a loud plant weighs %v against a quiet one's %v",
+			w.defenceWeight(loud), w.defenceWeight(quiet))
+	}
+	// And with the price off they are worth exactly the same, which is the
+	// world stage 17b was first measured in.
+	w.cfg.PlantSignalCost = 0
+	if w.defenceWeight(loud) != w.defenceWeight(quiet) {
+		t.Fatal("with the price off, shouting still costs something")
+	}
+}
+
+// Being poisonous costs seed too, and the two prices multiply rather than
+// replace each other.
+func TestPoisonCostsAPlantItsSeed(t *testing.T) {
+	cfg := testConfig()
+	cfg.PlantDefence = true
+	cfg.PlantPoisonCost, cfg.PlantSignalCost = 0.8, 0.8
+	w := NewWorld(cfg)
+
+	plain := &Food{Kind: FoodPlant}
+	toxic := &Food{Kind: FoodPlant, Genes: plantGenes{Poison: 1}}
+	both := &Food{Kind: FoodPlant, Genes: plantGenes{Poison: 1, Signal: 1}}
+	if !(w.defenceWeight(toxic) < w.defenceWeight(plain)) {
+		t.Fatalf("poison is free: %v against %v", w.defenceWeight(toxic), w.defenceWeight(plain))
+	}
+	if !(w.defenceWeight(both) < w.defenceWeight(toxic)) {
+		t.Fatalf("the two prices do not stack: %v against %v",
+			w.defenceWeight(both), w.defenceWeight(toxic))
+	}
+}
+
+// A poisonous plant may be spat out: the eater takes the dose, gets nothing,
+// and the plant is still standing. It is the only way poison can ever be
+// selected for - and the measurement says it cannot be afforded, because what
+// it does to the world is take food out of it.
+func TestAPoisonousPlantMayBeSpatOut(t *testing.T) {
+	cfg := quietConfig()
+	cfg.PlantDefence = true
+	cfg.PlantPoisonSaves = 1
+	cfg.PoisonDamage = 2
+	w := NewWorld(cfg)
+
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90, Hunger: 60,
+		Genome: genomeOf(50, 50, 50)})
+	fid := w.addFood(100, 100)
+	f := w.foodByID(fid)
+	f.Kind, f.Genes = FoodPlant, plantGenes{Poison: 1}
+
+	a := mustAgent(t, w, id)
+	before := a.Hunger
+	w.eat(a, fid)
+
+	if a.Hunger != before {
+		t.Fatalf("hunger went from %v to %v: a bite that failed still fed it", before, a.Hunger)
+	}
+	if a.Vitality >= 90 {
+		t.Fatal("it spat the plant out and took no harm from what it had already bitten")
+	}
+	if w.foodByID(fid) == nil {
+		t.Fatal("the plant it could not eat is gone all the same")
+	}
+	if w.Stats().PlantsSpat != 1 {
+		t.Fatalf("%d failed bites counted, want 1", w.Stats().PlantsSpat)
+	}
+}

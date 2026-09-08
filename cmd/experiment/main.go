@@ -547,6 +547,92 @@ var variants = []variant{
 		apply: func(c *engine.Config) { c.PlantDefence, c.PoisonDamage = true, 2 },
 	},
 	{
+		name:  "poisonsaves",
+		about: "a poisonous plant may be spat out and left standing: the first thing poison ever did for the plant (17b revived)",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage, c.PlantPoisonSaves = true, 2, 1
+		},
+	},
+	{
+		name:  "poisoncost",
+		about: "shouting costs seed: the plant-side price the signal never had",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage, c.PlantSignalCost = true, 2, 0.8
+		},
+	},
+	{
+		name:  "poisonboth",
+		about: "both prices at once: poison saves the plant, and being loud costs it seed (17b as revived)",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage = true, 2
+			c.PlantPoisonSaves, c.PlantSignalCost = 1, 0.8
+		},
+	},
+	{
+		name:  "poisonpriced",
+		about: "both defences priced in seed: poison saves the plant and costs it, and so does shouting (17b revived)",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage = true, 2
+			c.PlantPoisonSaves, c.PlantSignalCost, c.PlantPoisonCost = 1, 0.8, 0.8
+		},
+	},
+	{
+		name:  "poisonpricedhard",
+		about: "the same with a dose that hurts: does the priced world hold at 8?",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage = true, 8
+			c.PlantPoisonSaves, c.PlantSignalCost, c.PlantPoisonCost = 1, 0.8, 0.8
+		},
+	},
+	{
+		name:  "poisonpricedonly",
+		about: "control: poison priced but shouting free - which price is doing the work?",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage = true, 2
+			c.PlantPoisonSaves, c.PlantPoisonCost = 1, 0.8
+		},
+	},
+	{
+		name:  "poisonbothhard",
+		about: "the same with a dose that hurts: does the revived world hold at 8?",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage = true, 8
+			c.PlantPoisonSaves, c.PlantSignalCost = 1, 0.8
+		},
+	},
+	{
+		name:  "poisontol",
+		about: "the revived crop (dose 2, shouting priced) and bodies that learn what they can stomach (38b)",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage, c.PlantSignalCost = true, 2, 0.8
+			c.SkillBirthplace = 0.5
+		},
+	},
+	{
+		name:  "poisontolloud",
+		about: "tolerance in the world where the crop still shouts (no signal price): is the fear what it was for?",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage = true, 2
+			c.SkillBirthplace = 0.5
+		},
+	},
+	{
+		name:  "poisontoldead",
+		about: "control: the tolerance is learned and takes the room, and turns nothing aside",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage, c.PlantSignalCost = true, 2, 0.8
+			c.SkillBirthplace, c.SkillPoisonRelief = 0.5, 0
+		},
+	},
+	{
+		name:  "poisontolnoteach",
+		about: "control: what a body can stomach is born with and inherited, not caught",
+		apply: func(c *engine.Config) {
+			c.PlantDefence, c.PoisonDamage, c.PlantSignalCost = true, 2, 0.8
+			c.SkillBirthplace, c.SkillsSpread = 0.5, false
+		},
+	},
+	{
 		name:  "noseedcarry",
 		about: "nothing survives being eaten: wind dispersal alone (17a without 17c)",
 		apply: func(c *engine.Config) { c.SeedSurvival = 0 },
@@ -1716,7 +1802,7 @@ var metricNames = []string{
 	"bankMoves", "bankBoth",
 	"speedHigh", "speedLow", "highGap",
 	"plantSpread", "plantRegrow", "plantClump", "plantEmpty", "seedsCarried",
-	"plantPoison", "plantSignal", "plantHonesty",
+	"plantPoison", "plantSignal", "plantHonesty", "plantSpitRate", "poisonDrain",
 	"allAsleep", "clockSpread",
 	"looksCorr", "looksCorrHuman", "looksCeiling",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
@@ -1726,6 +1812,7 @@ var metricNames = []string{
 	"skillBornRate", "skillCopyRate", "skillLeaps",
 	"forageHeld", "forageNominal", "forageReal",
 	"swimHeld", "swimNominal", "swimReal",
+	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"extinct",
 }
@@ -1883,6 +1970,7 @@ type sample struct {
 	skillHeld, skillNominal, skillReal, skillSlots, skillGap float64
 	forageHeld, forageNominal, forageReal                    float64
 	swimHeld, swimNominal, swimReal                          float64
+	tolHeld, tolNominal, tolReal                             float64
 }
 
 // perAgentLifetime converts a count of events into a rate per ten thousand
@@ -1980,6 +2068,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		skills := w.Skills(engine.SkillRough)
 		forage := w.Skills(engine.SkillForage)
 		swim := w.Skills(engine.SkillSwim)
+		tol := w.Skills(engine.SkillPoison)
 		shelter := w.Shelter()
 		rich := w.Richness()
 		known := w.RegionKnowledge()
@@ -2013,7 +2102,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			allAsleep:    vig.AllResting, clockSpread: vig.Spread,
 			looksCorr: looks.All, looksCorrHuman: looks.Within,
 			looksCeiling: looks.Ceiling,
-			swimHeld:     swim.Held, swimNominal: swim.Nominal,
+			tolHeld:      tol.Held, tolNominal: tol.Nominal,
+			tolReal:  tol.Realised,
+			swimHeld: swim.Held, swimNominal: swim.Nominal,
 			swimReal:   swim.Realised,
 			forageHeld: forage.Held, forageNominal: forage.Nominal,
 			forageReal: forage.Realised,
@@ -2210,6 +2301,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// And the second skill (stage 38b), which is capped by a different
 		// gene and seeded by what the ground provides rather than by what it
 		// is made of.
+		"tolHeld":        tail.tolHeld,
+		"tolNominal":     tail.tolNominal,
+		"tolReal":        tail.tolReal,
 		"swimHeld":       tail.swimHeld,
 		"swimNominal":    tail.swimNominal,
 		"swimReal":       tail.swimReal,
@@ -2343,8 +2437,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// What the crop is defended with. plantHonesty is the correlation
 		// between poison and warning across the standing crop: nothing in the
 		// rules ties them together, so whatever it says the world found.
-		"plantPoison":  tail.plantPoison,
-		"plantSignal":  tail.plantSignal,
+		"plantPoison":   tail.plantPoison,
+		"plantSignal":   tail.plantSignal,
+		"plantSpitRate": perAgentLifetime(end.PlantsSpat-tailStart.PlantsSpat, personTicks),
+		// What the crop takes off a body per tick of being alive, so that it
+		// can be held against what a body recovers in the same tick
+		// (RegenRate, 0.09). It is the ceiling on what any defence against it
+		// could be worth.
+		"poisonDrain":  drain(end.PoisonLoss-tailStart.PoisonLoss, personTicks),
 		"plantHonesty": tail.plantHonesty,
 		// Stage 18. allAsleep is the share of groups caught with everybody
 		// asleep at once; clockSpread is how varied the population's hours
@@ -2487,6 +2587,9 @@ func tailAverage(series []sample) sample {
 		out.looksCorr += s.looksCorr
 		out.looksCorrHuman += s.looksCorrHuman
 		out.looksCeiling += s.looksCeiling
+		out.tolHeld += s.tolHeld
+		out.tolNominal += s.tolNominal
+		out.tolReal += s.tolReal
 		out.swimHeld += s.swimHeld
 		out.swimNominal += s.swimNominal
 		out.swimReal += s.swimReal
@@ -2589,6 +2692,9 @@ func tailAverage(series []sample) sample {
 	out.looksCorr /= d
 	out.looksCorrHuman /= d
 	out.looksCeiling /= d
+	out.tolHeld /= d
+	out.tolNominal /= d
+	out.tolReal /= d
 	out.swimHeld /= d
 	out.swimNominal /= d
 	out.swimReal /= d
@@ -2744,6 +2850,23 @@ func whoStandsWhere(w *engine.World) groundSplit {
 		out.high, out.low = 0, 0
 	}
 	return out
+}
+
+// drain is a quantity of vitality spread over the person-ticks it was taken
+// across: what it costs a body per tick of being alive.
+// cfgOf is the config an arm actually ran with, for the metrics that have to
+// divide by one of its figures.
+func cfgOf(v variant) engine.Config {
+	cfg := engine.DefaultConfig()
+	v.apply(&cfg)
+	return cfg
+}
+
+func drain(total, personTicks float64) float64 {
+	if personTicks <= 0 {
+		return 0
+	}
+	return total / personTicks
 }
 
 // share is what fraction of the deaths were killings. It is the headline

@@ -129,26 +129,56 @@ func (w *World) inheritPlantGenes(parent plantGenes) plantGenes {
 // where plants come up, not what they pass on, so the defences can be
 // inherited on a map that still puts plants where the ground is good.
 func (w *World) defenceParent() (plantGenes, bool) {
-	n := 0
+	total := 0.0
 	for i := range w.foods {
 		if w.foods[i].Kind == FoodPlant {
-			n++
+			total += w.defenceWeight(&w.foods[i])
 		}
 	}
-	if n == 0 {
+	if total <= 0 {
 		return plantGenes{}, false
 	}
-	k := w.rng.Intn(n)
+	r := w.rng.Float64() * total
 	for i := range w.foods {
 		if w.foods[i].Kind != FoodPlant {
 			continue
 		}
-		if k == 0 {
+		r -= w.defenceWeight(&w.foods[i])
+		if r <= 0 {
 			return w.foods[i].Genes, true
 		}
-		k--
 	}
 	return plantGenes{}, false
+}
+
+// defenceWeight is how much of the next generation's defences one standing
+// plant gets to write.
+//
+// One is the plain uniform draw the rule started with, and what the world had
+// when stage 17b was first measured: nothing weighted the draw, so a plant's
+// only way of being picked more often was to still be there. That turned out
+// to leave the two genes with nothing to be selected on but survival, and
+// survival did not depend on either of them: poison did not save an eaten
+// plant, and shouting only ever cost nothing.
+//
+// PlantSignalCost is the plant's side of the bargain (the condition
+// PARAMETERS.md wrote down for reviving this stage): being conspicuous is paid
+// for in seed. Without it the signal has a benefit and no price, runs to the
+// top, and every plant in the world says "do not eat me" - which at a dose
+// that matters is a population that starves next to its food.
+// PlantPoisonCost is the same bargain for the other gene, and it is needed for
+// the same reason in reverse: once poison saves a plant from being eaten
+// (PlantPoisonSaves) it is a benefit with no price, and a crop that is three
+// quarters poisonous is a field nobody can eat.
+func (w *World) defenceWeight(f *Food) float64 {
+	weight := 1.0
+	if w.cfg.PlantSignalCost > 0 {
+		weight *= math.Max(1-f.Genes.Signal*w.cfg.PlantSignalCost, 0)
+	}
+	if w.cfg.PlantPoisonCost > 0 {
+		weight *= math.Max(1-f.Genes.Poison*w.cfg.PlantPoisonCost, 0)
+	}
+	return weight
 }
 
 // dangerOf is what an eater makes of a plant: the warning it can see, read with

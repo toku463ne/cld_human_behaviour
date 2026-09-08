@@ -59,6 +59,19 @@ const (
 	// the crossing cheaper would be a skill about a thing nobody does.
 	SkillSwim
 
+	// SkillPoison is knowing what not to eat, and how much of it a body can
+	// take: the fourth. What it does is lower the dose a plant's poison
+	// delivers, and - because a body knows its own stomach - lower what it
+	// prices the warning at (stage 17b, diet and controller).
+	//
+	// It is the first skill whose subject is not written on the map. Rough
+	// going is what the ground is made of, foraging what it provides,
+	// swimming how much of it is water; poison is carried by the plants, and
+	// the plants are everywhere. What a newborn reads is therefore the crop
+	// standing in the region it was born in - the same shape as the other
+	// three, pointed at the thing this skill is about.
+	SkillPoison
+
 	NumSkillKinds
 )
 
@@ -70,6 +83,8 @@ func (s SkillKind) String() string {
 		return "foraging"
 	case SkillSwim:
 		return "swimming"
+	case SkillPoison:
+		return "poison"
 	}
 	return "none"
 }
@@ -235,8 +250,26 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 			return 0
 		}
 		share = w.regionWaterShare(i)
+	case SkillPoison:
+		// What the crop standing in that region is carrying. A world whose
+		// plants have no defences teaches nobody anything about them, the
+		// same way a world with no map teaches nobody about broken country.
+		if !w.cfg.PlantDefence {
+			return 0
+		}
+		share = w.regionPoison(i)
 	}
 	return clamp(share*w.cfg.SkillBirthplace, 0, 1)
+}
+
+// poisonResist is how much of a dose this body escapes, from 0 to 1. It is the
+// one figure the two halves of the skill share: what the stomach turns aside,
+// and what the body therefore knocks off the warning when it decides.
+func (w *World) poisonResist(a *Agent) float64 {
+	if w.cfg.SkillPoisonRelief <= 0 {
+		return 0
+	}
+	return clamp(a.skillAt(&w.cfg, SkillPoison)*w.cfg.SkillPoisonRelief, 0, 1)
 }
 
 // learnFromBirthplace hands a new body whatever the country it arrived in has
@@ -313,6 +346,25 @@ func (w *World) leapSkill(a *Agent) {
 		}
 		pick--
 	}
+}
+
+// regionPoison is how poisonous the plants standing in a region are, on
+// average. Zero when nothing is growing there: an empty region has nothing to
+// teach.
+func (w *World) regionPoison(i int) float64 {
+	var sum, n float64
+	for k := range w.foods {
+		f := &w.foods[k]
+		if f.Kind != FoodPlant || w.regionIndexAt(f.X, f.Y) != i {
+			continue
+		}
+		sum += f.Genes.Poison
+		n++
+	}
+	if n == 0 {
+		return 0
+	}
+	return sum / n
 }
 
 // --- reading it out ---------------------------------------------------------
