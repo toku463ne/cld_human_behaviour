@@ -49,6 +49,57 @@ func (w *World) Terrain() []string {
 // raising one region lowers everybody else's share of the same total. That is
 // stage 15a's rule and it holds here: an editor can move the food about and
 // cannot conjure any.
+// Inspire is the genius event, done by hand: the one thing an administrator
+// can give a node that is not the ground under it (stage 22's leftover).
+//
+// It does exactly what a genius birth does to what a body has learned, and
+// nothing else. One more room for an idea, if the body is under the world's
+// cap - paid for with new budget, the way Endow pays, so that nothing is
+// quietly taken out of the genes to fund it - and a leap at whatever skill the
+// body already has. It cannot invent a skill nobody in the world has needed,
+// for the same reason a genius birth cannot: a leap goes further at a thing,
+// it does not conjure the thing.
+//
+// It draws no random number, which is the whole reason it is written this way.
+// A genius birth picks a new idea out of the air, and an editor that did the
+// same would change what the world was going to do next; the empty room this
+// leaves is the deterministic half of the same event, and somebody else's idea
+// is what fills it (exchangeHints).
+//
+// It returns the budget it added, so an interface can say that this was not
+// the world's doing.
+func (w *World) Inspire(id int) (added float64, err error) {
+	a := w.agentByID(id)
+	if a == nil || !a.Alive {
+		return 0, fmt.Errorf("no such node: %d", id)
+	}
+	if a.hintSlots < w.cfg.HintSlots {
+		a.hintSlots++
+		added = w.hintCost(1)
+		if added > 0 {
+			// New budget rather than a redistribution: an administrator's
+			// gift must not make the body quietly worse at something it was
+			// never asked about (endow.go).
+			fitBudget(a.Genome, a.Budget()+added)
+		}
+	}
+	best, kind := 0.0, SkillNone
+	for i := range a.hints {
+		if h := &a.hints[i]; h.Skill != SkillNone && h.Mastery >= best {
+			best, kind = h.Mastery, h.Skill
+		}
+	}
+	if kind != SkillNone && w.cfg.SkillGeniusJump > 0 {
+		if w.learnSkill(a, kind, best+w.cfg.SkillGeniusJump) {
+			w.skillsLeapt++
+		}
+	}
+	if added == 0 && kind == SkillNone {
+		return 0, fmt.Errorf("node %d has all the room it can have and nothing to be a genius at", id)
+	}
+	return added, nil
+}
+
 func (w *World) SetRegion(i int, shelter, food float64) error {
 	if i < 0 || i >= len(w.regions) {
 		return fmt.Errorf("there is no region %d (the world has %d)", i, len(w.regions))

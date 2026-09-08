@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // The editor's hands change the world and nothing else: the same tick, the
 // same bodies, and the same next number out of the generator.
@@ -122,5 +125,58 @@ func TestDifficultyMovesOnlyTheBudget(t *testing.T) {
 	if w.cfg.GeneBudgetMean != std.GeneBudgetMean || w.cfg.GeneBudgetStd != std.GeneBudgetStd {
 		t.Fatalf("the measured preset is %v/%v and the default is %v/%v",
 			w.cfg.GeneBudgetMean, w.cfg.GeneBudgetStd, std.GeneBudgetMean, std.GeneBudgetStd)
+	}
+}
+
+// The genius event by hand: one more room for an idea, paid for with new
+// budget, and a leap at whatever the body already knows (stage 22's leftover).
+func TestInspireGivesRoomAndALeap(t *testing.T) {
+	cfg := quietConfig()
+	cfg.SkillBirthplace = 0.5
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)})
+	a := mustAgent(t, w, id)
+	a.hintSlots = 1
+	w.learnSkill(a, SkillForage, 0.3)
+
+	budget, slots := a.Budget(), a.hintSlots
+	added, err := w.Inspire(id)
+	if err != nil {
+		t.Fatalf("inspiring a node: %v", err)
+	}
+	a = mustAgent(t, w, id)
+	if a.hintSlots != slots+1 {
+		t.Fatalf("rooms went from %d to %d, want one more", slots, a.hintSlots)
+	}
+	if added <= 0 || math.Abs(a.Budget()-(budget+added)) > 1e-6 {
+		t.Fatalf("the room cost %v and the body went from %v to %v: it must be paid for with new budget",
+			added, budget, a.Budget())
+	}
+	if got := a.nominalSkill(SkillForage); got <= 0.3 {
+		t.Fatalf("it knows %v of what it knew 0.30 of: a genius goes further", got)
+	}
+}
+
+// It cannot conjure a skill nobody has needed, and it draws no random number -
+// an editor must not change what the world was going to do next.
+func TestInspireInventsNothingAndDrawsNothing(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Seed = 5
+	quiet, edited := NewWorld(cfg), NewWorld(cfg)
+	for i := 0; i < 200; i++ {
+		quiet.Step()
+		edited.Step()
+	}
+	id := edited.Agents()[0].ID
+	if _, err := edited.Inspire(id); err != nil {
+		t.Fatalf("inspiring: %v", err)
+	}
+	if a := edited.agentByID(id); a.nominalSkill(SkillRough) != 0 {
+		t.Fatal("a flat world has nothing to be a genius at crossing, and one was invented")
+	}
+	if quiet.draws.draws != edited.draws.draws {
+		t.Fatalf("the edited world drew %d random numbers against %d: an edit must draw none",
+			edited.draws.draws, quiet.draws.draws)
 	}
 }

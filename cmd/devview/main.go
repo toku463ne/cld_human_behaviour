@@ -162,16 +162,25 @@ type game struct {
 	// stops to ask at the turning points. Both are Controller implementations
 	// and the world cannot tell them apart, so all that is kept here is which
 	// one is installed.
-	play    playMode
-	played  int
-	human   *engine.HumanController
-	guided  *engine.GuidedController
-	effort  float64
-	stance  engine.Stance
-	mark    mark
-	heir    int // the child the line is to continue through, 0 for none
-	notice  string
-	noticed int // tick the notice was put up
+	play   playMode
+	played int
+
+	// raisedAt is the tick the player last raised a question of their own
+	// (TODO 19b). Orders are not rate limited - an order is new information
+	// and the node should act on it at once - but asking a node to think
+	// again adds nothing, and pressing it every tick reopens by hand the hole
+	// stage 13 closed in the world's own triggers: an agent that re-decides
+	// constantly draws fresh judgement noise each time and oscillates between
+	// near-tied options instead of carrying anything out.
+	raisedAt int
+	human    *engine.HumanController
+	guided   *engine.GuidedController
+	effort   float64
+	stance   engine.Stance
+	mark     mark
+	heir     int // the child the line is to continue through, 0 for none
+	notice   string
+	noticed  int // tick the notice was put up
 
 	// Stage 23. askedAt is the tick of the question the viewer has already
 	// stopped for, so that one question stops it once. was is the state of the
@@ -499,7 +508,7 @@ func (g *game) toggleEditor() {
 			g.say("a blank map to draw on. F3 to close, click to paint")
 			return
 		}
-		g.say("editing: click to paint, 1-0 pick a brush, F3 to close")
+		g.say("editing: click to paint, 1-0 pick a brush, g makes a genius, F3 to close")
 		return
 	}
 	g.paused = !g.wasRun
@@ -542,6 +551,8 @@ func (g *game) handleEditorInput() {
 		g.nudgeTunable(-1)
 	case inpututil.IsKeyJustPressed(ebiten.KeyD):
 		g.cycleDifficulty()
+	case inpututil.IsKeyJustPressed(ebiten.KeyG):
+		g.inspire()
 	case inpututil.IsKeyJustPressed(ebiten.KeySpace), inpututil.IsKeyJustPressed(ebiten.KeyRight):
 		// One tick, to see what the change did. The editor does not run the
 		// world; it lets it move one step at a time.
@@ -553,6 +564,27 @@ func (g *game) handleEditorInput() {
 			g.paint(mx, my)
 		}
 	}
+}
+
+// inspire is the genius event by hand, on whoever is selected (stage 22's
+// leftover). The engine does the whole of it; this only says what happened and
+// whose doing it was, the way the boost to a played body does.
+func (g *game) inspire() {
+	if g.selected == 0 {
+		g.say("click a node first: a genius is somebody, not somewhere")
+		return
+	}
+	added, err := g.world.Inspire(g.selected)
+	if err != nil {
+		g.say("%v", err)
+		return
+	}
+	if added > 0 {
+		g.say("#%d has room for one more idea (+%.0f budget, not the world's doing)",
+			g.selected, added)
+		return
+	}
+	g.say("#%d goes further at what it already knows (not the world's doing)", g.selected)
 }
 
 // paint lays the current brush on whatever is under the cursor.
@@ -717,9 +749,7 @@ func (g *game) handlePlayInput() {
 		// Ask for the question rather than answering one: this is the only
 		// way a player gets a decision out of turn, and it goes through the
 		// same trigger machinery as everything else.
-		if g.world.RequestDecision(g.played) {
-			g.say("asked #%d to think again", g.played)
-		}
+		g.askToThinkAgain()
 	case inpututil.IsKeyJustPressed(ebiten.KeyS):
 		g.stance = (g.stance + 1) % engine.Stance(engine.NumStances)
 		g.say("stance %s (fighting orders only)", g.stance)
@@ -1478,9 +1508,7 @@ func (g *game) handleAskedInput() {
 	if enter {
 		// The one question a person raises themselves. Without it the only
 		// thing to do between turning points is watch.
-		if g.world.RequestDecision(g.played) {
-			g.say("asked #%d what it is thinking", g.played)
-		}
+		g.askToThinkAgain()
 	}
 
 }
@@ -2575,6 +2603,35 @@ func (g *game) drawSight(screen *ebiten.Image) {
 	minX, minY, maxX, maxY := g.world.SightBlock(a.X, a.Y)
 	sx, sy := g.onScreen(minX, minY)
 	vector.StrokeRect(screen, sx, sy, g.long(maxX-minX), g.long(maxY-minY), 2, colorSight, false)
+}
+
+// askEvery is the shortest gap between two questions a player may raise, in
+// ticks.
+//
+// Fifteen because that is about how often the world asks an ordinary node
+// anyway (stage 23 counted one decision every 14.5 ticks), so a player may be
+// as impatient as the world is and no more. It is a knob on the interface and
+// not on the world: what a trigger costs is the engine's business, how often a
+// person may pull one is the game's.
+const askEvery = 15
+
+// askToThinkAgain raises the one question a player can raise, no more often
+// than the world would have asked anyway (TODO 19b).
+//
+// Orders are deliberately not limited this way. An order is new information
+// and the node should act on it at once; asking it to think again is not, and
+// pressing that every tick reopens by hand the hole stage 13 closed - an agent
+// that re-decides constantly draws fresh judgement noise each time and
+// oscillates between near-tied options instead of carrying anything out.
+func (g *game) askToThinkAgain() {
+	if since := g.world.Tick() - g.raisedAt; g.raisedAt != 0 && since < askEvery {
+		g.say("it is still thinking about the last one (%d ticks)", askEvery-since)
+		return
+	}
+	if g.world.RequestDecision(g.played) {
+		g.raisedAt = g.world.Tick()
+		g.say("asked #%d what it is thinking", g.played)
+	}
 }
 
 // markTarget rings whatever the selected node is currently acting on, so that
