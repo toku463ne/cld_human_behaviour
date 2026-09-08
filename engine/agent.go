@@ -159,6 +159,11 @@ type Agent struct {
 	// takes to be alright, which is what the slow lifespan cost is charged on.
 	frailTicks int
 
+	// drowned says the ground took this one, and is read once, by kill, so
+	// that the death is not also counted as a killing (stage 34). It lives
+	// only for the tick the body dies in, which is why it is not saved.
+	drowned bool
+
 	State  State
 	Action Action
 
@@ -364,6 +369,23 @@ func (a *Agent) isKin(otherID int) bool {
 		return true
 	}
 	return slices.Contains(a.ChildIDs, otherID)
+}
+
+// declaredFor is what this agent has taken on and anybody watching can see:
+// what it is calling others in against, or what it is already fighting.
+//
+// It is read off the current action and stored nowhere, exactly as
+// AttackingMe and CourtingMe are. A call that outlasted the calling would be a
+// piece of state that could go stale - an agent that called and then wandered
+// off would still be advertising a hunt - and it would have to be saved,
+// cleared and reasoned about. There is no gap for it to fill: going in after
+// what it called about is itself a declaration.
+func (a *Agent) declaredFor() int {
+	switch a.Action.Kind {
+	case ActInvite, ActAttack:
+		return a.Action.TargetID
+	}
+	return 0
 }
 
 // noteHit records a blow for the purpose of who has a claim on the carcass.

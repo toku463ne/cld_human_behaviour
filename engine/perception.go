@@ -121,6 +121,13 @@ type SelfView struct {
 	// A player is shown the same figure and no more (stage 19).
 	Ground float64
 
+	// Drown is the chance this ground ends the agent within the tick (stage
+	// 34). Its own footing again, and nothing about the country ahead: an
+	// agent feels the current it is standing in, and finds out about the next
+	// river by walking into it. Knowing which places are dangerous before
+	// going there is what a later stage buys with hearing about it.
+	Drown float64
+
 	// Covered is set when whoever is currently hitting this agent is hitting
 	// it from below (stage 30), so that the estimate of what the next few
 	// ticks will cost knows the ground is helping. Nothing when nobody is
@@ -231,6 +238,17 @@ type AgentView struct {
 	AttackingMe bool
 	CourtingMe  bool
 
+	// DeclaredFor is what this one has declared itself against: the target it
+	// is calling others in to bring down, or the one it is already hitting
+	// (stage 32). Zero when it has taken nothing on.
+	//
+	// It is the same kind of fact as the two above, seen from the side rather
+	// than from in front: an animal shouting at a carcass, or one already in a
+	// fight, is doing something anybody watching can see. Nothing hidden is in
+	// here - not how hard it will fight, not whether it will still be there in
+	// ten ticks. Whether to count on it is what trust is for.
+	DeclaredFor int
+
 	// Uphill is set when this agent is standing a level or more above the one
 	// looking at it (stage 30), which is what makes it harder to hit. It is a
 	// relation and not a property - the first thing in this perception that
@@ -304,6 +322,8 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Foods = p.Foods[:0]
 	p.Others = p.Others[:0]
 
+	ground := w.terrainAt(a.X, a.Y)
+
 	p.Self = SelfView{
 		ID:           a.ID,
 		X:            a.X,
@@ -331,7 +351,8 @@ func (w *World) perceive(a *Agent) *Perception {
 		ShockRisk:         a.lore.shockRisk,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
-		Ground:            w.terrainAt(a.X, a.Y).Cost,
+		Ground:            ground.Cost,
+		Drown:             drownFelt(&w.cfg, ground),
 		CourtedBy:         a.courtedBy,
 		CourtedTicksLeft:  w.courtAnswerLeft(a),
 		MateValue:         fitness(a, &w.cfg),
@@ -442,6 +463,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Rejected:    a.isRejected(o.ID),
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
 			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
+			DeclaredFor: o.declaredFor(),
 			Uphill:      w.terrainAt(o.X, o.Y).Height > w.terrainAt(a.X, a.Y).Height,
 			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
 			Uncertainty: variance,
@@ -496,4 +518,14 @@ func (w *World) noise(unit, scale float64) float64 {
 		return w.rng.NormFloat64() * std
 	}
 	return 0
+}
+
+// drownFelt is what an agent makes of how dangerous its footing is: the truth,
+// or nothing at all in the arm that takes the feeling away and leaves the
+// water exactly as deadly (stage 34).
+func drownFelt(cfg *Config, ground terrain) float64 {
+	if !cfg.DrownKnown {
+		return 0
+	}
+	return ground.Drown
 }

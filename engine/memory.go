@@ -346,23 +346,41 @@ func (w *World) addAffinity(a *Agent, otherID int, amount float64, forced bool) 
 // does come away with either way is the impression - a body of that size hit
 // that hard - because that costs no room (appearance.go).
 func (w *World) observeStrength(observer *Agent, target *Agent, obsVariance float64) {
+	w.takeReading(observer, target, obsVariance, true)
+}
+
+// takeReading is the same with a say in whether the reading also goes into the
+// observer's picture of what a build is worth (appearance.go).
+//
+// It is split out for stage 31, where a killing is watched by everybody in
+// sight and the readings are therefore many and drawn only from those who
+// have just killed. What that does to a line fitted to them is a question the
+// measurement has to be able to ask, and it cannot ask it if the two channels
+// are welded together.
+// It reports whether the reading was actually folded in. A great many are not
+// - a memory that is full of people who matter, or a tick's worth of taking
+// things in already spent, and the reading is watched and lost - and how often
+// that happens is the ceiling on what any rule that teaches for free can do.
+func (w *World) takeReading(observer *Agent, target *Agent, obsVariance float64, teachLooks bool) bool {
 	if observer.ID == target.ID {
-		return
+		return false
 	}
 	noiseStd := (MaxAbility - observer.Rationality(&w.cfg)) / MaxAbility * w.cfg.JudgementNoise
 	reading := target.Attack(&w.cfg) + w.rng.NormFloat64()*noiseStd
-	w.learnFromLooks(observer, target, reading)
+	if teachLooks {
+		w.learnFromLooks(observer, target, reading)
+	}
 
 	// Taking a reading is taking something in, whether or not the observer
 	// had heard of the target before, so it costs the same either way.
 	op := observer.opinion(target.ID)
 	if op == nil {
 		if op = w.recordOpinion(observer, target.ID); op == nil {
-			return
+			return false
 		}
 	} else {
 		if !w.hasMemoryBudget(observer) {
-			return
+			return false
 		}
 		w.spendMemory(observer)
 	}
@@ -373,6 +391,7 @@ func (w *World) observeStrength(observer *Agent, target *Agent, obsVariance floa
 	op.Strength += k * (reading - op.Strength)
 	op.Variance *= 1 - k
 	op.Samples++
+	return true
 }
 
 // --- reading the state of everybody's memory --------------------------------

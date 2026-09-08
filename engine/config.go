@@ -173,6 +173,59 @@ type Config struct {
 	// what a level buys is the advantage itself.
 	HighGroundCover float64
 
+	// WatersideFood makes the ground beside water grow more of it (stage 36).
+	// Positive is the river bank of the real world - the one piece of country
+	// that is not simply worse for being dear - and negative is the other
+	// landscape, where the water is a barren strip.
+	//
+	// A term of its own rather than part of TerrainFoodCorrelation (#62): the
+	// two say opposite things about the same ground (hard country is poor;
+	// the bank is rich), and folded into one multiplier a map's author could
+	// not ask for both.
+	//
+	// Zero is the world before this stage, and so is any value in a world
+	// with no map. Like stage 33 it moves the food and does not add any: the
+	// regions are scaled back to the total they had.
+	//
+	// The default is zero for the reason stage 33's is: which landscape this
+	// is belongs to whoever draws the map, and making it a rule of the world
+	// would mean no recorded measurement could be reproduced from any arm.
+	WatersideFood float64
+
+	// What an agent makes of how dangerous a region is (stage 35).
+	//
+	// RegionDangerTicks is how long a stay the belief is priced for. The
+	// chance itself is believed in the units the ground carries (a chance per
+	// tick), and the comparison between one piece of country and another runs
+	// in food-in-sight, so something has to convert. Nothing is invented for
+	// it: the chance is priced exactly as the hazard underfoot is priced in
+	// the utility formula - the chance, times the ticks it is run for, times
+	// LifeValue - and this is the ticks. Zero turns the belief out of the
+	// comparison while leaving it formed, which is the arm that says what
+	// knowing is worth.
+	//
+	// The default is a planning horizon, which is what every other "how far
+	// ahead is this agent reckoning" in the world comes to.
+	RegionDangerTicks float64
+
+	// RegionDangerTold says whether the danger travels between agents on the
+	// same trade the rest of the country does (stage 35). False leaves it
+	// learnable only by having been there, which is the control that says
+	// what handing it on adds - the same pair stages 15c and 29b were
+	// measured with.
+	RegionDangerTold bool
+
+	// DrownWitnessLooks is how many ordinary looks at a region seeing
+	// somebody drown in it is worth (stage 35). It is the whole of "the
+	// drowning is news": without it an agent can only learn that water kills
+	// by standing in it, and the ones it kills do not come back to say so.
+	//
+	// Heavier than a look because a death is worth more than a stroll, and
+	// weighed in looks rather than in a new unit so that there is only one
+	// scale in this belief. Zero turns witnessing off and leaves the belief
+	// to first-hand experience.
+	DrownWitnessLooks float64
+
 	// TerrainFoodCorrelation ties where the plants come up to how hard the
 	// ground is to cross (stage 33). Positive is the ordinary reading of a
 	// landscape - broken country is also poor country - and negative is the
@@ -531,6 +584,80 @@ type Config struct {
 	// nothing either.
 	AffinityHunt float64
 
+	// AffinityWitnessKill is what an onlooker comes to think of somebody it
+	// has just watched kill a creature of another kind (stage 31).
+	//
+	// It is the third party's version of AffinityHunt: that one is earned by
+	// being on the carcass's claim, this one by having been there to see it.
+	// Which way the sign goes is not a second rule - see witnessKill - and
+	// the record is taken only if there is room for it, the way a trade of
+	// assumptions is: seeing something happen is not the same as having it
+	// done to you, and it must not throw out somebody who matters.
+	//
+	// Zero turns the affinity half of stage 31 off; how often it had the
+	// chance to fire is counted either way.
+	AffinityWitnessKill float64
+
+	// KillWitnessFactor is how much coarser a reading taken from watching
+	// somebody kill is than one an agent paid ActObserve for (stage 31). It
+	// multiplies the variance of an onlooker's reading, so above one is worth
+	// less than a look and below one would be worth more.
+	//
+	// It must stay above one. Observing costs vitality and time and can only
+	// be spent on one person at a time, and a world where standing there and
+	// seeing it happen teaches as much is a world where nobody would ever
+	// choose to watch anybody (#55). The share of decisions that are
+	// ActObserve is measured for exactly this reason.
+	//
+	// Zero turns the reading half of stage 31 off.
+	KillWitnessFactor float64
+
+	// --- calling others in (stage 32) ---
+
+	// CallTicks is how long the calling itself takes and how long the call
+	// stands afterwards. Zero takes the word out of the vocabulary: no agent
+	// is offered the option and none is ever seen calling, which is the arm
+	// the whole stage is measured against.
+	CallTicks int
+
+	// AllyTrustWeight is how much of somebody else's strength counts towards
+	// a fight this agent is thinking about, when that somebody has declared
+	// for the same target - by calling for it, or by already hitting it.
+	//
+	// What it is multiplied by is trust, not affinity: an ally is worth its
+	// strength times how sure this agent is that it will still be there when
+	// the blows land (Affinity/AffinityTrust, the figure resting already uses
+	// - see #56). That is the whole of the rule. There is no bonus for
+	// joining in, no threshold above which an invitation is accepted, and no
+	// gene for being cooperative: whether to come is scored by the same
+	// comparison as everything else, and what the affinity does is make the
+	// arithmetic of a shared fight add up.
+	//
+	// Zero means nobody is ever counted on, which leaves the invitation
+	// pointless but still spoken - the two halves are measured apart.
+	AllyTrustWeight float64
+
+	// AllyPreyOnly restricts who may be counted on to fights against another
+	// kind of creature - a hunt rather than a quarrel.
+	//
+	// It is here to answer one question the measurement asked: the rule was
+	// written for bringing something down together, but nothing in it says
+	// the target has to be prey, so two agents ganging up on a third get the
+	// same arithmetic. Which of the two the world actually got its gain from
+	// is not a thing to reason about from an armchair.
+	AllyPreyOnly bool
+
+	// KillWitnessLooks says whether a reading taken from watching a killing
+	// also goes into what that agent thinks a build says about a blow
+	// (appearance.go), the way every other reading does.
+	//
+	// It has a switch of its own because the readings from a killing are the
+	// only ones in the world that are not a sample of who is about: every one
+	// of them is of somebody who has just won a fight. Stage 10 found that
+	// nearly all of what the line is worth is in its level - what the average
+	// body hits like - and a level learned from winners is not that average.
+	KillWitnessLooks bool
+
 	// --- utility weights ---
 	//
 	// Every action is scored with the same formula:
@@ -777,6 +904,34 @@ type Config struct {
 	RoughMoveCost float64
 	WaterMoveCost float64
 	SlopeMoveCost float64
+
+	// DrownChancePerTick is the chance that a tick spent in the water is the
+	// last one (stage 34). It is what makes a river something other than a
+	// dear stretch of ground: the first thing the country itself does that
+	// kills.
+	//
+	// A chance of dying outright rather than damage that accumulates, for
+	// three reasons. It adds no multiplication to power or defence, so no
+	// ability takes on a second role. It rewards the speed an agent already
+	// has without inventing a swimming one: crossing in fewer ticks is
+	// throwing the dice fewer times. And it needs no threshold anywhere -
+	// whether to go into the water comes out of the same comparison as
+	// everything else, with the chance priced into the options that would
+	// keep the body there (controller.go).
+	//
+	// Zero is the world before this stage, and so is any value in a world
+	// with no map: a flat world has no water in it, draws no random number
+	// here and runs identically.
+	DrownChancePerTick float64
+
+	// DrownKnown says whether an agent feels how dangerous the ground it is
+	// standing on is (stage 34). True is the ordinary world: the chance is in
+	// Perception.Self.Drown and priced into every option that would keep the
+	// body there. False leaves the water just as deadly and the agent unable
+	// to reckon with it at all, which is the control arm that says how much
+	// of what changes is the choosing and how much is simply the ones who
+	// stayed in the river being gone.
+	DrownKnown bool
 
 	// CourtAnswerTicks is how long a suitor stands and waits when the one it
 	// has proposed to answers proposals for itself (a person, that is: no AI
@@ -1064,6 +1219,14 @@ func DefaultConfig() Config {
 
 		// Two food items in sight is worth about as much as ground that costs
 		// twice as much to cross. A first guess, to be swept (stage 29).
+		// A planning horizon's worth of stay, which is what the rest of the
+		// world reckons over. See HISTORY.md, 2026-09-07.
+		WatersideFood: 0, // the landscape's own business; see HISTORY.md, 2026-09-07
+
+		RegionDangerTicks: 700,
+		RegionDangerTold:  true,
+		DrownWitnessLooks: 20,
+
 		RegionCostWeight:        2.0,
 		RegionCostForgetPerTick: 0, // the country does not move
 		RegionCostTold:          true,
@@ -1165,6 +1328,11 @@ func DefaultConfig() Config {
 		AffinityBirth:        18,
 		AffinityKin:          22,
 		AffinityHunt:         6,
+		AffinityWitnessKill:  2,
+		KillWitnessFactor:    2,
+		KillWitnessLooks:     true,
+		CallTicks:            30,
+		AllyTrustWeight:      1,
 		AffinityDecayPerTick: 0.0008,
 		AffinityTrust:        20,
 
@@ -1232,6 +1400,15 @@ func DefaultConfig() Config {
 		RoughMoveCost: 2.0,
 		WaterMoveCost: 3.0,
 		SlopeMoveCost: 2.0,
+
+		// Calibrated against how long a body actually spends in the water,
+		// which was counted before the rule was written: about a seventh of
+		// all agent-ticks on the river map, in stays averaging 127 ticks. At
+		// this rate a stay of that length is survived nineteen times in
+		// twenty and drowning is a few per cent of all deaths - see
+		// HISTORY.md, 2026-09-07.
+		DrownChancePerTick: 0.0002,
+		DrownKnown:         true,
 
 		// Long enough to read the proposal and decide, short enough that a
 		// player who has walked away does not hold a stranger in place. The

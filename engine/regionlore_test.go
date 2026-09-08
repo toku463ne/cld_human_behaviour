@@ -374,3 +374,232 @@ func TestAFlatWorldLearnsNothingAboutTheGoing(t *testing.T) {
 		t.Fatalf("a region is worth %v rather than the %v it sees, on flat ground", got, 4.0)
 	}
 }
+
+// --- stage 35: where the ground kills ---------------------------------------
+
+// A world of two halves: dry in the west, a river down the east. Regions are
+// the default four by three over 800 by 600, so the water lies wholly in the
+// eastern column and nothing in the west is dangerous.
+func drownCountryConfig() Config {
+	cfg := quietConfig()
+	cfg.RegionNoise = 0
+	cfg.Width, cfg.Height = 800, 600
+	cfg.DrownChancePerTick = 0.01
+	cfg.TerrainMap = []string{
+		"......~~",
+		"......~~",
+		"......~~",
+	}
+	return cfg
+}
+
+// An agent learns how dangerous the ground it stands in is, in the same units
+// the world holds it, and nothing about the ground it has not stood in.
+func TestAnAgentLearnsHowDangerousItsOwnGroundIs(t *testing.T) {
+	cfg := drownCountryConfig()
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 750, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+
+	here := w.regionIndexAt(a.X, a.Y)
+	for i := 0; i < 30; i++ {
+		w.noteRegion(a, 3)
+	}
+	danger, known := w.regionDangerEstimate(a, here)
+	if !known {
+		t.Fatal("stood in the river thirty times and learned nothing about it")
+	}
+	if math.Abs(danger-cfg.DrownChancePerTick) > cfg.DrownChancePerTick/3 {
+		t.Fatalf("reckons a tick here risks %v, want about %v", danger, cfg.DrownChancePerTick)
+	}
+	for r := range w.regions {
+		if r == here {
+			continue
+		}
+		if _, known := w.regionDangerEstimate(a, r); known {
+			t.Fatalf("fears region %d without ever having been there", r)
+		}
+	}
+}
+
+// Watching somebody drown teaches the onlookers about the place that killed -
+// which is not where they are standing, and need not be anywhere they have
+// ever been. This is the whole of the stage: the ones the water takes do not
+// come back to say so.
+func TestWatchingADrowningTeachesThePlaceThatKilled(t *testing.T) {
+	cfg := drownCountryConfig()
+	cfg.DrownChancePerTick = 1 // it goes under on the first tick
+	w := NewWorld(cfg)
+	w.agents = w.agents[:0]
+	// The victim just inside the water, the witness just outside it: near
+	// enough to watch, dry, and in the region next door.
+	victim := w.addAgent(Agent{Maturity: 1, X: 610, Y: 100, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+	witness := w.addAgent(Agent{Maturity: 1, X: 590, Y: 100, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+	far := w.addAgent(Agent{Maturity: 1, X: 100, Y: 500, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+
+	v := mustAgent(t, w, victim)
+	river := w.regionIndexAt(v.X, v.Y)
+	if river == w.regionIndexAt(590, 100) {
+		t.Fatal("the witness is standing in the same region as the drowning; the test cannot tell them apart")
+	}
+
+	w.Step()
+	if w.Stats().DrownDeaths != 1 {
+		t.Fatalf("nobody drowned: %+v", w.Stats())
+	}
+	danger, known := w.regionDangerEstimate(mustAgent(t, w, witness), river)
+	if !known || danger <= 0 {
+		t.Fatalf("watched somebody go under and learned nothing (danger %v, known %v)", danger, known)
+	}
+	if _, known := w.regionDangerEstimate(mustAgent(t, w, far), river); known {
+		t.Fatal("somebody across the world learned about a drowning it could not see")
+	}
+	if got := w.Stats().DrownWitnesses; got != 1 {
+		t.Fatalf("counted %d witnesses, want 1", got)
+	}
+}
+
+// With the weight at zero the drowning is not news: the water still kills and
+// nobody learns anything by watching. This is the arm the stage is measured
+// against.
+func TestWithNoWitnessWeightADrowningTeachesNobody(t *testing.T) {
+	cfg := drownCountryConfig()
+	cfg.DrownChancePerTick = 1
+	cfg.DrownWitnessLooks = 0
+	w := NewWorld(cfg)
+	w.agents = w.agents[:0]
+	w.addAgent(Agent{Maturity: 1, X: 610, Y: 100, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+	witness := w.addAgent(Agent{Maturity: 1, X: 590, Y: 100, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+	river := w.regionIndexAt(610, 100)
+
+	w.Step()
+	if w.Stats().DrownDeaths != 1 {
+		t.Fatal("nobody drowned")
+	}
+	if _, known := w.regionDangerEstimate(mustAgent(t, w, witness), river); known {
+		t.Fatal("learned from a drowning with the weight at zero")
+	}
+}
+
+// And it travels: an agent that has neither been to the river nor seen it take
+// anybody can still be told, on the same trade everything else rides on.
+func TestTheDangerIsHandedOn(t *testing.T) {
+	cfg := drownCountryConfig()
+	w := NewWorld(cfg)
+	knows := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 750, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+	hears := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+
+	river := w.regionIndexAt(knows.X, knows.Y)
+	for i := 0; i < 30; i++ {
+		w.noteRegion(knows, 3)
+	}
+	w.exchangeRegions(hears, knows)
+
+	danger, known := w.regionDangerEstimate(hears, river)
+	if !known || danger <= 0 {
+		t.Fatalf("was told nothing about the river (danger %v, known %v)", danger, known)
+	}
+
+	// And with the telling off it stays where it was learned.
+	cfg.RegionDangerTold = false
+	quiet := NewWorld(cfg)
+	a := mustAgent(t, quiet, quiet.addAgent(Agent{Maturity: 1, X: 750, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+	b := mustAgent(t, quiet, quiet.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+	for i := 0; i < 30; i++ {
+		quiet.noteRegion(a, 3)
+	}
+	quiet.exchangeRegions(b, a)
+	if _, known := quiet.regionDangerEstimate(b, river); known {
+		t.Fatal("the danger was handed on with the telling off")
+	}
+}
+
+// A place believed to kill is worth less to go to. Two regions with the same
+// food, one of them a river: the dry one is what the agent heads for.
+func TestADangerousPlaceIsWorthLess(t *testing.T) {
+	cfg := drownCountryConfig()
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 300, Vitality: 80,
+		Genome: genomeOf(50, 50, 50)}))
+
+	dryIdx := w.regionIndexAt(100, 100)
+	riverIdx := w.regionIndexAt(750, 100)
+	hereIdx := w.regionIndexAt(a.X, a.Y)
+	if dryIdx == riverIdx || hereIdx == dryIdx || hereIdx == riverIdx {
+		t.Fatal("the three places are not three regions")
+	}
+	a.regions = make([]regionView, len(w.regions))
+	for _, c := range []struct {
+		i      int
+		seen   float64
+		danger float64
+	}{
+		{hereIdx, 2, 0},
+		{dryIdx, 6, 0},
+		{riverIdx, 6, cfg.DrownChancePerTick},
+	} {
+		a.regions[c.i].setSeen(c.seen, 10, w.tick)
+		a.regions[c.i].danger = c.danger
+	}
+
+	best, _, ok := w.bestKnownRegion(a)
+	if !ok {
+		t.Fatal("knows nowhere better than here")
+	}
+	if best != dryIdx {
+		t.Fatalf("heads for region %d, want the dry one (%d) over the river (%d)", best, dryIdx, riverIdx)
+	}
+
+	// With the belief priced out the two are the same place again, which is
+	// the control arm the stage is measured against.
+	cfg.RegionDangerTicks = 0
+	blind := NewWorld(cfg)
+	blind.agents = w.agents
+	blind.index = w.index
+	if got := blind.worthOfRegion(mustAgent(t, blind, a.ID), riverIdx, 6); got != 6 {
+		t.Fatalf("the river is worth %v with the danger unpriced, want 6", got)
+	}
+}
+
+// The danger is never priced above a life: a belief so bad that the stay is
+// certain death costs exactly that and no more.
+func TestTheFearedGroundIsNeverWorseThanCertainDeath(t *testing.T) {
+	cfg := drownCountryConfig()
+	w := NewWorld(cfg)
+	if got, want := w.dangerPrice(1), cfg.LifeValue/cfg.RegionDrawValue; got != want {
+		t.Fatalf("certain death priced at %v, want %v", got, want)
+	}
+	if got, want := w.dangerPrice(50), cfg.LifeValue/cfg.RegionDrawValue; got != want {
+		t.Fatalf("a hopeless belief priced at %v, want %v", got, want)
+	}
+}
+
+// A flat world has no water in it, so nobody ever fears anywhere - whatever
+// the weight is set to. This is what keeps every measurement taken on level
+// ground comparable.
+func TestAFlatWorldFearsNowhere(t *testing.T) {
+	run := func(ticks float64) Stats {
+		cfg := DefaultConfig()
+		cfg.Seed = 9
+		cfg.RegionDangerTicks = ticks
+		w := NewWorld(cfg)
+		for i := 0; i < 400; i++ {
+			w.Step()
+		}
+		for i := range w.agents {
+			for r := range w.agents[i].regions {
+				if w.agents[i].regions[r].danger > 0 {
+					t.Fatalf("an agent in a flat world fears region %d", r)
+				}
+			}
+		}
+		return w.Stats()
+	}
+	if off, on := run(0), run(700); off != on {
+		t.Fatalf("a flat world ran differently with the danger weighed:\n off %+v\n on  %+v", off, on)
+	}
+}

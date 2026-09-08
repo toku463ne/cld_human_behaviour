@@ -66,6 +66,39 @@ type Stats struct {
 	Deaths        int
 	Kills         int
 	AgingDeaths   int // subset of Deaths caused by Lifespan reaching zero
+
+	// DrownDeaths is a bucket of its own on purpose (stage 34). Every
+	// measurement of this world reads the causes of death apart from one
+	// another - starving is Deaths less the rest - so a new way to die that
+	// was folded into an old one would turn up as a change in starvation or
+	// in killing in every A/B taken from here on.
+	DrownDeaths int
+
+	// KillWitnesses is how many readings onlookers have taken of somebody
+	// they watched kill, and AvengeWitnesses how many times one of them
+	// thought better of its own kind for killing something else (stage 31).
+	// Observes is how many decisions were "watch somebody", against Decisions.
+	KillWitnesses   int
+	AvengeWitnesses int
+	KillLessons     int
+	Observes        int
+
+	// Calls is how many decisions were an invitation, and Joins how many
+	// attacks were aimed at something another agent had already declared for
+	// (stage 32).
+	Calls int
+	Joins int
+
+	// DrownWitnesses is how many times an agent has seen the ground take
+	// somebody (stage 35), summed over witnesses: one drowning in front of
+	// three of them counts three times.
+	DrownWitnesses int
+
+	// Decisions is how many times a controller has been asked for an action,
+	// and RegionDraws how many of those were the one option that acts on a
+	// belief about somewhere else (stage 15b). Measurement only.
+	Decisions     int
+	RegionDraws   int
 	Matured       int // agents that finished growing up
 	ChildDeaths   int // subset of Deaths of agents that never got there
 	Children      int // alive right now and not grown yet
@@ -218,10 +251,48 @@ type World struct {
 	deaths               int
 	kills                int
 	agingDeaths          int
-	matured              int
-	childDeaths          int
-	fights               int
-	maxGeneration        int
+	drownDeaths          int
+	// drownWitnesses is how many times somebody has watched the ground take
+	// somebody else (stage 35). Counted because a rule that hardly ever fires
+	// explains nothing whatever its weight - the lesson of stage 24.
+	drownWitnesses int
+
+	// The same count for a killing seen (stage 31), split by which way the
+	// sign went: killWitnesses is readings taken of somebody who killed,
+	// avengeWitnesses is onlookers who thought better of one of their own for
+	// killing something else. Both are counted whatever the weights are set
+	// to, so that an arm with the rule off still says how often it could have
+	// fired.
+	killWitnesses   int
+	avengeWitnesses int
+
+	// killLessons is how many of those readings were actually taken in. Most
+	// are not: a memory full of people who matter has no room for a face in
+	// the crowd, whatever it was just seen doing.
+	killLessons int
+
+	// calls is how many decisions were "come and help me bring this down"
+	// (stage 32), and joins how many attacks were on something somebody else
+	// had already declared for. The second is the one the stage turns on: a
+	// call nobody answers is a word, not a hunt.
+	calls int
+	joins int
+
+	// observes is how many decisions were "watch somebody" - the share of
+	// them is what says whether a rule that teaches for free has killed off
+	// the action that teaches for a price (#55).
+	observes int
+
+	// decisions is how many times a controller has been asked, and
+	// regionDraws how many of those answers were "go to better country". The
+	// share of the two is the ceiling on what any belief about a place can do
+	// to where a body stands (stage 35).
+	decisions     int
+	regionDraws   int
+	matured       int
+	childDeaths   int
+	fights        int
+	maxGeneration int
 
 	// What the world actually does, against which what the agents believe can
 	// be checked: how many blows were sampled and how many of them were
@@ -345,6 +416,16 @@ func (w *World) Stats() Stats {
 		Deaths:                 w.deaths,
 		Kills:                  w.kills,
 		AgingDeaths:            w.agingDeaths,
+		DrownDeaths:            w.drownDeaths,
+		DrownWitnesses:         w.drownWitnesses,
+		KillWitnesses:          w.killWitnesses,
+		KillLessons:            w.killLessons,
+		AvengeWitnesses:        w.avengeWitnesses,
+		Observes:               w.observes,
+		Calls:                  w.calls,
+		Joins:                  w.joins,
+		Decisions:              w.decisions,
+		RegionDraws:            w.regionDraws,
 		Matured:                w.matured,
 		ChildDeaths:            w.childDeaths,
 		Fights:                 w.fights,
@@ -436,6 +517,10 @@ func (w *World) Step() {
 	w.resolveAttacks()
 	w.metabolise()
 
+	// What the ground itself does, settled with the rest of the tick's deaths
+	// rather than in the middle of the movement (stage 34).
+	w.drownings()
+
 	// After everybody has moved, so a carried seed comes up where its carrier
 	// ended up rather than where it set off (stage 17c).
 	w.dropSeeds()
@@ -521,12 +606,32 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	if p.Trace != nil {
 		p.Trace.Action = a.Action
 	}
+	// How often a decision is "go to country I think better of" (stage 15b),
+	// which is the only door a belief about a place has into a body. Counted
+	// for the world's own controller; a hand-driven node is not asked this
+	// question. Measurement only.
+	w.decisions++
+	if a.Action.Kind == ActObserve {
+		w.observes++
+	}
+	if ai, ok := c.(*AIController); ok {
+		if ai.ChoseBetterGround {
+			w.regionDraws++
+		}
+		if ai.JoinedDeclared {
+			w.joins++
+		}
+	}
 
 	a.lastDecisionTick = w.tick
 	a.vitalityAtDecision = a.Vitality
 	a.needsDecision = false
 	a.pendingTrigger = TriggerNone
 	a.actionTicks = 0
+
+	if a.Action.Kind == ActInvite {
+		w.calls++
+	}
 
 	switch a.Action.Kind {
 	case ActCourt:
@@ -604,6 +709,27 @@ func (w *World) perform(a *Agent) {
 			return
 		}
 		w.moveDir(a, a.X-o.X, a.Y-o.Y, a.Action.Effort)
+
+	case ActInvite:
+		// Calling others in (stage 32). The whole of it is a moment spent
+		// making a noise about something: the call is set the instant the
+		// action starts, so that anybody who looks this tick sees it, and
+		// after CallTicks the agent is asked again - by then whoever was
+		// coming is visibly coming, and the fight it was calling about is
+		// scored with them in it.
+		//
+		// Nothing here forms a party, hands out a share, or records who
+		// answered. There is no accepting: an agent that comes is an agent
+		// that decided the fight was worth it, which is the same comparison
+		// it makes about everything else.
+		o := w.agentByID(a.Action.TargetID)
+		if o == nil || !o.Alive {
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		if a.actionTicks >= w.cfg.CallTicks {
+			a.requestDecision(TriggerGoalReached)
+		}
 
 	case ActObserve:
 		o := w.agentByID(a.Action.TargetID)
@@ -1193,8 +1319,21 @@ func (w *World) kill(a *Agent) {
 		w.childDeaths++
 	}
 	w.dropMeat(a)
-	if a.lastAttackTick >= w.tick-1 {
+	// A body the river took is the river's, even if somebody had been hitting
+	// it a moment before. The buckets have to stay exclusive: what is read as
+	// starvation is everything the other counters do not claim.
+	if !a.drowned && a.lastAttackTick >= w.tick-1 {
 		w.kills++
+		// What the people who were standing there make of it (stage 31).
+		// Before the body is taken out of the world, for the same reason a
+		// drowning is told to the bank while the victim is still in the
+		// water: the onlookers are the ones who can see it where it is.
+		//
+		// Who did it is not a new rule - it is the same list the carcass is
+		// shared out to (recentAttackers), before the filter that keeps only
+		// those who can eat it, because a human that kills another human is
+		// still the one who killed it.
+		w.witnessKill(a, a.recentAttackers(w.tick, w.cfg.HuntCreditTicks))
 	}
 	if a.PartnerID != 0 {
 		if p := w.agentByID(a.PartnerID); p != nil && p.Alive {

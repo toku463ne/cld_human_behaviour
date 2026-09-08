@@ -89,6 +89,32 @@ type AIController struct {
 	incomingDmg float64
 	exposure    float64
 
+	// What a tick spent on this ground may cost (stage 34): the chance of
+	// drowning where the agent is standing, and what a life is worth. Zero
+	// everywhere but in the water, and zero in every world with no map, which
+	// is why nothing about a flat world changed.
+	drownChance float64
+	lifeValue   float64
+
+	// Which option, if any, was the one that goes to better country (stage
+	// 15b), and whether it won. Measurement only: no rule reads it, and it
+	// exists because a belief about a place can only reach a body through
+	// this one option, so how often that option is taken is the ceiling on
+	// what any such belief can do (stage 35).
+	betterGroundOpt   int
+	ChoseBetterGround bool
+
+	// Who has declared for what, worked out once in survey (stage 32): for
+	// each target somebody has called about or is already hitting, the
+	// trust-weighted strength and damage that side of the fight can count on.
+	// Empty in a world with nobody calling and nobody fighting, which is most
+	// of the time.
+	allies []allyForce
+
+	// Whether the chosen action was a fight somebody else had declared for.
+	// Measurement only, like ChoseBetterGround.
+	JoinedDeclared bool
+
 	// The deciding agent's rules of thumb and the situation they read (stage
 	// 12c). The situation is filled in once for the agent's own state and
 	// again for whoever each option is aimed at, so a hint about a stranger's
@@ -102,10 +128,13 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.terms = c.terms[:0]
 	c.tracing = p.Trace != nil
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
+	c.betterGroundOpt, c.ChoseBetterGround = -1, false
+	c.allies, c.JoinedDeclared = c.allies[:0], false
 	// readSelf clears the whole situation, so the options scored before any
 	// target is read (rest, wandering, food) see nothing about a target.
 	c.hints = p.Self.Hints
 	c.feats.readSelf(p)
+	c.drownChance, c.lifeValue = p.Self.Drown, p.Cfg.LifeValue
 	maxDepth := strategyDepth(p.Cfg, p.Self.Intelligence)
 
 	c.survey(p)
@@ -216,6 +245,20 @@ func (c *AIController) add(a Action, u Utility) {
 	// The one place a rule of thumb touches a decision, and all it does is
 	// add to the score. Nothing branches on it.
 	u.Hint = c.feats.score(c.hints, a.Kind)
+
+	// And the one place the ground's own danger touches a decision (stage
+	// 34). It is charged per tick the option is expected to take, so what
+	// tells the options apart is how long each would keep the body in the
+	// water - which is the only thing an agent that cannot see the far bank
+	// has to go on. An option that names no duration is charged for the one
+	// tick it is about to spend.
+	if c.drownChance > 0 {
+		ticks := u.Ticks
+		if ticks < 1 {
+			ticks = 1
+		}
+		u.Hazard = clamp(c.drownChance*ticks, 0, 1) * c.lifeValue
+	}
 	c.opts = append(c.opts, option{action: a, util: u.Total()})
 	if c.tracing {
 		c.terms = append(c.terms, u)
@@ -300,6 +343,7 @@ func (c *AIController) addExplore(p *Perception) {
 	if s.BetterGround > 0 && cfg.RegionDrawValue > 0 {
 		ddx, ddy := s.BetterGroundX-s.X, s.BetterGroundY-s.Y
 		if d := math.Hypot(ddx, ddy); d > 1e-9 {
+			c.betterGroundOpt = len(c.opts)
 			c.add(Action{Kind: ActMove, DX: ddx / d, DY: ddy / d, Effort: effort}, Utility{
 				Explore:      Goal{Value: cfg.RegionDrawValue * s.BetterGround, Chance: hungry},
 				Vitality:     cost,
@@ -397,6 +441,9 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 
 		if maxDepth >= depthReactive {
 			c.addAttack(p, o)
+			if o.Prey && o.Meat >= 1 {
+				c.addInvite(p, o)
+			}
 			if o.AttackingMe {
 				c.addFlee(p, o)
 			}
@@ -410,110 +457,232 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 	}
 }
 
+// allyForce is what one side of a fight can count on besides itself: the
+// trust-weighted strength of everybody who has declared for the same target,
+// and the damage they are expected to be putting in.
+type allyForce struct {
+	target  int
+	score   float64
+	damage  float64
+	backers int
+}
+
+func (c *AIController) noteAlly(target int, score, damage float64) {
+	for i := range c.allies {
+		if c.allies[i].target == target {
+			c.allies[i].score += score
+			c.allies[i].damage += damage
+			c.allies[i].backers++
+			return
+		}
+	}
+	c.allies = append(c.allies, allyForce{target: target, score: score, damage: damage, backers: 1})
+}
+
+// quarrelOnly reports that a declaration should not be counted because it is
+// against one of this agent's own kind and the arm being measured only counts
+// hunts (AllyPreyOnly).
+func (c *AIController) quarrelOnly(p *Perception, target int) bool {
+	if !p.Cfg.AllyPreyOnly {
+		return false
+	}
+	for i := range p.Others {
+		if p.Others[i].ID == target {
+			return !p.Others[i].Prey
+		}
+	}
+	return true // out of sight: nothing to say it is a hunt
+}
+
+// help is what is already declared against a target.
+func (c *AIController) help(target int) allyForce {
+	for i := range c.allies {
+		if c.allies[i].target == target {
+			return c.allies[i]
+		}
+	}
+	return allyForce{target: target}
+}
+
+// hoped is what an agent about to call out can hope for: the same
+// trust-weighted sum over everybody in sight of its own kind who has not
+// already taken something else on.
+//
+// It is a hope and not a fact, which is the difference between calling and
+// joining. Whoever is already swinging can be seen swinging; whoever has yet
+// to be asked can only be counted on as far as they are trusted, and that is
+// exactly the number trust is.
+func (c *AIController) hoped(p *Perception, prey *AgentView) allyForce {
+	cfg := p.Cfg
+	out := allyForce{target: prey.ID}
+	if cfg.AllyTrustWeight <= 0 || cfg.AffinityTrust <= 0 {
+		return out
+	}
+	for i := range p.Others {
+		o := &p.Others[i]
+		if o.ID == prey.ID || o.Species != p.Self.Species || o.DeclaredFor != 0 {
+			continue
+		}
+		trust := clamp(o.Affinity/cfg.AffinityTrust, 0, 1) * cfg.AllyTrustWeight
+		if trust <= 0 {
+			continue
+		}
+		out.score += trust * o.EstStrength * o.Vitality
+		out.damage += trust * damagePerTick(cfg, o.EstStrength, 1)
+		out.backers++
+	}
+	return out
+}
+
 // addAttack scores picking a fight. The same option covers both reasons to
 // throw a punch: taking the meal in front of you, and thinning out the
 // competition before the food runs short. Whether either is worth the vitality
 // is what the formula decides.
 func (c *AIController) addAttack(p *Perception, o *AgentView) {
+	help := c.help(o.ID)
+	// Three ready mixes rather than two levels of one number: how hard to
+	// swing is now inseparable from how much guard to keep up.
+	for stance := Stance(0); int(stance) < NumStances; stance++ {
+		c.scoreFight(p, o, help, ActAttack, stance, 0)
+	}
+}
+
+// addInvite scores calling others in against something (stage 32).
+//
+// It is the same fight scored with the help that could come, plus the moment
+// spent calling. There is no bonus for cooperating and no threshold above
+// which an invitation is worth making: with nobody trusted in sight the hope
+// is zero, the option is the attack plus a wasted moment, and it loses to the
+// attack on arithmetic alone.
+//
+// Scored at every stance, like the fight it is the front half of, so that the
+// two are compared like for like: the only differences between calling and
+// going in alone are the help that could come and the moment spent asking.
+func (c *AIController) addInvite(p *Perception, o *AgentView) {
+	cfg := p.Cfg
+	if cfg.CallTicks <= 0 {
+		return
+	}
+	hope := c.hoped(p, o)
+	if hope.backers == 0 {
+		return
+	}
+	for stance := Stance(0); int(stance) < NumStances; stance++ {
+		c.scoreFight(p, o, hope, ActInvite, stance, cfg.CallTicks)
+	}
+}
+
+// scoreFight is the whole of what a fight is worth, with whatever help is
+// counted on folded into both sides of it: the odds, and how long the thing
+// takes to bring down.
+//
+// The help is a number of the observer's own making - somebody else's believed
+// strength, times how far it trusts them to still be there. Nothing in the
+// world enforces it. An ally that thinks better of it and walks away leaves
+// this agent in a fight it priced as a shared one, and the vitality it loses
+// finding that out is what teaches it (through the ordinary risk memory) not
+// to count on that one again.
+func (c *AIController) scoreFight(p *Perception, o *AgentView, help allyForce, kind ActionKind, stance Stance, extraTicks int) {
 	cfg := p.Cfg
 	s := &p.Self
 
-	myScore := s.Attack * s.Vitality
+	myScore := s.Attack*s.Vitality + help.score
 	theirScore := o.EstStrength * o.Vitality
 	pWin := myScore / (myScore + theirScore + 1e-9)
 
 	maxDepth := strategyDepth(cfg, s.Intelligence)
 
-	// Three ready mixes rather than two levels of one number: how hard to
-	// swing is now inseparable from how much guard to keep up.
-	for stance := Stance(0); int(stance) < NumStances; stance++ {
-		m := stanceMix[stance]
-		const effort = 1.0
+	m := stanceMix[stance]
+	const effort = 1.0
 
-		// What the exchange is expected to cost, assuming the other side hits
-		// back with a fair share of its own effort.
-		//
-		// What the other side's guard would turn aside is not in here: how
-		// well somebody defends is a hidden parameter like everything else
-		// about them, so an agent finds out by being surprised. What it does
-		// know is its own guard, which is what the incoming blow is reduced
-		// by below.
-		//
-		// How readily the other side hits back at all is this agent's own
-		// figure now (lore.go): one that has been picking on people who did
-		// not fight back expects the next one not to either, and is wrong
-		// about the one that does.
-		mine := damagePerTick(cfg, s.Attack, effort*m.Attack)
-		if o.Uphill && cfg.HighGroundCover > 0 {
-			// Swinging up a bank at somebody: what they can do about it is
-			// their own hidden business, but that the bank is there is not.
-			// The figure is the world's ordinary evasion, since how well this
-			// one in particular gets out of the way is not knowable.
-			mine *= 1 - clamp(cfg.HighGroundCover, 0, cfg.EvasionCap)
-		}
-		theirs := damagePerTick(cfg, o.EstStrength, s.Retaliation) *
-			(1 - s.Defence*m.Defence) * (1 - s.Evasion*m.Evasion)
-
-		// Either they go down, or one side breaks off first. A weakened
-		// target is cheap to finish, which is what makes hitting somebody who
-		// is already hurt the best value there is.
-		exchange := math.Min(o.Vitality/math.Max(mine, 1e-9), cfg.SkirmishTicks)
-		travel := o.Dist / speedAt(s.MaxSpeed, effort)
-		ticks := exchange + travel
-
-		cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCost(cfg, s, effort)
-
-		drain := projectedDrain(cfg, s.HungerRate, s.Hunger+s.HungerRate*ticks)
-		now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incomingDmg)
-		after := pressure(cfg, s, s.Vitality-cost, drain)
-		lifeTerm := (now - after) * cfg.LifeValue
-
-		// The meal in front of them. Driving this one off wins the race for
-		// the item they are contesting, so it is worth the part of that meal
-		// the race was costing.
-		stake := Goal{}
-		if c.bestFoodRival == o.ID {
-			stake = Goal{Value: c.bestFoodGap, Chance: pWin}
-		}
-
-		// And the meal it would itself become. A creature of a kind this one
-		// eats is worth killing for the carcass, which is what makes hunting
-		// something other than a fight - and what makes a large animal worth
-		// more than a small one to whoever brings it down.
-		//
-		// It goes in as one meal rather than the whole carcass on purpose: an
-		// agent can only eat so much before it is full, and the rest feeds
-		// whoever else took part. That is the arithmetic that makes a big
-		// animal worth taking on together and not alone.
-		if o.Prey && o.Meat >= 1 && s.Hunger > 0 && cfg.PreyValue > 0 {
-			bite := math.Min(o.Meat, 1) * cfg.PreyValue *
-				mealValue(cfg, s, c.incomingDmg, s.Nutrition[FoodMeat])
-			pKill := clamp(exchange*mine/math.Max(o.Vitality, 1e-9), 0, 1) * pWin
-			stake = Goal{Value: stake.Value + bite, Chance: math.Max(stake.Chance, pKill)}
-		}
-
-		// Removing somebody who will be eating the same food later on. Only an
-		// agent that can think that far ahead sees this at all, and a world
-		// with food to spare makes the term vanish on its own.
-		competition := Goal{}
-		if maxDepth >= depthPreemtive {
-			competition = Goal{
-				Value:  s.CompetitionWeight * cfg.LifeValue * clamp(s.FoodScarcity, 0, 3) / 3,
-				Chance: pWin,
-			}
-		}
-
-		c.add(Action{Kind: ActAttack, TargetID: o.ID, Effort: effort, Stance: stance}, Utility{
-			Life:         Goal{Value: lifeTerm, Chance: 1},
-			Stake:        stake,
-			Rival:        competition,
-			Risk:         s.RiskWeight * o.Risk,
-			Vitality:     cost,
-			Ticks:        ticks,
-			VitalityCost: cost * cfg.VitalityWeight,
-			TimeCost:     ticks * cfg.TimeCost,
-		})
+	// What the exchange is expected to cost, assuming the other side hits
+	// back with a fair share of its own effort.
+	//
+	// What the other side's guard would turn aside is not in here: how
+	// well somebody defends is a hidden parameter like everything else
+	// about them, so an agent finds out by being surprised. What it does
+	// know is its own guard, which is what the incoming blow is reduced
+	// by below.
+	//
+	// How readily the other side hits back at all is this agent's own
+	// figure now (lore.go): one that has been picking on people who did
+	// not fight back expects the next one not to either, and is wrong
+	// about the one that does.
+	mine := damagePerTick(cfg, s.Attack, effort*m.Attack)
+	if o.Uphill && cfg.HighGroundCover > 0 {
+		// Swinging up a bank at somebody: what they can do about it is
+		// their own hidden business, but that the bank is there is not.
+		// The figure is the world's ordinary evasion, since how well this
+		// one in particular gets out of the way is not knowable.
+		mine *= 1 - clamp(cfg.HighGroundCover, 0, cfg.EvasionCap)
 	}
+	theirs := damagePerTick(cfg, o.EstStrength, s.Retaliation) *
+		(1 - s.Defence*m.Defence) * (1 - s.Evasion*m.Evasion)
+
+	// Either they go down, or one side breaks off first. A weakened
+	// target is cheap to finish, which is what makes hitting somebody who
+	// is already hurt the best value there is.
+	// How fast it goes down is this agent's blows plus whatever the ones
+	// who have declared for it are putting in. This is where a big animal
+	// becomes worth taking on: alone the exchange runs out at
+	// SkirmishTicks with the thing still standing, and with two of you it
+	// does not.
+	exchange := math.Min(o.Vitality/math.Max(mine+help.damage, 1e-9), cfg.SkirmishTicks)
+	travel := o.Dist / speedAt(s.MaxSpeed, effort)
+	ticks := exchange + travel + float64(extraTicks)
+
+	cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCost(cfg, s, effort)
+
+	drain := projectedDrain(cfg, s.HungerRate, s.Hunger+s.HungerRate*ticks)
+	now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incomingDmg)
+	after := pressure(cfg, s, s.Vitality-cost, drain)
+	lifeTerm := (now - after) * cfg.LifeValue
+
+	// The meal in front of them. Driving this one off wins the race for
+	// the item they are contesting, so it is worth the part of that meal
+	// the race was costing.
+	stake := Goal{}
+	if c.bestFoodRival == o.ID {
+		stake = Goal{Value: c.bestFoodGap, Chance: pWin}
+	}
+
+	// And the meal it would itself become. A creature of a kind this one
+	// eats is worth killing for the carcass, which is what makes hunting
+	// something other than a fight - and what makes a large animal worth
+	// more than a small one to whoever brings it down.
+	//
+	// It goes in as one meal rather than the whole carcass on purpose: an
+	// agent can only eat so much before it is full, and the rest feeds
+	// whoever else took part. That is the arithmetic that makes a big
+	// animal worth taking on together and not alone.
+	if o.Prey && o.Meat >= 1 && s.Hunger > 0 && cfg.PreyValue > 0 {
+		bite := math.Min(o.Meat, 1) * cfg.PreyValue *
+			mealValue(cfg, s, c.incomingDmg, s.Nutrition[FoodMeat])
+		pKill := clamp(exchange*(mine+help.damage)/math.Max(o.Vitality, 1e-9), 0, 1) * pWin
+		stake = Goal{Value: stake.Value + bite, Chance: math.Max(stake.Chance, pKill)}
+	}
+
+	// Removing somebody who will be eating the same food later on. Only an
+	// agent that can think that far ahead sees this at all, and a world
+	// with food to spare makes the term vanish on its own.
+	competition := Goal{}
+	if maxDepth >= depthPreemtive {
+		competition = Goal{
+			Value:  s.CompetitionWeight * cfg.LifeValue * clamp(s.FoodScarcity, 0, 3) / 3,
+			Chance: pWin,
+		}
+	}
+
+	c.add(Action{Kind: kind, TargetID: o.ID, Effort: effort, Stance: stance}, Utility{
+		Life:         Goal{Value: lifeTerm, Chance: 1},
+		Stake:        stake,
+		Rival:        competition,
+		Risk:         s.RiskWeight * o.Risk,
+		Vitality:     cost,
+		Ticks:        ticks,
+		VitalityCost: cost * cfg.VitalityWeight,
+		TimeCost:     ticks * cfg.TimeCost,
+	})
 }
 
 // addFlee scores running away. Nothing here says "flee when hurt": what the
@@ -620,6 +789,21 @@ func (c *AIController) survey(p *Perception) {
 	for i := range p.Others {
 		o := &p.Others[i]
 		threat := damagePerTick(cfg, o.EstStrength, 1)
+
+		// Somebody who has taken a target on, and how much of its weight this
+		// agent can count on (stage 32). Trust, not affinity: what is being
+		// estimated is not how much this agent likes the other but how likely
+		// it is that the other is still swinging when the blows land. A
+		// stranger is worth nothing here however strong it is, which is why a
+		// crowd of strangers does not add up to a hunting party.
+		if cfg.AllyTrustWeight > 0 && cfg.AffinityTrust > 0 {
+			if target := o.DeclaredFor; target != 0 && !c.quarrelOnly(p, target) {
+				trust := clamp(o.Affinity/cfg.AffinityTrust, 0, 1) * cfg.AllyTrustWeight
+				if trust > 0 {
+					c.noteAlly(target, trust*o.EstStrength*o.Vitality, trust*threat)
+				}
+			}
+		}
 		if o.ID == attacker {
 			// What the ground is worth, if this one is swinging uphill
 			// (stage 30). The agent knows it is standing above its attacker -
@@ -702,6 +886,14 @@ func (c *AIController) pick(p *Perception) Action {
 	}
 	if p.Trace != nil {
 		p.Trace.Chosen = best
+	}
+	c.ChoseBetterGround = best == c.betterGroundOpt
+	// Whether the fight it picked was one somebody else had already taken on
+	// (stage 32). Measurement only, like the line above: a rule that produces
+	// pack hunting has to show up as agents choosing the same target, and a
+	// call nobody answers is a word rather than a hunt.
+	if act := c.opts[best].action; act.Kind == ActAttack {
+		c.JoinedDeclared = c.help(act.TargetID).backers > 0
 	}
 	return c.opts[best].action
 }

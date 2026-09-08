@@ -221,3 +221,151 @@ func TestNoMapMeansNothingChanged(t *testing.T) {
 		t.Fatalf("an agent in a flat world feels ground %v, want 1", got)
 	}
 }
+
+// --- stage 34: what the water does -----------------------------------------
+
+// A world with no map has no water in it, so the rule cannot fire however high
+// the chance is set - and, because it draws no random number, such a world
+// runs to exactly the same state it did before the rule existed. This is the
+// same guarantee stage 20 gave, and it is what keeps every measurement taken
+// on flat ground comparable.
+func TestAFlatWorldNeverDrowns(t *testing.T) {
+	run := func(chance float64) Stats {
+		cfg := testConfig()
+		cfg.DrownChancePerTick = chance
+		w := NewWorld(cfg)
+		for i := 0; i < 400; i++ {
+			w.Step()
+		}
+		return w.Stats()
+	}
+	off, on := run(0), run(0.5)
+	if off != on {
+		t.Fatalf("a flat world ran differently with drowning on:\n off %+v\n on  %+v", off, on)
+	}
+	if on.DrownDeaths != 0 {
+		t.Fatalf("a flat world drowned %d agents", on.DrownDeaths)
+	}
+}
+
+// Every tick spent in the water is a throw of the dice, so a body that stays
+// in it goes under. With the chance at one it takes exactly one tick, which is
+// the deterministic form of the rule.
+func TestTheWaterTakesTheBodiesThatStayInIt(t *testing.T) {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 600
+	cfg.TerrainMap = []string{"~~~~"}
+	cfg.DrownChancePerTick = 1
+	w := NewWorld(cfg)
+	w.agents = w.agents[:0]
+	id := w.addAgent(Agent{Maturity: 1, X: 400, Y: 300, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+
+	w.Step()
+	if a := w.agentByID(id); a != nil {
+		t.Fatalf("an agent standing in the water at chance 1 is still alive after a tick (vitality %.1f)", a.Vitality)
+	}
+	if got := w.Stats().DrownDeaths; got != 1 {
+		t.Fatalf("drowned %d, want 1", got)
+	}
+}
+
+// The dry half of the same map is dry. A rule that killed everybody would pass
+// the test above.
+func TestOnlyTheWaterDrowns(t *testing.T) {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 600
+	cfg.TerrainMap = []string{"~~.."}
+	cfg.DrownChancePerTick = 1
+	w := NewWorld(cfg)
+	w.agents = w.agents[:0]
+	dry := w.addAgent(Agent{Maturity: 1, X: 700, Y: 300, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+
+	for i := 0; i < 20; i++ {
+		w.Step()
+	}
+	if w.agentByID(dry) == nil {
+		t.Fatal("an agent on dry ground drowned")
+	}
+	if got := w.Stats().DrownDeaths; got != 0 {
+		t.Fatalf("drowned %d on dry ground, want 0", got)
+	}
+}
+
+// Drowning is a cause of death of its own and not a killing, even when
+// somebody had been hitting the body a moment before. The buckets have to stay
+// exclusive: starvation is read as what the other counters do not claim, so a
+// death counted twice would turn up as a change in starvation in every
+// measurement taken from here on.
+func TestDrowningIsItsOwnCauseOfDeath(t *testing.T) {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 600
+	cfg.TerrainMap = []string{"~~~~"}
+	cfg.DrownChancePerTick = 1
+	w := NewWorld(cfg)
+	w.agents = w.agents[:0]
+	id := w.addAgent(Agent{Maturity: 1, X: 400, Y: 300, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+	mustAgent(t, w, id).lastAttackTick = w.tick
+
+	w.Step()
+	st := w.Stats()
+	if st.DrownDeaths != 1 || st.Kills != 0 {
+		t.Fatalf("a body that was being hit and then drowned counted as %d drownings and %d killings, want 1 and 0", st.DrownDeaths, st.Kills)
+	}
+	if st.Deaths-st.Kills-st.AgingDeaths-st.DrownDeaths != 0 {
+		t.Fatalf("the causes do not add up: %+v", st)
+	}
+}
+
+// An agent feels how dangerous its own footing is, exactly as it feels what
+// the ground costs - and nothing about the country it is not standing on.
+func TestAnAgentFeelsHowDangerousItsFootingIs(t *testing.T) {
+	cfg := terrainConfig()
+	cfg.DrownChancePerTick = 0.01
+	w := NewWorld(cfg)
+	dry := w.addAgent(Agent{Maturity: 1, X: 50, Y: 100, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+	wet := w.addAgent(Agent{Maturity: 1, X: 450, Y: 100, Vitality: 80, Genome: genomeOf(50, 50, 50)})
+
+	if got := w.perceive(mustAgent(t, w, dry)).Self.Drown; got != 0 {
+		t.Fatalf("an agent on dry ground feels a drowning chance of %v, want 0", got)
+	}
+	if got := w.perceive(mustAgent(t, w, wet)).Self.Drown; got != cfg.DrownChancePerTick {
+		t.Fatalf("an agent in the water feels %v, want %v", got, cfg.DrownChancePerTick)
+	}
+}
+
+// What the agent does with it: an option that would keep the body in the water
+// longer is charged more for it, and one on dry ground is charged nothing.
+// That is the whole of "the chance is priced into the comparison" - there is
+// no threshold anywhere saying to keep out of the river.
+func TestTheLongerTheOptionTheMoreTheWaterCosts(t *testing.T) {
+	cfg := terrainConfig()
+	cfg.DrownChancePerTick = 0.01
+	c := &AIController{}
+	c.drownChance, c.lifeValue = cfg.DrownChancePerTick, cfg.LifeValue
+
+	c.add(Action{Kind: ActMove}, Utility{Ticks: 1})
+	c.add(Action{Kind: ActMove}, Utility{Ticks: 10})
+	short, long := c.opts[0].util, c.opts[1].util
+	if !(long < short) {
+		t.Fatalf("ten ticks in the water scored %v against one tick at %v", long, short)
+	}
+
+	dry := &AIController{}
+	dry.add(Action{Kind: ActMove}, Utility{Ticks: 10})
+	if dry.opts[0].util != 0 {
+		t.Fatalf("an option on dry ground was charged %v for the ground", -dry.opts[0].util)
+	}
+}
+
+// The hazard never prices a life at more than a life: an option long enough to
+// be certain death is worth exactly that and no worse, which is what keeps a
+// long plan in shallow danger from swamping every other term.
+func TestTheWaterIsNeverWorseThanCertainDeath(t *testing.T) {
+	cfg := terrainConfig()
+	c := &AIController{}
+	c.drownChance, c.lifeValue = 0.5, cfg.LifeValue
+	c.add(Action{Kind: ActMove}, Utility{Ticks: 1000})
+	if got := -c.opts[0].util; got != cfg.LifeValue {
+		t.Fatalf("a hopeless crossing was charged %v, want %v", got, cfg.LifeValue)
+	}
+}

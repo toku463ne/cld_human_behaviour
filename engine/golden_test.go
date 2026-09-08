@@ -32,7 +32,19 @@ import (
 // every fresh attempt at courting (stage 28), and again when a bond that had
 // run its course stopped only producing a child if the loop happened to reach
 // the lower-numbered of the two partners first (2026-09-06, a bug: about half
-// of all bonds had been ending in nothing).
+// of all bonds had been ending in nothing), and again when a killing started
+// leaving something with the people who saw it (stage 31, 2026-09-08).
+//
+// The last one is worth a word, because the numbers below moved by more than
+// the rule turned out to be worth. Measured over 48 seeds, the whole of stage
+// 31 moves no figure of the world outside the noise; three seeds of five
+// thousand ticks is not a measurement but a fingerprint, and a fingerprint
+// moves whenever anything at all draws differently from the random source.
+//
+// And again when agents got a word for calling others in against something,
+// and started counting on whoever had declared for the same target (stage 32,
+// 2026-09-08). That one does move the world: measured over 48 seeds the
+// population is up about thirteen.
 //
 // Stage 7a is a change of how the neighbours are found, not of what happens,
 // and its completion condition is that the same seed gives the same run. That
@@ -50,9 +62,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 57, births: 47, deaths: 68, kills: 40, aging: 0, fights: 3397, gen: 3, power: 35.999942, vitality: 62.160429, hunger: 22.471078},
-	{seed: 2, pop: 33, births: 28, deaths: 77, kills: 61, aging: 0, fights: 6301, gen: 3, power: 32.869838, vitality: 70.519226, hunger: 14.134146},
-	{seed: 3, pop: 36, births: 24, deaths: 70, kills: 51, aging: 0, fights: 4643, gen: 3, power: 27.320301, vitality: 85.507666, hunger: 22.431841},
+	{seed: 1, pop: 49, births: 36, deaths: 69, kills: 42, aging: 0, fights: 2864, gen: 2, power: 40.908163, vitality: 70.184792, hunger: 24.963172},
+	{seed: 2, pop: 34, births: 29, deaths: 77, kills: 56, aging: 0, fights: 6311, gen: 3, power: 35.681863, vitality: 73.476392, hunger: 22.169870},
+	{seed: 3, pop: 44, births: 23, deaths: 61, kills: 36, aging: 0, fights: 2239, gen: 3, power: 30.518379, vitality: 77.687876, hunger: 27.794744},
 }
 
 const goldenTicks = 5000

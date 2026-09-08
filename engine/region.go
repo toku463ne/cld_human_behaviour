@@ -65,6 +65,7 @@ func (w *World) buildRegions() {
 		}
 	}
 	w.tieFoodToTheGround()
+	w.tieFoodToTheWater()
 
 	w.foodWeight = 0
 	for i := range w.regions {
@@ -126,6 +127,52 @@ func (w *World) tieFoodToTheGround() {
 		after += w.regions[i].Food
 	}
 	if after <= 0 || before <= 0 {
+		return
+	}
+	for i := range w.regions {
+		w.regions[i].Food = clamp(w.regions[i].Food*before/after, 0, 2)
+	}
+}
+
+// tieFoodToTheWater makes the ground beside water grow more of it (stage 36).
+//
+// This is the one piece of country that is not simply worse for being dear.
+// Water costs three times as much to cross and drowns whoever lingers in it
+// (stages 20 and 34), and now it also feeds them: the first place in this
+// world where the danger and the reward are the same place.
+//
+// It is a term of its own rather than part of the correlation with cost
+// (#62), because the two say opposite things about the same ground. Cost says
+// hard country is poor country; this says the river bank is rich. Folded into
+// one multiplier they would cancel, and a map's author could not ask for both.
+//
+// What it reads is how much of the region is water, which is the finest grain
+// a region-sized belief could ever act on (#53) - a band along the bank is not
+// something an agent can hold or be told. Negative is the other landscape,
+// where the water is a barren strip; it is the same rule with the sign turned
+// over and is measured as its own condition.
+//
+// Like stage 33 it changes where the food comes up and not how much of it
+// there is: the regions are scaled back to the total the draw produced.
+func (w *World) tieFoodToTheWater() {
+	if w.cfg.WatersideFood == 0 || w.ground == nil || len(w.regions) == 0 {
+		return
+	}
+	before := 0.0
+	for i := range w.regions {
+		before += w.regions[i].Food
+	}
+	if before <= 0 {
+		return
+	}
+
+	after := 0.0
+	for i := range w.regions {
+		share := w.regionWaterShare(i)
+		w.regions[i].Food = clamp(w.regions[i].Food*(1+w.cfg.WatersideFood*share), 0, 2)
+		after += w.regions[i].Food
+	}
+	if after <= 0 {
 		return
 	}
 	for i := range w.regions {
@@ -331,10 +378,16 @@ func (w *World) Shelter() ShelterUse {
 //
 // For the measurement rather than for the agents: an agent learns the going by
 // walking it, and this is what its belief is scored against.
-func (w *World) regionMeanCost(i int) float64 {
-	if w.ground == nil {
-		return 1
-	}
+// regionMean is what one reading of the ground comes to over a whole region,
+// sampled on a fixed lattice. Three things ask for it - what crossing costs
+// (stage 29), what a tick there risks (stage 35), and how much of it is water
+// (stage 36) - and they differ only in what they read off a cell, so they
+// share the sampling rather than each carrying a copy of it.
+//
+// The lattice is deliberately fixed and coarse: this is the world's own truth
+// about a region, used to lay the food out and to score what agents believe,
+// and nothing in the simulation loop calls it.
+func (w *World) regionMean(i int, of func(terrain) float64) float64 {
 	minX, minY, maxX, maxY := w.regionBounds(i)
 	const steps = 8
 	sum, n := 0.0, 0.0
@@ -342,12 +395,42 @@ func (w *World) regionMeanCost(i int) float64 {
 		for sy := 0; sy < steps; sy++ {
 			x := minX + (maxX-minX)*(float64(sx)+0.5)/steps
 			y := minY + (maxY-minY)*(float64(sy)+0.5)/steps
-			sum += w.terrainAt(x, y).Cost
+			sum += of(w.terrainAt(x, y))
 			n++
 		}
 	}
 	if n == 0 {
-		return 1
+		return 0
 	}
 	return sum / n
+}
+
+// regionMeanDrown is what a tick spent anywhere in this region really risks
+// (stage 35). It is the truth the population's belief is scored against; no
+// rule reads it.
+func (w *World) regionMeanDrown(i int) float64 {
+	if w.ground == nil {
+		return 0
+	}
+	return w.regionMean(i, func(t terrain) float64 { return t.Drown })
+}
+
+// regionWaterShare is how much of a region is water (stage 36).
+func (w *World) regionWaterShare(i int) float64 {
+	if w.ground == nil {
+		return 0
+	}
+	return w.regionMean(i, func(t terrain) float64 {
+		if t.Kind == GroundWater {
+			return 1
+		}
+		return 0
+	})
+}
+
+func (w *World) regionMeanCost(i int) float64 {
+	if w.ground == nil {
+		return 1
+	}
+	return w.regionMean(i, func(t terrain) float64 { return t.Cost })
 }

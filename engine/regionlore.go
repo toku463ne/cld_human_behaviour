@@ -47,6 +47,28 @@ type regionView struct {
 	// ground does not move while an agent is away (see regionCostEstimate).
 	cost float64
 
+	// danger is what it believes a tick spent in this region may cost it: the
+	// chance of the ground itself ending it, in the same units the terrain
+	// carries (stage 35).
+	//
+	// A second line rather than part of cost, which is a deliberate
+	// exception to #53's "one scalar for the ground". Rough country and a
+	// river are both dear to cross and only one of them drowns, and an agent
+	// that could not tell them apart would treat a bank of scree as a river.
+	// What #53 rules out is a belief per kind of ground; this is a belief per
+	// kind of consequence, and there are two: what it takes out of you, and
+	// whether you come out.
+	//
+	// Two things fill it in. Standing somewhere fills it in with what the
+	// ground under the agent's own feet does, averaged over visits exactly as
+	// cost is. Seeing somebody drown fills it in with what the ground under
+	// THEIR feet does, weighted heavier than a look, which is the whole of
+	// "the drowning is news" - it is the only way to learn that water kills
+	// without being the one it kills.
+	//
+	// It does not fade, for the same reason cost does not.
+	danger float64
+
 	// logN is log(n), kept because the test for "has this faded to nothing"
 	// is read far more often than it is written - twelve regions on every
 	// perception - and n * exp(-rate * elapsed) < 1 is the same question as
@@ -73,6 +95,17 @@ func (v *regionView) costOrOrdinary() float64 {
 		return 1
 	}
 	return v.cost
+}
+
+// dangerOrSafe is what this view says the ground may do to whoever is in it,
+// with "never been" and "never learned" both reading as safe. Safe is the
+// right prior for the same reason ordinary is the right prior for cost: an
+// agent with no reason to fear the country ahead does not.
+func (v *regionView) dangerOrSafe() float64 {
+	if v.danger <= 0 {
+		return 0
+	}
+	return v.danger
 }
 
 // faded reports whether this view has been away from long enough to be worth
@@ -129,9 +162,16 @@ func (w *World) noteRegion(a *Agent, foodInSight int) {
 	// ground under its own feet exactly (Perception.Self.Ground), and what it
 	// is unsure of is how much of the region is like this spot - which is what
 	// averaging over visits is for.
-	ground := w.terrainAt(a.X, a.Y).Cost
+	ground := w.terrainAt(a.X, a.Y)
 	cost := v.costOrOrdinary()
-	v.cost = cost + (ground-cost)*cfg.RegionLearnRate/n
+	v.cost = cost + (ground.Cost-cost)*cfg.RegionLearnRate/n
+
+	// And what the ground here may do to it (stage 35), over the same visits.
+	// An agent walking the dry half of a region folds in zeroes, so what it
+	// ends up believing is how dangerous being in this region is - not how
+	// dangerous the water is - which is the question it actually faces when
+	// it decides where to go.
+	v.danger = v.dangerOrSafe() + (ground.Drown-v.dangerOrSafe())*cfg.RegionLearnRate/n
 
 	v.setSeen(v.seen+(reading-v.seen)*cfg.RegionLearnRate/n, n, w.tick)
 }
@@ -186,6 +226,43 @@ func (w *World) regionCostEstimate(a *Agent, i int) (float64, bool) {
 	return v.cost, true
 }
 
+// regionDangerEstimate is what an agent believes a tick in a region may cost
+// it, or false if it has never formed a view. It fades through the same
+// function and at the same rate as the cost belief, which is zero: a river is
+// where it was when the agent last saw it.
+func (w *World) regionDangerEstimate(a *Agent, i int) (float64, bool) {
+	if i < 0 || i >= len(a.regions) {
+		return 0, false
+	}
+	v := &a.regions[i]
+	if v.n <= 0 || v.danger <= 0 {
+		return 0, false
+	}
+	if rate := w.cfg.RegionCostForgetPerTick / math.Max(a.MemoryScale(&w.cfg), 1e-9); rate > 0 &&
+		v.faded(rate, w.tick) {
+		return 0, false
+	}
+	return v.danger, true
+}
+
+// dangerPrice is what a believed chance of the ground killing you is worth in
+// the units this comparison runs in - how much food in sight it is worth
+// giving up to keep out of there.
+//
+// Nothing is invented for the conversion. The chance is priced exactly as the
+// hazard underfoot is priced in the utility formula (controller.go): the
+// chance, times the ticks it would be run for, times what a life is worth.
+// The only new number is how many ticks that is, and dividing by
+// RegionDrawValue puts the answer back into food-in-sight, which is what the
+// rest of worthOfRegion is counted in.
+func (w *World) dangerPrice(danger float64) float64 {
+	cfg := &w.cfg
+	if danger <= 0 || cfg.RegionDangerTicks <= 0 || cfg.RegionDrawValue <= 0 {
+		return 0
+	}
+	return clamp(danger*cfg.RegionDangerTicks, 0, 1) * cfg.LifeValue / cfg.RegionDrawValue
+}
+
 // worthOfRegion is what an agent makes of a piece of country all told: what it
 // remembers finding there, less what the ground there takes out of whoever
 // crosses it (stage 29).
@@ -195,11 +272,18 @@ func (w *World) regionCostEstimate(a *Agent, i int) (float64, bool) {
 // at zero, or in a world with no map, this is exactly the figure stage 15b
 // used - every cost is 1, so nothing is subtracted.
 func (w *World) worthOfRegion(a *Agent, i int, seen float64) float64 {
-	if w.cfg.RegionCostWeight <= 0 {
-		return seen
+	worth := seen
+	if w.cfg.RegionCostWeight > 0 {
+		cost, _ := w.regionCostEstimate(a, i)
+		worth -= w.cfg.RegionCostWeight * (cost - 1)
 	}
-	cost, _ := w.regionCostEstimate(a, i)
-	return seen - w.cfg.RegionCostWeight*(cost-1)
+	// And what it believes the ground there may do to whoever is in it
+	// (stage 35). Nothing is gated on this: as with the cost, what it changes
+	// is the ranking of the country the agent is already considering.
+	if danger, ok := w.regionDangerEstimate(a, i); ok {
+		worth -= w.dangerPrice(danger)
+	}
+	return worth
 }
 
 // bestKnownRegion is the ground this agent thinks best of, and how much better
@@ -278,14 +362,22 @@ func (w *World) exchangeRegions(a, o *Agent) float64 {
 			o.regions[i].seen -= step
 			moved += 2 * abs(step)
 			moved += w.exchangeRegionCost(a, o, i)
+			moved += w.exchangeRegionDanger(a, o, i)
 		case theyKnow && cfg.RegionToldCount > 0:
 			a.regions[i].setSeen(theirs, cfg.RegionToldCount, w.tick)
 			moved += abs(theirs)
 			moved += w.exchangeRegionCost(a, o, i)
+			moved += w.exchangeRegionDanger(a, o, i)
 		case iKnow && cfg.RegionToldCount > 0:
 			o.regions[i].setSeen(mine, cfg.RegionToldCount, w.tick)
 			moved += abs(mine)
 			moved += w.exchangeRegionCost(a, o, i)
+			moved += w.exchangeRegionDanger(a, o, i)
+		default:
+			// Neither has a food view of the place, which is what the three
+			// cases above turn on - but one of them may still have watched
+			// somebody drown there, and that is worth passing on by itself.
+			moved += w.exchangeRegionDanger(a, o, i)
 		}
 	}
 	// In the same units the rest of a trade is measured in: a share of the
@@ -326,6 +418,85 @@ func (w *World) exchangeRegionCost(a, o *Agent, i int) float64 {
 	return 0
 }
 
+// exchangeRegionDanger hands on what the two of them make of what the ground
+// there may do to whoever is in it (stage 35).
+//
+// The same three cases as the two beliefs above, and here they earn their keep
+// most plainly: an agent that has never been near the river can only learn
+// that it drowns people by being told, because the alternative way of finding
+// out is the one that does not leave anybody to tell.
+func (w *World) exchangeRegionDanger(a, o *Agent, i int) float64 {
+	if !w.cfg.RegionDangerTold {
+		return 0
+	}
+	mine, iKnow := w.regionDangerEstimate(a, i)
+	theirs, theyKnow := w.regionDangerEstimate(o, i)
+	switch {
+	case iKnow && theyKnow:
+		step := (theirs - mine) * w.cfg.LoreExchangeRate
+		a.regions[i].danger += step
+		o.regions[i].danger -= step
+		return 2 * abs(step) * w.cfg.RegionDangerTicks
+	case theyKnow:
+		a.regions[i].danger = theirs
+		return abs(theirs) * w.cfg.RegionDangerTicks
+	case iKnow:
+		o.regions[i].danger = mine
+		return abs(mine) * w.cfg.RegionDangerTicks
+	}
+	return 0
+}
+
+// witnessDrowning is what the rest of them make of somebody going under.
+//
+// Everyone who can see it revises what they believe about the region it
+// happened in - not the one they are standing in, which may be a different
+// one: what they learned is about the place that killed, and where they were
+// watching from has nothing to do with it.
+//
+// What they take in is the truth of the ground under the victim's feet, which
+// is the same reading they would have got by standing there themselves. It is
+// folded in as several looks rather than one, because a death carries more
+// than a stroll does; that weight is the only number this rule has.
+//
+// The walk over the onlookers is shared with the other rule that has one
+// (stage 31's killing, witness.go). What is not shared is everything below the
+// walk: this writes to a place, that writes to a person, and they count their
+// weights in different units (#60).
+func (w *World) witnessDrowning(victim *Agent) {
+	cfg := &w.cfg
+	if cfg.DrownWitnessLooks <= 0 || cfg.RegionLearnRate <= 0 || len(w.regions) == 0 {
+		return
+	}
+	danger := w.terrainAt(victim.X, victim.Y).Drown
+	if danger <= 0 {
+		return
+	}
+	where := w.regionIndexAt(victim.X, victim.Y)
+
+	w.forEachWitness(victim.X, victim.Y, victim.ID, func(o *Agent) {
+		if o.regions == nil {
+			o.regions = make([]regionView, len(w.regions))
+		}
+		v := &o.regions[where]
+		// The same cap a visit is subject to: a lifetime of old news must
+		// not make an agent unable to notice that a place has changed.
+		n := math.Min(v.n+cfg.DrownWitnessLooks, cfg.RegionMemory*o.MemoryScale(cfg))
+		held := v.dangerOrSafe()
+		v.danger = held + (danger-held)*cfg.RegionLearnRate*cfg.DrownWitnessLooks/n
+		// The record itself has to exist for the belief to be read back, and
+		// a witness that has never been there now knows one thing about the
+		// place: what it does to people. What it grows is still unknown, so
+		// the food view is left where it was.
+		if v.n <= 0 {
+			v.setSeen(v.seen, cfg.DrownWitnessLooks, w.tick)
+		} else {
+			v.setSeen(v.seen, n, w.tick)
+		}
+		w.drownWitnesses++
+	})
+}
+
 // --- reading it out ---------------------------------------------------------
 
 // CountryKnownBy is how much of the world one agent has a view of, and how
@@ -356,6 +527,23 @@ func (w *World) GoingKnownBy(id int) (cost float64, known bool) {
 	return w.regionCostEstimate(a, w.regionIndexAt(a.X, a.Y))
 }
 
+// DangerKnownBy is what one agent makes of what the country it is standing in
+// may do to it (stage 35): the chance it believes a tick here carries, and how
+// many places it fears at all. For the viewer; read only.
+func (w *World) DangerKnownBy(id int) (danger float64, feared int, known bool) {
+	a := w.agentByID(id)
+	if a == nil {
+		return 0, 0, false
+	}
+	for r := range a.regions {
+		if _, ok := w.regionDangerEstimate(a, r); ok {
+			feared++
+		}
+	}
+	danger, known = w.regionDangerEstimate(a, w.regionIndexAt(a.X, a.Y))
+	return danger, feared, known
+}
+
 // RegionKnowledge is what the population has made of the ground.
 type RegionKnowledge struct {
 	// Known is how many regions the average agent has a view of, and Told the
@@ -374,6 +562,19 @@ type RegionKnowledge struct {
 	// that says whether the belief is about the world at all: everything else
 	// this stage does rests on it being above zero.
 	CostRank float64
+
+	// DangerRank is the same again for what the ground may do to whoever is
+	// in it (stage 35). It is counted over every region the agent has any
+	// view of, with "been there and it was safe" reading as zero rather than
+	// as nothing: leaving the safe ground out would score the belief only
+	// where the truth is the same everywhere, which is a correlation over a
+	// constant and always comes to zero.
+	//
+	// DangerKnown is how many places the average agent believes are dangerous
+	// at all. It can count somewhere the agent has never been and knows
+	// nothing else about, because somebody drowned there in front of it.
+	DangerRank  float64
+	DangerKnown float64
 
 	// Spread is how much agents disagree about the same region, averaged over
 	// regions. It is what says whether a population has come to share a view
@@ -397,9 +598,16 @@ func (w *World) RegionKnowledge() RegionKnowledge {
 	// has a view of the cost - which is not quite the same set, since a cost
 	// belief does not fade with the food view it rides in.
 	var cn, cx, cy, cxx, cyy, cxy float64
+	// And again for the danger (stage 35). This one is counted over every
+	// agent-region pair with a danger view, whether or not the agent has a
+	// food view of the place - hearing that somebody drowned somewhere is
+	// knowing something about it.
+	var dn, dx, dy, dxx, dyy, dxy, dangerViews float64
 	truthCost := make([]float64, len(w.regions))
+	truthDrown := make([]float64, len(w.regions))
 	for r := range w.regions {
 		truthCost[r] = w.regionMeanCost(r)
+		truthDrown[r] = w.regionMeanDrown(r)
 	}
 	sum := make([]float64, len(w.regions))
 	sumSq := make([]float64, len(w.regions))
@@ -412,6 +620,18 @@ func (w *World) RegionKnowledge() RegionKnowledge {
 		}
 		agents++
 		for r := range w.regions {
+			if r < len(a.regions) && a.regions[r].n > 0 {
+				belief, t := a.regions[r].dangerOrSafe(), truthDrown[r]
+				dn++
+				dx += belief
+				dy += t
+				dxx += belief * belief
+				dyy += t * t
+				dxy += belief * t
+			}
+			if _, ok := w.regionDangerEstimate(a, r); ok {
+				dangerViews++
+			}
 			seen, known := w.regionEstimate(a, r)
 			if !known {
 				continue
@@ -459,6 +679,14 @@ func (w *World) RegionKnowledge() RegionKnowledge {
 		den := math.Sqrt((cn*cxx - cx*cx) * (cn*cyy - cy*cy))
 		if den > 0 {
 			out.CostRank = num / den
+		}
+	}
+	out.DangerKnown = dangerViews / agents
+	if dn > 1 {
+		num := dn*dxy - dx*dy
+		den := math.Sqrt((dn*dxx - dx*dx) * (dn*dyy - dy*dy))
+		if den > 0 {
+			out.DangerRank = num / den
 		}
 	}
 	regions := 0.0

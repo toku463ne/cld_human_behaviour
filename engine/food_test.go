@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // A carcass is left where somebody died, and how much of it there is scales
 // with how much the dead creature was made of. That is the whole reason a
@@ -326,9 +329,29 @@ func TestASharedKillIsRemembered(t *testing.T) {
 	if got := affinityOf(w, one, onlookerID); got != 0 {
 		t.Errorf("an onlooker that took no part earned %.1f", got)
 	}
-	if len(onlooker.opinions) != 0 {
-		t.Errorf("the onlooker came away with %d opinions, want none", len(onlooker.opinions))
+	// What the onlooker does come away with is stage 31's: it saw two of its
+	// own kill something else, and thinks a little better of both of them.
+	// That is a different rule with a different weight, and it does not put
+	// the onlooker on the carcass's claim.
+	for _, id := range []int{oneID, twoID} {
+		if got := affinityOf(w, onlooker, id); got != cfg.AffinityWitnessKill {
+			t.Errorf("the onlooker came away with %.1f of the killer, want %.1f",
+				got, cfg.AffinityWitnessKill)
+		}
 	}
+	if claimed(w, onlookerID) {
+		t.Error("watching the kill put the onlooker on the carcass's claim")
+	}
+}
+
+// claimed reports whether an agent holds a share of any meat lying about.
+func claimed(w *World, id int) bool {
+	for _, f := range w.Foods() {
+		if f.Kind == FoodMeat && slices.Contains(f.Claim, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // A kill nobody could have a share of leaves nobody with a friend: a party of

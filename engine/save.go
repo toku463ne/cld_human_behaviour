@@ -124,7 +124,11 @@ type counterSnap struct {
 	FirstSightErrorFlat                          float64
 	FirstSightErrorFixed                         float64
 	Geniuses, GreatGeniuses                      int
-	Deaths, Kills, AgingDeaths                   int
+	Deaths, Kills, AgingDeaths, DrownDeaths      int
+	DrownWitnesses                               int
+	KillWitnesses, AvengeWitnesses, Observes     int
+	KillLessons                                  int
+	Calls, Joins                                 int
 	Matured, ChildDeaths, Fights                 int
 	MaxGeneration                                int
 	BlowsSeen, BlowsAnswered                     int
@@ -205,6 +209,7 @@ type regionSnap struct {
 	Seen, N, LogN float64
 	LastTick      int
 	Cost          float64
+	Danger        float64
 }
 
 type looksSnap struct {
@@ -246,7 +251,12 @@ func (w *World) Save(out io.Writer) error {
 			FirstSightErrorFlat: w.firstSightErrorFlat, FirstSightErrorFixed: w.firstSightErrorFixed,
 			Geniuses: w.geniuses, GreatGeniuses: w.greatGeniuses,
 			Deaths: w.deaths, Kills: w.kills, AgingDeaths: w.agingDeaths,
-			Matured: w.matured, ChildDeaths: w.childDeaths, Fights: w.fights,
+			DrownDeaths: w.drownDeaths, DrownWitnesses: w.drownWitnesses,
+			KillWitnesses: w.killWitnesses, AvengeWitnesses: w.avengeWitnesses,
+			KillLessons: w.killLessons,
+			Calls:       w.calls, Joins: w.joins,
+			Observes: w.observes,
+			Matured:  w.matured, ChildDeaths: w.childDeaths, Fights: w.fights,
 			MaxGeneration: w.maxGeneration,
 			BlowsSeen:     w.blowsSeen, BlowsAnswered: w.blowsAnswered,
 			Courtships: w.courtships, CourtshipsAccepted: w.courtshipsAccepted,
@@ -313,7 +323,7 @@ func snapAgent(a *Agent) agentSnap {
 	for i := range a.regions {
 		r := &a.regions[i]
 		out.Regions = append(out.Regions, regionSnap{Seen: r.seen, N: r.n, LogN: r.logN,
-			LastTick: r.lastTick, Cost: r.cost})
+			LastTick: r.lastTick, Cost: r.cost, Danger: r.danger})
 	}
 	if len(a.opinions) > 0 {
 		out.Opinions = make(map[int]opinionSnap, len(a.opinions))
@@ -383,6 +393,11 @@ func Load(in io.Reader) (*World, error) {
 	w.firstSightErrorFlat, w.firstSightErrorFixed = c.FirstSightErrorFlat, c.FirstSightErrorFixed
 	w.geniuses, w.greatGeniuses = c.Geniuses, c.GreatGeniuses
 	w.deaths, w.kills, w.agingDeaths = c.Deaths, c.Kills, c.AgingDeaths
+	w.drownDeaths, w.drownWitnesses = c.DrownDeaths, c.DrownWitnesses
+	w.killWitnesses, w.avengeWitnesses = c.KillWitnesses, c.AvengeWitnesses
+	w.killLessons = c.KillLessons
+	w.calls, w.joins = c.Calls, c.Joins
+	w.observes = c.Observes
 	w.matured, w.childDeaths, w.fights = c.Matured, c.ChildDeaths, c.Fights
 	w.maxGeneration = c.MaxGeneration
 	w.blowsSeen, w.blowsAnswered = c.BlowsSeen, c.BlowsAnswered
@@ -432,7 +447,7 @@ func loadAgent(s *agentSnap) Agent {
 	for i := range s.Regions {
 		r := &s.Regions[i]
 		a.regions = append(a.regions, regionView{seen: r.Seen, n: r.N, logN: r.LogN,
-			lastTick: r.LastTick, cost: r.Cost})
+			lastTick: r.LastTick, cost: r.Cost, danger: r.Danger})
 	}
 	if len(s.Opinions) > 0 {
 		a.opinions = make(map[int]*Opinion, len(s.Opinions))

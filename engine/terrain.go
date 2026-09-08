@@ -64,6 +64,16 @@ type terrain struct {
 	Height int8
 	Slope  bool
 
+	// Drown is the chance that a tick spent on this cell is the last one
+	// (stage 34). Water is the only ground that carries one today.
+	//
+	// It sits on the cell rather than in a table of hazards because one
+	// example is not enough to know what the table should look like. When a
+	// second kind of dangerous ground turns up - a cliff, a bog - the two of
+	// them will say what they have in common, and that is the moment to
+	// gather them up (#60).
+	Drown float64
+
 	Kind Ground
 }
 
@@ -145,7 +155,7 @@ func cellFor(c rune, cfg *Config) terrain {
 	case c == ':':
 		return terrain{Cost: cfg.RoughMoveCost, Kind: GroundRough}
 	case c == '~':
-		return terrain{Cost: cfg.WaterMoveCost, Kind: GroundWater}
+		return terrain{Cost: cfg.WaterMoveCost, Drown: cfg.DrownChancePerTick, Kind: GroundWater}
 	case c >= '1' && c <= '9':
 		return terrain{Cost: 1, Height: int8(c - '0'), Kind: GroundOpen}
 	case c >= 'A' && c <= 'I':
@@ -198,6 +208,7 @@ type GroundView struct {
 	Cost   float64
 	Height int
 	Slope  bool
+	Drown  float64
 }
 
 // TerrainAt reports what the country is at a position. Read only.
@@ -209,7 +220,7 @@ type GroundView struct {
 // terrain cell is what movement costs.
 func (w *World) TerrainAt(x, y float64) GroundView {
 	t := w.terrainAt(x, y)
-	return GroundView{Kind: t.Kind, Cost: t.Cost, Height: int(t.Height), Slope: t.Slope}
+	return GroundView{Kind: t.Kind, Cost: t.Cost, Height: int(t.Height), Slope: t.Slope, Drown: t.Drown}
 }
 
 // TerrainSize is how many cells the map has, and how big one is. Zero when the
@@ -219,4 +230,46 @@ func (w *World) TerrainSize() (cols, rows int, cellW, cellH float64) {
 		return 0, 0, 0, 0
 	}
 	return w.ground.cols, w.ground.rows, w.ground.cellW, w.ground.cellH
+}
+
+// --- what the ground kills (stage 34) ---------------------------------------
+
+// drownings is the whole of the rule. Every body standing in the water at the
+// end of a tick throws once, and the ones that lose are simply gone.
+//
+// Nothing here is graded and nothing accumulates. A river does not wear a body
+// down the way a fight does - which is the point of the shape: damage would
+// have had to be divided by defence, and defence would have picked up a second
+// job. What decides who comes through is how many ticks were spent in there,
+// and that is speed, which the world already has.
+//
+// There is no threshold and no rule saying to keep out. Whether to be in the
+// water at all comes out of the same comparison as everything else, with the
+// chance priced into the options that would keep the body there.
+//
+// A flat world draws no random number here at all, which is why it runs to the
+// same fingerprint it always did.
+func (w *World) drownings() {
+	if w.ground == nil || w.cfg.DrownChancePerTick <= 0 {
+		return
+	}
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		p := w.terrainAt(a.X, a.Y).Drown
+		if p <= 0 {
+			continue
+		}
+		if w.rng.Float64() < p {
+			w.drownDeaths++
+			a.drowned = true
+			// Before the body is taken out of the world, because the ones who
+			// are about to learn from it are the ones who can see it where it
+			// is (stage 35).
+			w.witnessDrowning(a)
+			w.kill(a)
+		}
+	}
 }

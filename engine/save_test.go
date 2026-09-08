@@ -18,8 +18,8 @@ import (
 func digest(w *World) string {
 	h := sha256.New()
 	s := w.Stats()
-	fmt.Fprintf(h, "tick=%d pop=%d births=%d deaths=%d kills=%d fights=%d gen=%d\n",
-		s.Tick, s.Population, s.Births, s.Deaths, s.Kills, s.Fights, s.MaxGeneration)
+	fmt.Fprintf(h, "tick=%d pop=%d births=%d deaths=%d kills=%d drowned=%d fights=%d gen=%d\n",
+		s.Tick, s.Population, s.Births, s.Deaths, s.Kills, s.DrownDeaths, s.Fights, s.MaxGeneration)
 	for i := range w.agents {
 		a := &w.agents[i]
 		fmt.Fprintf(h, "a %d %.17g %.17g %.17g %.17g %.17g %v %d %d %v\n",
@@ -59,7 +59,7 @@ func TestASavedWorldComesBackTheSameWorld(t *testing.T) {
 		// genes of their own, and beliefs that are being learned rather than
 		// standing still.
 		cfg.TerrainMap = []string{
-			"....::::", "....::A1", "....::11",
+			"..~.::::", "..~.::A1", "..~.::11",
 		}
 		cfg.TerrainFoodCorrelation = 1
 		cfg.HighGroundCover = 0.3

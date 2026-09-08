@@ -14,6 +14,12 @@ const (
 	ActObserve            // keep an eye on somebody to size them up
 	ActCourt              // approach a candidate and try to form a pair
 
+	// ActInvite is calling others in to bring something down (stage 32). It
+	// is the first word added to this list since stage 0, and it is added at
+	// the end on purpose: the numbers are what a saved world holds, so the
+	// existing ones do not move.
+	ActInvite
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -33,6 +39,8 @@ func (k ActionKind) String() string {
 		return "observe"
 	case ActCourt:
 		return "court"
+	case ActInvite:
+		return "invite"
 	default:
 		return "rest"
 	}
@@ -47,7 +55,7 @@ func (k ActionKind) String() string {
 // than through a hardcoded limit.
 type Action struct {
 	Kind     ActionKind
-	TargetID int     // food item for ActEat, agent for ActAttack/ActFlee/ActObserve/ActCourt
+	TargetID int     // food item for ActEat, agent for ActAttack/ActFlee/ActObserve/ActCourt/ActInvite
 	DX, DY   float64 // unit direction, only used by ActMove
 	Effort   float64 // 0..1
 

@@ -100,6 +100,7 @@ var (
 	colorPairLink   = color.RGBA{0x0b, 0x0b, 0x0b, 0x30}
 	colorFightLink  = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
 	colorCourtLink  = color.RGBA{0xf0, 0x8c, 0x00, 0xd0}
+	colorCallLink   = color.RGBA{0x1c, 0x9c, 0x5a, 0xd0}
 	// The ground (stage 20). These are premultiplied, like every colour the
 	// vector calls take: each channel is the colour already faded by its own
 	// alpha, and a channel brighter than the alpha does not draw at all
@@ -736,6 +737,8 @@ func (g *game) handlePlayInput() {
 		g.orderAt(engine.ActObserve, markAgent)
 	case inpututil.IsKeyJustPressed(ebiten.KeyC):
 		g.orderAt(engine.ActCourt, markAgent)
+	case inpututil.IsKeyJustPressed(ebiten.KeyI):
+		g.orderAt(engine.ActInvite, markAgent)
 	}
 	for i, key := range effortKeys {
 		if inpututil.IsKeyJustPressed(key) {
@@ -2338,12 +2341,20 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// are in the target's own perception (AttackingMe, CourtingMe), so
 		// neither tells a player anything their node does not know.
 		switch a.Action.Kind {
-		case engine.ActAttack, engine.ActCourt:
+		case engine.ActAttack, engine.ActCourt, engine.ActInvite:
 			if t, ok := g.world.AgentByID(a.Action.TargetID); ok {
 				tx, ty := g.onScreen(t.X, t.Y)
 				line := colorFightLink
-				if a.Action.Kind == engine.ActCourt {
+				switch a.Action.Kind {
+				case engine.ActCourt:
 					line = colorCourtLink
+				case engine.ActInvite:
+					// Calling others in against something (stage 32). Drawn
+					// like the two above and for the same reason: it is in
+					// the perception of everybody who can see it
+					// (DeclaredFor), so the line tells a player nothing their
+					// node does not know.
+					line = colorCallLink
 				}
 				vector.StrokeLine(screen, ax, ay, tx, ty, 1.5, line, true)
 			}
@@ -2577,7 +2588,7 @@ func (g *game) markTarget(screen *ebiten.Image, a *engine.Agent) {
 				vector.StrokeCircle(screen, fx, fy, g.long(7), 1.5, colorTarget, true)
 			}
 		}
-	case engine.ActAttack, engine.ActFlee, engine.ActObserve, engine.ActCourt:
+	case engine.ActAttack, engine.ActFlee, engine.ActObserve, engine.ActCourt, engine.ActInvite:
 		if t, ok := g.world.AgentByID(a.Action.TargetID); ok {
 			tx, ty := g.onScreen(t.X, t.Y)
 			vector.StrokeCircle(screen, tx, ty, g.long(14), 1.5, colorTarget, true)
@@ -2663,15 +2674,19 @@ func (g *game) overlay() string {
 	if g.paused {
 		state = "PAUSED"
 	}
-	fmt.Fprintf(&b, "tick %d (hour %.2f)  pop %d (m %d / f %d)  food %d  births %d  deaths %d (kills %d)  gen %d  [%s]\n",
-		s.Tick, g.world.Hour(), s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, s.MaxGeneration, state)
+	drowned := ""
+	if s.DrownDeaths > 0 {
+		drowned = fmt.Sprintf(", drowned %d", s.DrownDeaths)
+	}
+	fmt.Fprintf(&b, "tick %d (hour %.2f)  pop %d (m %d / f %d)  food %d  births %d  deaths %d (kills %d%s)  gen %d  [%s]\n",
+		s.Tick, g.world.Hour(), s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, drowned, s.MaxGeneration, state)
 	fmt.Fprintf(&b, "avg power %.1f  rationality %.1f  intelligence %.1f  vitality %.1f  hunger %.1f\n",
 		s.AvgPower, s.AvgRationality, s.AvgIntelligence, s.AvgVitality, s.AvgHunger)
 	b.WriteString("circle = body (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
-	b.WriteString("a line between two: red = one is coming for the other, orange = one is courting the other, faint = a pair\n")
+	b.WriteString("a line between two: red = one is coming for the other, orange = one is courting the other, green = calling others in on it, faint = a pair\n")
 	if cols, _, _, _ := g.world.TerrainSize(); cols > 0 {
-		b.WriteString("ground: blue = water, brown = rough (both cost more to cross), pale = higher, yellow = a ramp, dark line = a cliff\n")
+		b.WriteString("ground: blue = water (dear to cross, and it drowns), brown = rough, pale = higher, yellow = a ramp, dark line = a cliff\n")
 	}
 	b.WriteString("children are small circles: a newborn expresses 60% of its genes and grows into the rest by eating\n")
 	if g.played != 0 {
@@ -2689,7 +2704,7 @@ func (g *game) overlay() string {
 	switch g.play {
 	case playDriven:
 		fmt.Fprintf(&b, "playing #%d: numpad or arrows+home/end/pgup/pgdn walk it (hold to keep going)   click a spot then m walks there and stops\n", g.played)
-		b.WriteString("   click to aim   r rest  m walk to the mark  e eat  a attack  f flee  o observe  c court   1-5 effort  s stance  k heir\n")
+		b.WriteString("   click to aim   r rest  m walk to the mark  e eat  a attack  f flee  o observe  c court  i call others in   1-5 effort  s stance  k heir\n")
 		b.WriteString("   y / n answer somebody who has walked up and proposed   t move on to one of your children\n")
 	case playAsked:
 		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir, t move on, y/n a proposal\n", g.played)
@@ -2846,6 +2861,17 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 			if cost, ok := g.world.GoingKnownBy(a.ID); ok {
 				t.line("  and reckons the going hereabouts is x%.2f", cost)
 			}
+			// And what it makes of what the ground here may do to it (stage
+			// 35). The count is worth showing next to it: a node can fear a
+			// place it has never been, because it watched somebody drown
+			// there or was told by somebody who did.
+			if danger, feared, known := g.world.DangerKnownBy(a.ID); feared > 0 {
+				line := fmt.Sprintf("  fears %d place(s)", feared)
+				if known && danger > 0 {
+					line += fmt.Sprintf("; reckons a tick here risks %.3f%%", danger*100)
+				}
+				t.line("%s", line)
+			}
 		}
 		t.line("state %s   doing %s", a.State, describeAction(a.Action))
 		t.line("parents %v  children %v", a.ParentIDs, a.ChildIDs)
@@ -2887,6 +2913,7 @@ func (g *game) drawPlay(t *textBox) {
 		t.line("  click   aim at somebody, something to eat, a spot")
 		t.line("  r rest   m move to the mark   e eat   a attack")
 		t.line("  f flee   o observe            c court")
+		t.line("  i call others in against what you are aimed at")
 		t.line("  (with nothing aimed at, those take the nearest one")
 		t.line("   the node can see)")
 		t.line("  numpad 1-9 (or the arrows with home/end/pgup/pgdn)")
@@ -2975,6 +3002,16 @@ func (g *game) drawWhatItKnows(t *textBox, view engine.HumanView) {
 	if self.BetterGround > 0 {
 		t.line("  reckons the ground at %.0f,%.0f is %.1f better",
 			self.BetterGroundX, self.BetterGroundY, self.BetterGround)
+	}
+	// The footing, when it is anything other than level open ground. The
+	// drowning chance is what the node itself feels (stage 34) - it says
+	// nothing about the far bank, because the node cannot see it either.
+	if self.Ground > 1 || self.Drown > 0 {
+		line := fmt.Sprintf("  the ground here costs x%.1f to cross", self.Ground)
+		if self.Drown > 0 {
+			line += fmt.Sprintf(", and drowns it %.2f%% of ticks", self.Drown*100)
+		}
+		t.line("%s", line)
 	}
 	if !self.CanReproduce {
 		// Why, not merely that. The three conditions are the node's own rule
@@ -3771,6 +3808,13 @@ func main() {
 		// something a hand-made world should have rather than a default of
 		// the physics.
 		cfg.HighGroundCover = 0.3
+		// And the bank grows more than the country behind it (stage 36),
+		// which is the one thing that makes the river a bargain rather than
+		// only a hazard: it costs three times as much to cross, it drowns
+		// whoever lingers, and it is where the food is. Measured as agents
+		// going in more and drowning more for a world that is easier all the
+		// same (death rate -0.27 *, starving -0.24 *).
+		cfg.WatersideFood = 1
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
 	}

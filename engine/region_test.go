@@ -317,3 +317,127 @@ func TestAFlatWorldIsUntouchedByTheCorrelation(t *testing.T) {
 		t.Fatalf("the world's total is %v with the rule and %v without", tied.foodWeight, plain.foodWeight)
 	}
 }
+
+// --- stage 36: the ground beside the water ---------------------------------
+
+// A river down the middle, and the bank grows more than the rest - but the
+// world grows exactly as much as it did. Moving the food and adding to it are
+// different things, and only the first is what this stage does.
+func TestWatersideGroundGrowsMoreWithoutGrowingMore(t *testing.T) {
+	base := quietConfig()
+	base.Width, base.Height = 800, 600
+	base.TerrainMap = []string{
+		"...~~...",
+		"...~~...",
+		"...~~...",
+	}
+
+	plain := NewWorld(base)
+	rich := base
+	rich.WatersideFood = 1
+	wet := NewWorld(rich)
+
+	var plainTotal, wetTotal float64
+	for i := range plain.regions {
+		plainTotal += plain.regions[i].Food
+		wetTotal += wet.regions[i].Food
+	}
+	if math.Abs(plainTotal-wetTotal) > 1e-9 {
+		t.Fatalf("the world grows %v with a rich bank against %v without: the total moved", wetTotal, plainTotal)
+	}
+
+	// And the food went where the water is.
+	var onWater, dry float64
+	var nWater, nDry float64
+	for i := range wet.regions {
+		if wet.regionWaterShare(i) > 0 {
+			onWater += wet.regions[i].Food
+			nWater++
+		} else {
+			dry += wet.regions[i].Food
+			nDry++
+		}
+	}
+	if nWater == 0 || nDry == 0 {
+		t.Fatalf("the map has %v watery regions and %v dry ones", nWater, nDry)
+	}
+	if !(onWater/nWater > dry/nDry) {
+		t.Fatalf("the bank grows %v per region against %v inland", onWater/nWater, dry/nDry)
+	}
+}
+
+// Negative is the other landscape: the same rule with the sign turned over,
+// and the same total.
+func TestABarrenBankIsTheSameRuleTurnedOver(t *testing.T) {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 600
+	cfg.TerrainMap = []string{"...~~...", "...~~...", "...~~..."}
+	cfg.WatersideFood = -1
+	w := NewWorld(cfg)
+
+	var onWater, dry, nWater, nDry float64
+	for i := range w.regions {
+		if w.regionWaterShare(i) > 0 {
+			onWater += w.regions[i].Food
+			nWater++
+		} else {
+			dry += w.regions[i].Food
+			nDry++
+		}
+	}
+	if !(onWater/nWater < dry/nDry) {
+		t.Fatalf("a barren bank grows %v per region against %v inland", onWater/nWater, dry/nDry)
+	}
+}
+
+// A world with no map has no water in it, so the rule cannot fire however it
+// is set - and, drawing no random number, such a world runs to the state it
+// always did.
+func TestAFlatWorldHasNoBank(t *testing.T) {
+	run := func(side float64) Stats {
+		cfg := DefaultConfig()
+		cfg.Seed = 11
+		cfg.WatersideFood = side
+		w := NewWorld(cfg)
+		for i := 0; i < 400; i++ {
+			w.Step()
+		}
+		return w.Stats()
+	}
+	if off, on := run(0), run(2); off != on {
+		t.Fatalf("a flat world ran differently with a rich bank:\n off %+v\n on  %+v", off, on)
+	}
+}
+
+// The two ways the ground can be tied to the food are separate rules and can
+// be asked for together: hard country poor, and the bank rich, at once.
+func TestTheBankAndTheGoingAreAskedForSeparately(t *testing.T) {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 600
+	// Rough in the west, a river in the middle, open in the east.
+	cfg.TerrainMap = []string{"::..~~..", "::..~~..", "::..~~.."}
+	cfg.TerrainFoodCorrelation = 1
+	cfg.WatersideFood = 1
+	w := NewWorld(cfg)
+
+	rough := w.regionIndexAt(50, 300)
+	river := w.regionIndexAt(500, 300)
+	open := w.regionIndexAt(750, 300)
+	if rough == river || river == open {
+		t.Fatal("the three pieces of country are not three regions")
+	}
+	// Stage 33 makes dear ground poor, which the river is; stage 36 gives the
+	// bank some of it back. What must hold is that they are two rules and not
+	// one: the rough is poorer than the open (33 is doing its work), and the
+	// same river is richer with the bank asked for than without it (36 is
+	// doing its own, on top).
+	if !(w.regions[rough].Food < w.regions[open].Food) {
+		t.Fatalf("rough %v is not poorer than open %v", w.regions[rough].Food, w.regions[open].Food)
+	}
+	cfg.WatersideFood = 0
+	without := NewWorld(cfg)
+	if !(w.regions[river].Food > without.regions[river].Food) {
+		t.Fatalf("the bank grows %v with stage 36 and %v without it",
+			w.regions[river].Food, without.regions[river].Food)
+	}
+}

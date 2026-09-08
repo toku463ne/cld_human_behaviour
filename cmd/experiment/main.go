@@ -70,6 +70,88 @@ var (
 		".......~~.......",
 	}
 
+	// The same river, moved to the western edge (stage 35). The point of it
+	// is that nothing lies beyond it: a body drawn to better country is never
+	// drawn THROUGH this one, so what it separates is whether a belief about
+	// a dangerous place keeps anybody out of it, from whether the place is
+	// simply on the way to everywhere.
+	mapRiverEdge = []string{
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+		".~~.............",
+	}
+
+	// The same water, not in a line (stage 37). Twenty-four cells of it, the
+	// same count as the river, laid out as six pools spread over the map: the
+	// same area to cross, the same cost to cross it, the same amount of
+	// ground that can drown a body - and nothing dividing the world.
+	//
+	// It is the control the stage turns on. A river against open country
+	// compares two worlds that differ in two ways at once (there is more dear
+	// ground, AND it lies in a line), and only the second of them is the
+	// question.
+	mapPonds = []string{
+		"................",
+		".~~.............",
+		".~~.........~~..",
+		"............~~..",
+		".....~~.........",
+		".....~~.........",
+		"................",
+		".........~~.....",
+		"..~~.....~~.....",
+		"..~~........~~..",
+		"............~~..",
+		"................",
+	}
+
+	// A river wide enough to be wider than sight (stage 37). Four cells is
+	// 200 across, against a sight block of about 230 that an agent is
+	// standing somewhere inside: a body on one bank can see the far bank only
+	// from the water's edge. It is the arm that says whether a river that
+	// does not divide a world failed to because it was too narrow to hide the
+	// other side.
+	mapGorge = []string{
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+		"......~~~~......",
+	}
+
+	// Forty-eight cells again, in twelve pools: the control for the gorge, the
+	// way mapPonds is the control for the river.
+	mapPools = []string{
+		"~~......~~......",
+		"~~......~~......",
+		"....~~......~~..",
+		"....~~......~~..",
+		"..~~......~~....",
+		"..~~......~~....",
+		"......~~......~~",
+		"......~~......~~",
+		"~~......~~......",
+		"~~......~~......",
+		"....~~......~~..",
+		"....~~......~~..",
+	}
+
 	// High ground in the north-east, stacked: a first level with two ramps up
 	// to it, and a second level on top of it with one ramp of its own. The
 	// only ways in are the ramps.
@@ -991,6 +1073,249 @@ var variants = []variant{
 		about: "all three at once: rough ground, a river, and a stacked plateau",
 		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
 	},
+	// Stage 34: what the water does. The pair to read is river against
+	// riverdry - the same map with the drowning turned off, which is the
+	// world stage 20 measured - and the two sweeps say how much of what
+	// happens is the rate rather than the rule.
+	{
+		name:  "riverdry",
+		about: "control: the same river, and nobody ever drowns in it (34 off)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.DrownChancePerTick = mapRiver, 0 },
+	},
+	{
+		name:  "drownlow",
+		about: "sweep: the river at a quarter of the drowning rate",
+		apply: func(c *engine.Config) { c.TerrainMap, c.DrownChancePerTick = mapRiver, 0.00005 },
+	},
+	{
+		name:  "drownhigh",
+		about: "sweep: the river at five times the drowning rate",
+		apply: func(c *engine.Config) { c.TerrainMap, c.DrownChancePerTick = mapRiver, 0.001 },
+	},
+	// Stage 35: the drowning as news, and the danger as a belief about a
+	// place. Three arms so the three ways of learning it come apart: nobody
+	// weighs it, everybody weighs what they felt themselves, and everybody
+	// also learns from watching. river is the base - it is stage 34's world.
+	{
+		name:  "dangernone",
+		about: "control: the river of stage 34 - the danger is learned and never weighed (35 off)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionDangerTicks = mapRiver, 0 },
+	},
+	{
+		name:  "dangerlore",
+		about: "the river, and agents believe how dangerous a region is (35: felt, watched and told)",
+		apply: func(c *engine.Config) { c.TerrainMap = mapRiver },
+	},
+	{
+		name:  "dangerfelt",
+		about: "control: the danger is learned by standing in it and never watched or told (35 alone)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.DrownWitnessLooks, c.RegionDangerTold = mapRiver, 0, false
+		},
+	},
+	{
+		name:  "dangernottold",
+		about: "control: felt and watched, but never handed on (what does telling add?)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionDangerTold = mapRiver, false },
+	},
+	{
+		name:  "dangerheavy",
+		about: "sweep: the same belief priced over four planning horizons instead of one",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionDangerTicks = mapRiver, 2800 },
+	},
+	// Stage 36: the bank. The base is river - stages 34 and 35 as they stand,
+	// with the food laid out without reference to the ground - and the arms
+	// ask what happens when the water is also where the food is, when it is
+	// the opposite, and when the two ways of tying food to ground are asked
+	// for together.
+	{
+		name:  "waterrich",
+		about: "the river bank grows more: the first country that both kills and feeds",
+		apply: func(c *engine.Config) { c.TerrainMap, c.WatersideFood = mapRiver, 1 },
+	},
+	{
+		name:  "waterbarren",
+		about: "the other landscape: the same strip, and nothing grows beside it",
+		apply: func(c *engine.Config) { c.TerrainMap, c.WatersideFood = mapRiver, -1 },
+	},
+	{
+		name:  "waterrichblind",
+		about: "control: a rich bank that nobody fears (35 priced out, 36 on)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.WatersideFood, c.RegionDangerTicks = mapRiver, 1, 0
+		},
+	},
+	{
+		name:  "waterrichlink",
+		about: "both ties at once: hard country poor (33) and the bank rich (36)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.WatersideFood, c.TerrainFoodCorrelation = mapRiver, 1, 1
+		},
+	},
+	// Stage 32: calling others in. The base is baseline - the rule is on by
+	// default - and the arms take it apart: the word without anybody being
+	// counted on, being counted on without the word, and the trust that
+	// decides how much an ally is worth.
+	{
+		name:  "nocall",
+		about: "control: no word for calling others in, but an ally already swinging still counts (32a off)",
+		apply: func(c *engine.Config) { c.CallTicks = 0 },
+	},
+	{
+		name:  "noally",
+		about: "control: nobody is ever counted on, so the call is spoken and means nothing (32b off)",
+		apply: func(c *engine.Config) { c.AllyTrustWeight = 0 },
+	},
+	{
+		name:  "noteam",
+		about: "control: neither half - the world as it was before stage 32",
+		apply: func(c *engine.Config) { c.CallTicks, c.AllyTrustWeight = 0, 0 },
+	},
+	{
+		name:  "preyonly",
+		about: "only a hunt counts: two agents ganging up on a third get no help from each other",
+		apply: func(c *engine.Config) { c.AllyPreyOnly = true },
+	},
+	{
+		name:  "trusteasy",
+		about: "sweep: half the affinity buys complete trust in an ally",
+		apply: func(c *engine.Config) { c.AffinityTrust = 10 },
+	},
+	{
+		name:  "trusthard",
+		about: "sweep: twice the affinity for complete trust - does it matter that trust reaches 1?",
+		apply: func(c *engine.Config) { c.AffinityTrust = 40 },
+	},
+	{
+		name:  "allyhalf",
+		about: "sweep: an ally is worth half what trust says (nobody is ever fully counted on)",
+		apply: func(c *engine.Config) { c.AllyTrustWeight = 0.5 },
+	},
+	// Stage 31: what a killing leaves with the people who saw it. The base
+	// is baseline - the rule is on by default - so the arms here are the
+	// controls: each half off, both off, and the reading half at weights
+	// either side of the default.
+	{
+		name:  "nowitness",
+		about: "control: a killing teaches the onlookers nothing (31 off, both halves)",
+		apply: func(c *engine.Config) { c.KillWitnessFactor, c.AffinityWitnessKill = 0, 0 },
+	},
+	{
+		name:  "noreading",
+		about: "control: seeing a killing is worth nothing about the killer's strength (31a off)",
+		apply: func(c *engine.Config) { c.KillWitnessFactor = 0 },
+	},
+	{
+		name:  "noavenge",
+		about: "control: killing one of theirs earns nothing from the onlookers (31b off)",
+		apply: func(c *engine.Config) { c.AffinityWitnessKill = 0 },
+	},
+	{
+		name:  "witnessnolooks",
+		about: "31a, with what is seen kept out of the picture of what a build is worth: is it the readings or the line?",
+		apply: func(c *engine.Config) { c.KillWitnessLooks = false },
+	},
+	{
+		name:  "readingnolooks",
+		about: "the reading half alone, kept out of the line (31b off, 31a on, looks untouched)",
+		apply: func(c *engine.Config) { c.KillWitnessLooks, c.AffinityWitnessKill = false, 0 },
+	},
+	{
+		name:  "witnesscoarse",
+		about: "sweep: a witnessed killing is worth a quarter of a paid look",
+		apply: func(c *engine.Config) { c.KillWitnessFactor = 4 },
+	},
+	{
+		name:  "witnessfine",
+		about: "sweep: a witnessed killing is worth as much as a paid look (the thing #55 forbids)",
+		apply: func(c *engine.Config) { c.KillWitnessFactor = 1 },
+	},
+	{
+		name:  "avengehigh",
+		about: "sweep: seeing one of your own kill an enemy is worth as much as taking part",
+		apply: func(c *engine.Config) { c.AffinityWitnessKill = 6 },
+	},
+	// Stage 37: whether the river divides the world. Nothing is added to the
+	// world here - these are controls, and the reading is done by the metrics
+	// (bankSplit, crossShare, crossIndex, crossDry, bankGeneGap,
+	// bankCountryGap).
+	//
+	// The pairs to read are river against ponds, and waterrichlink - the world
+	// a map would actually be played on - against pondslink. What separates
+	// them is only the shape of the water: the area, the cost of crossing it
+	// and the ground that can drown a body are the same on both sides of each
+	// pair, so anything that moves is the line and not the terrain.
+	{
+		name:  "ponds",
+		about: "control for river: the same water, in six pools instead of one line (37)",
+		apply: func(c *engine.Config) { c.TerrainMap = mapPonds },
+	},
+	{
+		name:  "pondslink",
+		about: "control for waterrichlink: the same water in pools, both ties on (37)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.WatersideFood, c.TerrainFoodCorrelation = mapPonds, 1, 1
+		},
+	},
+	{
+		name:  "gorge",
+		about: "a river four cells wide - wider than sight - down the middle (37)",
+		apply: func(c *engine.Config) { c.TerrainMap = mapGorge },
+	},
+	{
+		name:  "pools",
+		about: "control for gorge: the same forty-eight cells of water in twelve pools (37)",
+		apply: func(c *engine.Config) { c.TerrainMap = mapPools },
+	},
+	{
+		name:  "dangerlink",
+		about: "the river believed, with the food following the ground (33 on): is the water only stood in because the food is there?",
+		apply: func(c *engine.Config) { c.TerrainMap, c.TerrainFoodCorrelation = mapRiver, 1 },
+	},
+	{
+		name:  "dangerlinknone",
+		about: "control for dangerlink: the same world with the danger never weighed",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.RegionDangerTicks = mapRiver, 1, 0
+		},
+	},
+	{
+		name:  "edgedanger",
+		about: "the river against the western edge, believed: is the water avoided when it is not on the way?",
+		apply: func(c *engine.Config) { c.TerrainMap = mapRiverEdge },
+	},
+	{
+		name:  "edgedangernone",
+		about: "control for edgedanger: the same edge river, the danger never weighed",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionDangerTicks = mapRiverEdge, 0 },
+	},
+	{
+		name:  "dangerfine",
+		about: "sweep: the same river believed at 12x9 regions - is the belief too coarse to steer by?",
+		apply: func(c *engine.Config) { c.TerrainMap, c.RegionCols, c.RegionRows = mapRiver, 12, 9 },
+	},
+	{
+		name:  "dangerfinenone",
+		about: "control for dangerfine: 12x9 regions and the danger never weighed",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.RegionCols, c.RegionRows, c.RegionDangerTicks = mapRiver, 12, 9, 0
+		},
+	},
+	{
+		name:  "countrydanger",
+		about: "the whole country with the danger believed (35 on the map a world would be played on)",
+		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
+	},
+	{
+		name:  "drownblind",
+		about: "control: the river drowns exactly as often, and nobody can feel it (34 priced out)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.DrownKnown = mapRiver, false },
+	},
+	{
+		name:  "countrydry",
+		about: "control: the whole country with the drowning turned off (34 off)",
+		apply: func(c *engine.Config) { c.TerrainMap, c.DrownChancePerTick = mapCountry, 0 },
+	},
 	{
 		name:  "softrough",
 		about: "sweep: the same broken country at half the penalty",
@@ -1238,6 +1563,8 @@ func variantByName(name string) (variant, bool) {
 // to compare against afterwards.
 var metricNames = []string{
 	"pop", "gen", "births", "deaths", "starved", "killed", "killShare", "aged", "agedShare", "fights",
+	"drowned", "drownShare", "drownRate", "onWater", "drownSeen", "dangerRank", "dangerKnown", "drawShare",
+	"killSeen", "killLearned", "avengeSeen", "watchShare", "callShare", "joinShare",
 	"age", "maturity", "ageFactor", "childShare", "grewUp", "childDeathShare",
 	"birthRate", "deathRate", "killRate", "starveRate", "fightRate",
 	"clumping", "neighbours", "nearest",
@@ -1263,6 +1590,8 @@ var metricNames = []string{
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
+	"bankSplit", "crossShare", "crossIndex", "crossDry", "bankGeneGap", "bankCountryGap",
+	"bankMoves", "bankBoth",
 	"speedHigh", "speedLow", "highGap",
 	"plantSpread", "plantRegrow", "plantClump", "plantEmpty", "seedsCarried",
 	"plantPoison", "plantSignal", "plantHonesty",
@@ -1352,6 +1681,12 @@ type sample struct {
 	regionKnown, regionTold, regionRank, regionSpread float64
 	regionCostRank                                    float64
 
+	// What the population makes of where the ground kills (stage 35): the
+	// correlation with the truth, and how many regions the average agent has
+	// any view of it for - which can be more than it has stood in, because a
+	// drowning can be watched from the bank.
+	dangerRank, dangerKnown float64
+
 	// Where the population stands on the map, and who stands where (stage
 	// 20). speedOpen and speedDear are the mean share of the budget spent on
 	// speed by the agents standing on cheap and on dear ground; the gap
@@ -1362,6 +1697,23 @@ type sample struct {
 	// level above the bottom.
 	speedOpen, speedDear, speedGap, onDear, onHigh float64
 	speedHigh, speedLow, highGap                   float64
+
+	// What the two sides of the world's midline are doing (stage 37): how
+	// the population is split between them, how much of what can be seen is
+	// seen across the line, that share against what pairing at random would
+	// have given, and how far the two sides have drifted in what they are
+	// made of and what they believe about the same ground.
+	//
+	// Taken in every arm, at the same line, whether or not there is a river
+	// on it: the control has to be measured with the ruler its arm was.
+	bankSplit, crossShare, crossIndex, crossDry float64
+	bankGeneGap, bankCountryGap                 float64
+
+	// onWater is the share of the population standing in the river (stage
+	// 34). It is kept apart from onDear - which the water is also part of -
+	// because what the drowning changes is where the water is, not where the
+	// dear ground is.
+	onWater float64
 
 	// What the population is living on: how mixed the average diet is, and
 	// what the average mouthful is actually worth after the discount for
@@ -1469,6 +1821,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		engine.DefaultClusterLinkDist, engine.DefaultMembershipStep, engine.DefaultMembershipLags)
 	fights := engine.NewFightTracker(
 		engine.DefaultClusterLinkDist, engine.DefaultMembershipStep, engine.DefaultCompanionLag)
+	// Whether the same bodies stand on both banks (stage 37), watched over the
+	// same tail and at the same cadence as the membership above.
+	banks := engine.NewBankTracker(cfg.Width / 2)
 	// The census runs over the whole run rather than the tail: its window
 	// already trims it to the last stretch, and losing a species is a thing
 	// that has to be caught when it happens, because a window that has moved
@@ -1496,16 +1851,22 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		vig := w.Vigilance(engine.DefaultClusterLinkDist)
 		looks := w.LooksSignal()
 		ground := whoStandsWhere(w)
+		banks := w.Banks(w.Config().Width / 2)
 		series = append(series, sample{
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
 			humanRich: rich.Humans, enemyRich: rich.Enemies, allRich: rich.All,
 			regionKnown: known.Known, regionTold: known.Told,
 			regionCostRank: known.CostRank,
-			regionRank:     known.Rank, regionSpread: known.Spread,
+			dangerRank:     known.DangerRank, dangerKnown: known.DangerKnown,
+			regionRank: known.Rank, regionSpread: known.Spread,
 			dietVariety: diet.Variety, dietDiscount: diet.Discount,
 			speedOpen: ground.open, speedDear: ground.dear, speedGap: ground.gap,
 			onDear: ground.dearShare, onHigh: ground.highShare,
+			onWater:   ground.waterShare,
+			bankSplit: banks.Split, crossShare: banks.Cross, crossIndex: banks.CrossIndex,
+			crossDry:    banks.CrossDry,
+			bankGeneGap: banks.GeneGap, bankCountryGap: banks.CountryGap,
 			speedHigh: ground.high, speedLow: ground.low, highGap: ground.highSpeedGap,
 			plantSpread: plants.Spread, plantRegrow: plants.Regrow,
 			plantClump: plants.Clumping, plantEmpty: plants.Empty,
@@ -1555,6 +1916,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		if i >= watchFrom && w.Tick()%engine.DefaultMembershipStep == 0 {
 			member.Observe(w)
 			fights.Observe(w)
+			banks.Observe(w)
 		}
 		if w.Tick()%engine.DefaultCensusStep == 0 {
 			census.Observe(w)
@@ -1570,6 +1932,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	mem := member.Result()
 	fr := fights.Result()
 	cen := census.Result()
+	fords := banks.Result()
 
 	// The rarest species is the one coexistence stands on: the others can look
 	// healthy while it goes. With humans alone it is the human population, and
@@ -1584,16 +1947,22 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	}
 
 	r := run{variant: v.name, seed: seed, metrics: map[string]float64{
-		"pop":       float64(end.Population),
-		"gen":       float64(end.MaxGeneration),
-		"births":    float64(end.Births),
-		"deaths":    float64(end.Deaths),
-		"starved":   float64(end.Deaths - end.Kills - end.AgingDeaths),
-		"killed":    float64(end.Kills),
-		"killShare": share(end.Kills, end.Deaths),
-		"aged":      float64(end.AgingDeaths),
-		"agedShare": share(end.AgingDeaths, end.Deaths),
-		"fights":    float64(end.Fights),
+		"pop":    float64(end.Population),
+		"gen":    float64(end.MaxGeneration),
+		"births": float64(end.Births),
+		"deaths": float64(end.Deaths),
+		// Starving is what the named causes do not claim, which is why every
+		// new way to die has to have a bucket of its own: drowning folded in
+		// here would have turned up as starvation in every arm with a river
+		// in it (stage 34).
+		"starved":    float64(end.Deaths - end.Kills - end.AgingDeaths - end.DrownDeaths),
+		"drowned":    float64(end.DrownDeaths),
+		"drownShare": share(end.DrownDeaths, end.Deaths),
+		"killed":     float64(end.Kills),
+		"killShare":  share(end.Kills, end.Deaths),
+		"aged":       float64(end.AgingDeaths),
+		"agedShare":  share(end.AgingDeaths, end.Deaths),
+		"fights":     float64(end.Fights),
 		// Growing up and wearing out. "grewUp" is the share of everybody ever
 		// born that lived long enough to finish growing, which is the figure
 		// that says whether childhood is survivable at all.
@@ -1606,10 +1975,32 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// The same events as levels, divided by how many agent-lifetimes the
 		// window actually contained. These are what to compare between arms
 		// whose populations differ; the levels above cannot be.
-		"birthRate":    perAgentLifetime(end.Births-tailStart.Births, personTicks),
-		"deathRate":    perAgentLifetime(end.Deaths-tailStart.Deaths, personTicks),
-		"killRate":     perAgentLifetime(end.Kills-tailStart.Kills, personTicks),
-		"starveRate":   perAgentLifetime((end.Deaths-end.Kills-end.AgingDeaths)-(tailStart.Deaths-tailStart.Kills-tailStart.AgingDeaths), personTicks),
+		"birthRate":  perAgentLifetime(end.Births-tailStart.Births, personTicks),
+		"deathRate":  perAgentLifetime(end.Deaths-tailStart.Deaths, personTicks),
+		"killRate":   perAgentLifetime(end.Kills-tailStart.Kills, personTicks),
+		"starveRate": perAgentLifetime((end.Deaths-end.Kills-end.AgingDeaths-end.DrownDeaths)-(tailStart.Deaths-tailStart.Kills-tailStart.AgingDeaths-tailStart.DrownDeaths), personTicks),
+		"drownRate":  perAgentLifetime(end.DrownDeaths-tailStart.DrownDeaths, personTicks),
+		// How many pairs of eyes the average drowning had on it (stage 35).
+		// A rule that hardly ever fires explains nothing whatever its weight.
+		"drownSeen": ratio(end.DrownWitnesses, end.DrownDeaths),
+		// What a killing leaves with the people who saw it (stage 31), and
+		// what watching costs when it is free: the share of decisions that
+		// were "watch somebody" is the check on the weight (#55).
+		"killSeen": ratio(end.KillWitnesses, end.Kills),
+		// Of the readings a killing offers, how many landed: a memory that is
+		// full has no room for what it just watched.
+		"killLearned": share(end.KillLessons, end.KillWitnesses),
+		"avengeSeen":  ratio(end.AvengeWitnesses, end.Kills),
+		"watchShare":  ratio(end.Observes, end.Decisions),
+		// Calling others in, and going in on something somebody else has
+		// taken on (stage 32). The second is the one that says whether a call
+		// is answered: a word nobody acts on is not a hunt.
+		"callShare": ratio(end.Calls, end.Decisions),
+		"joinShare": ratio(end.Joins, end.Decisions),
+		// The share of all decisions that were "go to country I think better
+		// of" - the one door a belief about a place has into a body, and so
+		// the ceiling on what stages 15b, 29 and 35 can do (stage 35).
+		"drawShare":    share(end.RegionDraws, end.Decisions),
 		"fightRate":    perAgentLifetime(end.Fights-tailStart.Fights, personTicks),
 		"clumping":     tail.clumping,
 		"neighbours":   tail.neighbours,
@@ -1747,6 +2138,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// agents believe about a region and how well it actually grows.
 		"regionKnown":    tail.regionKnown,
 		"regionCostRank": tail.regionCostRank,
+		"dangerRank":     tail.dangerRank,
+		"dangerKnown":    tail.dangerKnown,
 		"regionTold":     tail.regionTold,
 		"regionRank":     tail.regionRank,
 		"regionSpread":   tail.regionSpread,
@@ -1757,9 +2150,21 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"speedGap":  tail.speedGap,
 		"onDear":    tail.onDear,
 		"onHigh":    tail.onHigh,
-		"speedHigh": tail.speedHigh,
-		"speedLow":  tail.speedLow,
-		"highGap":   tail.highGap,
+		"onWater":   tail.onWater,
+		// The two banks (stage 37). crossIndex is not to be read on its own -
+		// agents cluster locally whatever the ground is, so it is low
+		// everywhere; what it is for is the arm against its control.
+		"bankSplit":      tail.bankSplit,
+		"crossShare":     tail.crossShare,
+		"crossIndex":     tail.crossIndex,
+		"crossDry":       tail.crossDry,
+		"bankGeneGap":    tail.bankGeneGap,
+		"bankCountryGap": tail.bankCountryGap,
+		"bankMoves":      fords.Rate,
+		"bankBoth":       fords.Ever,
+		"speedHigh":      tail.speedHigh,
+		"speedLow":       tail.speedLow,
+		"highGap":        tail.highGap,
 
 		"dietVariety":  tail.dietVariety,
 		"dietDiscount": tail.dietDiscount,
@@ -1883,6 +2288,8 @@ func tailAverage(series []sample) sample {
 		out.allRich += s.allRich
 		out.regionKnown += s.regionKnown
 		out.regionCostRank += s.regionCostRank
+		out.dangerRank += s.dangerRank
+		out.dangerKnown += s.dangerKnown
 		out.regionTold += s.regionTold
 		out.regionRank += s.regionRank
 		out.regionSpread += s.regionSpread
@@ -1890,6 +2297,13 @@ func tailAverage(series []sample) sample {
 		out.speedDear += s.speedDear
 		out.speedGap += s.speedGap
 		out.onDear += s.onDear
+		out.onWater += s.onWater
+		out.bankSplit += s.bankSplit
+		out.crossShare += s.crossShare
+		out.crossIndex += s.crossIndex
+		out.crossDry += s.crossDry
+		out.bankGeneGap += s.bankGeneGap
+		out.bankCountryGap += s.bankCountryGap
 		out.onHigh += s.onHigh
 		out.speedHigh += s.speedHigh
 		out.speedLow += s.speedLow
@@ -1965,6 +2379,8 @@ func tailAverage(series []sample) sample {
 	out.allRich /= d
 	out.regionKnown /= d
 	out.regionCostRank /= d
+	out.dangerRank /= d
+	out.dangerKnown /= d
 	out.regionTold /= d
 	out.regionRank /= d
 	out.regionSpread /= d
@@ -1972,6 +2388,13 @@ func tailAverage(series []sample) sample {
 	out.speedDear /= d
 	out.speedGap /= d
 	out.onDear /= d
+	out.onWater /= d
+	out.bankSplit /= d
+	out.crossShare /= d
+	out.crossIndex /= d
+	out.crossDry /= d
+	out.bankGeneGap /= d
+	out.bankCountryGap /= d
 	out.onHigh /= d
 	out.speedHigh /= d
 	out.speedLow /= d
@@ -2067,6 +2490,10 @@ type groundSplit struct {
 	open, dear, gap      float64
 	dearShare, highShare float64
 
+	// waterShare is the share standing in the river, counted apart from the
+	// dear ground it is also part of (stage 34).
+	waterShare float64
+
 	// The same split by height rather than by cost. High ground is the one
 	// piece of country the population demonstrably does sort itself over -
 	// the ramps are a choice in a way that dear ground is not - so whether
@@ -2084,7 +2511,7 @@ type groundSplit struct {
 func whoStandsWhere(w *engine.World) groundSplit {
 	var out groundSplit
 	agents := w.Agents()
-	var nOpen, nDear, nHigh float64
+	var nOpen, nDear, nHigh, nWater float64
 	for i := range agents {
 		a := &agents[i]
 		b := a.Budget()
@@ -2093,6 +2520,9 @@ func whoStandsWhere(w *engine.World) groundSplit {
 		}
 		share := a.Gene(engine.GeneSpeed) / b
 		g := w.TerrainAt(a.X, a.Y)
+		if g.Kind == engine.GroundWater {
+			nWater++
+		}
 		if g.Height > 0 {
 			nHigh++
 			out.high += share
@@ -2109,6 +2539,7 @@ func whoStandsWhere(w *engine.World) groundSplit {
 	}
 	if n := nOpen + nDear; n > 0 {
 		out.dearShare, out.highShare = nDear/n, nHigh/n
+		out.waterShare = nWater / n
 	}
 	if nOpen > 0 {
 		out.open /= nOpen
@@ -2133,6 +2564,15 @@ func whoStandsWhere(w *engine.World) groundSplit {
 // figure for the cooperation work: the point of that work is to get it down
 // without simply feeding everybody, which is why it sits next to starved.
 func share(part, whole int) float64 {
+	if whole == 0 {
+		return 0
+	}
+	return float64(part) / float64(whole)
+}
+
+// ratio is one count against another when the second is not a total the first
+// is part of - how many onlookers per drowning, say.
+func ratio(part, whole int) float64 {
 	if whole == 0 {
 		return 0
 	}

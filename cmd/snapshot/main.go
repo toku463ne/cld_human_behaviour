@@ -65,7 +65,40 @@ var (
 	colorCaption    = color.RGBA{0x33, 0x33, 0x30, 0xff}
 	colorCaptionBg  = color.RGBA{0xef, 0xef, 0xec, 0xff}
 	colorFood       = color.RGBA{0x1b, 0xaf, 0x7a, 0x50}
+	colorWater      = color.RGBA{0x7f, 0xa8, 0xd0, 0x66}
+	colorDivide     = color.RGBA{0x33, 0x33, 0x30, 0x44}
 )
+
+// terrainMaps are the pieces of country cmd/experiment measures stage 37 on,
+// so that a number and a picture are of the same world. They live in both for
+// the reason cmd/devview's copies do: they are test fixtures rather than part
+// of the engine, and the world gets its country from whoever starts it.
+var terrainMaps = map[string][]string{
+	"river": {
+		".......~~.......", ".......~~.......", ".......~~.......",
+		".......~~.......", ".......~~.......", ".......~~.......",
+		".......~~.......", ".......~~.......", ".......~~.......",
+		".......~~.......", ".......~~.......", ".......~~.......",
+	},
+	"ponds": {
+		"................", ".~~.............", ".~~.........~~..",
+		"............~~..", ".....~~.........", ".....~~.........",
+		"................", ".........~~.....", "..~~.....~~.....",
+		"..~~........~~..", "............~~..", "................",
+	},
+	"gorge": {
+		"......~~~~......", "......~~~~......", "......~~~~......",
+		"......~~~~......", "......~~~~......", "......~~~~......",
+		"......~~~~......", "......~~~~......", "......~~~~......",
+		"......~~~~......", "......~~~~......", "......~~~~......",
+	},
+	"pools": {
+		"~~......~~......", "~~......~~......", "....~~......~~..",
+		"....~~......~~..", "..~~......~~....", "..~~......~~....",
+		"......~~......~~", "......~~......~~", "~~......~~......",
+		"~~......~~......", "....~~......~~..", "....~~......~~..",
+	},
+}
 
 func main() {
 	mode := flag.String("mode", "world", "what to draw: world, curve or genes")
@@ -74,6 +107,7 @@ func main() {
 	ticks := flag.Int("ticks", 50000, "ticks to run before drawing")
 	link := flag.Float64("link", engine.DefaultClusterLinkDist, "cluster linking distance")
 	scale := flag.Int("scale", 2, "output pixels per world unit (world mode)")
+	land := flag.String("terrain", "", "lay the world out on a piece of country (world mode): river, ponds, gorge or pools (stage 37)")
 	commit := flag.String("commit", "", "commit to stamp on the image (default: the current HEAD)")
 	out := flag.String("out", "snapshot.png", "file to write")
 	flag.Parse()
@@ -89,14 +123,28 @@ func main() {
 	case "world":
 		cfg := engine.DefaultConfig()
 		cfg.Seed = *seed
+		if *land != "" {
+			m, ok := terrainMaps[*land]
+			if !ok {
+				fail(fmt.Errorf("no such terrain %q: want river, ponds, gorge or pools", *land))
+			}
+			// The country a world would be played on: the bank grows more
+			// (stage 36) and hard ground is poor ground (stage 33), which is
+			// what cmd/devview lays out and what the waterrichlink arm
+			// measures.
+			cfg.TerrainMap = m
+			cfg.WatersideFood, cfg.TerrainFoodCorrelation = 1, 1
+		}
 		w := engine.NewWorld(cfg)
 		for i := 0; i < *ticks; i++ {
 			w.Step()
 		}
 		img = render(w, cfg, *link, *scale, stamp)
 		c := w.Clusters(*link)
-		note = fmt.Sprintf("seed %d, tick %d, link %.0f, pop %d, clusters %d, largest %.0f%%",
-			*seed, w.Tick(), *link, w.Stats().Population, c.Groups, c.LargestShare*100)
+		b := w.Banks(cfg.Width / 2)
+		note = fmt.Sprintf("seed %d, tick %d, link %.0f, pop %d, clusters %d, largest %.0f%%, split %.2f, cross %.2f (dry %.2f)",
+			*seed, w.Tick(), *link, w.Stats().Population, c.Groups, c.LargestShare*100,
+			b.Split, b.CrossIndex, b.CrossDry)
 	case "genes":
 		g := measureGenes(*seeds, *ticks)
 		img = renderGenes(g, *seeds, *ticks, stamp)
@@ -160,6 +208,25 @@ func render(w *engine.World, cfg engine.Config, link float64, scale int, commit 
 	agents := w.Agents()
 	c := w.Clusters(link)
 
+	// The water first of all, so that a clump standing in a river is visibly
+	// standing in a river (stage 37). The line the banks are counted across
+	// goes over it: a picture of two settlements and a picture of one crowd
+	// lying along the water look nothing alike, and the cluster figures in the
+	// caption cannot tell them apart.
+	if cols, rows, cw, ch := w.TerrainSize(); cols > 0 {
+		for cy := 0; cy < rows; cy++ {
+			for cx := 0; cx < cols; cx++ {
+				if w.TerrainAt((float64(cx)+0.5)*cw, (float64(cy)+0.5)*ch).Kind != engine.GroundWater {
+					continue
+				}
+				rect(img, float64(cx)*cw*float64(scale), float64(cy)*ch*float64(scale),
+					cw*float64(scale), ch*float64(scale), colorWater)
+			}
+		}
+		x := cfg.Width / 2 * float64(scale)
+		line(img, x, 0, x, cfg.Height*float64(scale), colorDivide)
+	}
+
 	// Food first, faintly: it is what the agents are gathered around, so
 	// leaving it out would make the clumps look unexplained.
 	for _, f := range w.Foods() {
@@ -217,6 +284,15 @@ func disc(img *image.RGBA, cx, cy, r float64, col color.RGBA) {
 			if cover > 0 {
 				blend(img, x, y, col, cover*float64(col.A)/255)
 			}
+		}
+	}
+}
+
+// rect fills a rectangle, the same way: a flat wash the agents are drawn over.
+func rect(img *image.RGBA, x, y, w, h float64, col color.RGBA) {
+	for py := int(math.Floor(y)); py < int(math.Ceil(y+h)); py++ {
+		for px := int(math.Floor(x)); px < int(math.Ceil(x+w)); px++ {
+			blend(img, px, py, col, float64(col.A)/255)
 		}
 	}
 }
