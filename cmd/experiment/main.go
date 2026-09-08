@@ -1069,6 +1069,11 @@ var variants = []variant{
 		apply: func(c *engine.Config) { c.TerrainMap = mapPlateau },
 	},
 	{
+		name:  "plateaulink",
+		about: "the plateau with the food following the ground (33 on): is high ground poor ground?",
+		apply: func(c *engine.Config) { c.TerrainMap, c.TerrainFoodCorrelation = mapPlateau, 1 },
+	},
+	{
 		name:  "country",
 		about: "all three at once: rough ground, a river, and a stacked plateau",
 		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
