@@ -536,6 +536,7 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 		if maxDepth >= depthReactive {
 			c.addAttack(p, o)
 			c.addThrow(p, o)
+			c.addGive(p, o)
 			if o.Prey && o.Meat >= 1 {
 				c.addInvite(p, o)
 			}
@@ -549,6 +550,42 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 		if maxDepth >= depthObserve {
 			c.addObserve(p, o)
 		}
+	}
+}
+
+// addGive scores handing what is in this body's hand to somebody (stage 48).
+//
+// What it is worth is what being on better terms with them is worth, which is
+// the figure the world already has for that: the same LoreValue that makes
+// standing with somebody worth the pause, times the trust the gift would buy.
+// Nothing new prices a gift.
+//
+// Two things fall out of using that figure rather than a new one. Trust
+// saturates, so a gift to somebody already close is worth nothing and a gift
+// to a stranger is worth the most - which is the direction an economy would
+// need. And the meal being given away is not subtracted here: eating it is a
+// separate option, scored at no distance at all, so the comparison decides
+// between them the way it decides everything else.
+func (c *AIController) addGive(p *Perception, o *AgentView) {
+	cfg, s := p.Cfg, &p.Self
+	if s.Carried == 0 || cfg.AffinityGift <= 0 || cfg.AffinityTrust <= 0 || !o.CarryRoom {
+		return
+	}
+	gained := clamp((o.Affinity+cfg.AffinityGift)/cfg.AffinityTrust, 0, 1) -
+		clamp(o.Affinity/cfg.AffinityTrust, 0, 1)
+	if gained <= 0 {
+		return
+	}
+	for _, effort := range effortLevels {
+		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
+		cost := moveCost(cfg, s, effort) * ticks
+		c.add(Action{Kind: ActGive, TargetID: o.ID, Effort: effort}, Utility{
+			Lore:         Goal{Value: cfg.LoreValue * gained, Chance: 1},
+			Vitality:     cost,
+			Ticks:        ticks,
+			VitalityCost: cost * cfg.VitalityWeight,
+			TimeCost:     ticks * cfg.TimeCost,
+		})
 	}
 }
 

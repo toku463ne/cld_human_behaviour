@@ -603,6 +603,17 @@ type Config struct {
 	// the room, and buys nothing.
 	SkillHarvestRelief float64
 
+	// AffinityGift is what handing something over earns, both ways (stage
+	// 48). Zero takes the reason to give anything away out of the world while
+	// leaving the word in it, which is the arm this stage is read against.
+	//
+	// It is the same quantity a shared kill earns (AffinityHunt) and it is
+	// written into the same place, because being on good terms is the only
+	// currency this world has: it makes resting near somebody cheap and
+	// counting on them in a fight possible. Nothing new is invented to price
+	// a gift with.
+	AffinityGift float64
+
 	// Throwing is whether a body with a stone in its hand can throw it (stage
 	// 46). False, and deliberately so on the first pass.
 	//
@@ -1645,6 +1656,7 @@ func DefaultConfig() Config {
 		SpecialtySpread: 0.6,
 		SpecialtyCatch:  0.25,
 		Stones:          0, // stage 45: the map author scatters them
+		AffinityGift:    6, // stage 48: the same as a shared kill
 		Throwing:        false, // stage 46: measured before it is given a default
 		ThrowRange:      70,    // longer than an arm (15), shorter than sight (130)
 		ThrowDamage:     6,

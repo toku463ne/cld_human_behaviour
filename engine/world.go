@@ -114,6 +114,9 @@ type Stats struct {
 	// (stage 44).
 	HarvestMissed int
 
+	// Gifts is how many times something changed hands (stage 48).
+	Gifts int
+
 	// Throws is how many stones have been thrown and ThrowHits how many of
 	// them landed (stage 46).
 	Throws    int
@@ -406,6 +409,13 @@ type World struct {
 	meatEatenFree int
 	fishEaten     int // stage 42: mouthfuls that came out of the water
 	fishMissed    int // stage 43: attempts that ended with the fish getting away
+	// What has been handed over (stage 48), and to whom.
+	gifts            int
+	giftsToKin       int
+	giftsToMates     int
+	giftsToStrangers int
+	giftStones       int
+
 	throws        int // stage 46: stones thrown
 	throwHits     int // ... of those, the ones that landed
 	harvestMissed int // stage 44: attempts that failed to get the crop out
@@ -598,6 +608,7 @@ func (w *World) Stats() Stats {
 		FishEaten:              w.fishEaten,
 		FishMissed:             w.fishMissed,
 		HarvestMissed:          w.harvestMissed,
+		Gifts:                  w.gifts,
 		Throws:                 w.throws,
 		ThrowHits:              w.throwHits,
 		MeatDropped:            w.meatDropped,
@@ -947,6 +958,22 @@ func (w *World) perform(a *Agent) {
 		a.effortSpent = math.Max(a.effortSpent, a.Action.Effort)
 		// One stone, one decision: what to do next is a fresh question, and
 		// the hand is empty now.
+		a.requestDecision(TriggerGoalReached)
+
+	case ActGive:
+		// Handing something over (stage 48). Close enough to put it in their
+		// hand, which is the same reach eating and courting use, and nothing
+		// to agree on: receiving costs nothing, so there is nothing to refuse.
+		o := w.agentByID(a.Action.TargetID)
+		if o == nil || !o.Alive || len(a.carried) == 0 {
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
+			w.moveToward(a, o.X, o.Y, a.Action.Effort)
+			return
+		}
+		w.giveItem(a, o)
 		a.requestDecision(TriggerGoalReached)
 
 	case ActFlee:

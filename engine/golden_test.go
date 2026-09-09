@@ -55,6 +55,12 @@ import (
 // every birth differ from the first tick, exactly as they did when calling
 // others in was added.
 //
+// And again when a body could hand what it was holding to somebody else
+// (stage 48, 2026-09-09). An eleventh word, and this one is used: measured
+// over 48 seeds it is worth about nine population in the world these numbers
+// come from, and ninety-five per cent of what changes hands goes to a
+// stranger.
+//
 // And again when a tenth word was added to the vocabulary - throwing a stone
 // (stage 46, 2026-09-09). The rule itself is off by default and no stone is
 // ever thrown in these runs; what moves the numbers is that a rule of thumb
@@ -85,9 +91,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 54, births: 50, deaths: 76, kills: 56, aging: 0, fights: 4071, gen: 3, power: 45.374236, vitality: 99.969565, hunger: 22.772655},
-	{seed: 2, pop: 47, births: 36, deaths: 70, kills: 57, aging: 0, fights: 4960, gen: 2, power: 39.379671, vitality: 113.808034, hunger: 25.048980},
-	{seed: 3, pop: 42, births: 32, deaths: 71, kills: 53, aging: 0, fights: 3597, gen: 2, power: 39.974457, vitality: 101.784240, hunger: 28.878968},
+	{seed: 1, pop: 38, births: 32, deaths: 70, kills: 48, aging: 0, fights: 4536, gen: 2, power: 46.300645, vitality: 114.638513, hunger: 22.647141},
+	{seed: 2, pop: 36, births: 36, deaths: 76, kills: 60, aging: 0, fights: 6205, gen: 3, power: 39.207026, vitality: 111.842113, hunger: 22.297056},
+	{seed: 3, pop: 34, births: 26, deaths: 70, kills: 50, aging: 0, fights: 4161, gen: 2, power: 36.690071, vitality: 86.768813, hunger: 31.176617},
 }
 
 const goldenTicks = 5000

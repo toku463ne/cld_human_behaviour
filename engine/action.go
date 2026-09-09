@@ -35,6 +35,10 @@ const (
 	// world holds.
 	ActThrow
 
+	// ActGive is handing what is in one hand to somebody else (stage 48).
+	// The eleventh word, added at the end like the three before it.
+	ActGive
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -60,6 +64,8 @@ func (k ActionKind) String() string {
 		return "take"
 	case ActThrow:
 		return "throw"
+	case ActGive:
+		return "give"
 	default:
 		return "rest"
 	}

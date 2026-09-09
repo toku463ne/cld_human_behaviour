@@ -3963,7 +3963,13 @@ func main() {
 		// about ten population once anybody knows the trick - and as not
 		// making anybody settle anywhere, which is why it is a thing a
 		// hand-made world has rather than a default of the physics.
-		cfg.SpecialtyShare = 0.2
+		// A tenth of it, and easier to get out of the ground than the
+		// measurement's figure. On the flat world the awkward crop is worth
+		// ten bodies; on this map, which is already short of food (starving
+		// is six times the flat world's rate), wasting a third of the harvest
+		// takes the population from 29 to 12. The same rule, the same
+		// numbers, a different world.
+		cfg.SpecialtyShare, cfg.SpecialtyCatch = 0.08, 0.5
 		// And a body born in broken country knows something about crossing
 		// it (stage 38a). Like the three above, it is a thing a hand-made
 		// world has rather than a default of the physics: it needs terrain to

@@ -1539,6 +1539,111 @@ var variants = []variant{
 			c.ThrowDamage = 18
 		},
 	},
+	// What the played world is made of, one rule at a time. The viewer turns
+	// several of these on together (cmd/devview -terrain), and a population
+	// that falls when they are combined is worth finding out about before
+	// anybody plays in it.
+	{
+		name:  "playedbase",
+		about: "the played map with terrain, the food tied to it and a rich bank",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+		},
+	},
+	{
+		name:  "playedfish",
+		about: "... and fish in the river",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare = 0.25
+		},
+	},
+	{
+		name:  "playedcrop",
+		about: "... and a fifth of what grows needing knowing",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.SpecialtyShare = 0.25, 0.2
+		},
+	},
+	{
+		name:  "playedcropmild",
+		about: "... with the awkward crop at a tenth and easier to get out of the ground",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.SpecialtyShare, c.SpecialtyCatch = 0.25, 0.08, 0.5
+		},
+	},
+	{
+		name:  "playedskills",
+		about: "... and bodies born somewhere learning what that place teaches",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.SpecialtyShare, c.SkillBirthplace = 0.25, 0.2, 0.5
+		},
+	},
+	{
+		name:  "playedall",
+		about: "... and stones to throw: the whole of what the viewer lays out",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.SpecialtyShare, c.SkillBirthplace = 0.25, 0.2, 0.5
+			c.Stones, c.Throwing, c.HighGroundCover = 60, true, 0.3
+		},
+	},
+	// Stage 48: handing something over. The gate the rest of the economy
+	// waits on (#73): coins and warehouses carry nothing if nobody would give
+	// a thing away in the first place. The arm to read it against is the same
+	// world where a gift earns nothing.
+	{
+		name:  "gifts",
+		about: "48: handing something over earns being on good terms, both ways, on the played map",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.SpecialtyShare, c.SpecialtyCatch = 0.25, 0.08, 0.5
+			c.Stones = 60
+		},
+	},
+	{
+		name:  "giftsdead",
+		about: "control: the word is there and a gift earns nothing",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.SpecialtyShare, c.SpecialtyCatch = 0.25, 0.08, 0.5
+			c.Stones = 60
+			c.AffinityGift = 0
+		},
+	},
+	{
+		name:  "giftsflat",
+		about: "48 on the flat world, where the only things worth holding are food",
+		apply: func(c *engine.Config) {},
+	},
+	{
+		name:  "giftsflatdead",
+		about: "the pair for it: the same world, and a gift earns nothing",
+		apply: func(c *engine.Config) { c.AffinityGift = 0 },
+	},
+	{
+		name:  "giftsdear",
+		about: "a gift worth three times as much goodwill: does the price change who gives?",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.SpecialtyShare, c.SpecialtyCatch = 0.25, 0.08, 0.5
+			c.Stones = 60
+			c.AffinityGift = 18
+		},
+	},
+	{
+		name:  "giftshands",
+		about: "48 with room for three things: a body that can hold its dinner and something to give",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.SpecialtyShare, c.SpecialtyCatch = 0.25, 0.08, 0.5
+			c.Stones = 60
+			c.CarryCapacity = 3
+		},
+	},
 	// Stage 47: knowing how to throw. The target is written down before it is
 	// measured (stage 44's habit): a throw from arm's length lands nine times
 	// in ten and the measured rate is 0.64, so distance costs twenty-six
@@ -2219,6 +2324,7 @@ var metricNames = []string{
 	"stonesLying", "stoneSeen", "stoneNear", "stoneHeld",
 	"throws", "throwHitRate", "throwRate",
 	"aimHeld", "aimReal",
+	"gifts", "giftRate", "giftsToKin", "giftsToMates", "giftsToStrangers", "giftStones",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2360,6 +2466,9 @@ type sample struct {
 	// The awkward crop (stage 44): its share of what grows, who knows the
 	// trick, what they make of it, and whether they have settled where it is.
 	specialShare, specialHeld, specialReal, specialGain float64
+
+	// Where the gifts went (stage 48).
+	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
 
 	// Knowing how to throw (stage 47): who has it and what their bodies make
 	// of it.
@@ -2533,6 +2642,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		crop := w.Specialty()
 		rocks := w.Stones()
 		aim := w.Skills(engine.SkillThrow)
+		given := w.Gifts()
 		tol := w.Skills(engine.SkillPoison)
 		shelter := w.Shelter()
 		rich := w.Richness()
@@ -2578,6 +2688,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			bankHeld:   bank.Held, bankReal: bank.Realised,
 			wadeHeld:   wade.Held, wadeReal: wade.Realised,
 			anglerGap:  wade.Realised - bank.Realised,
+			giftsToKin: given.ToKin, giftsToMates: given.ToMates,
+			giftsToStrangers: given.ToStrange, giftStones: given.Stones,
 			aimHeld: aim.Held, aimReal: aim.Realised,
 			stonesLying: float64(rocks.Lying), stoneSeen: rocks.InSight,
 			stoneNear: rocks.Nearest, stoneHeld: rocks.Carrying,
@@ -2895,6 +3007,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// Throwing (stage 46): how many stones were thrown, how many landed,
 		// and how often it happens per lifetime. Read beside trueRetal, which
 		// is the figure this rule is dangerous to.
+		// The gate the economy waits on (stage 48): did anything ever change
+		// hands, and to whom.
+		"gifts":            float64(end.Gifts),
+		"giftRate":         perAgentLifetime(end.Gifts-tailStart.Gifts, personTicks),
+		"giftsToKin":       tail.giftsToKin,
+		"giftsToMates":     tail.giftsToMates,
+		"giftsToStrangers": tail.giftsToStrangers,
+		"giftStones":       tail.giftStones,
 		"aimHeld":      tail.aimHeld,
 		"aimReal":      tail.aimReal,
 		"throws":       float64(end.Throws),
@@ -3130,6 +3250,10 @@ func tailAverage(series []sample) sample {
 		out.speedHigh += s.speedHigh
 		out.speedLow += s.speedLow
 		out.highGap += s.highGap
+		out.giftsToKin += s.giftsToKin
+		out.giftsToMates += s.giftsToMates
+		out.giftsToStrangers += s.giftsToStrangers
+		out.giftStones += s.giftStones
 		out.aimHeld += s.aimHeld
 		out.aimReal += s.aimReal
 		out.stonesLying += s.stonesLying
@@ -3260,6 +3384,10 @@ func tailAverage(series []sample) sample {
 	out.speedHigh /= d
 	out.speedLow /= d
 	out.highGap /= d
+	out.giftsToKin /= d
+	out.giftsToMates /= d
+	out.giftsToStrangers /= d
+	out.giftStones /= d
 	out.aimHeld /= d
 	out.aimReal /= d
 	out.stonesLying /= d

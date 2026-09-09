@@ -288,6 +288,10 @@ type AgentView struct {
 	// option that cannot be taken is never scored.
 	ThrowHit float64
 
+	// CarryRoom says this one has a hand free (stage 48). Whether somebody
+	// can be handed a thing is as visible as whether they are carrying one.
+	CarryRoom bool
+
 	AttackingMe bool
 	CourtingMe  bool
 
@@ -542,6 +546,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Resting:     o.Action.Kind == ActRest,
 			Rejected:    a.isRejected(o.ID),
 			ThrowHit:    w.throwHitFor(a, o, math.Sqrt(d2)),
+			CarryRoom:   o.canCarryMore(&w.cfg),
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
 			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
 			DeclaredFor: o.declaredFor(),
