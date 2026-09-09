@@ -428,6 +428,43 @@ func (w *World) regionWaterShare(i int) float64 {
 	})
 }
 
+// regionBankShare is how much of a region is dry ground with water beside it
+// (stage 43). It is the reading behind fishing from the bank, and it is
+// deliberately not the water share: a region that is all river teaches nobody
+// to fish from dry land, and neither does one with no water in it at all.
+//
+// "Beside" is one sample step in each of the four directions, which is the
+// same grain everything else about a region is read at.
+func (w *World) regionBankShare(i int) float64 {
+	if w.ground == nil {
+		return 0
+	}
+	minX, minY, maxX, maxY := w.regionBounds(i)
+	const steps = 8
+	dx, dy := (maxX-minX)/steps, (maxY-minY)/steps
+	sum, n := 0.0, 0.0
+	for sx := 0; sx < steps; sx++ {
+		for sy := 0; sy < steps; sy++ {
+			x := minX + dx*(float64(sx)+0.5)
+			y := minY + dy*(float64(sy)+0.5)
+			n++
+			if w.terrainAt(x, y).Kind == GroundWater {
+				continue // standing in it is the other skill's business
+			}
+			if w.terrainAt(x+dx, y).Kind == GroundWater ||
+				w.terrainAt(x-dx, y).Kind == GroundWater ||
+				w.terrainAt(x, y+dy).Kind == GroundWater ||
+				w.terrainAt(x, y-dy).Kind == GroundWater {
+				sum++
+			}
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	return sum / n
+}
+
 func (w *World) regionMeanCost(i int) float64 {
 	if w.ground == nil {
 		return 1

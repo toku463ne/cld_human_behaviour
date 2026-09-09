@@ -115,3 +115,91 @@ func (w *World) Fish() FishUse {
 	}
 	return out
 }
+
+// --- the two ways of taking it (stage 43) ------------------------------------
+
+// fishReach is how close this body has to get to take a fish: the ordinary
+// reach, and further for a body that knows how to fish from the bank.
+//
+// It is the whole of what that skill does. Reaching further is not more food -
+// a fish is a fish - it is not having to stand in the water for it, and what
+// that is worth is exactly what drowning costs. Paying it here as well would
+// have two skills buying the same thing, and then neither could be measured.
+func (w *World) fishReach(a *Agent, kind FoodKind) float64 {
+	r := w.cfg.GrabRadius
+	if kind != FoodFish || w.cfg.SkillFishReach <= 0 {
+		return r
+	}
+	return r * (1 + w.cfg.SkillFishReach*a.skillAt(&w.cfg, SkillFishLand))
+}
+
+// fishYield is what a fish is worth to this body where it is standing: more
+// for one that knows how to work the water, and only while it is in it.
+//
+// Standing in the water is what the drowning rule charges for (stage 34), so
+// this is the other half of the same trade rather than a bonus: the bank is
+// safe and ordinary, the water is dangerous and good.
+func (w *World) fishYield(a *Agent, kind FoodKind) float64 {
+	if kind != FoodFish || w.cfg.SkillFishYield <= 0 {
+		return 1
+	}
+	if w.terrainAt(a.X, a.Y).Kind != GroundWater {
+		return 1
+	}
+	return 1 + w.cfg.SkillFishYield*a.skillAt(&w.cfg, SkillFishWater)
+}
+
+// AnglerUse is where the two kinds of fisher actually stand. Read only.
+//
+// The average share of the population standing in water cannot answer the
+// question this stage asks - one number over two kinds of body says nothing
+// about whether they have parted. This splits it by which of the two skills a
+// body is better at, which is the only sense in which this world has a bank
+// fisher and a wader at all.
+type AnglerUse struct {
+	// InWater is the share of the wading-leaning bodies standing in water,
+	// OnBank the same for the bank-leaning ones, and Split the difference: a
+	// population that has divided into the two trades stands apart.
+	InWater float64
+	OnBank  float64
+	Split   float64
+	// Waders and Bankers are how many of each there are, because a split
+	// worked out from three bodies is not a split.
+	Waders  float64
+	Bankers float64
+}
+
+// Anglers reports where the two kinds of fisher stand.
+func (w *World) Anglers() AnglerUse {
+	var out AnglerUse
+	var inWater, onBank float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Species != SpeciesHuman {
+			continue
+		}
+		wade, bank := a.skillAt(&w.cfg, SkillFishWater), a.skillAt(&w.cfg, SkillFishLand)
+		if wade == bank {
+			continue // no trade of its own
+		}
+		wet := 0.0
+		if w.terrainAt(a.X, a.Y).Kind == GroundWater {
+			wet = 1
+		}
+		if wade > bank {
+			out.Waders++
+			inWater += wet
+		} else {
+			out.Bankers++
+			onBank += wet
+		}
+	}
+	if out.Waders > 0 {
+		out.InWater = inWater / out.Waders
+	}
+	if out.Bankers > 0 {
+		out.OnBank = onBank / out.Bankers
+	}
+	out.Split = out.InWater - out.OnBank
+	return out
+}

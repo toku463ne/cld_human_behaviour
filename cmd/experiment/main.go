@@ -1501,6 +1501,66 @@ var variants = []variant{
 			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
 		},
 	},
+	// Stage 43: the two ways of fishing. One resource, two trades - the bank
+	// is safe and ordinary, the water is dangerous and good - which is the
+	// first place in this world where the same food can be had either way.
+	// The control is the same river with fish in it and nobody knowing
+	// anything (riverfish).
+	{
+		name:  "riverangle",
+		about: "43: bodies born by the water learn to fish, from the bank or in it",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
+		},
+	},
+	{
+		name:  "riverangledead",
+		about: "control: the skills are learned and take the room, and do nothing",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
+			c.SkillFishReach, c.SkillFishYield = 0, 0
+		},
+	},
+	{
+		name:  "riverbankonly",
+		about: "only the bank half: reaching out from dry ground, with nothing to be had by wading",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
+			c.SkillFishYield = 0
+		},
+	},
+	{
+		name:  "riverwadeonly",
+		about: "only the wading half: more out of every fish, and no way to reach one from dry ground",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
+			c.SkillFishReach = 0
+		},
+	},
+	{
+		name:  "riverangleplenty",
+		about: "43 at a dose that cannot be missed: everybody born by the water learns it well, and both halves are large",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 1
+			c.SkillFishReach, c.SkillFishYield = 4, 1.5
+		},
+	},
+	{
+		name:  "riverangleplentydead",
+		about: "control for it: the same learning, taking the same room, doing nothing",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 1
+			c.SkillFishReach, c.SkillFishYield = 0, 0
+		},
+	},
+	{
+		name:  "riverangleswim",
+		about: "43 with swimming as well, which is the whole water family at once",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
+			c.SkillSwimRelief = 1
+		},
+	},
 	// Stage 41: the surplus. What a party cannot carry away stops being
 	// theirs to wait for. The pair that says what it bought is the default -
 	// where the claim covers the whole carcass - and the ceiling is an arm
@@ -1997,6 +2057,8 @@ var metricNames = []string{
 	"meatDropped", "meatPerHunt", "meatShare", "meatSpoilShare", "meatEatenShare", "meatHeal",
 	"meatSurplus", "meatFreeShare",
 	"fishItems", "fishShare", "foodInWater",
+	"bankHeld", "bankReal", "wadeHeld", "wadeReal", "anglerGap",
+	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
@@ -2133,6 +2195,16 @@ type sample struct {
 	// because what the drowning changes is where the water is, not where the
 	// dear ground is.
 	onWater float64
+
+	// The two ways of fishing (stage 43): who holds each, what their bodies
+	// can make of it, and the difference between the two - the figure that
+	// says whether a population has split into bank and water.
+	bankHeld, bankReal, wadeHeld, wadeReal, anglerGap float64
+
+	// Where the two of them stand: the share of each kind found in water, the
+	// difference (a population that has split into the two trades stands
+	// apart), and how many there are of each.
+	wadersWet, bankersWet, anglerSplit, waders, bankers float64
 
 	// What the water holds (stage 42): fish about, and the share of the
 	// world's food that is standing in it.
@@ -2282,6 +2354,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		skills := w.Skills(engine.SkillRough)
 		forage := w.Skills(engine.SkillForage)
 		swim := w.Skills(engine.SkillSwim)
+		bank := w.Skills(engine.SkillFishLand)
+		wade := w.Skills(engine.SkillFishWater)
+		anglers := w.Anglers()
 		tol := w.Skills(engine.SkillPoison)
 		shelter := w.Shelter()
 		rich := w.Richness()
@@ -2324,6 +2399,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			tolReal:  tol.Realised,
 			swimHeld: swim.Held, swimNominal: swim.Nominal,
 			swimReal:   swim.Realised,
+			bankHeld:   bank.Held, bankReal: bank.Realised,
+			wadeHeld:   wade.Held, wadeReal: wade.Realised,
+			anglerGap:  wade.Realised - bank.Realised,
+			wadersWet: anglers.InWater, bankersWet: anglers.OnBank,
+			anglerSplit: anglers.Split, waders: anglers.Waders, bankers: anglers.Bankers,
 			forageHeld: forage.Held, forageNominal: forage.Nominal,
 			forageReal: forage.Realised,
 			skillHeld:  skills.Held, skillNominal: skills.Nominal,
@@ -2614,6 +2694,16 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// share of the mouthfuls were fish, and how much of the world's food
 		// is standing in water - the figure that says whether the reward and
 		// the danger are in the same cells.
+		"bankHeld":  tail.bankHeld,
+		"bankReal":  tail.bankReal,
+		"wadeHeld":  tail.wadeHeld,
+		"wadeReal":  tail.wadeReal,
+		"anglerGap": tail.anglerGap,
+		"wadersWet":   tail.wadersWet,
+		"bankersWet":  tail.bankersWet,
+		"anglerSplit": tail.anglerSplit,
+		"waders":      tail.waders,
+		"bankers":     tail.bankers,
 		"fishItems":   tail.fishItems,
 		"fishShare":   share(end.FishEaten, end.FishEaten+end.PlantsEaten+end.MeatEaten),
 		"foodInWater": tail.foodInWater,
@@ -2834,6 +2924,16 @@ func tailAverage(series []sample) sample {
 		out.speedHigh += s.speedHigh
 		out.speedLow += s.speedLow
 		out.highGap += s.highGap
+		out.wadersWet += s.wadersWet
+		out.bankersWet += s.bankersWet
+		out.anglerSplit += s.anglerSplit
+		out.waders += s.waders
+		out.bankers += s.bankers
+		out.bankHeld += s.bankHeld
+		out.bankReal += s.bankReal
+		out.wadeHeld += s.wadeHeld
+		out.wadeReal += s.wadeReal
+		out.anglerGap += s.anglerGap
 		out.fishItems += s.fishItems
 		out.foodInWater += s.foodInWater
 		out.held += s.held
@@ -2944,6 +3044,16 @@ func tailAverage(series []sample) sample {
 	out.speedHigh /= d
 	out.speedLow /= d
 	out.highGap /= d
+	out.wadersWet /= d
+	out.bankersWet /= d
+	out.anglerSplit /= d
+	out.waders /= d
+	out.bankers /= d
+	out.bankHeld /= d
+	out.bankReal /= d
+	out.wadeHeld /= d
+	out.wadeReal /= d
+	out.anglerGap /= d
 	out.fishItems /= d
 	out.foodInWater /= d
 	out.held /= d

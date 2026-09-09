@@ -72,6 +72,16 @@ const (
 	// three, pointed at the thing this skill is about.
 	SkillPoison
 
+	// SkillFishLand and SkillFishWater are the two ways of taking what the
+	// water holds (stage 43). They are one resource and two trades: the first
+	// reaches out from dry ground and never rolls the drowning dice, the
+	// second wades in and gets more out of every fish. Nothing else about
+	// either differs, which is the point - it is the first place in this
+	// world where the same food can be had safely and slowly or riskily and
+	// well.
+	SkillFishLand
+	SkillFishWater
+
 	NumSkillKinds
 )
 
@@ -85,6 +95,10 @@ func (s SkillKind) String() string {
 		return "swimming"
 	case SkillPoison:
 		return "poison"
+	case SkillFishLand:
+		return "fishing from the bank"
+	case SkillFishWater:
+		return "fishing in the water"
 	}
 	return "none"
 }
@@ -246,6 +260,25 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 		// How much of the region is water. The same reading stage 36 uses to
 		// decide where the bank is rich: a body born by the river is a body
 		// that grew up in it.
+		if w.ground == nil {
+			return 0
+		}
+		share = w.regionWaterShare(i)
+	case SkillFishLand:
+		// The bank: dry ground with water next to it. A body born where the
+		// land meets the water is a body that learned to fish without going
+		// in - and a region that is all water, or all dry, teaches nobody
+		// this one. It is a different reading from the water share, so the
+		// two ways of fishing are not seeded from the same cells.
+		if w.ground == nil {
+			return 0
+		}
+		share = w.regionBankShare(i)
+	case SkillFishWater:
+		// How much of the region is water, the same reading swimming takes.
+		// These two are the same fact about a childhood - it was spent by the
+		// river - and what they buy from it is different: one is not drowning
+		// and the other is getting more out of what is in there.
 		if w.ground == nil {
 			return 0
 		}

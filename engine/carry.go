@@ -147,7 +147,7 @@ func (w *World) eatCarried(a *Agent, foodID int) {
 	f := a.carried[i]
 	kept := w.share(a, &f)
 	hungerBefore := a.Hunger
-	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind))
+	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind)*w.fishYield(a, f.Kind))
 	if w.cfg.PlantDefence && f.Kind == FoodPlant {
 		dose := kept * f.Genes.Poison * w.cfg.PoisonDamage * (1 - w.poisonResist(a))
 		a.Vitality -= dose

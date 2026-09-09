@@ -527,6 +527,23 @@ type Config struct {
 	// for deliberately rather than one every measurement inherits.
 	FishShare float64
 
+	// SkillFishReach is how much further a body can take a fish for each
+	// point of skill at fishing from the bank (stage 43): at 2 and full
+	// mastery, three times the ordinary reach, which is far enough to keep
+	// dry beside a river cell. With no skill the reach is the ordinary one,
+	// so a world where nobody has learned it is exactly the world before.
+	//
+	// It buys no food. What it buys is not being in the water, which is
+	// worth exactly what drowning costs - and that is swimming's figure, not
+	// this one. The two skills must not both pay for the same thing or
+	// neither can be measured.
+	SkillFishReach float64
+
+	// SkillFishYield is how much more a fish is worth to a body that took it
+	// while standing in the water, per point of skill at fishing there. The
+	// other half of the trade: the wading body is the one that drowns.
+	SkillFishYield float64
+
 	// FishForAll lets enemies fish too. False, because a second food for the
 	// species that lives on meat would make every population figure since
 	// stage 11 a different measurement; the arm is here to be run.
@@ -1807,10 +1824,20 @@ func DefaultConfig() Config {
 			SkillForage: GeneMemory,
 			SkillSwim:   GeneVitality,
 			SkillPoison: GeneVitality,
+			// Fishing from the bank is patience and a good eye - reading
+			// where the fish is from outside the water - so it is capped by
+			// rationality, the gene for how well a body reads the world.
+			// Fishing in the water is capped by vitality, the same as
+			// swimming: what decides how much of the river a body can work
+			// is how long it can stay in it.
+			SkillFishLand:  GeneRationality,
+			SkillFishWater: GeneVitality,
 		},
 		SkillForageRelief: 1,
 		SkillSwimRelief:   1,
 		SkillPoisonRelief: 1,
+		SkillFishReach:    2,
+		SkillFishYield:    0.5,
 		SkillsSpread:      true,
 		HintSlotCost:      5,
 		HintWeightStd:     6,
