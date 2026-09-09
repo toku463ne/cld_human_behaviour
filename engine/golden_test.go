@@ -41,6 +41,14 @@ import (
 // thousand ticks is not a measurement but a fingerprint, and a fingerprint
 // moves whenever anything at all draws differently from the random source.
 //
+// And again when a carcass started mending whoever ate it (stage 39,
+// 2026-09-09). That is the largest deliberate move these numbers have made in
+// a while, and it is the one worth remembering: average vitality is up about
+// twenty points in all three seeds, because the world gained a second way of
+// getting better that does not require lying down. Measured over 48 seeds it
+// is also the change that finally made pack hunting appear - party size 1.36
+// to 1.81 - after four attempts that did not.
+//
 // And again when agents got a word for calling others in against something,
 // and started counting on whoever had declared for the same target (stage 32,
 // 2026-09-08). That one does move the world: measured over 48 seeds the
@@ -62,9 +70,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 49, births: 36, deaths: 69, kills: 42, aging: 0, fights: 2864, gen: 2, power: 40.908163, vitality: 70.184792, hunger: 24.963172},
-	{seed: 2, pop: 34, births: 29, deaths: 77, kills: 56, aging: 0, fights: 6311, gen: 3, power: 35.681863, vitality: 73.476392, hunger: 22.169870},
-	{seed: 3, pop: 44, births: 23, deaths: 61, kills: 36, aging: 0, fights: 2239, gen: 3, power: 30.518379, vitality: 77.687876, hunger: 27.794744},
+	{seed: 1, pop: 62, births: 52, deaths: 65, kills: 43, aging: 0, fights: 3577, gen: 3, power: 37.367342, vitality: 88.272254, hunger: 26.934867},
+	{seed: 2, pop: 47, births: 40, deaths: 74, kills: 57, aging: 0, fights: 5808, gen: 3, power: 41.685753, vitality: 93.461370, hunger: 24.841248},
+	{seed: 3, pop: 33, births: 33, deaths: 82, kills: 70, aging: 0, fights: 5757, gen: 3, power: 42.181137, vitality: 102.502633, hunger: 20.517023},
 }
 
 const goldenTicks = 5000

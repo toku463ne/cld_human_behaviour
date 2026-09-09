@@ -1343,6 +1343,51 @@ var variants = []variant{
 		about: "control for countryskill: nobody learns the ground (the default)",
 		apply: func(c *engine.Config) { c.TerrainMap = mapCountry },
 	},
+	// Stage 39: what a carcass is worth. Two levers, measured apart (#68) -
+	// how much meat there is, and what one item of it does - because a world
+	// where hunting suddenly pays cannot say which of them paid. Healing is
+	// the default since 2026-09-09, so the arm that says what it bought is
+	// the one with it off.
+	{
+		name:  "meatoff",
+		about: "39b off: a carcass fills a stomach and mends nothing, which is every world before stage 39",
+		apply: func(c *engine.Config) { c.MeatVitality = 0 },
+	},
+	{
+		name:  "meatquarter",
+		about: "39b at a quarter of the eater's ceiling, for the shape of the dose",
+		apply: func(c *engine.Config) { c.MeatVitality = 0.25 },
+	},
+	{
+		name:  "meatwhole",
+		about: "39b at a whole ceiling: what the consultation asked for",
+		apply: func(c *engine.Config) { c.MeatVitality = 1 },
+	},
+	{
+		name:  "meathealblind",
+		about: "control: the meat mends as much and nobody is told - selection without choice (the control stage 34 paid for)",
+		apply: func(c *engine.Config) { c.MeatHealKnown = false },
+	},
+	{
+		name:  "meatfills",
+		about: "control: a carcass worth two meals in the stomach and nothing in the body - nourishing, not medicine",
+		apply: func(c *engine.Config) { c.MeatNutrition, c.MeatVitality = 2, 0 },
+	},
+	{
+		name:  "meatmore",
+		about: "39a on top of the default: a carcass leaves twice as much (MeatPerBudget 60). What stage 41 needs a surplus from",
+		apply: func(c *engine.Config) { c.MeatPerBudget = 60 },
+	},
+	{
+		name:  "meatlots",
+		about: "39a four times over, which is where the amount starts scattering the population across the kills",
+		apply: func(c *engine.Config) { c.MeatPerBudget = 30 },
+	},
+	{
+		name:  "meatmoreoff",
+		about: "39a with no healing: the amount on its own, as it was measured before healing became the default",
+		apply: func(c *engine.Config) { c.MeatPerBudget, c.MeatVitality = 60, 0 },
+	},
 	// Stage 38b: the second skill. Foraging is seeded by what the ground
 	// provides rather than by what it is made of, so unlike the first it
 	// needs no terrain - which makes the flat world the clean arm for it, and
@@ -1792,6 +1837,7 @@ var metricNames = []string{
 	"priorErr", "priorErrFlat", "priorErrFixed", "slopeGain", "learnGain",
 	"priorErrAll", "priorErrLearned", "priorErrGreen", "learnedShare", "firstSights",
 	"hunts", "jointHunts", "packSize", "evadedShare",
+	"meatDropped", "meatPerHunt", "meatShare", "meatSpoilShare", "meatEatenShare", "meatHeal",
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
@@ -2372,6 +2418,21 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			windowMean(end.FirstSightError-tailStart.FirstSightError, end.FirstSights-tailStart.FirstSights),
 		"hunts":       float64(end.Hunts),
 		"jointHunts":  float64(end.JointHunts),
+		// What becomes of the meat (stage 39). Before making a carcass worth
+		// more it has to be said how much of it there is and how much of it
+		// nobody takes: meatShare is the share of all the mouthfuls in the
+		// world that were meat, and meatSpoilShare the share of the items
+		// that rotted where they fell. A rule about meat can do nothing about
+		// the meals that were never going to be meat.
+		"meatDropped":    float64(end.MeatDropped),
+		"meatPerHunt":    ratio(end.MeatDropped, end.Hunts),
+		"meatShare":      share(end.MeatEaten, end.MeatEaten+end.PlantsEaten),
+		"meatSpoilShare": share(end.MeatSpoiled, end.MeatDropped),
+		"meatEatenShare": share(end.MeatEaten, end.MeatDropped),
+		// And what the carcasses mended, per item of meat eaten. Counted in
+		// every arm, so the ones where the rule is off say how much of a
+		// difference it could have made.
+		"meatHeal": ratioF(end.MeatHealing, end.MeatEaten),
 		"evadedShare": share(end.Evaded, end.Fights),
 		// Whether running away works: attempts to flee over the tail window,
 		// and the share of them that ended with the pursuer out of sight. It
@@ -2881,6 +2942,14 @@ func share(part, whole int) float64 {
 
 // ratio is one count against another when the second is not a total the first
 // is part of - how many onlookers per drowning, say.
+// ratioF is ratio for a total that is not a count of events.
+func ratioF(part float64, whole int) float64 {
+	if whole == 0 {
+		return 0
+	}
+	return part / float64(whole)
+}
+
 func ratio(part, whole int) float64 {
 	if whole == 0 {
 		return 0

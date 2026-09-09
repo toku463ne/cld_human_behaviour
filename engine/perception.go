@@ -75,6 +75,12 @@ type SelfView struct {
 	// it is sick of something.
 	Nutrition [NumFoodKinds]float64
 
+	// Heal is what one of each kind would put back into this body's vitality
+	// (stage 39). Zero for everything a world's carcasses do not mend, which
+	// is every kind in a world with the rule off. Not hidden, for the same
+	// reason Nutrition is not: a body knows what a meal does for it.
+	Heal [NumFoodKinds]float64
+
 	// BetterGround is how much more food this agent believes is to be found
 	// somewhere it has been than where it is standing, and BetterGroundX/Y
 	// where that is (stage 15b). Zero when it knows nowhere better - which
@@ -189,6 +195,10 @@ type FoodView struct {
 	// share of what it would be worth to one that had not been living on the
 	// same thing (stage 16). One for an agent with a varied diet.
 	Nutrition float64
+
+	// Heal is what this item would mend of this agent's vitality (stage 39),
+	// before the ceiling of what it is actually missing.
+	Heal float64
 
 	// Danger is how poisonous this observer reckons the item is, from 0 to 1
 	// (stage 17b). It is a reading of the plant's warning, blurred by the
@@ -368,6 +378,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		LastCourt:         a.lastCourt,
 		RestRate:          w.restRate(a),
 		Nutrition:         w.mealValues(a),
+		Heal:              w.mealHeals(a),
 	}
 
 	// The index narrows the world down to the cells sight could possibly reach;
@@ -397,6 +408,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Dist:      math.Sqrt(d2),
 			Kind:      f.Kind,
 			Nutrition: p.Self.Nutrition[f.Kind],
+			Heal:      p.Self.Heal[f.Kind],
 			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),
 		})

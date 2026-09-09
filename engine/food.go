@@ -132,6 +132,7 @@ func (w *World) dropMeat(a *Agent) {
 			Claim: claim, ClaimUntil: w.tick + w.cfg.MeatClaimTicks,
 			SpoilAt: w.tick + w.cfg.MeatSpoilTicks,
 		})
+		w.meatDropped++
 	}
 }
 
@@ -167,6 +168,9 @@ func (w *World) rememberHunt(party []int) {
 func (w *World) clearSpoiled() {
 	for i := 0; i < len(w.foods); {
 		if f := &w.foods[i]; f.SpoilAt > 0 && w.tick >= f.SpoilAt {
+			if f.Kind == FoodMeat {
+				w.meatSpoiled++
+			}
 			w.removeFoodByID(f.ID)
 			continue // the last item was swapped into this slot
 		}

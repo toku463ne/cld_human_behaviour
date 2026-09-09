@@ -3160,7 +3160,14 @@ func (g *game) drawWhatItKnows(t *textBox, view engine.HumanView) {
 		if f.RivalID != 0 {
 			rival = fmt.Sprintf("  #%d is %.0f away from it", f.RivalID, f.RivalDist)
 		}
-		t.line("  #%-4d %3.0f away  worth x%.2f%s", f.ID, f.Dist, f.Nutrition, rival)
+		// What it would mend as well, when the world's carcasses mend
+		// anything (stage 39). It is in Perception, so it is the node's own
+		// knowledge and not the player's - the promise of stage 19.
+		mends := ""
+		if f.Heal > 0 {
+			mends = fmt.Sprintf("  mends %.0f", f.Heal)
+		}
+		t.line("  #%-4d %3.0f away  worth x%.2f%s%s", f.ID, f.Dist, f.Nutrition, mends, rival)
 	}
 }
 

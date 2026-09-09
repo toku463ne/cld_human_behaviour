@@ -302,10 +302,16 @@ func (c *AIController) addRest(p *Perception) {
 // dying inside the planning horizon.
 // nutrition is what one of it is worth to this agent: the world's figure, less
 // whatever it has been living on lately (stage 16).
-func mealValue(cfg *Config, s *SelfView, incoming, nutrition float64) float64 {
+// heal is what it would mend as well (stage 39), which is nothing for every
+// kind of food but a carcass in a world where carcasses mend anything. It is
+// capped at what the body is actually missing, and that cap is the whole of
+// why nobody had to be told to save meat for later: a body that is nearly
+// whole gets almost nothing from it and scores a plant higher.
+func mealValue(cfg *Config, s *SelfView, incoming, nutrition, heal float64) float64 {
 	now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
 	fed := math.Max(0, s.Hunger-cfg.FoodNutrition*nutrition)
-	after := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, fed)+incoming)
+	mended := math.Min(s.Vitality+heal, s.MaxVitality)
+	after := pressure(cfg, s, mended, projectedDrain(cfg, s.HungerRate, fed)+incoming)
 	return (now - after) * cfg.LifeValue
 }
 
@@ -401,6 +407,11 @@ func (c *AIController) addFood(p *Perception) {
 			cost := moveCost(cfg, s, effort) * ticks
 			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*f.Nutrition)
 			vitAfter := s.Vitality - cost
+			// What the item itself mends, up to what is missing (stage 39).
+			// It goes in before the resting estimate for the same reason the
+			// cost of walking does: it is what the body would have when it
+			// got there.
+			vitAfter = math.Min(vitAfter+f.Heal, s.MaxVitality)
 			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
 			after := pressure(cfg, s, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
 
@@ -659,7 +670,7 @@ func (c *AIController) scoreFight(p *Perception, o *AgentView, help allyForce, k
 	// animal worth taking on together and not alone.
 	if o.Prey && o.Meat >= 1 && s.Hunger > 0 && cfg.PreyValue > 0 {
 		bite := math.Min(o.Meat, 1) * cfg.PreyValue *
-			mealValue(cfg, s, c.incomingDmg, s.Nutrition[FoodMeat])
+			mealValue(cfg, s, c.incomingDmg, s.Nutrition[FoodMeat], s.Heal[FoodMeat])
 		pKill := clamp(exchange*(mine+help.damage)/math.Max(o.Vitality, 1e-9), 0, 1) * pWin
 		stake = Goal{Value: stake.Value + bite, Chance: math.Max(stake.Chance, pKill)}
 	}

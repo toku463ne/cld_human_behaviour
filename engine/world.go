@@ -90,6 +90,17 @@ type Stats struct {
 	SkillsBorn    int
 	SkillsLeapt   int
 
+	// What becomes of the meat (stage 39): how many items carcasses left, how
+	// many of those rotted where they lay, how many were eaten, and how many
+	// plants were eaten beside them. The share of meals that are meat is what
+	// says whether a rule about meat has anything to bite on.
+	MeatDropped int
+	MeatSpoiled int
+	// MeatHealing is all the vitality carcasses have mended (stage 39).
+	MeatHealing float64
+	MeatEaten   int
+	PlantsEaten int
+
 	// PlantsSpat is how many bites came to nothing because the plant was
 	// poisonous enough to be dropped (stage 17b), and PoisonLoss all the
 	// vitality the crop has taken off the population.
@@ -293,6 +304,22 @@ type World struct {
 	skillsBorn    int
 	skillsLeapt   int
 
+	// What becomes of the meat (stage 39). A carcass is the only food this
+	// world makes rather than grows, and before changing what one is worth it
+	// has to be said how much of it there is, how much of it is eaten and how
+	// much of it rots: a rule about meat can do nothing about a mouthful
+	// nobody was ever going to take.
+	// meatHealing is all the vitality carcasses have put back into the
+	// population (stage 39). Counted whatever MeatVitality is set to, so an
+	// arm with the rule off still says how much of a difference it could
+	// have made.
+	meatHealing float64
+
+	meatDropped int // items left by carcasses
+	meatSpoiled int // ... of those, the ones nobody got to in time
+	meatEaten   int // ... and the ones somebody did
+	plantsEaten int // for the share: meat against everything eaten
+
 	// plantsSpat is how many bites failed because what was bitten was
 	// poisonous enough to be dropped (stage 17b, 2026-09-08).
 	plantsSpat int
@@ -457,6 +484,11 @@ func (w *World) Stats() Stats {
 		SkillsCopied:           w.skillsCopied,
 		SkillsBorn:             w.skillsBorn,
 		SkillsLeapt:            w.skillsLeapt,
+		MeatHealing:            w.meatHealing,
+		MeatDropped:            w.meatDropped,
+		MeatSpoiled:            w.meatSpoiled,
+		MeatEaten:              w.meatEaten,
+		PlantsEaten:            w.plantsEaten,
 		PlantsSpat:             w.plantsSpat,
 		PoisonLoss:             w.poisonLoss,
 		Calls:                  w.calls,
@@ -1402,7 +1434,7 @@ func (w *World) eat(a *Agent, foodID int) {
 	// Worth less if it is the same as everything else it has been living on
 	// (stage 16). Nothing else changes: hunger falls by less, and everything
 	// downstream of hunger follows from that on its own.
-	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind))
+	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind))
 	// And whatever it was defended with (stage 17b). The plant's poison is a
 	// hidden parameter: this is where an agent finds out what it actually ate,
 	// as against what the warning said.
@@ -1424,6 +1456,19 @@ func (w *World) eat(a *Agent, foodID int) {
 			w.plantsSpat++
 			return
 		}
+	}
+	// And what a carcass mends (stage 39). This is the only food that gives
+	// vitality back directly; with MeatVitality at zero nothing here fires
+	// and the world is the one that came before.
+	//
+	// After the bite that fails, not before it: nothing meat carries can be
+	// spat out today, but a mouthful that was never swallowed must not mend
+	// anybody the day something can.
+	w.mend(a, f.Kind, kept)
+	if f.Kind == FoodMeat {
+		w.meatEaten++
+	} else {
+		w.plantsEaten++
 	}
 	w.noteEaten(a, f.Kind)
 	// Some of what it swallows lives through the journey (stage 17c).

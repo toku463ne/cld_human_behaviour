@@ -451,6 +451,41 @@ type Config struct {
 	MeatClaimTicks  int     // how long the carcass belongs to those who killed it
 	HuntCreditTicks int     // how recently a blow must have landed to count as taking part
 
+	// MeatVitality is what one item of meat mends, as a share of the eater's
+	// own vitality ceiling (stage 39). Zero is the world as it was up to here,
+	// where food only ever took hunger away and vitality came back from
+	// resting alone; this is the first food that touches vitality directly.
+	//
+	// Half is the default because it is what finally made pack hunting appear
+	// after four attempts that did not (party size 1.36 -> 1.81, joint kills
+	// 34 -> 95 over 48 seeds), and because a carcass that merely fills a
+	// stomach twice as full does almost nothing (+0.06): what brings bodies
+	// in on the same animal is that the animal mends them. A whole ceiling
+	// measures the same within noise and is not the default only because the
+	// smaller dose leaves the loop - kill, mend, kill again - with less room
+	// to run away in the stages that come after this one.
+	//
+	// It needs no new term in the utility formula. The healing goes in where
+	// resting's does - as vitality the body expects to have afterwards - so
+	// the existing ceiling does the rest: a nearly whole body scores a
+	// carcass low, which is "save it for later" without a state that saves
+	// anything.
+	MeatVitality float64
+
+	// MeatHealKnown is whether what a carcass mends reaches the decision.
+	// True is the ordinary case - a body knows what a meal does for it, the
+	// same way it knows it is sick of something (stage 16). False is the
+	// control stage 34 paid for: the meat mends exactly as much and no
+	// utility formula is told, which separates a rule that changes what
+	// agents choose from one that merely changes who survives.
+	MeatHealKnown bool
+
+	// MeatNutrition multiplies what one item of meat takes off hunger. One is
+	// the ordinary item. It exists for the control the stage needs: a carcass
+	// that fills a stomach by as much as the healing was worth and mends
+	// nothing separates "meat became nourishing" from "meat became medicine".
+	MeatNutrition float64
+
 	// MeatSpoilTicks is how long a carcass lasts before it is gone. Without
 	// it, meat nobody can eat piles up until it fills the world's allowance
 	// for food and crowds the plants out - which is what happened the first
@@ -1387,6 +1422,9 @@ func DefaultConfig() Config {
 
 		PreyValue:       1,
 		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more
+		MeatVitality:    0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
+		MeatHealKnown:   true,
+		MeatNutrition:   1,
 		MeatClaimTicks:  400,
 		MeatSpoilTicks:  900,
 		HuntCreditTicks: 200,

@@ -155,6 +155,13 @@ func (w *World) Diet() DietUse {
 // its own perception says otherwise.
 func (w *World) mealValues(a *Agent) [NumFoodKinds]float64 {
 	out := w.dietValues(a)
+	// What a carcass fills, if the world says a carcass fills more than an
+	// ordinary item (stage 39). The estimate has to carry the same factor
+	// eating does, or an agent would be scoring a meal it is not about to
+	// get.
+	for k := range out {
+		out[k] *= w.meatWorth(FoodKind(k))
+	}
 	if !w.cfg.ParentFeedKnown {
 		return out
 	}
