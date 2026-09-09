@@ -141,6 +141,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addRest(p)
 	c.addExplore(p)
 	c.addFood(p)
+	c.addStones(p)
 	c.addAgents(p, maxDepth)
 
 	return c.pick(p)
@@ -534,6 +535,7 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 
 		if maxDepth >= depthReactive {
 			c.addAttack(p, o)
+			c.addThrow(p, o)
 			if o.Prey && o.Meat >= 1 {
 				c.addInvite(p, o)
 			}
@@ -548,6 +550,118 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 			c.addObserve(p, o)
 		}
 	}
+}
+
+// addStones scores picking one up (stage 46).
+//
+// A stone is worth what it lets a body do, which is throw it - so what is
+// scored here is a throw that has not happened yet, at a rival that may not be
+// there yet, discounted by the same figure that discounts a meal carried for
+// later (CarryValue) and scaled by how contested this patch feels. In a quiet
+// corner with food to spare, a stone is a stone; where bodies are crowding the
+// same plants, it is worth having one.
+//
+// Before there was anything to throw, nothing valued a stone and nobody picked
+// one up - which is what stage 45 measured, and why the supply was counted
+// there rather than assumed here.
+func (c *AIController) addStones(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if !cfg.Throwing || !s.CarryRoom || cfg.CarryValue <= 0 || len(p.Stones) == 0 {
+		return
+	}
+	// What one stone would do to an ordinary body, as a share of finishing it.
+	damage := damagePerTick(cfg, s.Attack, 1) * cfg.ThrowDamage * cfg.ThrowHit
+	share := clamp(damage/math.Max(cfg.MaxVitality, 1e-9), 0, 1)
+	want := cfg.CarryValue * s.CompetitionWeight * cfg.LifeValue *
+		clamp(s.FoodScarcity, 0, 3) / 3 * share
+	if want <= 0 {
+		return
+	}
+	for i := range p.Stones {
+		if i >= maxAgentOptions {
+			break
+		}
+		st := &p.Stones[i]
+		for _, effort := range effortLevels {
+			ticks := st.Dist/speedAt(s.MaxSpeed, effort) + 1
+			cost := moveCost(cfg, s, effort) * ticks
+			c.add(Action{Kind: ActTake, TargetID: st.ID, Effort: effort}, Utility{
+				Life:         Goal{Value: want, Chance: 1},
+				Vitality:     cost,
+				Ticks:        ticks,
+				VitalityCost: cost * cfg.VitalityWeight,
+				TimeCost:     ticks * cfg.TimeCost,
+			})
+		}
+	}
+}
+
+// addThrow scores putting a stone into somebody from out of reach (stage 46).
+//
+// It is scored as an attack is scored and not as something new: what a body
+// wants out of hurting somebody - being rid of a rival for the food, finishing
+// something worth eating, easing what is coming at it now - is the same list,
+// and the only differences are how much of it one stone buys and that the
+// answer has to walk over first.
+//
+// The exchange it charges itself for is the same one a fight charges. A body
+// that throws is not believed to be safe: it expects to be hit back exactly as
+// often as if it had walked up, which is conservative, and deliberately so.
+// Stage 12a found that the belief in retaliation is what holds this world
+// together, so a rule that let agents notice range makes them safe would be
+// changing two things at once. What range changes here is what the world
+// actually does, and that is what the measurement reads.
+func (c *AIController) addThrow(p *Perception, o *AgentView) {
+	cfg, s := p.Cfg, &p.Self
+	if !s.HasStone || o.ThrowHit <= 0 || o.Species == s.Species && o.Paired {
+		return
+	}
+	const effort = 1.0
+
+	// What one stone does, if it lands.
+	damage := damagePerTick(cfg, s.Attack, effort) * cfg.ThrowDamage * o.ThrowHit
+	share := clamp(damage/math.Max(o.Vitality, 1e-9), 0, 1)
+
+	// What it eases. A stone in somebody who is hitting this body now takes
+	// part of what is coming: the same arithmetic the fight uses, over one
+	// throw instead of an exchange.
+	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
+	now := pressure(cfg, s, s.Vitality, drain+c.incomingDmg)
+	eased := c.incomingDmg
+	if o.AttackingMe {
+		eased = math.Max(0, c.incomingDmg*(1-share))
+	}
+	// A throw is a throw: the body is not guarding or dodging while it does
+	// it, so what it pays is the aggressive stance's cost and no more.
+	cost := stanceCost(cfg, StanceAggressive) * effort
+	after := pressure(cfg, s, s.Vitality-cost, drain+eased)
+	lifeTerm := (now - after) * cfg.LifeValue
+
+	// What it is worth if it finishes them: the same two reasons a fight has.
+	stake := Goal{}
+	if c.bestFoodRival == o.ID {
+		stake = Goal{Value: c.bestFoodGap, Chance: share}
+	}
+	if o.Prey && o.Meat >= 1 && s.Hunger > 0 && cfg.PreyValue > 0 {
+		bite := math.Min(o.Meat, 1) * cfg.PreyValue *
+			mealValue(cfg, s, c.incomingDmg, s.Nutrition[FoodMeat], s.Heal[FoodMeat])
+		stake = Goal{Value: stake.Value + bite, Chance: math.Max(stake.Chance, share)}
+	}
+	competition := Goal{
+		Value:  s.CompetitionWeight * cfg.LifeValue * clamp(s.FoodScarcity, 0, 3) / 3,
+		Chance: share,
+	}
+
+	c.add(Action{Kind: ActThrow, TargetID: o.ID, Effort: effort}, Utility{
+		Life:         Goal{Value: lifeTerm, Chance: 1},
+		Stake:        stake,
+		Rival:        competition,
+		Risk:         s.RiskWeight * o.Risk,
+		Vitality:     cost,
+		Ticks:        1,
+		VitalityCost: cost * cfg.VitalityWeight,
+		TimeCost:     cfg.TimeCost,
+	})
 }
 
 // allyForce is what one side of a fight can count on besides itself: the

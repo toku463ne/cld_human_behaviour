@@ -772,6 +772,11 @@ func (g *game) handlePlayInput() {
 		g.orderAt(engine.ActCourt, markAgent)
 	case inpututil.IsKeyJustPressed(ebiten.KeyI):
 		g.orderAt(engine.ActInvite, markAgent)
+	case inpututil.IsKeyJustPressed(ebiten.KeyT):
+		// Throwing a stone (stage 46). The world refuses it if there is
+		// nothing in the hand, exactly as it refuses aiming at what cannot be
+		// seen: what a player may order is what the node could have chosen.
+		g.orderAt(engine.ActThrow, markAgent)
 	}
 	for i, key := range effortKeys {
 		if inpututil.IsKeyJustPressed(key) {
@@ -2664,7 +2669,8 @@ func (g *game) markTarget(screen *ebiten.Image, a *engine.Agent) {
 				vector.StrokeCircle(screen, fx, fy, g.long(7), 1.5, colorTarget, true)
 			}
 		}
-	case engine.ActAttack, engine.ActFlee, engine.ActObserve, engine.ActCourt, engine.ActInvite:
+	case engine.ActAttack, engine.ActFlee, engine.ActObserve, engine.ActCourt, engine.ActInvite,
+		engine.ActThrow:
 		if t, ok := g.world.AgentByID(a.Action.TargetID); ok {
 			tx, ty := g.onScreen(t.X, t.Y)
 			vector.StrokeCircle(screen, tx, ty, g.long(14), 1.5, colorTarget, true)
@@ -2780,7 +2786,7 @@ func (g *game) overlay() string {
 	switch g.play {
 	case playDriven:
 		fmt.Fprintf(&b, "playing #%d: numpad or arrows+home/end/pgup/pgdn walk it (hold to keep going)   click a spot then m walks there and stops\n", g.played)
-		b.WriteString("   click to aim   r rest  m walk to the mark  e eat  a attack  f flee  o observe  c court  i call others in   1-5 effort  s stance  k heir\n")
+		b.WriteString("   click to aim   r rest  m walk to the mark  e eat  a attack  t throw a stone  f flee  o observe  c court  i call others in   1-5 effort  s stance  k heir\n")
 		b.WriteString("   y / n answer somebody who has walked up and proposed   t move on to one of your children\n")
 	case playAsked:
 		fmt.Fprintf(&b, "playing #%d: it decides for itself and stops to ask at the turning points. 1-5 answer, enter ask now / leave it, k heir, t move on, y/n a proposal\n", g.played)
@@ -3008,7 +3014,7 @@ func (g *game) drawPlay(t *textBox) {
 		t.line("")
 		t.line("driving it yourself:")
 		t.line("  click   aim at somebody, something to eat, a spot")
-		t.line("  r rest   m move to the mark   e eat   a attack")
+		t.line("  r rest   m move to the mark   e eat   a attack   t throw")
 		t.line("  f flee   o observe            c court")
 		t.line("  i call others in against what you are aimed at")
 		t.line("  (with nothing aimed at, those take the nearest one")
@@ -3939,6 +3945,13 @@ func main() {
 		// what gives the two fishing skills something to be about, and a
 		// played world should have the water be work.
 		cfg.FishCatchWater, cfg.FishCatchBank = 0.75, 0.3
+		// And a body with a stone in its hand can throw it (stage 46). It
+		// costs the world about six bodies and makes running away work less
+		// well, which is a thing a played world should have and the physics
+		// should not: it is a verb for a player, and the measurement of what
+		// it does to a world is an arm rather than a default.
+		cfg.Throwing = true
+
 		// And there are stones lying on the broken ground (stage 45). What
 		// they are for is stage 46; a played world has them because where the
 		// ammunition is is a fact about the country.

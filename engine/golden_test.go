@@ -55,6 +55,12 @@ import (
 // every birth differ from the first tick, exactly as they did when calling
 // others in was added.
 //
+// And again when a tenth word was added to the vocabulary - throwing a stone
+// (stage 46, 2026-09-09). The rule itself is off by default and no stone is
+// ever thrown in these runs; what moves the numbers is that a rule of thumb
+// can now be about one more kind of action, so the hints drawn at every birth
+// differ from the first tick, exactly as they did at stages 32 and 40.
+//
 // And again when what a kill leaves beyond what its party can carry away
 // stopped being theirs to wait for (stage 41, 2026-09-09).
 //
@@ -79,9 +85,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 63, births: 50, deaths: 65, kills: 54, aging: 0, fights: 4892, gen: 3, power: 31.251651, vitality: 90.379271, hunger: 23.576590},
-	{seed: 2, pop: 43, births: 44, deaths: 77, kills: 61, aging: 0, fights: 5152, gen: 3, power: 43.217736, vitality: 112.594921, hunger: 19.064147},
-	{seed: 3, pop: 50, births: 40, deaths: 72, kills: 60, aging: 0, fights: 3933, gen: 4, power: 28.334360, vitality: 96.128791, hunger: 22.150394},
+	{seed: 1, pop: 54, births: 50, deaths: 76, kills: 56, aging: 0, fights: 4071, gen: 3, power: 45.374236, vitality: 99.969565, hunger: 22.772655},
+	{seed: 2, pop: 47, births: 36, deaths: 70, kills: 57, aging: 0, fights: 4960, gen: 2, power: 39.379671, vitality: 113.808034, hunger: 25.048980},
+	{seed: 3, pop: 42, births: 32, deaths: 71, kills: 53, aging: 0, fights: 3597, gen: 2, power: 39.974457, vitality: 101.784240, hunger: 28.878968},
 }
 
 const goldenTicks = 5000

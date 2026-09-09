@@ -1501,6 +1501,44 @@ var variants = []variant{
 			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
 		},
 	},
+	// Stage 46: throwing. The one rule in this run that can break the world,
+	// so it is measured with TrueRetaliation printed beside the population
+	// (#71) and on both maps, because the supply of stones differs fourfold
+	// between them (stage 45).
+	{
+		name:  "throwing",
+		about: "46: a body with a stone can throw it, on the played map",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.Stones, c.Throwing = 60, true
+		},
+	},
+	{
+		name:  "throwingoff",
+		about: "the pair for it: the same stones lying about and nobody able to throw one",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.Stones = 60
+		},
+	},
+	{
+		name:  "throwrough",
+		about: "46 where the ammunition is: broken ground everywhere, one body in two with a stone in sight",
+		apply: func(c *engine.Config) { c.TerrainMap, c.Stones, c.Throwing = mapRough, 60, true },
+	},
+	{
+		name:  "throwroughoff",
+		about: "the pair for that one",
+		apply: func(c *engine.Config) { c.TerrainMap, c.Stones = mapRough, 60 },
+	},
+	{
+		name:  "throwhard",
+		about: "a stone that hurts as much as three ticks of a fist, to see the shape of the danger",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.Stones, c.Throwing = mapRough, 60, true
+			c.ThrowDamage = 18
+		},
+	},
 	// Stage 45: stones. Nothing values one yet - what they are for is stage
 	// 46 - so what these arms measure is the supply: how many there are, how
 	// often a body has one in sight, and how far away the nearest is. A
@@ -2134,6 +2172,7 @@ var metricNames = []string{
 	"fishMissRate",
 	"specialShare", "specialHeld", "specialReal", "specialGain", "harvestMissRate",
 	"stonesLying", "stoneSeen", "stoneNear", "stoneHeld",
+	"throws", "throwHitRate", "throwRate",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2801,6 +2840,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// who knows it, what their bodies make of it, and - the figure the
 		// stage turns on - how much more of it grows where they are standing
 		// than the world's average.
+		// Throwing (stage 46): how many stones were thrown, how many landed,
+		// and how often it happens per lifetime. Read beside trueRetal, which
+		// is the figure this rule is dangerous to.
+		"throws":       float64(end.Throws),
+		"throwHitRate": share(end.ThrowHits, end.Throws),
+		"throwRate":    perAgentLifetime(end.Throws-tailStart.Throws, personTicks),
 		// The supply of things to throw (stage 45).
 		"stonesLying": tail.stonesLying,
 		"stoneSeen":   tail.stoneSeen,

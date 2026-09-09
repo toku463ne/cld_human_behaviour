@@ -75,6 +75,11 @@ type SelfView struct {
 	// it is sick of something.
 	Nutrition [NumFoodKinds]float64
 
+	// HasStone says there is something to throw in this body's hand (stage
+	// 46). What it would be worth throwing at is on the other side, in
+	// AgentView.
+	HasStone bool
+
 	// Burden is what this body's load multiplies the cost of moving by
 	// (stage 40). One for empty hands, which is every body in a world with
 	// carrying off. Carried is how many items it is holding and CarryRoom
@@ -276,6 +281,13 @@ type AgentView struct {
 	// decision that has not been taken yet. An agent crossing the ground with
 	// no target picked out shows neither flag, because there is nothing to
 	// show: it has not decided anything about anybody.
+	// ThrowHit is the chance a stone thrown at this one from here finds its
+	// mark, before its own guard and footwork are asked about (stage 46).
+	// Zero when there is no throwing in this world, when it is out of range,
+	// or when the body doing the reckoning has nothing to throw - so an
+	// option that cannot be taken is never scored.
+	ThrowHit float64
+
 	AttackingMe bool
 	CourtingMe  bool
 
@@ -414,6 +426,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		Carried:           len(a.carried),
 		CarryCapacity:     a.carryCapacity(&w.cfg),
 		CarryRoom:         a.canCarryMore(&w.cfg),
+		HasStone:          a.canThrow(&w.cfg),
 	}
 
 	// The index narrows the world down to the cells sight could possibly reach;
@@ -528,6 +541,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Seeking:     o.State == StateSeekMate,
 			Resting:     o.Action.Kind == ActRest,
 			Rejected:    a.isRejected(o.ID),
+			ThrowHit:    w.throwHitFor(a, o, math.Sqrt(d2)),
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
 			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
 			DeclaredFor: o.declaredFor(),

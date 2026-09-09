@@ -30,6 +30,11 @@ const (
 	// something to buy the ability to swap one plant for another.
 	ActTake
 
+	// ActThrow is a stone from out of reach (stage 46). Added at the end like
+	// the two before it, for the same reason: the numbers are what a saved
+	// world holds.
+	ActThrow
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -53,6 +58,8 @@ func (k ActionKind) String() string {
 		return "invite"
 	case ActTake:
 		return "take"
+	case ActThrow:
+		return "throw"
 	default:
 		return "rest"
 	}

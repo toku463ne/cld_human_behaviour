@@ -114,6 +114,11 @@ type Stats struct {
 	// (stage 44).
 	HarvestMissed int
 
+	// Throws is how many stones have been thrown and ThrowHits how many of
+	// them landed (stage 46).
+	Throws    int
+	ThrowHits int
+
 	MeatDropped int
 	MeatSpoiled int
 	// MeatHealing is all the vitality carcasses have mended (stage 39).
@@ -200,6 +205,13 @@ type Stats struct {
 type attack struct {
 	fromID, toID int
 	effort       float64
+
+	// thrown says this one was a stone from out of reach (stage 46), and hit
+	// the chance it finds its mark before the target's guard and footwork are
+	// asked about. A blow at arm's length always arrives; a thrown one may
+	// not, and that is the only difference in how the two resolve.
+	thrown bool
+	hit    float64
 }
 
 // World holds the whole simulation state. It knows nothing about rendering or
@@ -394,6 +406,8 @@ type World struct {
 	meatEatenFree int
 	fishEaten     int // stage 42: mouthfuls that came out of the water
 	fishMissed    int // stage 43: attempts that ended with the fish getting away
+	throws        int // stage 46: stones thrown
+	throwHits     int // ... of those, the ones that landed
 	harvestMissed int // stage 44: attempts that failed to get the crop out
 
 	meatDropped int // items left by carcasses
@@ -584,6 +598,8 @@ func (w *World) Stats() Stats {
 		FishEaten:              w.fishEaten,
 		FishMissed:             w.fishMissed,
 		HarvestMissed:          w.harvestMissed,
+		Throws:                 w.throws,
+		ThrowHits:              w.throwHits,
 		MeatDropped:            w.meatDropped,
 		MeatSpoiled:            w.meatSpoiled,
 		MeatEaten:              w.meatEaten,
@@ -908,6 +924,31 @@ func (w *World) perform(a *Agent) {
 		a.Vitality -= stanceCost(&w.cfg, a.Action.Stance) * a.Action.Effort
 		a.effortSpent = math.Max(a.effortSpent, a.Action.Effort)
 
+	case ActThrow:
+		o := w.agentByID(a.Action.TargetID)
+		if o == nil || !o.Alive {
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		// Out of sight is out of reach, whatever the range says (stage 19's
+		// promise, kept for the AI too). Too far is walked at, exactly as a
+		// body closes on somebody it means to hit.
+		r := w.throwRange()
+		if r <= 0 || !a.canThrow(&w.cfg) {
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		if !w.canSee(a.X, a.Y, o.X, o.Y) || dist2(a.X, a.Y, o.X, o.Y) > r*r {
+			w.moveToward(a, o.X, o.Y, a.Action.Effort)
+			return
+		}
+		w.throwStone(a, o)
+		a.Vitality -= stanceCost(&w.cfg, a.Action.Stance) * a.Action.Effort
+		a.effortSpent = math.Max(a.effortSpent, a.Action.Effort)
+		// One stone, one decision: what to do next is a fresh question, and
+		// the hand is empty now.
+		a.requestDecision(TriggerGoalReached)
+
 	case ActFlee:
 		o := w.agentByID(a.Action.TargetID)
 		if o == nil || !o.Alive {
@@ -1082,8 +1123,21 @@ func (w *World) resolveAttacks() {
 		w.fights++
 
 		// Only the part of the effort that went into the blow lands, so an
-		// attacker that is also guarding hits for less.
+		// attacker that is also guarding hits for less. A thrown stone is one
+		// event rather than a tick of an exchange, and it may simply miss
+		// before anybody has to dodge it (stage 46).
 		damage := damagePerTick(&w.cfg, from.Attack(&w.cfg), at.effort*from.mix().Attack)
+		if at.thrown {
+			damage = w.throwDamage(from, at.effort)
+			if w.rng.Float64() >= at.hit {
+				// Wide. Nothing is off balance for it: the reason a missed
+				// swing leaves an opening (stage 24) does not reach across a
+				// gap this size.
+				to.noteHit(from.ID, w.tick)
+				continue
+			}
+			w.throwHits++
+		}
 
 		// The one being hit is meanwhile doing whatever it chose: turning the
 		// blow aside, not being there, or neither if it was eating - and all

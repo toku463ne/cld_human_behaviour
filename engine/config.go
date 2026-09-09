@@ -592,6 +592,31 @@ type Config struct {
 	// the room, and buys nothing.
 	SkillHarvestRelief float64
 
+	// Throwing is whether a body with a stone in its hand can throw it (stage
+	// 46). False, and deliberately so on the first pass.
+	//
+	// Everything about how this world holds together runs through the cost of
+	// starting a fight, and stage 12a measured what that cost is made of: the
+	// belief that one gets hit back 0.7 of the time, against a world that
+	// does it 0.15 of the time. Teaching agents the truth halves the
+	// population. Throwing lowers the truth further - a stone from out of
+	// reach cannot be answered until the thrown-at body has crossed the gap -
+	// so this is switched on in an arm, measured with TrueRetaliation printed
+	// beside the population, and only then given a default.
+	Throwing bool
+
+	// ThrowRange is how far a stone carries, clamped at sight: a rule about
+	// hitting what cannot be seen would break the one promise stage 19 made
+	// about what may be aimed at. ThrowDamage is what one does as a multiple
+	// of a tick's worth of the same body's melee, ThrowHit the chance it
+	// finds its mark from arm's length, and ThrowFalloff how much of that
+	// distance takes away at the far end - which is the only part of it the
+	// skill of stage 47 may touch (#71).
+	ThrowRange   float64
+	ThrowDamage  float64
+	ThrowHit     float64
+	ThrowFalloff float64
+
 	// Stones is how many are scattered over the broken ground when the world
 	// is built (stage 45). Zero by default, and zero in effect on any map
 	// with no rough country: where the ammunition is is the map author's to
@@ -1609,6 +1634,11 @@ func DefaultConfig() Config {
 		SpecialtySpread: 0.6,
 		SpecialtyCatch:  0.25,
 		Stones:          0, // stage 45: the map author scatters them
+		Throwing:        false, // stage 46: measured before it is given a default
+		ThrowRange:      70,    // longer than an arm (15), shorter than sight (130)
+		ThrowDamage:     6,
+		ThrowHit:        0.9,
+		ThrowFalloff:    0.6,
 		MeatSurplusFree: true,
 		MeatVitality:    0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
 		MeatHealKnown:   true,
