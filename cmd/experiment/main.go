@@ -1501,56 +1501,53 @@ var variants = []variant{
 			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
 		},
 	},
-	// Stage 43: the two ways of fishing. One resource, two trades - the bank
-	// is safe and ordinary, the water is dangerous and good - which is the
-	// first place in this world where the same food can be had either way.
-	// The control is the same river with fish in it and nobody knowing
-	// anything (riverfish).
+	// Stage 43: the two ways of fishing. One resource and two trades - in the
+	// river most attempts land and the drowning rule charges by the tick, on
+	// the bank nothing charges anything and most attempts fail - so what a
+	// body has learned decides which of them is worth its time. The control
+	// throughout is the same world with the skills learned, taking the same
+	// room, and doing nothing.
+	{
+		name:  "riverchancy",
+		about: "43's world without anybody knowing anything: a fish is landed three times in four in the river and three in ten from the bank",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.FishShare = mapRiver, 0.25
+			c.FishCatchWater, c.FishCatchBank = 0.75, 0.3
+		},
+	},
 	{
 		name:  "riverangle",
-		about: "43: bodies born by the water learn to fish, from the bank or in it",
+		about: "43: and bodies born by the water learn one of the two ways of doing it",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
+			c.FishCatchWater, c.FishCatchBank = 0.75, 0.3
 		},
 	},
 	{
 		name:  "riverangledead",
-		about: "control: the skills are learned and take the room, and do nothing",
+		about: "control: the same skills learned, taking the same room, worth nothing",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
-			c.SkillFishReach, c.SkillFishYield = 0, 0
-		},
-	},
-	{
-		name:  "riverbankonly",
-		about: "only the bank half: reaching out from dry ground, with nothing to be had by wading",
-		apply: func(c *engine.Config) {
-			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
-			c.SkillFishYield = 0
-		},
-	},
-	{
-		name:  "riverwadeonly",
-		about: "only the wading half: more out of every fish, and no way to reach one from dry ground",
-		apply: func(c *engine.Config) {
-			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
-			c.SkillFishReach = 0
+			c.FishCatchWater, c.FishCatchBank = 0.75, 0.3
+			c.SkillFishRelief = 0
 		},
 	},
 	{
 		name:  "riverangleplenty",
-		about: "43 at a dose that cannot be missed: everybody born by the water learns it well, and both halves are large",
+		about: "43 at a dose that cannot be missed: everybody born by the water learns it well, and the two grounds are far apart",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 1
-			c.SkillFishReach, c.SkillFishYield = 4, 1.5
+			c.FishCatchWater, c.FishCatchBank = 0.9, 0.1
+			c.SkillFishReach = 4
 		},
 	},
 	{
 		name:  "riverangleplentydead",
-		about: "control for it: the same learning, taking the same room, doing nothing",
+		about: "control for it: the same learning, the same room, worth nothing",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 1
-			c.SkillFishReach, c.SkillFishYield = 0, 0
+			c.FishCatchWater, c.FishCatchBank = 0.9, 0.1
+			c.SkillFishReach, c.SkillFishRelief = 4, 0
 		},
 	},
 	{
@@ -1558,6 +1555,7 @@ var variants = []variant{
 		about: "43 with swimming as well, which is the whole water family at once",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5
+			c.FishCatchWater, c.FishCatchBank = 0.75, 0.3
 			c.SkillSwimRelief = 1
 		},
 	},
@@ -2058,6 +2056,7 @@ var metricNames = []string{
 	"meatSurplus", "meatFreeShare",
 	"fishItems", "fishShare", "foodInWater",
 	"bankHeld", "bankReal", "wadeHeld", "wadeReal", "anglerGap",
+	"fishMissRate",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2704,6 +2703,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"anglerSplit": tail.anglerSplit,
 		"waders":      tail.waders,
 		"bankers":     tail.bankers,
+		// How often a fish gets away, against how often one is landed: the
+		// figure the two fishing skills are about (stage 43).
+		"fishMissRate": share(end.FishMissed, end.FishMissed+end.FishEaten),
 		"fishItems":   tail.fishItems,
 		"fishShare":   share(end.FishEaten, end.FishEaten+end.PlantsEaten+end.MeatEaten),
 		"foodInWater": tail.foodInWater,

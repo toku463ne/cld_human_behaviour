@@ -147,7 +147,7 @@ func (w *World) eatCarried(a *Agent, foodID int) {
 	f := a.carried[i]
 	kept := w.share(a, &f)
 	hungerBefore := a.Hunger
-	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind)*w.fishYield(a, f.Kind))
+	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind))
 	if w.cfg.PlantDefence && f.Kind == FoodPlant {
 		dose := kept * f.Genes.Poison * w.cfg.PoisonDamage * (1 - w.poisonResist(a))
 		a.Vitality -= dose
@@ -230,6 +230,7 @@ func (w *World) carriedViews(a *Agent, out []FoodView) []FoodView {
 			Kind:      f.Kind,
 			Held:      true,
 			Nutrition: w.mealValues(a)[f.Kind],
+			Catch:     1, // in the hand already: there is nothing left to land
 			Heal:      w.mealHeals(a)[f.Kind],
 			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),

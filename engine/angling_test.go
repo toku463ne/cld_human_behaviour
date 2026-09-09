@@ -65,13 +65,100 @@ func TestTheLongerReachIsOnlyForFish(t *testing.T) {
 	}
 }
 
-// Fishing in the water is yield, and only while standing in it. That is the
-// trade: the bank is safe and ordinary, the water is dangerous and good.
-func TestWadingPaysOnlyWhileStandingInTheWater(t *testing.T) {
+// What being good at fishing means: landing more of them, not getting more out
+// of each. A fish is a fish - it feeds a body what a fish feeds a body,
+// whoever caught it and wherever they were standing.
+func TestSkillLandsMoreFishRatherThanBiggerOnes(t *testing.T) {
 	w, cfg := anglerWorld(t)
+	wet, dry := banksOf(t, w, cfg)
 
-	// Where the water is on this map: the middle columns.
-	wet, dry := 0.0, 0.0
+	fed := func(x float64, mastery float64) float64 {
+		a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: x, Y: 300, Vitality: 90,
+			Hunger: 90, Genome: filledGenome(100)}))
+		learn(w, a, SkillFishWater, mastery)
+		id := w.putFood(Food{X: x, Y: 300, Kind: FoodFish})
+		before := a.Hunger
+		w.eat(a, id)
+		return before - a.Hunger
+	}
+	for _, c := range []struct {
+		where   string
+		x       float64
+		mastery float64
+	}{{"in the water, skilled", wet, 1}, {"in the water, green", wet, 0},
+		{"on the bank, skilled", dry, 1}, {"on the bank, green", dry, 0}} {
+		if got := fed(c.x, c.mastery); math.Abs(got-cfg.FoodNutrition) > 1e-9 {
+			t.Fatalf("a fish eaten %s fed %v, want the ordinary %v", c.where, got, cfg.FoodNutrition)
+		}
+	}
+}
+
+// The trade is in the chance of landing it. Standing in the river most
+// attempts come off; reaching in from dry ground most do not; and each skill
+// lifts its own side.
+func TestTheWaterIsTheGoodPlaceToFishAndTheBankTheSafeOne(t *testing.T) {
+	cfg := riverConfig()
+	cfg.FishCatchWater, cfg.FishCatchBank = 0.75, 0.3
+	w := NewWorld(cfg)
+	wet, dry := banksOf(t, w, cfg)
+
+	chance := func(x float64, kind SkillKind, mastery float64) float64 {
+		a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: x, Y: 300, Vitality: 90,
+			Genome: filledGenome(100)}))
+		if mastery > 0 {
+			learn(w, a, kind, mastery)
+		}
+		return w.fishCatch(a, FoodFish)
+	}
+	green, wading := chance(wet, SkillFishWater, 0), chance(wet, SkillFishWater, 1)
+	bank, angling := chance(dry, SkillFishLand, 0), chance(dry, SkillFishLand, 1)
+
+	if green <= bank {
+		t.Fatalf("standing in the water lands %v of them and the bank %v", green, bank)
+	}
+	if wading <= green || angling <= bank {
+		t.Fatalf("skill bought nothing: water %v -> %v, bank %v -> %v", green, wading, bank, angling)
+	}
+	// And neither lifts the other's ground.
+	if got := chance(wet, SkillFishLand, 1); math.Abs(got-green) > 1e-9 {
+		t.Fatalf("knowing the bank changed what the water lands: %v against %v", got, green)
+	}
+}
+
+// A fish that gets away is not destroyed: it is somewhere else in the water,
+// and what the failure cost is the walk.
+func TestAFishThatGetsAwayIsStillInTheWorld(t *testing.T) {
+	cfg := riverConfig()
+	cfg.FishCatchWater, cfg.FishCatchBank = 0, 0 // nothing is ever landed
+	w := NewWorld(cfg)
+	wet, _ := banksOf(t, w, cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: wet, Y: 300, Vitality: 90,
+		Hunger: 90, Genome: filledGenome(100)}))
+	id := w.putFood(Food{X: wet, Y: 300, Kind: FoodFish})
+	before := len(w.Foods())
+
+	a.Action = Action{Kind: ActEat, TargetID: id}
+	w.perform(a)
+
+	if a.Hunger != 90 {
+		t.Fatal("a fish nobody could land fed somebody anyway")
+	}
+	if got := len(w.Foods()); got != before {
+		t.Fatalf("the world holds %d items after a miss, it held %d", got, before)
+	}
+	if f := w.foodByID(id); f == nil {
+		t.Fatal("the fish that got away is gone from the world")
+	} else if f.X == wet && f.Y == 300 {
+		t.Fatal("the fish that got away did not go anywhere")
+	}
+	if w.Stats().FishMissed == 0 {
+		t.Fatal("the miss was not counted")
+	}
+}
+
+// banksOf finds a wet spot and a dry one on the test map.
+func banksOf(t *testing.T, w *World, cfg Config) (wet, dry float64) {
+	t.Helper()
 	for x := 10.0; x < cfg.Width-10; x += 5 {
 		if w.terrainAt(x, 300).Kind == GroundWater {
 			wet = x
@@ -82,23 +169,7 @@ func TestWadingPaysOnlyWhileStandingInTheWater(t *testing.T) {
 	if wet == 0 || dry == 0 {
 		t.Fatal("this map has no bank and no water on it")
 	}
-
-	fed := func(x float64) float64 {
-		a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: x, Y: 300, Vitality: 90,
-			Hunger: 90, Genome: filledGenome(100)}))
-		learn(w, a, SkillFishWater, 1)
-		id := w.putFood(Food{X: x, Y: 300, Kind: FoodFish})
-		before := a.Hunger
-		w.eat(a, id)
-		return before - a.Hunger
-	}
-	inWater, onLand := fed(wet), fed(dry)
-	if inWater <= onLand {
-		t.Fatalf("a fish taken in the water fed %v and one taken from the bank %v", inWater, onLand)
-	}
-	if math.Abs(onLand-cfg.FoodNutrition) > 1e-9 {
-		t.Fatalf("a fish taken from the bank fed %v, want the ordinary %v", onLand, cfg.FoodNutrition)
-	}
+	return wet, dry
 }
 
 // It does not touch the drowning. That is swimming's figure, and two skills

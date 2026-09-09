@@ -3916,6 +3916,11 @@ func main() {
 		// costs 5.27 and the error bar covers it - which is why a played
 		// world has them and the physics does not.
 		cfg.FishShare = 0.25
+		// And they are not simply picked up (stage 43): standing in the river
+		// most attempts land, reaching in from the bank most do not. It is
+		// what gives the two fishing skills something to be about, and a
+		// played world should have the water be work.
+		cfg.FishCatchWater, cfg.FishCatchBank = 0.75, 0.3
 		// And a body born in broken country knows something about crossing
 		// it (stage 38a). Like the three above, it is a thing a hand-made
 		// world has rather than a default of the physics: it needs terrain to

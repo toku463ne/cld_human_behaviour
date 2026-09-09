@@ -434,14 +434,20 @@ func (c *AIController) addFood(p *Perception) {
 		// be asleep, and treating every one of them as racing makes strolling
 		// over to a contested item look hopeless. It cost two thirds of the
 		// population (see HISTORY.md).
+		// Whether it can be landed at all (stage 43). A fish reached is not a
+		// fish taken, and the chance of it depends on where this body would
+		// be standing and what it has learned about fishing there.
 		pGet := 1.0
+		if f.Catch > 0 && f.Catch < 1 {
+			pGet = f.Catch
+		}
 		if !math.IsInf(f.RivalDist, 1) {
 			if cfg.RaceOnDistance {
-				pGet = clamp(f.RivalDist/(f.RivalDist+f.Dist+1e-9), 0.05, 1)
+				pGet *= clamp(f.RivalDist/(f.RivalDist+f.Dist+1e-9), 0.05, 1)
 			} else {
 				mine := f.Dist / s.MaxSpeed
 				theirs := f.RivalDist / cfg.MaxSpeed
-				pGet = clamp(theirs/(theirs+mine+1e-9), 0.05, 1)
+				pGet *= clamp(theirs/(theirs+mine+1e-9), 0.05, 1)
 			}
 		}
 

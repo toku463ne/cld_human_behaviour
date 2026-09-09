@@ -539,10 +539,31 @@ type Config struct {
 	// neither can be measured.
 	SkillFishReach float64
 
-	// SkillFishYield is how much more a fish is worth to a body that took it
-	// while standing in the water, per point of skill at fishing there. The
-	// other half of the trade: the wading body is the one that drowns.
-	SkillFishYield float64
+	// FishCatchWater and FishCatchBank are the chances of landing a fish that
+	// has been reached, standing in the river and reaching in from dry ground
+	// (stage 43). Each skill lifts its own side towards certainty.
+	//
+	// This is where the two halves of the trade meet. In the water most
+	// attempts land, and the drowning rule charges by the tick for being
+	// there; from the bank nothing charges anything and most attempts fail.
+	// What a body has learned decides which of the two is worth its time.
+	//
+	// The first version of this stage made a fish worth more calories to a
+	// skilled body instead, borrowing foraging's shape - and inherited its
+	// consequence, that a body needing fewer fish spends less time fishing.
+	// Being good at something in this world had only ever meant needing less
+	// of it; here it means getting more, which is what fishing is.
+	// Both are one by default: a fish that has been reached is a fish taken,
+	// which is the world stage 42 measured. What a landscape's fish are like
+	// to catch is the map author's to say, as what grows there is.
+	FishCatchWater float64
+	FishCatchBank  float64
+
+	// SkillFishRelief scales what the two fishing skills are worth, the same
+	// way SkillSwimRelief and the rest do for theirs. Zero is the control the
+	// stage is read against: the skills are learned, take the room, and buy
+	// nothing.
+	SkillFishRelief float64
 
 	// FishForAll lets enemies fish too. False, because a second food for the
 	// species that lives on meat would make every population figure since
@@ -1837,7 +1858,9 @@ func DefaultConfig() Config {
 		SkillSwimRelief:   1,
 		SkillPoisonRelief: 1,
 		SkillFishReach:    2,
-		SkillFishYield:    0.5,
+		FishCatchWater:    1,
+		FishCatchBank:     1,
+		SkillFishRelief:   1,
 		SkillsSpread:      true,
 		HintSlotCost:      5,
 		HintWeightStd:     6,

@@ -1,5 +1,7 @@
 package engine
 
+import "math"
+
 // Fish: food that is only in the water (stage 42).
 //
 // Water has been three things so far and none of them a reason to be there.
@@ -127,26 +129,85 @@ func (w *World) Fish() FishUse {
 // have two skills buying the same thing, and then neither could be measured.
 func (w *World) fishReach(a *Agent, kind FoodKind) float64 {
 	r := w.cfg.GrabRadius
-	if kind != FoodFish || w.cfg.SkillFishReach <= 0 {
+	if kind != FoodFish || w.cfg.SkillFishReach <= 0 || w.cfg.SkillFishRelief <= 0 {
 		return r
 	}
-	return r * (1 + w.cfg.SkillFishReach*a.skillAt(&w.cfg, SkillFishLand))
+	return r * (1 + w.cfg.SkillFishReach*w.cfg.SkillFishRelief*a.skillAt(&w.cfg, SkillFishLand))
 }
 
-// fishYield is what a fish is worth to this body where it is standing: more
-// for one that knows how to work the water, and only while it is in it.
+// fishCatch is the chance this body lands a fish it has reached, from where it
+// is standing.
 //
-// Standing in the water is what the drowning rule charges for (stage 34), so
-// this is the other half of the same trade rather than a bonus: the bank is
-// safe and ordinary, the water is dangerous and good.
-func (w *World) fishYield(a *Agent, kind FoodKind) float64 {
-	if kind != FoodFish || w.cfg.SkillFishYield <= 0 {
+// This is what being good at fishing means (rewritten 2026-09-09). The first
+// version of this stage made a fish worth more calories to a skilled body,
+// which is the shape stage 38b's foraging rule has - and it inherited that
+// rule's consequence: a body that gets more out of each fish needs fewer of
+// them, so being good at working the water made bodies spend less time in it.
+// That is a sensible thing to say about a stomach and a silly thing to say
+// about fishing. What a good fisher gets is more fish.
+//
+// The two halves of the trade are the two grounds. Standing in the river,
+// where the drowning rule charges by the tick, most attempts land; reaching in
+// from dry ground, where nothing charges anything, most do not. Each skill
+// lifts its own side towards certainty, and neither touches the other's - so
+// what a body has learned decides which of the two ways of fishing is worth
+// its time, rather than how little of it it needs.
+func (w *World) fishCatch(a *Agent, kind FoodKind) float64 {
+	if kind != FoodFish {
 		return 1
 	}
-	if w.terrainAt(a.X, a.Y).Kind != GroundWater {
+	if w.terrainAt(a.X, a.Y).Kind == GroundWater {
+		return w.catchWading(a)
+	}
+	return w.catchFromBank(a)
+}
+
+// catchWading and catchFromBank are the two sides of it.
+func (w *World) catchWading(a *Agent) float64 {
+	return catchWith(w.cfg.FishCatchWater, w.cfg.SkillFishRelief*a.skillAt(&w.cfg, SkillFishWater))
+}
+
+func (w *World) catchFromBank(a *Agent) float64 {
+	return catchWith(w.cfg.FishCatchBank, w.cfg.SkillFishRelief*a.skillAt(&w.cfg, SkillFishLand))
+}
+
+// catchExpected is what a body reckons its chances are at a fish it has not
+// reached yet: the better of its two ways of going about it.
+//
+// Which of them it will actually use is decided by where it stops, and that is
+// decided by how far it can reach - so a body good at working from the bank
+// stops on the bank and a body good in the water goes in. Reading the chance
+// from the ground it happens to be standing on when it decides was tried
+// first, and it says the wrong thing in the ordinary case: a body on dry land
+// far from the river would rate every fish in it at the bank's odds, when what
+// it is about to do is wade in.
+func (w *World) catchExpected(a *Agent, kind FoodKind) float64 {
+	if kind != FoodFish {
 		return 1
 	}
-	return 1 + w.cfg.SkillFishYield*a.skillAt(&w.cfg, SkillFishWater)
+	return math.Max(w.catchWading(a), w.catchFromBank(a))
+}
+
+// catchWith lifts a base chance towards one in proportion to mastery: no skill
+// leaves the ground's own figure, and complete mastery lands everything.
+func catchWith(base, mastery float64) float64 {
+	return clamp(base+(1-base)*clamp(mastery, 0, 1), 0, 1)
+}
+
+// theFishGetsAway is what happens when an attempt fails: it darts off to
+// somewhere else in the water rather than being destroyed.
+//
+// Nothing is lost from the world, which is the rule every food rule in here
+// keeps - what the failure costs is the walk, and having to find it again.
+func (w *World) theFishGetsAway(f *Food) {
+	w.fishMissed++
+	if len(w.water) == 0 {
+		return
+	}
+	c := w.water[w.rng.Intn(len(w.water))]
+	x := clamp(c.x+w.randRange(-c.w/2, c.w/2), 10, w.cfg.Width-10)
+	y := clamp(c.y+w.randRange(-c.h/2, c.h/2), 10, w.cfg.Height-10)
+	w.moveFood(f.ID, x, y)
 }
 
 // AnglerUse is where the two kinds of fisher actually stand. Read only.

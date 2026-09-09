@@ -177,11 +177,6 @@ func (w *World) mealValues(a *Agent) [NumFoodKinds]float64 {
 	// get.
 	for k := range out {
 		out[k] *= w.meatWorth(FoodKind(k))
-		// ... and what this body gets out of a fish where it is standing
-		// (stage 43). It assumes the ground it will be standing on when it
-		// eats is the ground under it now, which is the same assumption
-		// every other estimate in this world makes about the country ahead.
-		out[k] *= w.fishYield(a, FoodKind(k))
 	}
 	if !w.cfg.ParentFeedKnown {
 		return out

@@ -106,6 +106,10 @@ type Stats struct {
 	// FishEaten is how many mouthfuls came out of the water (stage 42).
 	FishEaten int
 
+	// FishMissed is how many attempts at one ended with it getting away
+	// (stage 43).
+	FishMissed int
+
 	MeatDropped int
 	MeatSpoiled int
 	// MeatHealing is all the vitality carcasses have mended (stage 39).
@@ -381,6 +385,7 @@ type World struct {
 	meatEatenHeld int
 	meatEatenFree int
 	fishEaten     int // stage 42: mouthfuls that came out of the water
+	fishMissed    int // stage 43: attempts that ended with the fish getting away
 
 	meatDropped int // items left by carcasses
 	meatSpoiled int // ... of those, the ones nobody got to in time
@@ -564,6 +569,7 @@ func (w *World) Stats() Stats {
 		MeatEatenHeld:          w.meatEatenHeld,
 		MeatEatenFree:          w.meatEatenFree,
 		FishEaten:              w.fishEaten,
+		FishMissed:             w.fishMissed,
 		MeatDropped:            w.meatDropped,
 		MeatSpoiled:            w.meatSpoiled,
 		MeatEaten:              w.meatEaten,
@@ -836,6 +842,13 @@ func (w *World) perform(a *Agent) {
 			w.moveToward(a, f.X, f.Y, a.Action.Effort)
 			return
 		}
+		// And whether it lands it. A fish is the only food in this world that
+		// can be reached and still not had.
+		if f.Kind == FoodFish && w.rng.Float64() >= w.fishCatch(a, f.Kind) {
+			w.theFishGetsAway(f)
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
 		w.eat(a, f.ID)
 		a.requestDecision(TriggerGoalReached)
 
@@ -847,6 +860,11 @@ func (w *World) perform(a *Agent) {
 		}
 		if reach := w.fishReach(a, f.Kind); dist2(a.X, a.Y, f.X, f.Y) > reach*reach {
 			w.moveToward(a, f.X, f.Y, a.Action.Effort)
+			return
+		}
+		if f.Kind == FoodFish && w.rng.Float64() >= w.fishCatch(a, f.Kind) {
+			w.theFishGetsAway(f)
+			a.requestDecision(TriggerTargetLost)
 			return
 		}
 		w.take(a, f.ID)
@@ -1552,7 +1570,7 @@ func (w *World) eat(a *Agent, foodID int) {
 	// Worth less if it is the same as everything else it has been living on
 	// (stage 16). Nothing else changes: hunger falls by less, and everything
 	// downstream of hunger follows from that on its own.
-	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind)*w.fishYield(a, f.Kind))
+	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind))
 	// And whatever it was defended with (stage 17b). The plant's poison is a
 	// hidden parameter: this is where an agent finds out what it actually ate,
 	// as against what the warning said.
@@ -2086,6 +2104,19 @@ func (w *World) removeFoodByID(id int) {
 	w.foods = w.foods[:last]
 	delete(w.foodIndex, id)
 	// The last item was swapped into the hole, so two indices changed meaning.
+	w.invalidateIndex()
+}
+
+// moveFood puts an item somewhere else. Only a fish that got away uses it
+// (stage 43): food does not otherwise move, and the spatial index has to be
+// told, because everything that asks it where things are would otherwise be
+// answering about where this one used to be.
+func (w *World) moveFood(id int, x, y float64) {
+	i, ok := w.foodIndex[id]
+	if !ok {
+		return
+	}
+	w.foods[i].X, w.foods[i].Y = x, y
 	w.invalidateIndex()
 }
 

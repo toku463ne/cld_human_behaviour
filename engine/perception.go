@@ -210,6 +210,13 @@ type FoodView struct {
 	// before the ceiling of what it is actually missing.
 	Heal float64
 
+	// Catch is the chance this body lands it if it gets to it (stage 43).
+	// One for everything but a fish, and one for a fish too in a world whose
+	// water gives them up freely. It is read from where the body is standing
+	// now, which is the same assumption about the ground ahead that every
+	// other estimate here makes.
+	Catch float64
+
 	// Held says this one is already in the agent's own hands (stage 40).
 	// Nothing about how it is scored changes - it is a meal at no distance
 	// with nobody racing for it - but the option to pick something up is
@@ -430,6 +437,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Kind:      f.Kind,
 			Nutrition: p.Self.Nutrition[f.Kind],
 			Heal:      p.Self.Heal[f.Kind],
+			Catch:     w.catchExpected(a, f.Kind),
 			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),
 		})
