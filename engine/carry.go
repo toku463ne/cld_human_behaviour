@@ -119,6 +119,17 @@ func (w *World) take(a *Agent, foodID int) {
 	held := *f
 	held.Claim = nil // in hand it is nobody else's business whose kill it was
 	held.ClaimUntil = 0
+	// A fish out of the water is dead, and dead flesh goes off (stage 49's
+	// aftermath). Landing one is the moment its clock starts: a fish the
+	// world planted is alive and keeps for ever, and there is no other way
+	// out of the river than a mouth or a hand. From here it is a carcass in
+	// every respect - it goes off in the hand, it goes off if the hand that
+	// held it dies and drops it on the bank, and it goes off at a carcass's
+	// rate rather than at one of its own.
+	if held.Kind == FoodFish && held.SpoilAt == 0 &&
+		w.cfg.MeatSpoilTicks > 0 && !w.cfg.LandedFishKeeps {
+		held.SpoilAt = w.tick + w.cfg.MeatSpoilTicks
+	}
 	a.carried = append(a.carried, held)
 	w.heldKind[held.Kind]++
 	w.removeFoodByID(foodID)
@@ -216,8 +227,11 @@ func (w *World) removeCarried(a *Agent, i int) {
 func (w *World) spoilCarried(a *Agent) {
 	for i := 0; i < len(a.carried); {
 		if f := &a.carried[i]; f.SpoilAt > 0 && w.tick >= f.SpoilAt && !w.cfg.CarriedMeatKeeps {
-			if f.Kind == FoodMeat {
+			switch f.Kind {
+			case FoodMeat:
 				w.meatSpoiled++
+			case FoodFish:
+				w.fishSpoiled++
 			}
 			w.removeCarried(a, i)
 			continue

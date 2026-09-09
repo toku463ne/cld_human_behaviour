@@ -107,15 +107,28 @@ type Stats struct {
 	FishEaten int
 
 	// FishMissed is how many attempts at one ended with it getting away
-	// (stage 43).
-	FishMissed int
+	// (stage 43), and FishSpoiled how many landed ones went off before
+	// anybody ate them: a fish out of the river is dead flesh and keeps no
+	// better than a carcass.
+	FishMissed  int
+	FishSpoiled int
 
 	// HarvestMissed is how many attempts at the awkward crop came to nothing
 	// (stage 44).
 	HarvestMissed int
 
-	// Gifts is how many times something changed hands (stage 48).
-	Gifts int
+	// Gifts is how many times something changed hands (stage 48), and
+	// GiftsCried how many of those were made by a body that had been crying
+	// its wares (stage 49).
+	Gifts      int
+	GiftsCried int
+
+	// Cries is how many decisions were "here is what I have" (stage 49),
+	// OffersHeard how many were taken with somebody's wares in sight, and
+	// OfferDraws how many of those were a walk towards one.
+	Cries       int
+	OffersHeard int
+	OfferDraws  int
 
 	// Throws is how many stones have been thrown and ThrowHits how many of
 	// them landed (stage 46).
@@ -140,8 +153,8 @@ type Stats struct {
 	StarvedFoodNear int
 	SightTicks      int
 	SpareTicks      int
-	MeatEaten   int
-	PlantsEaten int
+	MeatEaten       int
+	PlantsEaten     int
 
 	// PlantsSpat is how many bites came to nothing because the plant was
 	// poisonous enough to be dropped (stage 17b), and PoisonLoss all the
@@ -409,12 +422,34 @@ type World struct {
 	meatEatenFree int
 	fishEaten     int // stage 42: mouthfuls that came out of the water
 	fishMissed    int // stage 43: attempts that ended with the fish getting away
+	// fishSpoiled is how many landed fish went off before anybody ate them -
+	// in a hand, or lying where the body that carried them died. A fish still
+	// in the river has no clock on it at all.
+	fishSpoiled int
 	// What has been handed over (stage 48), and to whom.
 	gifts            int
 	giftsToKin       int
 	giftsToMates     int
 	giftsToStrangers int
 	giftStones       int
+	// ... and how much of it followed a cry (stage 49): gifts made by a body
+	// that had been crying its wares within the last two cries' worth of
+	// ticks. It is the closest this world can come to asking whether the
+	// advertisement is what brought the two of them together.
+	giftsCried int
+
+	// cries is how many decisions were "here is what I have" (stage 49),
+	// offersHeard how many were taken with somebody's wares in sight, and
+	// offerDraws how many of those were a walk towards one. The last is the
+	// one the stage turns on: a cry nobody walks to is a noise.
+	cries       int
+	offersHeard int
+	offerDraws  int
+	// sawOffer is set by perceive when this look turned up somebody's wares,
+	// and read by the decision that look was for. It is a scratch flag rather
+	// than a second scan of the neighbours: the scan that builds the
+	// perception has already been over every one of them.
+	sawOffer bool
 
 	throws        int // stage 46: stones thrown
 	throwHits     int // ... of those, the ones that landed
@@ -607,8 +642,13 @@ func (w *World) Stats() Stats {
 		MeatEatenFree:          w.meatEatenFree,
 		FishEaten:              w.fishEaten,
 		FishMissed:             w.fishMissed,
+		FishSpoiled:            w.fishSpoiled,
 		HarvestMissed:          w.harvestMissed,
 		Gifts:                  w.gifts,
+		GiftsCried:             w.giftsCried,
+		Cries:                  w.cries,
+		OffersHeard:            w.offersHeard,
+		OfferDraws:             w.offerDraws,
 		Throws:                 w.throws,
 		ThrowHits:              w.throwHits,
 		MeatDropped:            w.meatDropped,
@@ -816,6 +856,12 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 		if ai.JoinedDeclared {
 			w.joins++
 		}
+		if ai.WentToOffer {
+			w.offerDraws++
+		}
+	}
+	if w.sawOffer {
+		w.offersHeard++
 	}
 
 	a.lastDecisionTick = w.tick
@@ -826,6 +872,10 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 
 	if a.Action.Kind == ActInvite {
 		w.calls++
+	}
+	if a.Action.Kind == ActOffer {
+		w.cries++
+		a.criedAt = w.tick
 	}
 
 	switch a.Action.Kind {
@@ -959,6 +1009,9 @@ func (w *World) perform(a *Agent) {
 		// One stone, one decision: what to do next is a fresh question, and
 		// the hand is empty now.
 		a.requestDecision(TriggerGoalReached)
+
+	case ActOffer:
+		w.cry(a)
 
 	case ActGive:
 		// Handing something over (stage 48). Close enough to put it in their

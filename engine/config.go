@@ -603,6 +603,37 @@ type Config struct {
 	// the room, and buys nothing.
 	SkillHarvestRelief float64
 
+	// OfferTicks is how long a cry lasts and how long it takes (stage 49).
+	// For that many ticks the body stands there doing nothing else, and for
+	// that many ticks what is in its hand is visible to everybody who can see
+	// it. Zero takes the word out of the vocabulary: no agent is offered the
+	// option, none is ever seen crying, and nobody's hands are read - which is
+	// the arm the whole stage is measured against.
+	//
+	// It is the price and the reach at once, which is what makes it the one
+	// figure this stage has. A longer cry costs more time and is worth more,
+	// because the estimate on both sides is the same question: can whoever
+	// would come get here before it stops? Past TriggerIdleTicks a cry is cut
+	// short by boredom, which is a rule of the world rather than an oversight:
+	// nothing here is allowed to hold a body still indefinitely.
+	//
+	// It is zero by default, and not because nothing happens - the word is
+	// spoken, heard and walked to. It is zero because the control that takes
+	// the information out and leaves the standing still (WaresSeen) is worth
+	// as much: what this rule buys is not the advertisement.
+	OfferTicks int
+
+	// WaresSeen is whether a held-out item can be read by anybody looking
+	// (stage 49). True is the rule; false is the control that separates what
+	// the advertisement does from what standing still does. In the false arm
+	// the cry is still scored, still chosen and still costs its ticks - the
+	// only thing missing is that nobody can see what is being held up.
+	//
+	// It is the same shape of control as stage 34's DrownKnown and stage 39's
+	// meat that mends without anybody knowing it does: the rule fires either
+	// way, and what is taken away is the knowing.
+	WaresSeen bool
+
 	// AffinityGift is what handing something over earns, both ways (stage
 	// 48). Zero takes the reason to give anything away out of the world while
 	// leaving the word in it, which is the arm this stage is read against.
@@ -717,6 +748,17 @@ type Config struct {
 	// for food and crowds the plants out - which is what happened the first
 	// time carcasses went in, and cost a fifth of the population.
 	MeatSpoilTicks int
+
+	// LandedFishKeeps puts the world back the way it was before a fish out of
+	// the water was dead flesh: false is the rule (landing one starts a
+	// carcass's clock on it), true is the world every figure recorded for
+	// stages 42 and 43 was measured in.
+	//
+	// It shares MeatSpoilTicks rather than having a figure of its own. A dead
+	// fish and a carcass are the same thing wearing different names, and a
+	// second number would have to be told apart from the first by a
+	// measurement nobody has a reason to want.
+	LandedFishKeeps bool
 
 	// Carcasses are counted against MaxMeatItems rather than against the
 	// world's allowance for plants. Sharing one allowance meant a spell of
@@ -1655,8 +1697,8 @@ func DefaultConfig() Config {
 		SpecialtyShare:  0, // stage 44: the same
 		SpecialtySpread: 0.6,
 		SpecialtyCatch:  0.25,
-		Stones:          0, // stage 45: the map author scatters them
-		AffinityGift:    6, // stage 48: the same as a shared kill
+		Stones:          0,     // stage 45: the map author scatters them
+		AffinityGift:    6,     // stage 48: the same as a shared kill
 		Throwing:        false, // stage 46: measured before it is given a default
 		ThrowRange:      70,    // longer than an arm (15), shorter than sight (130)
 		ThrowDamage:     6,
@@ -1668,6 +1710,7 @@ func DefaultConfig() Config {
 		MeatNutrition:   1,
 		MeatClaimTicks:  400,
 		MeatSpoilTicks:  900,
+		LandedFishKeeps: false, // a fish out of the water is dead flesh
 		HuntCreditTicks: 200,
 
 		AttackDamage: 1.15,
@@ -1724,6 +1767,8 @@ func DefaultConfig() Config {
 		KillWitnessFactor:    2,
 		KillWitnessLooks:     true,
 		CallTicks:            30,
+		OfferTicks:           0,
+		WaresSeen:            true,
 		AllyTrustWeight:      1,
 		AffinityDecayPerTick: 0.0008,
 		AffinityTrust:        20,
@@ -1958,20 +2003,20 @@ func DefaultConfig() Config {
 			// that already decides what the stone does on arrival (#71).
 			SkillThrow: GeneRationality,
 		},
-		SkillForageRelief: 1,
-		SkillSwimRelief:   1,
-		SkillPoisonRelief: 1,
-		SkillFishReach:    2,
-		FishCatchWater:    1,
-		FishCatchBank:     1,
-		SkillFishRelief:   1,
+		SkillForageRelief:  1,
+		SkillSwimRelief:    1,
+		SkillPoisonRelief:  1,
+		SkillFishReach:     2,
+		FishCatchWater:     1,
+		FishCatchBank:      1,
+		SkillFishRelief:    1,
 		SkillHarvestRelief: 1,
 		SkillThrowRelief:   1,
-		SkillsSpread:      true,
-		HintSlotCost:      5,
-		HintWeightStd:     6,
-		HintWeightMax:     20,
-		HintTradeWorth:    0.5,
-		HintsSpread:       true,
+		SkillsSpread:       true,
+		HintSlotCost:       5,
+		HintWeightStd:      6,
+		HintWeightMax:      20,
+		HintTradeWorth:     0.5,
+		HintsSpread:        true,
 	}
 }

@@ -39,6 +39,11 @@ const (
 	// The eleventh word, added at the end like the three before it.
 	ActGive
 
+	// ActOffer is standing still and holding out what is in the hand, so that
+	// anybody who can see it knows it is there (stage 49). The twelfth word,
+	// added at the end like the four before it.
+	ActOffer
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -66,6 +71,8 @@ func (k ActionKind) String() string {
 		return "throw"
 	case ActGive:
 		return "give"
+	case ActOffer:
+		return "offer"
 	default:
 		return "rest"
 	}

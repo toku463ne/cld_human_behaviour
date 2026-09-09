@@ -300,6 +300,11 @@ type Agent struct {
 	// what makes an action that takes time (watching somebody) possible.
 	actionTicks int
 
+	// criedAt is when this agent last started crying its wares (stage 49).
+	// Nothing in the world reads it: it is there so that a gift can be told
+	// apart from a gift that followed an advertisement.
+	criedAt int
+
 	// opinions is what this agent believes about others: how much it has been
 	// hurt by them, what they have given it, and how strong it reckons they
 	// are. Allocated lazily, because a young agent has met nobody. There is

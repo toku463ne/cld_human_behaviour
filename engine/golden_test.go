@@ -55,6 +55,13 @@ import (
 // every birth differ from the first tick, exactly as they did when calling
 // others in was added.
 //
+// And again when a body got a word for crying what is in its hand (stage 49,
+// 2026-09-10). A twelfth word, and this one is off by default: no agent cries
+// in these runs and OfferTicks is zero. What moves the numbers is only the
+// width of the vocabulary a rule of thumb can be about, exactly as at stages
+// 32, 40 and 46 - held at its old width, the world with the rule off is
+// bit-identical, which is how that was checked.
+//
 // And again when a body could hand what it was holding to somebody else
 // (stage 48, 2026-09-09). An eleventh word, and this one is used: measured
 // over 48 seeds it is worth about nine population in the world these numbers
@@ -91,9 +98,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 38, births: 32, deaths: 70, kills: 48, aging: 0, fights: 4536, gen: 2, power: 46.300645, vitality: 114.638513, hunger: 22.647141},
-	{seed: 2, pop: 36, births: 36, deaths: 76, kills: 60, aging: 0, fights: 6205, gen: 3, power: 39.207026, vitality: 111.842113, hunger: 22.297056},
-	{seed: 3, pop: 34, births: 26, deaths: 70, kills: 50, aging: 0, fights: 4161, gen: 2, power: 36.690071, vitality: 86.768813, hunger: 31.176617},
+	{seed: 1, pop: 55, births: 31, deaths: 58, kills: 33, aging: 0, fights: 2032, gen: 2, power: 42.055532, vitality: 80.905414, hunger: 25.032907},
+	{seed: 2, pop: 41, births: 34, deaths: 73, kills: 64, aging: 0, fights: 6266, gen: 3, power: 41.543219, vitality: 118.959319, hunger: 19.958365},
+	{seed: 3, pop: 33, births: 22, deaths: 70, kills: 52, aging: 0, fights: 3912, gen: 2, power: 39.481722, vitality: 100.353095, hunger: 21.538241},
 }
 
 const goldenTicks = 5000

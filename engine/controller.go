@@ -115,6 +115,19 @@ type AIController struct {
 	// Measurement only, like ChoseBetterGround.
 	JoinedDeclared bool
 
+	// Which options, if any, were walks towards somebody crying their wares
+	// (stage 49), and whether one of them won. Measurement only, and for the
+	// same reason ChoseBetterGround is measured: an advertisement can only
+	// reach a body through this option, so how often it is taken is the
+	// ceiling on what advertising can do.
+	offerOpts   []int
+	WentToOffer bool
+
+	// The best hand-over in sight and how far off it is, worked out while
+	// scoring the gifts and read by the cry that would arrange one (stage 49).
+	bestGiftGain float64
+	bestGiftDist float64
+
 	// The deciding agent's rules of thumb and the situation they read (stage
 	// 12c). The situation is filled in once for the agent's own state and
 	// again for whoever each option is aimed at, so a hint about a stranger's
@@ -129,6 +142,8 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.tracing = p.Trace != nil
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
 	c.betterGroundOpt, c.ChoseBetterGround = -1, false
+	c.offerOpts, c.WentToOffer = c.offerOpts[:0], false
+	c.bestGiftGain, c.bestGiftDist = 0, 0
 	c.allies, c.JoinedDeclared = c.allies[:0], false
 	// readSelf clears the whole situation, so the options scored before any
 	// target is read (rest, wandering, food) see nothing about a target.
@@ -143,6 +158,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addFood(p)
 	c.addStones(p)
 	c.addAgents(p, maxDepth)
+	c.addOffer(p)
 
 	return c.pick(p)
 }
@@ -537,6 +553,7 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 			c.addAttack(p, o)
 			c.addThrow(p, o)
 			c.addGive(p, o)
+			c.addGoToOffer(p, o)
 			if o.Prey && o.Meat >= 1 {
 				c.addInvite(p, o)
 			}
@@ -576,11 +593,96 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 	if gained <= 0 {
 		return
 	}
+	// The best hand-over in sight, kept for the cry that would arrange one
+	// instead of walking to it (stage 49). It is worked out here rather than
+	// again because it is the same question.
+	if gained > c.bestGiftGain {
+		c.bestGiftGain, c.bestGiftDist = gained, o.Dist
+	}
 	for _, effort := range effortLevels {
 		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
 		cost := moveCost(cfg, s, effort) * ticks
 		c.add(Action{Kind: ActGive, TargetID: o.ID, Effort: effort}, Utility{
 			Lore:         Goal{Value: cfg.LoreValue * gained, Chance: 1},
+			Vitality:     cost,
+			Ticks:        ticks,
+			VitalityCost: cost * cfg.VitalityWeight,
+			TimeCost:     ticks * cfg.TimeCost,
+		})
+	}
+}
+
+// addOffer scores standing there and crying what is in the hand (stage 49).
+//
+// It is worth the same thing a gift is worth - the trust it buys - because it
+// is the same hand-over, arranged rather than walked to. What tells the two
+// apart is the price and the chance. Walking to somebody costs vitality and
+// arrives for certain; crying costs only time, and comes off if whoever would
+// come can get here before the cry stops.
+//
+// That chance is an assumption and not a fact, in the shape this world already
+// uses for the legs of somebody else: how fast a stranger walks is hidden, so
+// an ordinary body's speed is assumed, exactly as the race for a piece of food
+// assumes it. Nothing here knows whether anybody wants what is being held up.
+// If they do not come, the cry was time spent for nothing, and the body is
+// asked again with the distance unchanged - so a cry that is not worth making
+// is not made twice for a different reason.
+func (c *AIController) addOffer(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if cfg.OfferTicks <= 0 || s.Carried == 0 || c.bestGiftGain <= 0 {
+		return
+	}
+	ticks := float64(cfg.OfferTicks)
+	comes := clamp(ticks*cfg.MaxSpeed/math.Max(c.bestGiftDist, 1e-9), 0, 1)
+	c.add(Action{Kind: ActOffer}, Utility{
+		Lore:     Goal{Value: cfg.LoreValue * c.bestGiftGain, Chance: comes},
+		Ticks:    ticks,
+		TimeCost: ticks * cfg.TimeCost,
+	})
+}
+
+// addGoToOffer scores walking over to somebody holding something up (stage
+// 49). It is the other half of the cry, and without it a cry is a noise made
+// at bodies with no reason to answer it.
+//
+// No new word is needed for it: heading somewhere because there is thought to
+// be something there is what stage 15b's walk to better country already is,
+// and this is the same option with a body at the end of it instead of a
+// region. What happens when it arrives is not arranged here - the one holding
+// the item scores handing it over the way it scores everything else - so the
+// chance on this is what the walker can actually reckon: whether the cry will
+// still be running when it gets there.
+func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
+	cfg, s := p.Cfg, &p.Self
+	if !o.Offering || o.OfferLeft <= 0 || !s.CarryRoom || o.Dist <= 1e-9 {
+		return
+	}
+	incoming := c.incomingDmg
+	now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
+	dx, dy := (o.X-s.X)/o.Dist, (o.Y-s.Y)/o.Dist
+	for _, effort := range effortLevels {
+		// Whoever else heard the cry is walking for it too, and it goes into
+		// one pair of hands. That is the same race as a piece of food on the
+		// ground, judged the same way: my legs against an ordinary body's,
+		// because a stranger's speed is hidden here as it is everywhere.
+		//
+		// Without it this option was worth about five times what it came to:
+		// measured before the term went in, one walk in five ended with
+		// anything being handed over.
+		pGet := 1.0
+		if !math.IsInf(o.OfferRivalDist, 1) && o.OfferRivalDist > 0 {
+			mine, theirs := o.Dist/s.MaxSpeed, o.OfferRivalDist/cfg.MaxSpeed
+			pGet = clamp(theirs/(theirs+mine+1e-9), 0.05, 1)
+		}
+		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
+		cost := moveCost(cfg, s, effort) * ticks
+		hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*o.OfferValue)
+		vitAfter := math.Min(s.Vitality-cost+o.OfferHeal, s.MaxVitality)
+		vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
+		after := pressure(cfg, s, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
+		c.offerOpts = append(c.offerOpts, len(c.opts))
+		c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, Utility{
+			Life:         Goal{Value: (now - after) * cfg.LifeValue, Chance: pGet * clamp(float64(o.OfferLeft)/ticks, 0, 1)},
 			Vitality:     cost,
 			Ticks:        ticks,
 			VitalityCost: cost * cfg.VitalityWeight,
@@ -1132,6 +1234,12 @@ func (c *AIController) pick(p *Perception) Action {
 		p.Trace.Chosen = best
 	}
 	c.ChoseBetterGround = best == c.betterGroundOpt
+	for _, i := range c.offerOpts {
+		if i == best {
+			c.WentToOffer = true
+			break
+		}
+	}
 	// Whether the fight it picked was one somebody else had already taken on
 	// (stage 32). Measurement only, like the line above: a rule that produces
 	// pack hunting has to show up as agents choosing the same target, and a

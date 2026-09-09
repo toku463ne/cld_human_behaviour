@@ -40,6 +40,14 @@ func (w *World) giveItem(from, to *Agent) bool {
 	to.carried = append(to.carried, item)
 	w.heldKind[item.Kind]++
 	w.gifts++
+	// And whether it followed a cry (stage 49), which is as close as this
+	// world gets to asking whether the advertisement is what brought them
+	// together. Two cries' worth of ticks is the window: long enough for
+	// somebody to have crossed the sight that heard it, short enough that an
+	// ordinary gift does not fall inside it by chance.
+	if w.cfg.OfferTicks > 0 && from.criedAt > 0 && w.tick-from.criedAt <= 2*w.cfg.OfferTicks {
+		w.giftsCried++
+	}
 	if item.Kind == FoodStone {
 		w.giftStones++
 	}

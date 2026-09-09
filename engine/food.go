@@ -246,9 +246,10 @@ func (w *World) rememberHunt(party []int) {
 	}
 }
 
-// clearSpoiled takes away the carcasses nobody got to in time. Meat that stayed
-// would fill the world's allowance for food and leave no room for anything to
-// grow.
+// clearSpoiled takes away the dead flesh nobody got to in time. Meat that
+// stayed would fill the world's allowance for food and leave no room for
+// anything to grow - and so would a fish landed and left on the bank, which is
+// the same thing wearing a different name.
 func (w *World) clearSpoiled() {
 	// Including what is in somebody's hands (stage 40): the clock does not
 	// stop for being carried, because a benefit with no price runs to the
@@ -260,8 +261,15 @@ func (w *World) clearSpoiled() {
 	}
 	for i := 0; i < len(w.foods); {
 		if f := &w.foods[i]; f.SpoilAt > 0 && w.tick >= f.SpoilAt {
-			if f.Kind == FoodMeat {
+			switch f.Kind {
+			case FoodMeat:
 				w.meatSpoiled++
+			case FoodFish:
+				// A fish somebody landed and then left, or dropped on the
+				// bank when it died (stage 42 and stage 40 together). The
+				// world never plants a fish with a clock on it, so nothing
+				// here takes a living fish out of the river.
+				w.fishSpoiled++
 			}
 			w.removeFoodByID(f.ID)
 			continue // the last item was swapped into this slot

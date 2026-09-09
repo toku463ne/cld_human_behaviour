@@ -187,6 +187,16 @@ var (
 	}
 )
 
+// playedMap is the world cmd/devview lays out to be played on: terrain, food
+// tied to the ground and the water, fish, the awkward crop and stones. Stage
+// 44 showed that a rule which spends food can be worth a population on the
+// flat world and cost one here, so anything about food is read on both.
+func playedMap(c *engine.Config) {
+	c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+	c.FishShare, c.SpecialtyShare, c.SpecialtyCatch = 0.25, 0.08, 0.5
+	c.Stones = 60
+}
+
 // A variant is one arm of an experiment: a name, why it exists, and what it
 // changes about the default configuration.
 type variant struct {
@@ -1495,6 +1505,14 @@ var variants = []variant{
 		},
 	},
 	{
+		name:  "countryfishkeeps",
+		about: "the pair for it: a landed fish keeps for ever, as it did before stage 49",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare, c.LandedFishKeeps = 0.25, true
+		},
+	},
+	{
 		name:  "countrynofish",
 		about: "the same map with the water empty: the pair for the world a game is played in",
 		apply: func(c *engine.Config) {
@@ -1589,6 +1607,65 @@ var variants = []variant{
 			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
 			c.FishShare, c.SpecialtyShare, c.SkillBirthplace = 0.25, 0.2, 0.5
 			c.Stones, c.Throwing, c.HighGroundCover = 60, true, 0.3
+		},
+	},
+	// Stage 49: crying what is in the hand. The target was counted before the
+	// rule was written: 27% of bodies hold something and 85% of those are not
+	// hungry, so there is a surplus - but 52% of holders can already see a
+	// hungry body with a free hand at a mean distance of 64, and the whole of
+	// the buyer's side is 2.9% (the share of hungry moments spent with no food
+	// in sight and somebody holding some within sight). The arm to read it
+	// against is the same world with the word taken out.
+	{
+		name:  "criers",
+		about: "49: a body can stand still and hold out what it has, on the played map",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks = 30
+		},
+	},
+	{
+		name:  "criersdead",
+		about: "the pair for it: the same world, and nobody can say what they have",
+		apply: playedMap,
+	},
+	{
+		name:  "criersdeaf",
+		about: "control: the cry is made and costs its time, and nobody can read the hand",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.WaresSeen = 30, false
+		},
+	},
+	{
+		name:  "criersflatdeaf",
+		about: "the same control on the flat world: crying that nobody can read",
+		apply: func(c *engine.Config) { c.OfferTicks, c.WaresSeen = 30, false },
+	},
+	{
+		name:  "criersflat",
+		about: "49 on the flat world, where the only things worth holding are food",
+		apply: func(c *engine.Config) { c.OfferTicks = 30 },
+	},
+	{
+		name:  "criersflatdead",
+		about: "the pair for it: the flat world with the word taken out",
+		apply: func(c *engine.Config) {},
+	},
+	{
+		name:  "crierslong",
+		about: "a cry that runs three times as long: worth more, and costs more",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks = 90
+		},
+	},
+	{
+		name:  "criershands",
+		about: "49 with room for three things: hands that can hold dinner and stock",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.CarryCapacity = 30, 3
 		},
 	},
 	// Stage 48: handing something over. The gate the rest of the economy
@@ -2319,12 +2396,13 @@ var metricNames = []string{
 	"meatSurplus", "meatFreeShare",
 	"fishItems", "fishShare", "foodInWater",
 	"bankHeld", "bankReal", "wadeHeld", "wadeReal", "anglerGap",
-	"fishMissRate",
+	"fishMissRate", "fishSpoilShare",
 	"specialShare", "specialHeld", "specialReal", "specialGain", "harvestMissRate",
 	"stonesLying", "stoneSeen", "stoneNear", "stoneHeld",
 	"throws", "throwHitRate", "throwRate",
 	"aimHeld", "aimReal",
 	"gifts", "giftRate", "giftsToKin", "giftsToMates", "giftsToStrangers", "giftStones",
+	"cryShare", "offerHeard", "offerDraw", "giftsCried",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2684,9 +2762,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			tolHeld:      tol.Held, tolNominal: tol.Nominal,
 			tolReal:  tol.Realised,
 			swimHeld: swim.Held, swimNominal: swim.Nominal,
-			swimReal:   swim.Realised,
-			bankHeld:   bank.Held, bankReal: bank.Realised,
-			wadeHeld:   wade.Held, wadeReal: wade.Realised,
+			swimReal: swim.Realised,
+			bankHeld: bank.Held, bankReal: bank.Realised,
+			wadeHeld: wade.Held, wadeReal: wade.Realised,
 			anglerGap:  wade.Realised - bank.Realised,
 			giftsToKin: given.ToKin, giftsToMates: given.ToMates,
 			giftsToStrangers: given.ToStrange, giftStones: given.Stones,
@@ -2822,7 +2900,17 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// taken on (stage 32). The second is the one that says whether a call
 		// is answered: a word nobody acts on is not a hunt.
 		"callShare": ratio(end.Calls, end.Decisions),
-		"joinShare": ratio(end.Joins, end.Decisions),
+		// Crying what is in the hand (stage 49), in the same three shapes the
+		// call is read in: how often the word is spoken, how often anybody is
+		// deciding with somebody's wares in sight, and how often that decision
+		// was a walk towards them. The last is the one the stage turns on - a
+		// cry nobody walks to is a noise - and giftsCried is what it came to:
+		// the share of hand-overs made by a body that had been advertising.
+		"cryShare":   ratio(end.Cries, end.Decisions),
+		"offerHeard": ratio(end.OffersHeard, end.Decisions),
+		"offerDraw":  ratio(end.OfferDraws, end.Decisions),
+		"giftsCried": share(end.GiftsCried, end.Gifts),
+		"joinShare":  ratio(end.Joins, end.Decisions),
 		// The share of all decisions that were "go to country I think better
 		// of" - the one door a belief about a place has into a body, and so
 		// the ceiling on what stages 15b, 29 and 35 can do (stage 35).
@@ -2961,8 +3049,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			windowMean(end.FirstSightError-tailStart.FirstSightError, end.FirstSights-tailStart.FirstSights),
 		"learnGain": windowMean(end.FirstSightErrorFixed-tailStart.FirstSightErrorFixed, end.FirstSights-tailStart.FirstSights) -
 			windowMean(end.FirstSightError-tailStart.FirstSightError, end.FirstSights-tailStart.FirstSights),
-		"hunts":       float64(end.Hunts),
-		"jointHunts":  float64(end.JointHunts),
+		"hunts":      float64(end.Hunts),
+		"jointHunts": float64(end.JointHunts),
 		// What becomes of the meat (stage 39). Before making a carcass worth
 		// more it has to be said how much of it there is and how much of it
 		// nobody takes: meatShare is the share of all the mouthfuls in the
@@ -2982,16 +3070,16 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// and how much of the meat eaten was eaten by somebody who had no
 		// claim on it (stage 41). The first is the premise: a rule about a
 		// surplus needs there to be one.
-		"meatSurplus":   share(end.MeatItems-end.MeatKeepable, end.MeatItems),
+		"meatSurplus": share(end.MeatItems-end.MeatKeepable, end.MeatItems),
 		// What the water holds (stage 42): how many fish are about, what
 		// share of the mouthfuls were fish, and how much of the world's food
 		// is standing in water - the figure that says whether the reward and
 		// the danger are in the same cells.
-		"bankHeld":  tail.bankHeld,
-		"bankReal":  tail.bankReal,
-		"wadeHeld":  tail.wadeHeld,
-		"wadeReal":  tail.wadeReal,
-		"anglerGap": tail.anglerGap,
+		"bankHeld":    tail.bankHeld,
+		"bankReal":    tail.bankReal,
+		"wadeHeld":    tail.wadeHeld,
+		"wadeReal":    tail.wadeReal,
+		"anglerGap":   tail.anglerGap,
 		"wadersWet":   tail.wadersWet,
 		"bankersWet":  tail.bankersWet,
 		"anglerSplit": tail.anglerSplit,
@@ -3000,6 +3088,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// How often a fish gets away, against how often one is landed: the
 		// figure the two fishing skills are about (stage 43).
 		"fishMissRate": share(end.FishMissed, end.FishMissed+end.FishEaten),
+		// And the share of the fish that were landed and then went off before
+		// anybody ate them - in a hand, or lying where the body carrying them
+		// died. A fish still in the river has no clock on it.
+		"fishSpoilShare": share(end.FishSpoiled, end.FishSpoiled+end.FishEaten),
 		// The awkward crop (stage 44): how much of what grows needs knowing,
 		// who knows it, what their bodies make of it, and - the figure the
 		// stage turns on - how much more of it grows where they are standing
@@ -3015,25 +3107,25 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"giftsToMates":     tail.giftsToMates,
 		"giftsToStrangers": tail.giftsToStrangers,
 		"giftStones":       tail.giftStones,
-		"aimHeld":      tail.aimHeld,
-		"aimReal":      tail.aimReal,
-		"throws":       float64(end.Throws),
-		"throwHitRate": share(end.ThrowHits, end.Throws),
-		"throwRate":    perAgentLifetime(end.Throws-tailStart.Throws, personTicks),
+		"aimHeld":          tail.aimHeld,
+		"aimReal":          tail.aimReal,
+		"throws":           float64(end.Throws),
+		"throwHitRate":     share(end.ThrowHits, end.Throws),
+		"throwRate":        perAgentLifetime(end.Throws-tailStart.Throws, personTicks),
 		// The supply of things to throw (stage 45).
-		"stonesLying": tail.stonesLying,
-		"stoneSeen":   tail.stoneSeen,
-		"stoneNear":   tail.stoneNear,
-		"stoneHeld":   tail.stoneHeld,
+		"stonesLying":     tail.stonesLying,
+		"stoneSeen":       tail.stoneSeen,
+		"stoneNear":       tail.stoneNear,
+		"stoneHeld":       tail.stoneHeld,
 		"specialShare":    tail.specialShare,
 		"specialHeld":     tail.specialHeld,
 		"specialReal":     tail.specialReal,
 		"specialGain":     tail.specialGain,
 		"harvestMissRate": share(end.HarvestMissed, end.HarvestMissed+end.PlantsEaten),
-		"fishItems":   tail.fishItems,
-		"fishShare":   share(end.FishEaten, end.FishEaten+end.PlantsEaten+end.MeatEaten),
-		"foodInWater": tail.foodInWater,
-		"meatFreeShare": share(end.MeatEatenFree, end.MeatEaten),
+		"fishItems":       tail.fishItems,
+		"fishShare":       share(end.FishEaten, end.FishEaten+end.PlantsEaten+end.MeatEaten),
+		"foodInWater":     tail.foodInWater,
+		"meatFreeShare":   share(end.MeatEatenFree, end.MeatEaten),
 		// Counting the target for carrying (stage 40, #67). starvedSeen is
 		// the share of the bodies that starved which had had food in sight
 		// within a planning horizon of dying - the deaths an item in hand
@@ -3045,10 +3137,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// And what carrying itself does: how much is in hand, how many hands
 		// have anything in them, how full they are, and how often something
 		// was picked up.
-		"held":     tail.held,
-		"holders":  tail.holders,
-		"load":     tail.load,
-		"takeRate": perAgentLifetime(end.Taken-tailStart.Taken, personTicks),
+		"held":        tail.held,
+		"holders":     tail.holders,
+		"load":        tail.load,
+		"takeRate":    perAgentLifetime(end.Taken-tailStart.Taken, personTicks),
 		"spareShare":  share(end.SpareTicks, end.SightTicks),
 		"evadedShare": share(end.Evaded, end.Fights),
 		// Whether running away works: attempts to flee over the tail window,

@@ -104,6 +104,7 @@ var (
 	colorFightLink  = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
 	colorCourtLink  = color.RGBA{0xf0, 0x8c, 0x00, 0xd0}
 	colorCallLink   = color.RGBA{0x1c, 0x9c, 0x5a, 0xd0}
+	colorWares      = color.RGBA{0xe8, 0xd0, 0x40, 0xd0}
 	// The ground (stage 20). These are premultiplied, like every colour the
 	// vector calls take: each channel is the colour already faded by its own
 	// alpha, and a channel brighter than the alpha does not draw at all
@@ -2454,6 +2455,14 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		vector.DrawFilledCircle(screen, x, y, filled, fill, true)
 		vector.StrokeCircle(screen, x, y, radius, ringWidth, stateColor(a.State), true)
 
+		// A body crying its wares (stage 49). It is drawn because it is a
+		// visible fact - what is in that hand is in the perception of
+		// everybody who can see it - and because a body standing still with
+		// something held out looks exactly like a body resting otherwise.
+		if a.Action.Kind == engine.ActOffer {
+			vector.StrokeCircle(screen, x, y, radius+4, 1, colorWares, true)
+			vector.StrokeCircle(screen, x, y, radius+7, 1, colorWares, true)
+		}
 		if hunger := float32(a.Hunger / 100); hunger > 0.01 {
 			bar := g.long(12)
 			vector.StrokeLine(screen, x-bar/2, y+radius+3, x-bar/2+bar*hunger, y+radius+3, 2, colorHungerBar, true)
@@ -2903,10 +2912,13 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		// about the config rather than about the body.
 		if cfg.CarryCapacity > 0 {
 			held := a.CarriedCount()
-			t.line("carrying %d item(s)%s", held, map[bool]string{
+			t.line("carrying %d item(s)%s%s", held, map[bool]string{
 				true:  "",
 				false: "  (slowing it down)",
-			}[held == 0])
+			}[held == 0], map[bool]string{
+				true:  "  CRYING ITS WARES",
+				false: "",
+			}[a.Action.Kind == engine.ActOffer])
 		}
 		// What it assumes, as against what it knows about anybody in
 		// particular. The counts say whether it has seen anything: with
@@ -3976,6 +3988,14 @@ func main() {
 		// mean anything at all, and turning it on by default would re-base
 		// every measurement taken on rough, river and country.
 		cfg.SkillBirthplace = 0.5
+
+		// And a body can stand there and hold out what it is carrying (stage
+		// 49). It is here for the same reason throwing is: it is a word a
+		// player can use and a thing to look at, and it is not a default of
+		// the physics because the measurement says the information in it buys
+		// nothing - everything the cry appears to be worth is still there in
+		// the arm where nobody can read the hand.
+		cfg.OfferTicks = 30
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
 	}

@@ -306,6 +306,31 @@ type AgentView struct {
 	// ten ticks. Whether to count on it is what trust is for.
 	DeclaredFor int
 
+	// Offering is set while this one is crying its wares (stage 49): the item
+	// it is holding out, what it is, and how much of the cry is left to run.
+	// False for everybody in a world with the rule off, and false for
+	// somebody holding out what this one cannot eat.
+	//
+	// It is the same kind of fact as DeclaredFor above: read off the current
+	// action, stored nowhere, and visible in the plainest sense - a body
+	// standing there holding something up is doing something anybody watching
+	// can see. What is not in here is what it will do when somebody arrives.
+	//
+	// OfferValue and OfferHeal are what that item would be worth to whoever
+	// is looking, not to the one holding it: the sameness of a diet is the
+	// looker's own (stage 16), and so is how much of a wound is left to mend.
+	//
+	// OfferRivalDist is how far the nearest other body in sight is from those
+	// wares: an advertised item goes into one pair of hands, and everybody who
+	// heard the cry is walking for it. Infinite when nobody else is in sight,
+	// and meaningless unless Offering is set.
+	Offering       bool
+	OfferKind      FoodKind
+	OfferLeft      int
+	OfferValue     float64
+	OfferHeal      float64
+	OfferRivalDist float64
+
 	// Uphill is set when this agent is standing a level or more above the one
 	// looking at it (stage 30), which is what makes it harder to hit. It is a
 	// relation and not a property - the first thing in this perception that
@@ -439,6 +464,10 @@ func (w *World) perceive(a *Agent) *Perception {
 	// ascending index order, which is the order those loops used, so the
 	// perception buffers are filled identically and the random draws below
 	// happen in the same sequence.
+	// This look's own scratch flag (stage 49), cleared here so that it says
+	// something about this look and not the last one.
+	w.sawOffer = false
+
 	w.nearFoods = w.appendFoodsInSight(w.nearFoods[:0], a.X, a.Y)
 	w.nearAgents = w.appendAgentsInSight(w.nearAgents[:0], a.X, a.Y)
 
@@ -529,6 +558,18 @@ func (w *World) perceive(a *Agent) *Perception {
 			est = w.strangerFromLooks(a, seen)
 		}
 
+		// What it is holding out, if it is holding anything out (stage 49).
+		// Priced in the looker's own terms, the way everything else in this
+		// view is: the same figures that price a meal on the ground.
+		offering, offerLeft := false, 0
+		offerKind, offerValue, offerHeal := FoodKind(0), 0.0, 0.0
+		if item := w.offering(o); item != nil && w.canEat(a, item) {
+			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
+			offerValue = p.Self.Nutrition[item.Kind]
+			offerHeal = p.Self.Heal[item.Kind]
+			w.sawOffer = true
+		}
+
 		blur := w.noise(unit, w.cfg.JudgementNoise)
 		p.Others = append(p.Others, AgentView{
 			ID:          o.ID,
@@ -550,6 +591,11 @@ func (w *World) perceive(a *Agent) *Perception {
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
 			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
 			DeclaredFor: o.declaredFor(),
+			Offering:    offering,
+			OfferKind:   offerKind,
+			OfferLeft:   offerLeft,
+			OfferValue:  offerValue,
+			OfferHeal:   offerHeal,
 			Uphill:      w.terrainAt(o.X, o.Y).Height > w.terrainAt(a.X, a.Y).Height,
 			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
 			Uncertainty: variance,
@@ -557,6 +603,31 @@ func (w *World) perceive(a *Agent) *Perception {
 			Affinity:    affinity,
 			Fitness:     fitness(o, &w.cfg) + w.noise(unit, w.cfg.JudgementNoise*0.5),
 		})
+	}
+
+	// Whoever else can get to those wares first (stage 49). An advertised
+	// item is a contested item - it goes to one pair of hands and everybody
+	// who heard the cry is walking - so it is priced with the race the world
+	// already runs for a meal on the ground. The pass costs nothing in the
+	// ordinary world: sawOffer is false unless somebody in this look was
+	// holding something up.
+	if w.sawOffer {
+		for i := range p.Others {
+			o := &p.Others[i]
+			if !o.Offering {
+				continue
+			}
+			o.OfferRivalDist = math.Inf(1)
+			for j := range p.Others {
+				if i == j {
+					continue
+				}
+				r := &p.Others[j]
+				if d := dist2(o.X, o.Y, r.X, r.Y); d < o.OfferRivalDist*o.OfferRivalDist {
+					o.OfferRivalDist = math.Sqrt(d)
+				}
+			}
+		}
 	}
 
 	// Counting the target for carrying (stage 40, #67): when this body last
