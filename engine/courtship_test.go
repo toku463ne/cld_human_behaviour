@@ -128,6 +128,28 @@ func TestAControllerThatDoesNotAnswerChangesNothing(t *testing.T) {
 	}
 }
 
+// ... and it does not disturb the node either (2026-09-09). Handing the
+// question back has to leave the body exactly as an AI body would be, and a
+// body asked to think again is a body drawing from the random source that an
+// AI one would not have drawn from - which is how this was found, as a world
+// with one unattended guided node in it slowly parting company with the same
+// world without one.
+func TestAControllerThatDoesNotAnswerDoesNotEvenDisturbTheNode(t *testing.T) {
+	cfg := testConfig()
+	cfg.JudgementNoise = 0
+	w, suitor, courted := twoAboutToCourt(t, cfg)
+	w.SetController(courted, NewGuidedController()) // answering is off by default
+
+	ca := mustAgent(t, w, courted)
+	ca.needsDecision, ca.pendingTrigger = false, TriggerNone
+	w.court(mustAgent(t, w, suitor))
+
+	if ca.needsDecision || ca.pendingTrigger != TriggerNone {
+		t.Fatalf("the node was asked to think again (%v) about a question its controller handed back",
+			ca.pendingTrigger)
+	}
+}
+
 // A proposal is forgotten when the one who made it stops making it.
 func TestAProposalLapsesWhenTheSuitorGivesUp(t *testing.T) {
 	cfg := testConfig()

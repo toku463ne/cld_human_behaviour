@@ -79,6 +79,20 @@ func (w *World) askAboutCourtship(o *Agent, suitor *Agent, seen float64) (bool, 
 	if !ok {
 		return w.willCommit(o, seen), true
 	}
+	// Ask before disturbing anybody (2026-09-09). A controller that hands the
+	// question straight back has to leave its node exactly as an AI node
+	// would be, and that includes not being asked to think again: opening the
+	// proposal first fired TriggerCourted at a node whose controller did not
+	// want the question, and a decision nobody else would have taken is a
+	// draw from the random source nobody else would have made. The promise
+	// this file makes at the top - an unattended guided node is
+	// indistinguishable from an AI one - was true only for as long as no
+	// proposal happened to reach one.
+	answer := c.AnswerCourt(suitor.ID)
+	if answer == CourtLeaveIt {
+		w.closeProposal(o)
+		return w.willCommit(o, seen), true
+	}
 	if o.courtedBy != suitor.ID {
 		// It has just arrived. Tell the agent it has been asked something,
 		// through the same trigger machinery as everything else - an
@@ -86,16 +100,13 @@ func (w *World) askAboutCourtship(o *Agent, suitor *Agent, seen float64) (bool, 
 		o.courtedBy, o.courtedTick = suitor.ID, w.tick
 		o.requestDecision(TriggerCourted)
 	}
-	switch c.AnswerCourt(suitor.ID) {
+	switch answer {
 	case CourtAccept:
 		w.closeProposal(o)
 		return true, true
 	case CourtRefuse:
 		w.closeProposal(o)
 		return false, true
-	case CourtLeaveIt:
-		w.closeProposal(o)
-		return w.willCommit(o, seen), true
 	}
 	if w.courtAnswerLeft(o) <= 0 {
 		// Waited long enough. The rule answers, which is what it would have
