@@ -77,7 +77,15 @@ func (w *World) throwHit(a *Agent, dist float64) float64 {
 // is where a body can learn to lose less of it; until then it is the world's
 // figure for everybody.
 func (w *World) throwFalloff(a *Agent) float64 {
-	return clamp(w.cfg.ThrowFalloff, 0, 1)
+	f := clamp(w.cfg.ThrowFalloff, 0, 1)
+	if w.cfg.SkillThrowRelief <= 0 || a == nil {
+		return f
+	}
+	// What a body has learned takes some of the distance back (stage 47).
+	// Only this: what the stone does on arrival is the attack gene's work and
+	// what the target does about it is the target's, so a skill that touched
+	// either would be the melee with a new name (#71).
+	return f * (1 - clamp(w.cfg.SkillThrowRelief*a.skillAt(&w.cfg, SkillThrow), 0, 1))
 }
 
 // throwStone is the act. It takes the stone out of the thrower's hand, puts it

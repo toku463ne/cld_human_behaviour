@@ -130,3 +130,30 @@ func (w *World) Stones() StoneUse {
 	}
 	return out
 }
+
+// regionStoneShare is how well supplied with stones one region is, against an
+// ordinary share of them: one is twice the average or better, zero is none.
+//
+// It is the reading behind knowing how to throw (stage 47) - a body born where
+// the ammunition is grows up throwing - and it is deliberately taken from the
+// stones and not from the ground under them, because the ground already seeds
+// knowing how to cross it (stage 38a: not two skills from one reading).
+func (w *World) regionStoneShare(i int) float64 {
+	if w.cfg.Stones <= 0 || len(w.regions) == 0 {
+		return 0
+	}
+	n := 0
+	for j := range w.foods {
+		if w.foods[j].Kind != FoodStone {
+			continue
+		}
+		if w.regionIndexAt(w.foods[j].X, w.foods[j].Y) == i {
+			n++
+		}
+	}
+	mean := float64(w.cfg.Stones) / float64(len(w.regions))
+	if mean <= 0 {
+		return 0
+	}
+	return clamp(float64(n)/(2*mean), 0, 1)
+}

@@ -587,6 +587,17 @@ type Config struct {
 	// trap of StrategyDepthUnlock and of the discrete-sight proposal.
 	SpecialtyCatch float64
 
+	// SkillThrowRelief scales how much of the distance a good throw takes
+	// back (stage 47). Zero is the control: the skill is learned, takes the
+	// room, and buys nothing.
+	//
+	// The size of what it can buy is written down rather than left to be
+	// discovered, the way stage 44's was: at the world's figures a throw from
+	// arm's length lands nine times in ten and the measured rate over all
+	// throws is 0.64, so distance is costing about twenty-six points of
+	// accuracy and that is the whole of what this skill can win back.
+	SkillThrowRelief float64
+
 	// SkillHarvestRelief scales what knowing the trick is worth, the same way
 	// the other reliefs do. Zero is the control: the skill is learned, takes
 	// the room, and buys nothing.
@@ -1929,6 +1940,11 @@ func DefaultConfig() Config {
 			// one gene no skill has been hung on yet, so what it can support
 			// has never been asked.
 			SkillHarvest: GeneIntelligence,
+			// Putting a stone where it was meant to go is reading the world
+			// accurately, which is what rationality is for here - and never
+			// power, which would make the skill a second name for the gene
+			// that already decides what the stone does on arrival (#71).
+			SkillThrow: GeneRationality,
 		},
 		SkillForageRelief: 1,
 		SkillSwimRelief:   1,
@@ -1938,6 +1954,7 @@ func DefaultConfig() Config {
 		FishCatchBank:     1,
 		SkillFishRelief:   1,
 		SkillHarvestRelief: 1,
+		SkillThrowRelief:   1,
 		SkillsSpread:      true,
 		HintSlotCost:      5,
 		HintWeightStd:     6,

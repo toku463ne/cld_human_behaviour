@@ -87,6 +87,13 @@ const (
 	// able to do that somebody else cannot.
 	SkillHarvest
 
+	// SkillThrow is knowing how to put a stone where it was meant to go
+	// (stage 47). It is the one part of throwing that nothing else in the
+	// world already does: what the stone does when it lands is the attack
+	// gene's, and what the target does about it is the target's, so all this
+	// may touch is the accuracy distance takes away (#71).
+	SkillThrow
+
 	NumSkillKinds
 )
 
@@ -106,6 +113,8 @@ func (s SkillKind) String() string {
 		return "fishing in the water"
 	case SkillHarvest:
 		return "harvesting"
+	case SkillThrow:
+		return "throwing"
 	}
 	return "none"
 }
@@ -290,6 +299,13 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 			return 0
 		}
 		share = w.regionWaterShare(i)
+	case SkillThrow:
+		// How much there is to throw where this one was born. It is read off
+		// the stones themselves rather than off the ground they lie on: the
+		// broken country already seeds knowing how to cross it, and seeding
+		// two skills from one reading of a place is what stage 38a set out
+		// not to do.
+		share = w.regionStoneShare(i)
 	case SkillHarvest:
 		// How much of what grows there needs knowing. A body born where the
 		// awkward crop is the ordinary crop grows up knowing the trick, and

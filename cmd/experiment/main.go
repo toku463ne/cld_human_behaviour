@@ -1539,6 +1539,51 @@ var variants = []variant{
 			c.ThrowDamage = 18
 		},
 	},
+	// Stage 47: knowing how to throw. The target is written down before it is
+	// measured (stage 44's habit): a throw from arm's length lands nine times
+	// in ten and the measured rate is 0.64, so distance costs twenty-six
+	// points of accuracy and that is the whole of what this can win back.
+	{
+		name:  "throwskill",
+		about: "47: bodies born where the stones are learn to put one where it was meant to go",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.Stones, c.Throwing = mapRough, 60, true
+			c.SkillBirthplace = 0.5
+		},
+	},
+	{
+		name:  "throwskilldead",
+		about: "control: the same skill learned, taking the same room, worth nothing",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.Stones, c.Throwing = mapRough, 60, true
+			c.SkillBirthplace, c.SkillThrowRelief = 0.5, 0
+		},
+	},
+	{
+		name:  "throwskillplenty",
+		about: "47 at a dose that cannot be missed: stones everywhere and everybody born among them learning it well",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.Stones, c.Throwing = mapRough, 240, true
+			c.SkillBirthplace = 1
+		},
+	},
+	{
+		name:  "throwskillplentydead",
+		about: "control for it",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.Stones, c.Throwing = mapRough, 240, true
+			c.SkillBirthplace, c.SkillThrowRelief = 1, 0
+		},
+	},
+	{
+		name:  "throwskillwits",
+		about: "sweep: aim capped by wits rather than by how well the world is read",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.Stones, c.Throwing = mapRough, 60, true
+			c.SkillBirthplace = 0.5
+			c.SkillAptitude[engine.SkillThrow] = engine.GeneIntelligence
+		},
+	},
 	// Stage 45: stones. Nothing values one yet - what they are for is stage
 	// 46 - so what these arms measure is the supply: how many there are, how
 	// often a body has one in sight, and how far away the nearest is. A
@@ -2173,6 +2218,7 @@ var metricNames = []string{
 	"specialShare", "specialHeld", "specialReal", "specialGain", "harvestMissRate",
 	"stonesLying", "stoneSeen", "stoneNear", "stoneHeld",
 	"throws", "throwHitRate", "throwRate",
+	"aimHeld", "aimReal",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2314,6 +2360,10 @@ type sample struct {
 	// The awkward crop (stage 44): its share of what grows, who knows the
 	// trick, what they make of it, and whether they have settled where it is.
 	specialShare, specialHeld, specialReal, specialGain float64
+
+	// Knowing how to throw (stage 47): who has it and what their bodies make
+	// of it.
+	aimHeld, aimReal float64
 
 	// The supply of stones (stage 45): how many lie about, how often a body
 	// has one in sight, how far the nearest is, and how many are in hands.
@@ -2482,6 +2532,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		anglers := w.Anglers()
 		crop := w.Specialty()
 		rocks := w.Stones()
+		aim := w.Skills(engine.SkillThrow)
 		tol := w.Skills(engine.SkillPoison)
 		shelter := w.Shelter()
 		rich := w.Richness()
@@ -2527,6 +2578,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			bankHeld:   bank.Held, bankReal: bank.Realised,
 			wadeHeld:   wade.Held, wadeReal: wade.Realised,
 			anglerGap:  wade.Realised - bank.Realised,
+			aimHeld: aim.Held, aimReal: aim.Realised,
 			stonesLying: float64(rocks.Lying), stoneSeen: rocks.InSight,
 			stoneNear: rocks.Nearest, stoneHeld: rocks.Carrying,
 			specialShare: crop.Share, specialHeld: crop.Held,
@@ -2843,6 +2895,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// Throwing (stage 46): how many stones were thrown, how many landed,
 		// and how often it happens per lifetime. Read beside trueRetal, which
 		// is the figure this rule is dangerous to.
+		"aimHeld":      tail.aimHeld,
+		"aimReal":      tail.aimReal,
 		"throws":       float64(end.Throws),
 		"throwHitRate": share(end.ThrowHits, end.Throws),
 		"throwRate":    perAgentLifetime(end.Throws-tailStart.Throws, personTicks),
@@ -3076,6 +3130,8 @@ func tailAverage(series []sample) sample {
 		out.speedHigh += s.speedHigh
 		out.speedLow += s.speedLow
 		out.highGap += s.highGap
+		out.aimHeld += s.aimHeld
+		out.aimReal += s.aimReal
 		out.stonesLying += s.stonesLying
 		out.stoneSeen += s.stoneSeen
 		out.stoneNear += s.stoneNear
@@ -3204,6 +3260,8 @@ func tailAverage(series []sample) sample {
 	out.speedHigh /= d
 	out.speedLow /= d
 	out.highGap /= d
+	out.aimHeld /= d
+	out.aimReal /= d
 	out.stonesLying /= d
 	out.stoneSeen /= d
 	out.stoneNear /= d
