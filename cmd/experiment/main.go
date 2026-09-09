@@ -1383,6 +1383,26 @@ var variants = []variant{
 		about: "39a four times over, which is where the amount starts scattering the population across the kills",
 		apply: func(c *engine.Config) { c.MeatPerBudget = 30 },
 	},
+	// What the spoil clock is worth at all. Asked before designing "meat does
+	// not rot while it is being carried or offered" (stages 40 and 49): if
+	// meat that never rots on the ground buys nothing, meat that does not rot
+	// in somebody's hands cannot buy much either, and the rule would be an
+	// unpriced benefit of the kind stage 17b showed runs to the ceiling.
+	{
+		name:  "meatkeeps",
+		about: "a carcass lasts four times as long (MeatSpoilTicks 3600)",
+		apply: func(c *engine.Config) { c.MeatSpoilTicks = 3600 },
+	},
+	{
+		name:  "meatforever",
+		about: "a carcass never rots: the ceiling on anything preservation could buy",
+		apply: func(c *engine.Config) { c.MeatSpoilTicks = 1 << 30 },
+	},
+	{
+		name:  "meatrots",
+		about: "a carcass lasts a third as long (300): the same question from the other side",
+		apply: func(c *engine.Config) { c.MeatSpoilTicks = 300 },
+	},
 	{
 		name:  "meatmoreoff",
 		about: "39a with no healing: the amount on its own, as it was measured before healing became the default",
