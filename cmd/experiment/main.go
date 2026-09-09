@@ -1462,6 +1462,25 @@ var variants = []variant{
 			c.CarryCapacity = 0
 		},
 	},
+	// Stage 41: the surplus. What a party cannot carry away stops being
+	// theirs to wait for. The pair that says what it bought is the default -
+	// where the claim covers the whole carcass - and the ceiling is an arm
+	// with no claim at all.
+	{
+		name:  "meatkept",
+		about: "41 off: a claim covers the whole carcass, which is the world stages 11 to 40 were measured in",
+		apply: func(c *engine.Config) { c.MeatSurplusFree = false },
+	},
+	{
+		name:  "meatnoclaim",
+		about: "the ceiling: no claim at all, so a kill is anybody's the moment it falls",
+		apply: func(c *engine.Config) { c.MeatClaimTicks = 0 },
+	},
+	{
+		name:  "meatmorekept",
+		about: "more meat (MeatPerBudget 60) with the claim covering all of it: the pair that says what opening the surplus did",
+		apply: func(c *engine.Config) { c.MeatSurplusFree, c.MeatPerBudget = false, 60 },
+	},
 	// What the spoil clock is worth at all. Asked before designing "meat does
 	// not rot while it is being carried or offered" (stages 40 and 49): if
 	// meat that never rots on the ground buys nothing, meat that does not rot
@@ -1937,6 +1956,7 @@ var metricNames = []string{
 	"priorErrAll", "priorErrLearned", "priorErrGreen", "learnedShare", "firstSights",
 	"hunts", "jointHunts", "packSize", "evadedShare",
 	"meatDropped", "meatPerHunt", "meatShare", "meatSpoilShare", "meatEatenShare", "meatHeal",
+	"meatSurplus", "meatFreeShare",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
@@ -2539,6 +2559,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// every arm, so the ones where the rule is off say how much of a
 		// difference it could have made.
 		"meatHeal": ratioF(end.MeatHealing, end.MeatEaten),
+		// What a kill leaves beyond what those who made it could carry away,
+		// and how much of the meat eaten was eaten by somebody who had no
+		// claim on it (stage 41). The first is the premise: a rule about a
+		// surplus needs there to be one.
+		"meatSurplus":   share(end.MeatItems-end.MeatKeepable, end.MeatItems),
+		"meatFreeShare": share(end.MeatEatenFree, end.MeatEaten),
 		// Counting the target for carrying (stage 40, #67). starvedSeen is
 		// the share of the bodies that starved which had had food in sight
 		// within a planning horizon of dying - the deaths an item in hand

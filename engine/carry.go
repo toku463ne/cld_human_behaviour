@@ -81,10 +81,18 @@ func (a *Agent) burden(cfg *Config) float64 {
 // discrete-and-nonlinear trap this project has already walked into twice (the
 // strategy depth gate, and the proposal to make sight a discrete gene).
 func (a *Agent) canCarryMore(cfg *Config) bool {
+	return len(a.carried) < a.carrySlots(cfg)
+}
+
+// carrySlots is how many items this body may actually hold: at least one for
+// anything with hands at all, and more as the gene allows. It is the whole of
+// what "how much can it carry" means, and the surplus rule of stage 41 asks
+// the same question of a hunting party, so both go through here.
+func (a *Agent) carrySlots(cfg *Config) int {
 	if cfg.CarryCapacity <= 0 {
-		return false
+		return 0
 	}
-	return len(a.carried) < max(1, int(a.carryCapacity(cfg)))
+	return max(1, int(a.carryCapacity(cfg)))
 }
 
 // take moves an item out of the world and into a pair of hands.
@@ -156,6 +164,13 @@ func (w *World) eatCarried(a *Agent, foodID int) {
 	w.mend(a, f.Kind, kept)
 	if f.Kind == FoodMeat {
 		w.meatEaten++
+		// And whether the eater was one of those who brought it down, or
+		// somebody who came upon what was left (stage 41).
+		if f.heldBy(a.ID) {
+			w.meatEatenHeld++
+		} else {
+			w.meatEatenFree++
+		}
 	} else {
 		w.plantsEaten++
 	}

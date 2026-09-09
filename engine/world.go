@@ -94,6 +94,15 @@ type Stats struct {
 	// many of those rotted where they lay, how many were eaten, and how many
 	// plants were eaten beside them. The share of meals that are meat is what
 	// says whether a rule about meat has anything to bite on.
+	// MeatItems is how much carcasses have offered and MeatKeepable how much
+	// of it those who made the kills could have carried away (stage 41); the
+	// difference is the surplus. MeatEatenHeld and MeatEatenFree split the
+	// meat actually eaten by whether the eater had a claim on it.
+	MeatItems     int
+	MeatKeepable  int
+	MeatEatenHeld int
+	MeatEatenFree int
+
 	MeatDropped int
 	MeatSpoiled int
 	// MeatHealing is all the vitality carcasses have mended (stage 39).
@@ -352,6 +361,17 @@ type World struct {
 	// have made.
 	meatHealing float64
 
+	// What a carcass offers against what those who made it could take away
+	// (stage 41). Counted in every arm, including the one where the surplus
+	// stays closed, because "is there a surplus at all" is the premise the
+	// whole stage rests on.
+	meatItems    int
+	meatKeepable int
+	// And who ends up eating it: somebody with a claim on it, or somebody
+	// who came upon what was left.
+	meatEatenHeld int
+	meatEatenFree int
+
 	meatDropped int // items left by carcasses
 	meatSpoiled int // ... of those, the ones nobody got to in time
 	meatEaten   int // ... and the ones somebody did
@@ -528,6 +548,10 @@ func (w *World) Stats() Stats {
 		StarvedFoodNear:        w.starvedFoodNear,
 		SightTicks:             w.sightTicks,
 		SpareTicks:             w.spareTicks,
+		MeatItems:              w.meatItems,
+		MeatKeepable:           w.meatKeepable,
+		MeatEatenHeld:          w.meatEatenHeld,
+		MeatEatenFree:          w.meatEatenFree,
 		MeatDropped:            w.meatDropped,
 		MeatSpoiled:            w.meatSpoiled,
 		MeatEaten:              w.meatEaten,
@@ -1546,6 +1570,13 @@ func (w *World) eat(a *Agent, foodID int) {
 	w.mend(a, f.Kind, kept)
 	if f.Kind == FoodMeat {
 		w.meatEaten++
+		// And whether the eater was one of those who brought it down, or
+		// somebody who came upon what was left (stage 41).
+		if f.heldBy(a.ID) {
+			w.meatEatenHeld++
+		} else {
+			w.meatEatenFree++
+		}
 	} else {
 		w.plantsEaten++
 	}

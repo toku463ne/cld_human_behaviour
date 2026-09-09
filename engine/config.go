@@ -506,6 +506,29 @@ type Config struct {
 	// rather than meat somebody chose.
 	CarriedMeatKeeps bool
 
+	// MeatSurplusFree opens what a kill leaves beyond what those who made it
+	// can carry away (stage 41). True, because it wastes less and costs
+	// nothing: the share of meat that rots falls by 0.03 **, starvation per
+	// lifetime by 0.16 *, and the population does not move. False is the
+	// world where a claim covers the whole carcass.
+	//
+	// What it buys grows with how much meat there is. In a world where a
+	// carcass leaves twice as much, opening the surplus is worth 10.90 *
+	// population and 0.25 *** on the size of a hunting party - and that same
+	// doubling, which cost 13 population when it was measured in stage 39a,
+	// is worth 23.94 *** once carcasses mend and the surplus is open. The
+	// figure did not change; the rules around it did. The claim itself is unchanged - it is still
+	// "whoever brought it down eats first" - and what changes is how much of
+	// the carcass it covers.
+	//
+	// The definition costs no new figure: the surplus is what is left after
+	// every participant's carrying capacity, so a party of strong bodies
+	// leaves little and a party of weak ones leaves a good deal (#68). And
+	// nobody is robbed by it: what the party cannot take away was never
+	// theirs to wait for, so the rule needs no spite, no witnessing and no
+	// competition of its own - the food rules already have all of that.
+	MeatSurplusFree bool
+
 	// MeatVitality is what one item of meat mends, as a share of the eater's
 	// own vitality ceiling (stage 39). Zero is the world as it was up to here,
 	// where food only ever took hunger away and vitality came back from
@@ -1480,6 +1503,7 @@ func DefaultConfig() Config {
 		CarryCapacity:   1,
 		CarryCost:       0.5,
 		CarryValue:      0.5,
+		MeatSurplusFree: true,
 		MeatVitality:    0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
 		MeatHealKnown:   true,
 		MeatNutrition:   1,

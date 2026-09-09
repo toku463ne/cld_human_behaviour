@@ -82,6 +82,18 @@ func (f *Food) claimedBy(id, tick int) bool {
 	return false
 }
 
+// heldBy reports whether this agent is one of those the item belongs to,
+// whether or not the claim has run out. It answers "was this its kill", which
+// is a different question from claimedBy's "may it eat this now".
+func (f *Food) heldBy(id int) bool {
+	for _, c := range f.Claim {
+		if c == id {
+			return true
+		}
+	}
+	return false
+}
+
 // dropMeat leaves a carcass where an agent died.
 //
 // How much there is scales with how much the dead creature was made of, so a
@@ -109,6 +121,38 @@ func (w *World) dropMeat(a *Agent) {
 	}
 	claim = kept
 
+	// How much of this carcass those who brought it down could actually take
+	// away (stage 41). Counted whatever the rule is set to, so that an arm
+	// with the surplus closed still says how much of a surplus there was:
+	// the whole question is whether a kill leaves more than its party can
+	// use, and the answer has to be measured before it is acted on.
+	//
+	// What each of them may actually pick up, which is the same question
+	// carrying answers and so the same function: anything with hands keeps at
+	// least one item, and a bigger body keeps more where the world's hands
+	// are big enough for builds to differ at all. A party of weak bodies
+	// leaves more behind than a party of strong ones, and a party of two
+	// keeps more than one of them alone - which is what ties the surplus to
+	// hunting together rather than to being large (#68).
+	theirs := 0
+	for _, id := range claim {
+		if c := w.agentByID(id); c != nil {
+			// One each at the very least, hands or no hands: the claim was
+			// always "whoever brought it down eats first", and eating does
+			// not need a hand. A world with carrying turned off keeps the
+			// ownership it always had.
+			theirs += max(1, c.carrySlots(&w.cfg))
+		}
+	}
+	if len(claim) == 0 {
+		theirs = items // nobody's kill: nothing is anybody's to keep
+	}
+	if theirs > items {
+		theirs = items
+	}
+	w.meatItems += items
+	w.meatKeepable += theirs
+
 	// A kill that leaves a carcass somebody can eat is a hunt, and how many
 	// took part in it is the figure stage 11 turns on: pack hunting, if it
 	// appears at all, appears here as a party size above one.
@@ -126,10 +170,21 @@ func (w *World) dropMeat(a *Agent) {
 		if w.countKind(FoodMeat) >= w.cfg.MaxMeatItems {
 			return // as much meat as the world will hold is already lying about
 		}
+		// What the party can carry away is theirs; the rest is nobody's
+		// (stage 41). It is not a new kind of ownership and there is nothing
+		// to steal - the claim was only ever "wait your turn", and beyond
+		// what they can take away there is no turn to wait for. Whoever comes
+		// for the rest is picking up something that was left, which is why no
+		// spite, no witnessing and no new competition rule is needed for it.
+		held := claim
+		until := w.tick + w.cfg.MeatClaimTicks
+		if w.cfg.MeatSurplusFree && i >= theirs {
+			held, until = nil, 0
+		}
 		w.putFood(Food{
 			X: a.X + w.randRange(-6, 6), Y: a.Y + w.randRange(-6, 6),
 			Kind: FoodMeat, From: a.Species,
-			Claim: claim, ClaimUntil: w.tick + w.cfg.MeatClaimTicks,
+			Claim: held, ClaimUntil: until,
 			SpoilAt: w.tick + w.cfg.MeatSpoilTicks,
 		})
 		w.meatDropped++
