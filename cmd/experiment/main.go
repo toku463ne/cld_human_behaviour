@@ -1383,6 +1383,85 @@ var variants = []variant{
 		about: "39a four times over, which is where the amount starts scattering the population across the kills",
 		apply: func(c *engine.Config) { c.MeatPerBudget = 30 },
 	},
+	// Stage 40: carrying. The arm that says what it bought is the one with it
+	// off, and the flat world is where it is measured first - the load and the
+	// ground both multiply what moving costs, so a map with rough country in
+	// it measures the two of them at once (#66).
+	{
+		name:  "carryoff",
+		about: "no hands: food is in the ground or in a stomach, which is every world before stage 40",
+		apply: func(c *engine.Config) { c.CarryCapacity = 0 },
+	},
+	{
+		name:  "carryfree",
+		about: "control: carrying costs nothing to lug, so what is left is the value of having food later",
+		apply: func(c *engine.Config) { c.CarryCost = 0 },
+	},
+	{
+		name:  "carryunwanted",
+		about: "control: the word exists and nothing is ever worth picking up (CarryValue 0)",
+		apply: func(c *engine.Config) { c.CarryValue = 0 },
+	},
+	{
+		name:  "carrytwo",
+		about: "two items at a time, between the one that helps and the three that do not",
+		apply: func(c *engine.Config) { c.CarryCapacity = 2 },
+	},
+	{
+		name:  "carrycool",
+		about: "three items but half as keen to fill them (CarryValue 0.25)",
+		apply: func(c *engine.Config) { c.CarryValue = 0.25 },
+	},
+	{
+		name:  "carrybig",
+		about: "twice the hands (capacity 6)",
+		apply: func(c *engine.Config) { c.CarryCapacity = 6 },
+	},
+	{
+		name:  "carrythree",
+		about: "three items at a time, which is where the sweep first went negative",
+		apply: func(c *engine.Config) { c.CarryCapacity = 3 },
+	},
+	{
+		name:  "carrydear",
+		about: "a full load doubles what moving costs",
+		apply: func(c *engine.Config) { c.CarryCost = 1 },
+	},
+	{
+		name:  "carrykeen",
+		about: "food in hand is worth as much as food in the stomach (CarryValue 1)",
+		apply: func(c *engine.Config) { c.CarryValue = 1 },
+	},
+	{
+		name:  "carrybooks",
+		about: "what is held stops counting against the world's allowance: does carrying cost the population by withdrawing food?",
+		apply: func(c *engine.Config) { c.CarryOffTheBooks = true },
+	},
+	{
+		name:  "carrybooksbig",
+		about: "the same with twice the hands, where the withdrawal would be largest",
+		apply: func(c *engine.Config) { c.CarryOffTheBooks, c.CarryCapacity = true, 6 },
+	},
+	{
+		name:  "carrykeeps",
+		about: "#77 with hands: what is carried does not rot",
+		apply: func(c *engine.Config) { c.CarriedMeatKeeps = true },
+	},
+	{
+		name:  "countrycarry",
+		about: "carrying on the map that is played, where the ground already multiplies what moving costs",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+		},
+	},
+	{
+		name:  "countrycarryoff",
+		about: "the same map with no hands: the pair that says what carrying is worth where the ground is dear",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.CarryCapacity = 0
+		},
+	},
 	// What the spoil clock is worth at all. Asked before designing "meat does
 	// not rot while it is being carried or offered" (stages 40 and 49): if
 	// meat that never rots on the ground buys nothing, meat that does not rot
@@ -1858,6 +1937,7 @@ var metricNames = []string{
 	"priorErrAll", "priorErrLearned", "priorErrGreen", "learnedShare", "firstSights",
 	"hunts", "jointHunts", "packSize", "evadedShare",
 	"meatDropped", "meatPerHunt", "meatShare", "meatSpoilShare", "meatEatenShare", "meatHeal",
+	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
@@ -1993,6 +2073,10 @@ type sample struct {
 	// because what the drowning changes is where the water is, not where the
 	// dear ground is.
 	onWater float64
+
+	// What the population is holding (stage 40): items per body, the share of
+	// bodies holding anything, and how full the hands that exist are.
+	held, holders, load float64
 
 	// What the population is living on: how mixed the average diet is, and
 	// what the average mouthful is actually worth after the discount for
@@ -2139,6 +2223,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		rich := w.Richness()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
+		carry := w.Carrying()
 		plants := w.Plants()
 		vig := w.Vigilance(engine.DefaultClusterLinkDist)
 		looks := w.LooksSignal()
@@ -2153,6 +2238,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			dangerRank:     known.DangerRank, dangerKnown: known.DangerKnown,
 			regionRank: known.Rank, regionSpread: known.Spread,
 			dietVariety: diet.Variety, dietDiscount: diet.Discount,
+			held: carry.Held, holders: carry.Holders, load: carry.Load,
 			speedOpen: ground.open, speedDear: ground.dear, speedGap: ground.gap,
 			onDear: ground.dearShare, onHigh: ground.highShare,
 			onWater:   ground.waterShare,
@@ -2453,6 +2539,22 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// every arm, so the ones where the rule is off say how much of a
 		// difference it could have made.
 		"meatHeal": ratioF(end.MeatHealing, end.MeatEaten),
+		// Counting the target for carrying (stage 40, #67). starvedSeen is
+		// the share of the bodies that starved which had had food in sight
+		// within a planning horizon of dying - the deaths an item in hand
+		// could have answered. spareShare is how much of the time spent with
+		// food in sight was spent not hungry: the room there is to pick
+		// something up for later.
+		"starvedSeen": share(end.StarvedFoodSeen, end.StarvedDeaths),
+		"starvedNear": share(end.StarvedFoodNear, end.StarvedDeaths),
+		// And what carrying itself does: how much is in hand, how many hands
+		// have anything in them, how full they are, and how often something
+		// was picked up.
+		"held":     tail.held,
+		"holders":  tail.holders,
+		"load":     tail.load,
+		"takeRate": perAgentLifetime(end.Taken-tailStart.Taken, personTicks),
+		"spareShare":  share(end.SpareTicks, end.SightTicks),
 		"evadedShare": share(end.Evaded, end.Fights),
 		// Whether running away works: attempts to flee over the tail window,
 		// and the share of them that ended with the pursuer out of sight. It
@@ -2653,6 +2755,9 @@ func tailAverage(series []sample) sample {
 		out.speedHigh += s.speedHigh
 		out.speedLow += s.speedLow
 		out.highGap += s.highGap
+		out.held += s.held
+		out.holders += s.holders
+		out.load += s.load
 		out.dietVariety += s.dietVariety
 		out.dietDiscount += s.dietDiscount
 		out.plantSpread += s.plantSpread
@@ -2758,6 +2863,9 @@ func tailAverage(series []sample) sample {
 	out.speedHigh /= d
 	out.speedLow /= d
 	out.highGap /= d
+	out.held /= d
+	out.holders /= d
+	out.load /= d
 	out.dietVariety /= d
 	out.dietDiscount /= d
 	out.plantSpread /= d

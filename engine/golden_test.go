@@ -49,6 +49,12 @@ import (
 // is also the change that finally made pack hunting appear - party size 1.36
 // to 1.81 - after four attempts that did not.
 //
+// And again when a body could pick something up and eat it later (stage 40,
+// 2026-09-09). Part of that move is not carrying at all: a ninth word in the
+// vocabulary changes what a rule of thumb can be about, so the hints drawn at
+// every birth differ from the first tick, exactly as they did when calling
+// others in was added.
+//
 // And again when agents got a word for calling others in against something,
 // and started counting on whoever had declared for the same target (stage 32,
 // 2026-09-08). That one does move the world: measured over 48 seeds the
@@ -70,9 +76,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 62, births: 52, deaths: 65, kills: 43, aging: 0, fights: 3577, gen: 3, power: 37.367342, vitality: 88.272254, hunger: 26.934867},
-	{seed: 2, pop: 47, births: 40, deaths: 74, kills: 57, aging: 0, fights: 5808, gen: 3, power: 41.685753, vitality: 93.461370, hunger: 24.841248},
-	{seed: 3, pop: 33, births: 33, deaths: 82, kills: 70, aging: 0, fights: 5757, gen: 3, power: 42.181137, vitality: 102.502633, hunger: 20.517023},
+	{seed: 1, pop: 48, births: 42, deaths: 75, kills: 53, aging: 0, fights: 4567, gen: 2, power: 47.937619, vitality: 103.057565, hunger: 22.480189},
+	{seed: 2, pop: 44, births: 39, deaths: 74, kills: 60, aging: 0, fights: 5044, gen: 3, power: 43.070530, vitality: 101.492404, hunger: 17.908744},
+	{seed: 3, pop: 43, births: 42, deaths: 81, kills: 58, aging: 0, fights: 4227, gen: 3, power: 32.348096, vitality: 86.875982, hunger: 17.178571},
 }
 
 const goldenTicks = 5000

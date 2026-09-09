@@ -180,7 +180,11 @@ func (w *World) terrainAt(x, y float64) terrain {
 // here - the skill lowers the ground's figure, it does not add a factor of its
 // own to the agent.
 func (w *World) moveCostOn(a *Agent, x, y, effort float64) float64 {
-	return moveCostAt(&w.cfg, effort) * w.groundCostFor(a, w.terrainAt(x, y))
+	// ... and what it is carrying (stage 40). The load goes on the cost and
+	// not on the speed, for the same reason the ground's figure does: effort
+	// is already on the speed, and two things there cannot be told apart in a
+	// measurement.
+	return moveCostAt(&w.cfg, effort) * w.groundCostFor(a, w.terrainAt(x, y)) * a.burden(&w.cfg)
 }
 
 // groundCostFor is what this ground costs this body: the terrain's own figure,

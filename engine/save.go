@@ -190,6 +190,11 @@ type agentSnap struct {
 	EffortSpent                       float64
 	ActionTicks                       int
 
+	// What it is holding (stage 40). Saved with the body: an inventory is
+	// state, and a world that came back with empty hands would part company
+	// with the one that was saved inside a few ticks.
+	Carried []Food
+
 	Opinions      map[int]opinionSnap
 	NoSpareMemory bool
 	MemoryTick    int
@@ -311,6 +316,7 @@ func snapAgent(a *Agent) agentSnap {
 		SeedDueAt:   a.seedDueAt,
 		RecentFood:  a.recentFood,
 		DietTick:    a.dietTick,
+		Carried:     a.carried,
 		TimesTaught: a.timesTaught,
 		Looks: looksSnap{N: a.looks.n, Sx: a.looks.sx, Sy: a.looks.sy,
 			Sxx: a.looks.sxx, Sxy: a.looks.sxy},
@@ -415,6 +421,17 @@ func Load(in io.Reader) (*World, error) {
 	w.courtships, w.courtshipsAccepted = c.Courtships, c.CourtshipsAccepted
 	w.flees, w.escapes = c.Flees, c.Escapes
 	w.exchanges, w.hintsCopied = c.Exchanges, c.HintsCopied
+
+	// How much food is in somebody's hands is worked out from the hands
+	// rather than saved (stage 40): it is a tally of what the agents already
+	// hold, and two copies of the same fact are one copy that can be wrong.
+	// It has to be rebuilt all the same, because what is held counts against
+	// the world's allowance and so decides what grows next.
+	for i := range w.agents {
+		for _, f := range w.agents[i].carried {
+			w.heldKind[f.Kind]++
+		}
+	}
 	return w, nil
 }
 
@@ -442,6 +459,7 @@ func loadAgent(s *agentSnap) Agent {
 	a.chronotype = s.Chronotype
 	a.seed, a.seedDueAt = s.Seed, s.SeedDueAt
 	a.recentFood, a.dietTick = s.RecentFood, s.DietTick
+	a.carried = s.Carried
 	a.timesTaught = s.TimesTaught
 	a.looks = looksModel{n: s.Looks.N, sx: s.Looks.Sx, sy: s.Looks.Sy,
 		sxx: s.Looks.Sxx, sxy: s.Looks.Sxy}

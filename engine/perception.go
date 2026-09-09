@@ -75,6 +75,16 @@ type SelfView struct {
 	// it is sick of something.
 	Nutrition [NumFoodKinds]float64
 
+	// Burden is what this body's load multiplies the cost of moving by
+	// (stage 40). One for empty hands, which is every body in a world with
+	// carrying off. Carried is how many items it is holding and CarryRoom
+	// whether there is space for one more: what a body knows about its own
+	// hands, and nothing about anybody else's.
+	Burden        float64
+	Carried       int
+	CarryRoom     bool
+	CarryCapacity float64
+
 	// Heal is what one of each kind would put back into this body's vitality
 	// (stage 39). Zero for everything a world's carcasses do not mend, which
 	// is every kind in a world with the rule off. Not hidden, for the same
@@ -199,6 +209,13 @@ type FoodView struct {
 	// Heal is what this item would mend of this agent's vitality (stage 39),
 	// before the ceiling of what it is actually missing.
 	Heal float64
+
+	// Held says this one is already in the agent's own hands (stage 40).
+	// Nothing about how it is scored changes - it is a meal at no distance
+	// with nobody racing for it - but the option to pick something up is
+	// only offered for what is not held, and a human player is shown which
+	// is which.
+	Held bool
 
 	// Danger is how poisonous this observer reckons the item is, from 0 to 1
 	// (stage 17b). It is a reading of the plant's warning, blurred by the
@@ -379,6 +396,10 @@ func (w *World) perceive(a *Agent) *Perception {
 		RestRate:          w.restRate(a),
 		Nutrition:         w.mealValues(a),
 		Heal:              w.mealHeals(a),
+		Burden:            a.burden(&w.cfg),
+		Carried:           len(a.carried),
+		CarryCapacity:     a.carryCapacity(&w.cfg),
+		CarryRoom:         a.canCarryMore(&w.cfg),
 	}
 
 	// The index narrows the world down to the cells sight could possibly reach;
@@ -493,8 +514,26 @@ func (w *World) perceive(a *Agent) *Perception {
 		})
 	}
 
-	if len(p.Foods) > 0 {
-		p.Self.FoodScarcity = float64(len(p.Others)) / float64(len(p.Foods))
+	// Counting the target for carrying (stage 40, #67): when this body last
+	// had a meal in sight, and how much of that time it was in no hurry to
+	// eat it. Neither figure is read by any rule.
+	// What it is already holding is food too (stage 40) - a meal at no
+	// distance with nobody racing for it. It goes in after everything that
+	// counts what is on the ground: an item in the hand says nothing about
+	// how rich this patch of country is, and nothing about how contested it
+	// is either.
+	seen := len(p.Foods)
+
+	if seen > 0 {
+		a.sawFoodTick = w.tick
+		w.sightTicks++
+		if a.Hunger <= w.cfg.SatiatedHunger {
+			w.spareTicks++
+		}
+	}
+
+	if seen > 0 {
+		p.Self.FoodScarcity = float64(len(p.Others)) / float64(seen)
 	} else if len(p.Others) > 0 {
 		p.Self.FoodScarcity = float64(len(p.Others))
 	}
@@ -502,7 +541,9 @@ func (w *World) perceive(a *Agent) *Perception {
 	// What this look says about the ground the agent is standing on (stage
 	// 15b). It is not a new sense: the food it has just counted is the whole
 	// of the reading.
-	w.noteRegion(a, len(p.Foods))
+	w.noteRegion(a, seen)
+
+	p.Foods = w.carriedViews(a, p.Foods)
 	if i, gain, ok := w.bestKnownRegion(a); ok {
 		minX, minY, maxX, maxY := w.regionBounds(i)
 		p.Self.BetterGroundX = (minX + maxX) / 2

@@ -166,6 +166,14 @@ func (w *World) rememberHunt(party []int) {
 // would fill the world's allowance for food and leave no room for anything to
 // grow.
 func (w *World) clearSpoiled() {
+	// Including what is in somebody's hands (stage 40): the clock does not
+	// stop for being carried, because a benefit with no price runs to the
+	// ceiling (#77).
+	for i := range w.agents {
+		if a := &w.agents[i]; a.Alive && len(a.carried) > 0 {
+			w.spoilCarried(a)
+		}
+	}
 	for i := 0; i < len(w.foods); {
 		if f := &w.foods[i]; f.SpoilAt > 0 && w.tick >= f.SpoilAt {
 			if f.Kind == FoodMeat {

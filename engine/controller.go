@@ -216,6 +216,35 @@ func speedAt(maxSpeed, effort float64) float64 {
 	return maxSpeed * math.Sqrt(effort)
 }
 
+// groundOf is what the ground under this body multiplies movement by, and
+// burdenOf what its load does (stage 40), with the guard the rest of the file
+// uses for a view that never had one set.
+func groundOf(s *SelfView) float64 {
+	if s.Ground <= 0 {
+		return 1
+	}
+	return s.Ground
+}
+
+func burdenOf(s *SelfView) float64 {
+	if s.Burden <= 0 {
+		return 1
+	}
+	return s.Burden
+}
+
+// burdenWith is what the load would multiply movement by with one more item
+// in hand. The difference between the two is the price of picking something
+// up: not what it costs to reach it, but what it costs to carry it until it
+// is eaten.
+func burdenWith(cfg *Config, s *SelfView, more int) float64 {
+	if s.CarryCapacity <= 0 || cfg.CarryCost <= 0 {
+		return burdenOf(s)
+	}
+	load := clamp(float64(s.Carried+more)/s.CarryCapacity, 0, 1)
+	return 1 + cfg.CarryCost*load
+}
+
 func moveCostAt(cfg *Config, effort float64) float64 {
 	return cfg.MoveCost * effort
 }
@@ -232,7 +261,11 @@ func moveCost(cfg *Config, s *SelfView, effort float64) float64 {
 	if g <= 0 {
 		g = 1
 	}
-	return moveCostAt(cfg, effort) * g
+	b := s.Burden
+	if b <= 0 {
+		b = 1
+	}
+	return moveCostAt(cfg, effort) * g * b
 }
 
 // damagePerTick is what an attacker of the given power does at the given
@@ -369,6 +402,17 @@ func (c *AIController) addFood(p *Perception) {
 	incoming := c.incomingDmg
 	now := pressure(cfg, s, s.Vitality, drain+incoming)
 
+	// When this body would run short, and how much worse off it would be
+	// then (stage 40). Carrying is not about being fed now - it is about
+	// being fed when there is nothing about - so what a held item is worth is
+	// the meal it would be at that moment, not the meal it would be today.
+	wait := 0.0
+	if s.HungerRate > 0 {
+		wait = clamp((cfg.StarveHunger-s.Hunger)/s.HungerRate, 0, cfg.PlanHorizon)
+	}
+	later := pressure(cfg, s, s.Vitality,
+		projectedDrain(cfg, s.HungerRate, math.Max(s.Hunger, cfg.StarveHunger))+incoming)
+
 	for i := range p.Foods {
 		if i >= maxFoodOptions {
 			break
@@ -434,6 +478,36 @@ func (c *AIController) addFood(p *Perception) {
 			// clearing the rival out of the way would buy.
 			if gap := meal * (1 - pGet); gap > c.bestFoodGap && f.RivalID != 0 {
 				c.bestFood, c.bestFoodGap, c.bestFoodRival = meal, gap, f.RivalID
+			}
+
+			// Or pick it up and eat it when it is needed (stage 40). Same
+			// walk, same race - what changes is when the meal happens, so it
+			// is scored as the meal the body would be having at the moment it
+			// runs short, discounted for the chance that it finds something
+			// by then, or does not live to need it.
+			//
+			// What it will cost to lug is charged here rather than left to be
+			// felt afterwards: a body knows its own hands, and it knows
+			// roughly how long it is until it eats. One trajectory, no
+			// branching - the same shape as every other estimate here.
+			if !f.Held && s.CarryRoom && cfg.CarryValue > 0 {
+				// How likely it is to be needed. A body in a patch with more
+				// food than neighbours has little use for a berry in its
+				// hand; one where the food is contested may well find nothing
+				// when it next looks. FoodScarcity is the only reading it has
+				// of that, and it is normalised the way the competition term
+				// already normalises it.
+				need := cfg.CarryValue * clamp(s.FoodScarcity, 0, 3) / 3
+				keep := (now - later) * cfg.LifeValue
+				lug := (burdenWith(cfg, s, 1) - burdenOf(s)) *
+					moveCostAt(cfg, effort) * groundOf(s) * wait
+				c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
+					Life:         Goal{Value: keep, Chance: pGet * need},
+					Vitality:     cost + lug + poison*pGet,
+					Ticks:        ticks,
+					VitalityCost: (cost + lug + poison*pGet) * cfg.VitalityWeight,
+					TimeCost:     ticks * cfg.TimeCost,
+				})
 			}
 		}
 	}

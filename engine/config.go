@@ -451,6 +451,61 @@ type Config struct {
 	MeatClaimTicks  int     // how long the carcass belongs to those who killed it
 	HuntCreditTicks int     // how recently a blow must have landed to count as taking part
 
+	// CarryCapacity is how many items a body of ordinary build can hold at
+	// once (stage 40). Zero is the world before carrying, where food was only
+	// ever in the ground or in a stomach.
+	//
+	// One, because one is where the sweep changes sign. A body that can hold
+	// a single item starves a quarter less often and the world grows; at two
+	// and at three the population falls, and it falls further the more
+	// carrying there is. What costs is not the weight (an arm with the load
+	// free costs the same) nor the bookkeeping (taking held items out of the
+	// world's allowance costs more, not less) - it is the carrying itself:
+	// a body that walks to a meal to pick it up rather than to eat it has
+	// spent the trip and is no less hungry.
+	//
+	// It scales with the vitality gene rather than with a gene of its own
+	// (#65): a tenth gene would draw on the same budget as the nine and move
+	// every share at once, which would make every figure recorded since stage
+	// 7c a different measurement.
+	CarryCapacity float64
+
+	// CarryCost is what a full load adds to the cost of moving, as a
+	// multiplier (0.5 means a fully laden body pays half as much again).
+	// Weight against vitality, never against power (#66): power is combat
+	// efficiency and nothing else, and a second job would make the two
+	// pressures on it impossible to tell apart.
+	//
+	// It goes on the cost and not on the speed, because effort is already on
+	// the speed - the same reason stage 20 put the ground's figure there.
+	CarryCost float64
+
+	// CarryValue is how much of a future meal an agent reckons a held item is
+	// worth: one would be a body that values food in hand exactly as much as
+	// food in its stomach, which would leave it holding a meal while it
+	// starved. It is the discount that keeps eating ahead of hoarding.
+	CarryValue float64
+
+	// CarryOffTheBooks takes what is held out of the world's allowance for
+	// food. False is the rule: an item in a pocket is food the world still
+	// has, so it counts, and carrying moves food about rather than making
+	// room for more of it.
+	//
+	// The arm exists because the two readings of the allowance are different
+	// claims about what it is. Counting says the allowance is how much food
+	// exists; not counting says it is how much lies about on the ground, and
+	// a plant in somebody's hand does not stop another growing. Which one
+	// the world runs on decides whether carrying withdraws food from
+	// circulation, so it is measured rather than assumed.
+	CarryOffTheBooks bool
+
+	// CarriedMeatKeeps stops the spoiling clock for what is being carried.
+	// False is the rule, and the arm is here to settle #77 now that carrying
+	// exists: measured on the ground beforehand, meat that never rots at all
+	// left the population where it was, but that was meat nobody came for
+	// rather than meat somebody chose.
+	CarriedMeatKeeps bool
+
 	// MeatVitality is what one item of meat mends, as a share of the eater's
 	// own vitality ceiling (stage 39). Zero is the world as it was up to here,
 	// where food only ever took hunger away and vitality came back from
@@ -1422,6 +1477,9 @@ func DefaultConfig() Config {
 
 		PreyValue:       1,
 		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more
+		CarryCapacity:   1,
+		CarryCost:       0.5,
+		CarryValue:      0.5,
 		MeatVitality:    0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
 		MeatHealKnown:   true,
 		MeatNutrition:   1,

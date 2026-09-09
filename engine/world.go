@@ -98,6 +98,20 @@ type Stats struct {
 	MeatSpoiled int
 	// MeatHealing is all the vitality carcasses have mended (stage 39).
 	MeatHealing float64
+
+	// StarvedDeaths is the same figure cmd/experiment works out from the
+	// other buckets, and StarvedFoodSeen how many of those bodies had food in
+	// sight within a planning horizon of dying (stage 40). SightTicks and
+	// SpareTicks are ticks with food in sight, and those of them where the
+	// body was not hungry - the room there is to pick something up for later.
+	// Taken is how many times something has been picked up (stage 40).
+	Taken int
+
+	StarvedDeaths   int
+	StarvedFoodSeen int
+	StarvedFoodNear int
+	SightTicks      int
+	SpareTicks      int
 	MeatEaten   int
 	PlantsEaten int
 
@@ -309,6 +323,29 @@ type World struct {
 	// has to be said how much of it there is, how much of it is eaten and how
 	// much of it rots: a rule about meat can do nothing about a mouthful
 	// nobody was ever going to take.
+	// heldKind is how many items of each kind are in somebody's hands (stage
+	// 40), and taken how many times something has been picked up. What is
+	// held counts against the world's allowance: carrying moves food about,
+	// it does not make room for more of it.
+	heldKind [NumFoodKinds]int
+	taken    int
+
+	// Counting the target before building carrying (stage 40, #67). A body
+	// that starves with food it had seen a moment ago is a death an item in
+	// hand would have prevented; a body that starves having seen nothing for
+	// a long while is one that carrying could not have saved. The share of
+	// the first is what the whole stage can be worth.
+	starvedDeaths   int
+	starvedFoodSeen int
+	// ... and the same with a window short enough to mean "it was right
+	// there": a body that saw a meal a whole planning horizon ago is not one
+	// an item in hand would obviously have saved.
+	starvedFoodNear int
+	// And the room there is to pick anything up: ticks spent with food in
+	// sight and no hunger worth speaking of, against ticks in sight at all.
+	sightTicks int
+	spareTicks int
+
 	// meatHealing is all the vitality carcasses have put back into the
 	// population (stage 39). Counted whatever MeatVitality is set to, so an
 	// arm with the rule off still says how much of a difference it could
@@ -485,6 +522,12 @@ func (w *World) Stats() Stats {
 		SkillsBorn:             w.skillsBorn,
 		SkillsLeapt:            w.skillsLeapt,
 		MeatHealing:            w.meatHealing,
+		Taken:                  w.taken,
+		StarvedDeaths:          w.starvedDeaths,
+		StarvedFoodSeen:        w.starvedFoodSeen,
+		StarvedFoodNear:        w.starvedFoodNear,
+		SightTicks:             w.sightTicks,
+		SpareTicks:             w.spareTicks,
 		MeatDropped:            w.meatDropped,
 		MeatSpoiled:            w.meatSpoiled,
 		MeatEaten:              w.meatEaten,
@@ -738,6 +781,13 @@ func (w *World) perform(a *Agent) {
 		w.moveDir(a, a.Action.DX, a.Action.DY, a.Action.Effort)
 
 	case ActEat:
+		// Out of its own hands, if that is where it is (stage 40). No
+		// distance to cover and nobody to race: the only thing carrying
+		// changes about a meal is where it was a moment before.
+		if a.carriedIndex(a.Action.TargetID) >= 0 {
+			w.eatCarried(a, a.Action.TargetID)
+			return
+		}
 		f := w.foodByID(a.Action.TargetID)
 		if f == nil {
 			a.requestDecision(TriggerTargetLost) // somebody else got it
@@ -749,6 +799,18 @@ func (w *World) perform(a *Agent) {
 		}
 		w.eat(a, f.ID)
 		a.requestDecision(TriggerGoalReached)
+
+	case ActTake:
+		f := w.foodByID(a.Action.TargetID)
+		if f == nil {
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		if dist2(a.X, a.Y, f.X, f.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
+			w.moveToward(a, f.X, f.Y, a.Action.Effort)
+			return
+		}
+		w.take(a, f.ID)
 
 	case ActAttack:
 		o := w.agentByID(a.Action.TargetID)
@@ -1392,6 +1454,10 @@ func (w *World) tryBirth(pa, pb *Agent) {
 func (w *World) kill(a *Agent) {
 	a.Alive = false
 	w.deaths++
+	// Whatever it was holding falls where it fell (stage 40). Food carried
+	// out of the world would be a leak in a total the world has kept fixed
+	// since stage 15a.
+	w.dropCarried(a)
 	if a.Maturity < 1 {
 		w.childDeaths++
 	}
@@ -1399,6 +1465,19 @@ func (w *World) kill(a *Agent) {
 	// A body the river took is the river's, even if somebody had been hitting
 	// it a moment before. The buckets have to stay exclusive: what is read as
 	// starvation is everything the other counters do not claim.
+	// Which deaths carrying could have answered (stage 40, #67). The buckets
+	// here are the ones cmd/experiment reads, so starving is what nothing
+	// else claims - and among those, the ones that had food in sight lately
+	// are the target. Read only: nothing in the world turns on it.
+	if !a.drowned && a.lastAttackTick < w.tick-1 && a.Lifespan > 0 {
+		w.starvedDeaths++
+		if a.sawFoodTick > 0 && float64(w.tick-a.sawFoodTick) <= w.cfg.PlanHorizon {
+			w.starvedFoodSeen++
+		}
+		if a.sawFoodTick > 0 && float64(w.tick-a.sawFoodTick) <= w.cfg.PlanHorizon/7 {
+			w.starvedFoodNear++
+		}
+	}
 	if !a.drowned && a.lastAttackTick >= w.tick-1 {
 		w.kills++
 		// What the people who were standing there make of it (stage 31).
@@ -1907,12 +1986,25 @@ func (w *World) addPlant(x, y float64, genes plantGenes) int {
 // separate allowances, so this is asked before either is added.
 func (w *World) countKind(kind FoodKind) int {
 	n := 0
+	if !w.cfg.CarryOffTheBooks {
+		n = w.heldKind[kind]
+	}
 	for i := range w.foods {
 		if w.foods[i].Kind == kind {
 			n++
 		}
 	}
 	return n
+}
+
+// kindAllowance is how many items of a kind the world will hold at once.
+// Plants and carcasses have separate ones: sharing an allowance meant a spell
+// of heavy dying filled it with meat and no plant could grow.
+func (w *World) kindAllowance(kind FoodKind) int {
+	if kind == FoodMeat {
+		return w.cfg.MaxMeatItems
+	}
+	return w.cfg.MaxFoodItems
 }
 
 func (w *World) putFood(f Food) int {

@@ -2873,6 +2873,16 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		t.line("looks %.0f (what others can see of its build)", a.Appearance(&cfg))
 		t.line("memory %d/%d faces   forgets at x%.2f",
 			len(g.world.Opinions(a.ID)), a.MemoryCapacity(&cfg), a.ForgetScale(&cfg))
+		// What it is carrying (stage 40). Only worth a line when the world
+		// has hands in it at all: a flat zero on every node would be a line
+		// about the config rather than about the body.
+		if cfg.CarryCapacity > 0 {
+			held := a.CarriedCount()
+			t.line("carrying %d item(s)%s", held, map[bool]string{
+				true:  "",
+				false: "  (slowing it down)",
+			}[held == 0])
+		}
 		// What it assumes, as against what it knows about anybody in
 		// particular. The counts say whether it has seen anything: with
 		// learning off they never move off the founding figure.

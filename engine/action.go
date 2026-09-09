@@ -20,6 +20,16 @@ const (
 	// existing ones do not move.
 	ActInvite
 
+	// ActTake is picking something up to eat later (stage 40). Added at the
+	// end for the same reason ActInvite was: the numbers are what a saved
+	// world holds.
+	//
+	// There is no word for putting something down. A body can always eat what
+	// it is holding - held food is a meal at no distance - so nothing is ever
+	// stuck, and a verb per held item would cost every decision in the world
+	// something to buy the ability to swap one plant for another.
+	ActTake
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -41,6 +51,8 @@ func (k ActionKind) String() string {
 		return "court"
 	case ActInvite:
 		return "invite"
+	case ActTake:
+		return "take"
 	default:
 		return "rest"
 	}
@@ -55,7 +67,7 @@ func (k ActionKind) String() string {
 // than through a hardcoded limit.
 type Action struct {
 	Kind     ActionKind
-	TargetID int     // food item for ActEat, agent for ActAttack/ActFlee/ActObserve/ActCourt/ActInvite
+	TargetID int     // food item for ActEat/ActTake, agent for ActAttack/ActFlee/ActObserve/ActCourt/ActInvite
 	DX, DY   float64 // unit direction, only used by ActMove
 	Effort   float64 // 0..1
 

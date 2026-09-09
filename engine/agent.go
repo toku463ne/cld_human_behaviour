@@ -200,6 +200,20 @@ type Agent struct {
 	attackerID     int
 	lastAttackTick int
 
+	// carried is what this body is holding (stage 40): the fifth state axis,
+	// and the only one whose contents are the world's own items rather than a
+	// number. It is not exported - the viewer asks through Perception like
+	// everything else - and what is in it counts against the world's
+	// allowance for food, so carrying moves food about without making more of
+	// it.
+	carried []Food
+
+	// sawFoodTick is the last tick this body had anything it could eat in
+	// sight (stage 40). Read only, and only by the tally that says how many
+	// bodies starve within reach of something - the count that says what
+	// carrying could be worth.
+	sawFoodTick int
+
 	// lore is what this agent assumes about the world and what it wants out
 	// of it: the figures the utility formula used to take from the config, now
 	// its own. See lore.go for which of them it can be wrong about.
