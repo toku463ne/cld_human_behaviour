@@ -1462,6 +1462,45 @@ var variants = []variant{
 			c.CarryCapacity = 0
 		},
 	},
+	// Stage 42: fish. The water finally holds something worth being in it
+	// for, and the pair that says what that is worth is the same map with the
+	// fish taken out - every water arm has them by default now, exactly as
+	// every water arm started drowning people when stage 34 landed.
+	{
+		name:  "riverfish",
+		about: "42: a quarter of what the world grows comes up in the water. The control is river",
+		apply: func(c *engine.Config) { c.TerrainMap, c.FishShare = mapRiver, 0.25 },
+	},
+	{
+		name:  "riverfishlots",
+		about: "half of it in the water, for the shape of the dose",
+		apply: func(c *engine.Config) { c.TerrainMap, c.FishShare = mapRiver, 0.5 },
+	},
+	{
+		name:  "riverfishall",
+		about: "control: enemies fish too, which is the species rule this stage does not change by default",
+		apply: func(c *engine.Config) { c.TerrainMap, c.FishShare, c.FishForAll = mapRiver, 0.25, true },
+	},
+	{
+		name:  "riverfishswim",
+		about: "42 with swimming (38b): does a body that knows the water get more out of what is in it?",
+		apply: func(c *engine.Config) { c.TerrainMap, c.FishShare, c.SkillBirthplace = mapRiver, 0.25, 0.5 },
+	},
+	{
+		name:  "countryfish",
+		about: "the map that is played, with fish in its river",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.FishShare = 0.25
+		},
+	},
+	{
+		name:  "countrynofish",
+		about: "the same map with the water empty: the pair for the world a game is played in",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+		},
+	},
 	// Stage 41: the surplus. What a party cannot carry away stops being
 	// theirs to wait for. The pair that says what it bought is the default -
 	// where the claim covers the whole carcass - and the ceiling is an arm
@@ -1957,6 +1996,7 @@ var metricNames = []string{
 	"hunts", "jointHunts", "packSize", "evadedShare",
 	"meatDropped", "meatPerHunt", "meatShare", "meatSpoilShare", "meatEatenShare", "meatHeal",
 	"meatSurplus", "meatFreeShare",
+	"fishItems", "fishShare", "foodInWater",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
@@ -2093,6 +2133,10 @@ type sample struct {
 	// because what the drowning changes is where the water is, not where the
 	// dear ground is.
 	onWater float64
+
+	// What the water holds (stage 42): fish about, and the share of the
+	// world's food that is standing in it.
+	fishItems, foodInWater float64
 
 	// What the population is holding (stage 40): items per body, the share of
 	// bodies holding anything, and how full the hands that exist are.
@@ -2244,6 +2288,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
+		fish := w.Fish()
 		plants := w.Plants()
 		vig := w.Vigilance(engine.DefaultClusterLinkDist)
 		looks := w.LooksSignal()
@@ -2259,6 +2304,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			regionRank: known.Rank, regionSpread: known.Spread,
 			dietVariety: diet.Variety, dietDiscount: diet.Discount,
 			held: carry.Held, holders: carry.Holders, load: carry.Load,
+			fishItems: float64(fish.Items), foodInWater: fish.InWater,
 			speedOpen: ground.open, speedDear: ground.dear, speedGap: ground.gap,
 			onDear: ground.dearShare, onHigh: ground.highShare,
 			onWater:   ground.waterShare,
@@ -2564,6 +2610,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// claim on it (stage 41). The first is the premise: a rule about a
 		// surplus needs there to be one.
 		"meatSurplus":   share(end.MeatItems-end.MeatKeepable, end.MeatItems),
+		// What the water holds (stage 42): how many fish are about, what
+		// share of the mouthfuls were fish, and how much of the world's food
+		// is standing in water - the figure that says whether the reward and
+		// the danger are in the same cells.
+		"fishItems":   tail.fishItems,
+		"fishShare":   share(end.FishEaten, end.FishEaten+end.PlantsEaten+end.MeatEaten),
+		"foodInWater": tail.foodInWater,
 		"meatFreeShare": share(end.MeatEatenFree, end.MeatEaten),
 		// Counting the target for carrying (stage 40, #67). starvedSeen is
 		// the share of the bodies that starved which had had food in sight
@@ -2781,6 +2834,8 @@ func tailAverage(series []sample) sample {
 		out.speedHigh += s.speedHigh
 		out.speedLow += s.speedLow
 		out.highGap += s.highGap
+		out.fishItems += s.fishItems
+		out.foodInWater += s.foodInWater
 		out.held += s.held
 		out.holders += s.holders
 		out.load += s.load
@@ -2889,6 +2944,8 @@ func tailAverage(series []sample) sample {
 	out.speedHigh /= d
 	out.speedLow /= d
 	out.highGap /= d
+	out.fishItems /= d
+	out.foodInWater /= d
 	out.held /= d
 	out.holders /= d
 	out.load /= d

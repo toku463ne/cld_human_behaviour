@@ -70,6 +70,15 @@ func (w *World) dietValue(a *Agent, kind FoodKind) float64 {
 	return 1 - penalty*share
 }
 
+// kindsOnOffer is how many kinds of food this world can actually produce.
+// Plants and carcasses always; fish only where there is water to hold them.
+func (w *World) kindsOnOffer() int {
+	if w.cfg.FishShare > 0 && len(w.water) > 0 {
+		return int(NumFoodKinds)
+	}
+	return int(NumFoodKinds) - 1
+}
+
 // dietValues is what every kind is worth to this agent now, for Perception.
 func (w *World) dietValues(a *Agent) [NumFoodKinds]float64 {
 	var out [NumFoodKinds]float64
@@ -131,8 +140,15 @@ func (w *World) Diet() DietUse {
 		}
 		// One minus the share of the commonest thing, scaled so that an even
 		// split over all the kinds there are comes to one.
-		if total > 0 && NumFoodKinds > 1 {
-			out.Variety += (1 - best/total) * float64(NumFoodKinds) / float64(NumFoodKinds-1)
+		//
+		// "There are" means in this world, not in this program (stage 42). A
+		// world with no water has no fish in it, so scaling by three would
+		// put a ceiling of 0.75 on a diet that is as varied as that world
+		// allows - and every figure recorded before fish existed would read
+		// as a fall that nothing did. What the metric says is the same
+		// question it always asked: how far from living on one thing is this.
+		if kinds := w.kindsOnOffer(); total > 0 && kinds > 1 {
+			out.Variety += (1 - best/total) * float64(kinds) / float64(kinds-1)
 		}
 	}
 	if n == 0 {

@@ -103,6 +103,9 @@ type Stats struct {
 	MeatEatenHeld int
 	MeatEatenFree int
 
+	// FishEaten is how many mouthfuls came out of the water (stage 42).
+	FishEaten int
+
 	MeatDropped int
 	MeatSpoiled int
 	// MeatHealing is all the vitality carcasses have mended (stage 39).
@@ -215,6 +218,12 @@ type World struct {
 	// flat world. Drawn once from the config and never changed by the
 	// simulation: agents cross it, nothing reshapes it.
 	ground *terrainGrid
+
+	// water is every cell of the map that is water, worked out once when the
+	// world is built (stage 42). Fish go in one of these, drawn uniformly,
+	// which is what makes how many a region has follow from how much of it is
+	// water without a figure to tune. Empty in a flat world.
+	water []cell
 
 	// regions is the world's own coarse division of itself (region.go). It is
 	// drawn once and never changes; foodWeight is the sum of what the blocks
@@ -371,6 +380,7 @@ type World struct {
 	// who came upon what was left.
 	meatEatenHeld int
 	meatEatenFree int
+	fishEaten     int // stage 42: mouthfuls that came out of the water
 
 	meatDropped int // items left by carcasses
 	meatSpoiled int // ... of those, the ones nobody got to in time
@@ -447,6 +457,7 @@ func NewWorld(cfg Config) *World {
 	// Before anybody is put in it, because what the ground is like is not
 	// something the population decides.
 	w.ground = buildTerrain(&w.cfg)
+	w.water = waterCells(w.ground)
 	w.buildRegions()
 	for i := 0; i < cfg.InitialPopulation; i++ {
 		w.addAgent(w.randomAgent(SpeciesHuman))
@@ -552,6 +563,7 @@ func (w *World) Stats() Stats {
 		MeatKeepable:           w.meatKeepable,
 		MeatEatenHeld:          w.meatEatenHeld,
 		MeatEatenFree:          w.meatEatenFree,
+		FishEaten:              w.fishEaten,
 		MeatDropped:            w.meatDropped,
 		MeatSpoiled:            w.meatSpoiled,
 		MeatEaten:              w.meatEaten,
@@ -1568,6 +1580,9 @@ func (w *World) eat(a *Agent, foodID int) {
 	// spat out today, but a mouthful that was never swallowed must not mend
 	// anybody the day something can.
 	w.mend(a, f.Kind, kept)
+	if f.Kind == FoodFish {
+		w.fishEaten++
+	}
 	if f.Kind == FoodMeat {
 		w.meatEaten++
 		// And whether the eater was one of those who brought it down, or
@@ -1938,6 +1953,14 @@ func (w *World) spawnFood() {
 	if len(w.foods) >= w.cfg.MaxFoodItems {
 		return
 	}
+	// One of them comes up in the water instead (stage 42). It is asked first
+	// and it takes the place of this planting rather than adding to it, which
+	// is what keeps how much the world grows FoodSpawnRate's business alone.
+	// A world with no water says no without drawing anything.
+	if w.spawnFish() {
+		return
+	}
+
 	// A seed that has been carried somewhere first, if one is waiting. It
 	// takes the place of this planting rather than adding to it, which is what
 	// keeps the count of plants FoodSpawnRate's business alone.

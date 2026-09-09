@@ -506,6 +506,32 @@ type Config struct {
 	// rather than meat somebody chose.
 	CarriedMeatKeeps bool
 
+	// FishShare is how much of what the world grows comes up as fish in the
+	// water instead of as a plant on land (stage 42). Zero is a world with no
+	// fish in it, which is every world before this and every flat world after
+	// it - with no water there is nowhere for one, and no random number is
+	// drawn deciding.
+	//
+	// It takes the place of a plant rather than adding to the world, so
+	// FoodSpawnRate still says how much food there is (#69). How much of it
+	// is in any one region follows from how much of that region is water,
+	// with nothing to tune: a fish goes in a water cell drawn uniformly.
+	//
+	// Zero by default, the same as the other two rules that say what a
+	// landscape provides (TerrainFoodCorrelation, WatersideFood): what is in
+	// the water is a property of the country somebody drew, not of the world.
+	// It is also the only figure measured so far that moves where bodies
+	// stand by a lot - a quarter of the crop in the water takes the share of
+	// the population standing in it from 0.13 to 0.24 *** - and it costs a
+	// quarter of the population to do it, which is a price a map should ask
+	// for deliberately rather than one every measurement inherits.
+	FishShare float64
+
+	// FishForAll lets enemies fish too. False, because a second food for the
+	// species that lives on meat would make every population figure since
+	// stage 11 a different measurement; the arm is here to be run.
+	FishForAll bool
+
 	// MeatSurplusFree opens what a kill leaves beyond what those who made it
 	// can carry away (stage 41). True, because it wastes less and costs
 	// nothing: the share of meat that rots falls by 0.03 **, starvation per
@@ -1503,6 +1529,7 @@ func DefaultConfig() Config {
 		CarryCapacity:   1,
 		CarryCost:       0.5,
 		CarryValue:      0.5,
+		FishShare:       0, // stage 42: what a map holds is the map author's to say
 		MeatSurplusFree: true,
 		MeatVitality:    0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
 		MeatHealKnown:   true,

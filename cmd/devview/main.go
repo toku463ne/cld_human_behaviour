@@ -89,6 +89,7 @@ var (
 	colorPanel      = color.RGBA{0xef, 0xef, 0xec, 0xff}
 	colorPanelEdge  = color.RGBA{0xc0, 0xc0, 0xba, 0xff}
 	colorFood       = color.RGBA{0x1b, 0xaf, 0x7a, 0xff}
+	colorFish       = color.RGBA{0x2f, 0xc8, 0xd8, 0xff}
 	colorMale       = color.RGBA{0x2a, 0x78, 0xd6, 0xff}
 	colorFemale     = color.RGBA{0xe8, 0x7b, 0xa4, 0xff}
 	colorForage     = color.RGBA{0xc3, 0xc2, 0xb7, 0xff}
@@ -2344,7 +2345,14 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 
 	for _, f := range g.world.Foods() {
 		fx, fy := g.onScreen(f.X, f.Y)
-		vector.DrawFilledCircle(screen, fx, fy, g.long(3), colorFood, true)
+		// Fish are a paler blue-green (stage 42): they are in the water, and
+		// on a map with a river a green dot on blue ground is the one thing
+		// the eye needs to tell apart to see what the water is for.
+		c := colorFood
+		if f.Kind == engine.FoodFish {
+			c = colorFish
+		}
+		vector.DrawFilledCircle(screen, fx, fy, g.long(3), c, true)
 	}
 
 	g.drawAim(screen)
@@ -2922,9 +2930,10 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		}
 		shelter, food := g.world.GroundAt(a.X, a.Y)
 		t.line("ground here: resting x%.2f, plants x%.2f (1 = ordinary)", shelter, food)
-		if d := g.world.DietOf(a.ID); d[engine.FoodPlant] < 1 || d[engine.FoodMeat] < 1 {
-			t.line("sick of it: a plant is worth x%.2f, meat x%.2f",
-				d[engine.FoodPlant], d[engine.FoodMeat])
+		if d := g.world.DietOf(a.ID); d[engine.FoodPlant] < 1 || d[engine.FoodMeat] < 1 ||
+			d[engine.FoodFish] < 1 {
+			t.line("sick of it: a plant is worth x%.2f, meat x%.2f, a fish x%.2f",
+				d[engine.FoodPlant], d[engine.FoodMeat], d[engine.FoodFish])
 		}
 		if known, total, gain := g.world.CountryKnownBy(a.ID); total > 0 {
 			where := "nowhere better known"
@@ -3899,6 +3908,14 @@ func main() {
 		// going in more and drowning more for a world that is easier all the
 		// same (death rate -0.27 *, starving -0.24 *).
 		cfg.WatersideFood = 1
+		// And there are fish in it (stage 42), which is the only thing
+		// measured so far that moves where bodies stand by a lot: a quarter
+		// of the crop in the water takes the share of the population standing
+		// in it from 0.13 to 0.24 ***. On a bare river that costs a quarter
+		// of the population; on this map, where the bank is already rich, it
+		// costs 5.27 and the error bar covers it - which is why a played
+		// world has them and the physics does not.
+		cfg.FishShare = 0.25
 		// And a body born in broken country knows something about crossing
 		// it (stage 38a). Like the three above, it is a thing a hand-made
 		// world has rather than a default of the physics: it needs terrain to

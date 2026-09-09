@@ -26,14 +26,23 @@ const (
 	// came from, because that decides who is allowed to eat it.
 	FoodMeat
 
+	// FoodFish is what the water holds (stage 42). It is a third kind rather
+	// than a kind of plant because the whole point of it is that it is
+	// somewhere else: a body eats it where it swims, which is the cell that
+	// is dear to cross and drowns people.
+	FoodFish
+
 	// NumFoodKinds is how many there are, for the code that keeps one figure
 	// per kind (the diet rule of stage 16). It is not a kind.
 	NumFoodKinds
 )
 
 func (k FoodKind) String() string {
-	if k == FoodMeat {
+	switch k {
+	case FoodMeat:
 		return "meat"
+	case FoodFish:
+		return "fish"
 	}
 	return "plant"
 }
@@ -53,6 +62,8 @@ func eatsMeat(s Species) bool   { return true }
 // canEat says whether this agent may take this item, at this moment.
 func (w *World) canEat(a *Agent, f *Food) bool {
 	switch f.Kind {
+	case FoodFish:
+		return w.eatsFish(a.Species)
 	case FoodMeat:
 		if !eatsMeat(a.Species) {
 			return false

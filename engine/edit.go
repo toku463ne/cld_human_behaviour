@@ -34,6 +34,7 @@ import "fmt"
 func (w *World) SetTerrain(rows []string) {
 	w.cfg.TerrainMap = append([]string(nil), rows...)
 	w.ground = buildTerrain(&w.cfg)
+	w.water = waterCells(w.ground)
 }
 
 // Terrain is the map as it stands, for an editor to draw and change. The copy

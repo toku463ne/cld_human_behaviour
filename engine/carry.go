@@ -162,6 +162,9 @@ func (w *World) eatCarried(a *Agent, foodID int) {
 		}
 	}
 	w.mend(a, f.Kind, kept)
+	if f.Kind == FoodFish {
+		w.fishEaten++
+	}
 	if f.Kind == FoodMeat {
 		w.meatEaten++
 		// And whether the eater was one of those who brought it down, or
