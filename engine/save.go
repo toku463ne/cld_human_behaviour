@@ -105,6 +105,11 @@ type snapshot struct {
 	Agents  []agentSnap `json:"agents"`
 	Foods   []Food      `json:"foods"`
 	Regions []region    `json:"regions"`
+	// Stores are the caches whoever laid the world out put on it (stage 50).
+	// They are part of the world in the way the terrain and the regions are,
+	// and what is in them needs no saving of its own: it is in Foods, with
+	// the store written on it.
+	Stores []store `json:"stores,omitempty"`
 
 	FoodWeight   float64    `json:"foodWeight"`
 	PendingSeeds []seedSnap `json:"pendingSeeds,omitempty"`
@@ -180,7 +185,11 @@ type agentSnap struct {
 	RecentFood [NumFoodKinds]float64
 	DietTick   int
 
-	Regions     []regionSnap
+	Regions []regionSnap
+	// Which caches this body could find, and how firmly (stage 50). It is
+	// knowledge and so it is state: a world that came back with everybody
+	// having forgotten where things are kept is a different world.
+	Stores      []storeSnap `json:",omitempty"`
 	TimesTaught int
 	Looks       looksSnap
 
@@ -221,6 +230,14 @@ type regionSnap struct {
 	Danger        float64
 }
 
+// storeSnap is one agent's knowledge of one cache (stage 50). It holds the
+// strength and the clock and nothing else, because that is all the record is.
+type storeSnap struct {
+	N, LogN  float64
+	LastTick int
+	Looks    int
+}
+
 type looksSnap struct {
 	N, Sx, Sy, Sxx, Sxy float64
 }
@@ -250,6 +267,7 @@ func (w *World) Save(out io.Writer) error {
 		NextAgentID: w.nextAgentID,
 		NextFoodID:  w.nextFoodID,
 		Foods:       w.foods,
+		Stores:      w.stores,
 		Regions:     w.regions,
 		FoodWeight:  w.foodWeight,
 		Counters: counterSnap{
@@ -333,6 +351,11 @@ func snapAgent(a *Agent) agentSnap {
 		LastCourt:     a.lastCourt,
 		Rejected:      a.rejected,
 	}
+	for i := range a.stores {
+		m := &a.stores[i]
+		out.Stores = append(out.Stores, storeSnap{N: m.n, LogN: m.logN,
+			LastTick: m.lastTick, Looks: m.looks})
+	}
 	for i := range a.regions {
 		r := &a.regions[i]
 		out.Regions = append(out.Regions, regionSnap{Seen: r.seen, N: r.n, LogN: r.logN,
@@ -371,6 +394,7 @@ func Load(in io.Reader) (*World, error) {
 		cfg:         s.Config,
 		agents:      make([]Agent, 0, len(s.Agents)),
 		foods:       s.Foods,
+		stores:      s.Stores,
 		index:       make(map[int]int, len(s.Agents)),
 		foodIndex:   make(map[int]int, len(s.Foods)),
 		ai:          &AIController{},
@@ -475,6 +499,11 @@ func loadAgent(s *agentSnap) Agent {
 	a.courtedBy, a.courtedTick = s.CourtedBy, s.CourtedTick
 	a.lastCourt = s.LastCourt
 	a.rejected = s.Rejected
+	for i := range s.Stores {
+		m := &s.Stores[i]
+		a.stores = append(a.stores, storeMemory{n: m.N, logN: m.LogN,
+			lastTick: m.LastTick, looks: m.Looks})
+	}
 	for i := range s.Regions {
 		r := &s.Regions[i]
 		a.regions = append(a.regions, regionView{seen: r.Seen, n: r.N, logN: r.LogN,

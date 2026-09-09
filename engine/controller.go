@@ -157,6 +157,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addExplore(p)
 	c.addFood(p)
 	c.addStones(p)
+	c.addPutInStore(p)
 	c.addAgents(p, maxDepth)
 	c.addOffer(p)
 
@@ -358,11 +359,41 @@ func (c *AIController) addRest(p *Perception) {
 // why nobody had to be told to save meat for later: a body that is nearly
 // whole gets almost nothing from it and scores a plant higher.
 func mealValue(cfg *Config, s *SelfView, incoming, nutrition, heal float64) float64 {
-	now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
-	fed := math.Max(0, s.Hunger-cfg.FoodNutrition*nutrition)
+	return mealValueAt(cfg, s, incoming, s.Hunger, nutrition, heal)
+}
+
+// mealValueAt is the same figure reckoned from a hunger this body is not at
+// yet, which is what a thing kept for later is worth: not the meal it would be
+// today, but the meal it would be at the moment there is nothing about.
+//
+// It exists because that value was being worked out the wrong way round.
+// Stage 40 wrote it as the difference between now and the moment of running
+// short - which is how much worse things get, a loss - where what it meant was
+// the good that eating then would do. Measured before the fix: of 138,310
+// carry options scored in one run, not one had a positive value, so nothing
+// was ever picked up on purpose. CarryPricedBackwards puts that world back.
+func mealValueAt(cfg *Config, s *SelfView, incoming, hunger, nutrition, heal float64) float64 {
+	before := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, hunger)+incoming)
+	fed := math.Max(0, hunger-cfg.FoodNutrition*nutrition)
 	mended := math.Min(s.Vitality+heal, s.MaxVitality)
 	after := pressure(cfg, s, mended, projectedDrain(cfg, s.HungerRate, fed)+incoming)
-	return (now - after) * cfg.LifeValue
+	return (before - after) * cfg.LifeValue
+}
+
+// keepValue is what having this item when it is needed is worth. One place,
+// because two options are the same bet: carrying it (stage 40) and putting it
+// in a cache (stage 50).
+func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal float64) float64 {
+	if cfg.CarryPricedBackwards {
+		// The world as stages 40 to 49 measured it, kept so that those
+		// figures can be reproduced: the loss from getting hungrier, with the
+		// sign that made every such option a penalty.
+		now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
+		later := pressure(cfg, s, s.Vitality,
+			projectedDrain(cfg, s.HungerRate, math.Max(s.Hunger, cfg.StarveHunger))+incoming)
+		return (now - later) * cfg.LifeValue
+	}
+	return mealValueAt(cfg, s, incoming, math.Max(s.Hunger, cfg.StarveHunger), nutrition, heal)
 }
 
 // addExplore scores wandering off to look for something to eat. It is worth
@@ -427,9 +458,6 @@ func (c *AIController) addFood(p *Perception) {
 	if s.HungerRate > 0 {
 		wait = clamp((cfg.StarveHunger-s.Hunger)/s.HungerRate, 0, cfg.PlanHorizon)
 	}
-	later := pressure(cfg, s, s.Vitality,
-		projectedDrain(cfg, s.HungerRate, math.Max(s.Hunger, cfg.StarveHunger))+incoming)
-
 	for i := range p.Foods {
 		if i >= maxFoodOptions {
 			break
@@ -521,7 +549,7 @@ func (c *AIController) addFood(p *Perception) {
 				// of that, and it is normalised the way the competition term
 				// already normalises it.
 				need := cfg.CarryValue * clamp(s.FoodScarcity, 0, 3) / 3
-				keep := (now - later) * cfg.LifeValue
+				keep := keepValue(cfg, s, incoming, f.Nutrition, f.Heal)
 				lug := (burdenWith(cfg, s, 1) - burdenOf(s)) *
 					moveCostAt(cfg, effort) * groundOf(s) * wait
 				c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
@@ -688,6 +716,69 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 			VitalityCost: cost * cfg.VitalityWeight,
 			TimeCost:     ticks * cfg.TimeCost,
 		})
+	}
+}
+
+// addPutInStore scores walking to a cache and leaving what is in the hand
+// there (stage 50).
+//
+// What it is worth is the same bet picking something up is (stage 40): the
+// meal this body would be having at the moment it runs short, discounted for
+// the chance it finds something else by then. What differs is who can take it
+// in the meantime. Food in a hand is nobody else's; food in a cache is there
+// for everybody who knows the place, which is why the discount is its own
+// figure (StoreValue) rather than CarryValue.
+//
+// What it buys against carrying is the weight: a body walking with its hands
+// empty pays no burden, and a body with its hands empty can pick up the next
+// thing it sees. Neither is written here as a bonus - both fall out of the
+// comparison, because putting the item down ends the burden the carry option
+// charged for and frees the room the carry option needed.
+func (c *AIController) addPutInStore(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if len(p.Stores) == 0 || s.Carried == 0 || cfg.StoreValue <= 0 {
+		return
+	}
+	// What is in the hand, since what it is worth keeping depends on what it
+	// is. The held items are in the food list with nothing between the body
+	// and them (stage 40), and it is the first of them that ActStore puts
+	// away.
+	held := -1
+	for i := range p.Foods {
+		if p.Foods[i].Held {
+			held = i
+			break
+		}
+	}
+	if held < 0 {
+		return
+	}
+	incoming := c.incomingDmg
+	// How likely it is to be wanted at all, read the same way the reason to
+	// pick something up is read: a body in a patch with more food than
+	// neighbours has little use for a cache, and one where every plant is
+	// contested may well find nothing when it next looks.
+	need := cfg.StoreValue * clamp(s.FoodScarcity, 0, 3) / 3
+	keep := keepValue(cfg, s, incoming, p.Foods[held].Nutrition, p.Foods[held].Heal)
+	if keep <= 0 || need <= 0 {
+		return
+	}
+	for i := range p.Stores {
+		st := &p.Stores[i]
+		if st.Room <= 0 {
+			continue
+		}
+		for _, effort := range effortLevels {
+			ticks := st.Dist/speedAt(s.MaxSpeed, effort) + 1
+			cost := moveCost(cfg, s, effort) * ticks
+			c.add(Action{Kind: ActStore, TargetID: st.Index, Effort: effort}, Utility{
+				Life:         Goal{Value: keep, Chance: need},
+				Vitality:     cost,
+				Ticks:        ticks,
+				VitalityCost: cost * cfg.VitalityWeight,
+				TimeCost:     ticks * cfg.TimeCost,
+			})
+		}
 	}
 }
 

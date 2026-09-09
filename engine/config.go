@@ -603,6 +603,83 @@ type Config struct {
 	// the room, and buys nothing.
 	SkillHarvestRelief float64
 
+	// CarryPricedBackwards puts back the world in which what a held item was
+	// worth came out the wrong way round (stage 40, found in stage 50).
+	//
+	// What a thing kept for later is worth was written as the difference
+	// between how this body stands now and how it will stand when it runs
+	// short - which is a loss, not a gain - where what was meant was the good
+	// that eating it then would do. Measured before the fix: of 138,310 carry
+	// options scored in one run of the default world, not one had a positive
+	// value. Every figure recorded for stages 40 to 49 was measured in that
+	// world, which is why the way back is kept.
+	CarryPricedBackwards bool
+
+	// --- a place to put things (stage 50) ---
+
+	// StoreCapacity is how many items one store holds. Zero takes stores out
+	// of the world altogether: none can be laid out, so no agent is offered
+	// the option and nobody's hands are read for one.
+	//
+	// A world has no stores unless whoever lays it out puts them there
+	// (SetStore), so this being non-zero changes nothing on its own - the same
+	// footing the terrain and the regions are on.
+	StoreCapacity int
+
+	// MaxStores is how many a world may have. It is the bound that makes
+	// #41's exemption hold: a place is not a person and takes no room from
+	// what a body can remember about people, which is a fair trade only while
+	// the count stays in the same order as the regions (twelve).
+	MaxStores int
+
+	// StoresKnownToAll is the control this stage is read against: the stores
+	// are there and used, and every body knows where all of them are from
+	// birth. It leaves the storing and takes away the knowing, the way stage
+	// 49's WaresSeen leaves the crying and takes away the hearing - and stage
+	// 49 is the reason it exists at all, because without that control this
+	// project would have recorded a finding that the control took back.
+	StoresKnownToAll bool
+
+	// StoreFindLooks is how many looks at a cache it does not know it takes
+	// for a body to notice it. Zero closes the path.
+	//
+	// The plan named three ways of coming to know a place - inheritance,
+	// seeing somebody use it, and hearing it cried - and writing them showed
+	// that none of them can start: every one of the three needs somebody who
+	// already knows. This is the path that starts it, and the only one that
+	// needs nobody else.
+	//
+	// It counts looks rather than drawing a chance on each of them, and that
+	// is a measurement decision rather than a modelling one. A draw here
+	// would be a draw the world without caches does not make, so the two arms
+	// would run on different random streams and no small difference between
+	// them could be read - which is the trap stage 45 fell into and had to
+	// warn about. Counting is deterministic, so a world with caches and a
+	// world without diverge only where the rule actually bites.
+	StoreFindLooks int
+
+	// What one telling is worth, down each of the three paths a place can be
+	// learned (#75). They are strengths on the same record a region's
+	// knowledge is kept in, so they are counted in the same units as a look
+	// at the ground, and the record fades at RegionForgetPerTick - no new
+	// rate is invented for forgetting a place.
+	//
+	// Inheriting is worth the most because a child is with its parent for the
+	// whole of its rearing; seeing somebody reach into a cache is worth a
+	// look; hearing it cried is worth least, for the reason every second-hand
+	// figure in this world is worth less than a first-hand one. Any of them
+	// at zero closes that path, which is how they are told apart.
+	StoreInheritStrength float64
+	StoreWitnessStrength float64
+	StoreCryStrength     float64
+
+	// StoreValue is what a body thinks a store is for: how much of a meal
+	// kept for later it reckons on getting back out of one. It is the same
+	// discount carrying uses (CarryValue) and it is separate from it because
+	// the two are not the same bet - what is in a hand cannot be taken by
+	// somebody else, and what is in a store can.
+	StoreValue float64
+
 	// OfferTicks is how long a cry lasts and how long it takes (stage 49).
 	// For that many ticks the body stands there doing nothing else, and for
 	// that many ticks what is in its hand is visible to everybody who can see
@@ -1767,6 +1844,15 @@ func DefaultConfig() Config {
 		KillWitnessFactor:    2,
 		KillWitnessLooks:     true,
 		CallTicks:            30,
+		CarryPricedBackwards: false,
+		StoreCapacity:        6,
+		MaxStores:            16,
+		StoresKnownToAll:     false,
+		StoreFindLooks:       50,
+		StoreInheritStrength: 3,
+		StoreWitnessStrength: 1,
+		StoreCryStrength:     0.5,
+		StoreValue:           0.5,
 		OfferTicks:           0,
 		WaresSeen:            true,
 		AllyTrustWeight:      1,

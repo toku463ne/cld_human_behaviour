@@ -44,6 +44,15 @@ const (
 	// added at the end like the four before it.
 	ActOffer
 
+	// ActStore is putting what is in the hand into a cache the body knows
+	// (stage 50). The thirteenth word, added at the end like the five before
+	// it. TargetID is the store's index, which is the only place in this
+	// vocabulary where the target is not a food item or an agent - and the
+	// reason there is no word for taking something back out is that there is
+	// nothing to add: what is in a store this body knows is food in the
+	// world, eaten and picked up by the ordinary words.
+	ActStore
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -73,6 +82,8 @@ func (k ActionKind) String() string {
 		return "give"
 	case ActOffer:
 		return "offer"
+	case ActStore:
+		return "store"
 	default:
 		return "rest"
 	}
@@ -87,7 +98,7 @@ func (k ActionKind) String() string {
 // than through a hardcoded limit.
 type Action struct {
 	Kind     ActionKind
-	TargetID int     // food item for ActEat/ActTake, agent for ActAttack/ActFlee/ActObserve/ActCourt/ActInvite
+	TargetID int     // food item for ActEat/ActTake, agent for ActAttack/ActFlee/ActObserve/ActCourt/ActInvite, store index for ActStore
 	DX, DY   float64 // unit direction, only used by ActMove
 	Effort   float64 // 0..1
 

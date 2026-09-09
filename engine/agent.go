@@ -259,6 +259,12 @@ type Agent struct {
 	// against what it can remember about people: somewhere is not somebody.
 	regions []regionView
 
+	// stores is which of the world's caches this agent could find (stage 50).
+	// Allocated the first time it learns one, never counted against what it
+	// can remember about people, and it fades at the same rate country does:
+	// somewhere is not somebody, and a place nobody goes to is forgotten.
+	stores []storeMemory
+
 	// timesTaught is how often this agent has been in a trade of what it
 	// assumes (stage 12b), on either side of it. Nothing reads it: it is there
 	// so that the measurement can ask whether a few agents are teaching
@@ -488,6 +494,14 @@ type Food struct {
 
 	// SpoilAt is when meat is gone, 0 for anything that does not spoil.
 	SpoilAt int
+
+	// Store is which cache this item is in, plus one, and zero for the far
+	// more usual case of lying in the open (stage 50). It is a place and not
+	// a container: an item in a store is in the world's own list, counts
+	// against the world's allowance, and goes off at the ordinary rate. The
+	// only thing being in one does to it is hide it from anybody who does not
+	// know the place.
+	Store int
 
 	// Genes is what a plant inherited from the one it grew from (plant.go).
 	// Meat has none: a carcass is not a lineage.

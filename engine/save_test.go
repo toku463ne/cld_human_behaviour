@@ -41,7 +41,21 @@ func digest(w *World) string {
 	}
 	for i := range w.foods {
 		f := &w.foods[i]
-		fmt.Fprintf(h, "f %d %.17g %.17g %d %d\n", f.ID, f.X, f.Y, f.Kind, f.SpoilAt)
+		fmt.Fprintf(h, "f %d %.17g %.17g %d %d %d\n", f.ID, f.X, f.Y, f.Kind, f.SpoilAt, f.Store)
+	}
+	// The caches and who can find them (stage 50). Knowledge of a place is
+	// state, and a world that came back with everybody having forgotten where
+	// things are kept would part company with the saved one as soon as
+	// anybody was hungry.
+	for _, st := range w.Stores() {
+		fmt.Fprintf(h, "s %d %.17g %.17g %d\n", st.Index, st.X, st.Y, st.Held)
+	}
+	for i := range w.agents {
+		a := &w.agents[i]
+		for j := range a.stores {
+			m := &a.stores[j]
+			fmt.Fprintf(h, "k %d %d %.17g %d\n", a.ID, j, m.n, m.lastTick)
+		}
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
@@ -65,8 +79,16 @@ func TestASavedWorldComesBackTheSameWorld(t *testing.T) {
 		cfg.HighGroundCover = 0.3
 		cfg.PlantGenetics = true
 		cfg.LearningRate = 0.05
+		// And caches with things in them, and bodies that know where some of
+		// them are (stage 50).
+		cfg.OfferTicks = 30
 
 		w := NewWorld(cfg)
+		for _, at := range [][2]float64{{60, 40}, {200, 90}, {500, 300}} {
+			if _, err := w.SetStore(at[0], at[1]); err != nil {
+				t.Fatalf("laying out a store: %v", err)
+			}
+		}
 		for i := 0; i < ticks; i++ {
 			w.Step()
 		}

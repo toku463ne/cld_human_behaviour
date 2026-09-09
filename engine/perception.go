@@ -197,6 +197,19 @@ type CourtView struct {
 }
 
 // FoodView is one food item as an agent sees it.
+// StoreSight is a cache in sight that this agent knows how to find (stage 50).
+// A body that does not know the place has none of them in its perception, and
+// standing on one tells it nothing.
+type StoreSight struct {
+	Index int
+	X, Y  float64
+	Dist  float64
+
+	// Room is how many more items it would hold. Not hidden: a body that
+	// knows the place and can see it can see what is in it.
+	Room int
+}
+
 type FoodView struct {
 	ID   int
 	X, Y float64
@@ -228,6 +241,13 @@ type FoodView struct {
 	// only offered for what is not held, and a human player is shown which
 	// is which.
 	Held bool
+
+	// Store is which cache this item is in, plus one, and zero for anything
+	// lying in the open (stage 50). An item in a store is only in this list
+	// at all if the agent knows the place, so what this says is not "there is
+	// one" but "this one is in the cache" - which is what tells an agent that
+	// walking there and putting something else in is a thing it could do.
+	Store int
 
 	// Danger is how poisonous this observer reckons the item is, from 0 to 1
 	// (stage 17b). It is a reading of the plant's warning, blurred by the
@@ -378,6 +398,13 @@ type Perception struct {
 	// was last in sight all count what is edible, and a stone is not.
 	Stones []FoodView
 
+	// Stores is the caches in sight that this agent knows about (stage 50).
+	// Kept apart from Foods for the reason the stones are: a cache is not a
+	// meal, and none of the figures that count what is edible should count
+	// one. An empty store is in here - which is the point, because an empty
+	// store is exactly the one worth walking to with something in your hand.
+	Stores []StoreSight
+
 	// Trigger is why the engine is asking. It is not a instruction - what to
 	// do about being hit is still for the controller to work out - but it is
 	// something the agent knows about its own situation, and one thing cannot
@@ -409,6 +436,7 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Rand = w.rng
 	p.Foods = p.Foods[:0]
 	p.Stones = p.Stones[:0]
+	p.Stores = p.Stores[:0]
 	p.Others = p.Others[:0]
 
 	ground := w.terrainAt(a.X, a.Y)
@@ -488,6 +516,14 @@ func (w *World) perceive(a *Agent) *Perception {
 			})
 			continue
 		}
+		// And what is in a cache is nothing to a body that does not know the
+		// cache (stage 50). It is in plain sight in every other sense - the
+		// world holds it in the same list as everything else lying about -
+		// but a place to keep things is not a landmark, and knowing where one
+		// is is the whole of what stage 50 is about.
+		if f.Store > 0 && !w.knowsStore(a, f.Store-1) {
+			continue
+		}
 		// What this agent cannot eat is not food to it: a carcass of its own
 		// kind, or somebody else's kill while the claim on it still stands.
 		if !w.canEat(a, f) {
@@ -499,6 +535,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Y:         f.Y,
 			Dist:      math.Sqrt(d2),
 			Kind:      f.Kind,
+			Store:     f.Store,
 			Nutrition: p.Self.Nutrition[f.Kind],
 			Heal:      p.Self.Heal[f.Kind],
 			Catch:     w.catchExpected(a, f),
@@ -658,6 +695,34 @@ func (w *World) perceive(a *Agent) *Perception {
 	// 15b). It is not a new sense: the food it has just counted is the whole
 	// of the reading.
 	w.noteRegion(a, seen)
+
+	// And the caches this one knows and can see (stage 50). The scan is over
+	// the world's stores rather than over the index because there are at most
+	// MaxStores of them - the same order as the regions - and a world with
+	// none does not look at all.
+	if len(w.stores) > 0 && w.cfg.StoreCapacity > 0 {
+		for i := range w.stores {
+			st := &w.stores[i]
+			if !w.canSee(a.X, a.Y, st.X, st.Y) {
+				continue
+			}
+			// Noticing one it did not know (StoreFindChance). It is the only
+			// path to a cache that does not need somebody who already knows,
+			// and without it the other three cannot start. What it finds this
+			// look it can use from the next one: the food in there was passed
+			// over above, which is the ordinary way round for anything a body
+			// learns while it is looking.
+			if !w.knowsStore(a, i) {
+				w.noticeStore(a, i)
+				continue
+			}
+			p.Stores = append(p.Stores, StoreSight{
+				Index: i, X: st.X, Y: st.Y,
+				Dist: math.Sqrt(dist2(a.X, a.Y, st.X, st.Y)),
+				Room: w.storeRoom(i),
+			})
+		}
+	}
 
 	p.Foods = w.carriedViews(a, p.Foods)
 	if i, gain, ok := w.bestKnownRegion(a); ok {

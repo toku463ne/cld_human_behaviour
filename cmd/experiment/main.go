@@ -203,7 +203,25 @@ type variant struct {
 	name  string
 	about string
 	apply func(*engine.Config)
+
+	// stores lays caches on the world after it is built (stage 50). They are
+	// not a Config field: they are put there by whoever lays the world out,
+	// the same footing the editor is on, so an arm that wants them has to
+	// place them.
+	stores func(*engine.World)
 }
+
+// Where the caches go. Spread out rather than clustered, so that no one body
+// can know all of them by standing still, and away from the edges.
+func playedStores(w *engine.World) {
+	for _, at := range [][2]float64{
+		{200, 130}, {200, 500}, {640, 130}, {640, 500}, {1080, 130}, {1080, 500},
+	} {
+		w.SetStore(at[0], at[1])
+	}
+}
+
+func flatStores(w *engine.World) { playedStores(w) }
 
 // The arms available. New rules under test get an entry here rather than a
 // branch in the engine, so that both arms live in the same binary and can be
@@ -1609,6 +1627,90 @@ var variants = []variant{
 			c.Stones, c.Throwing, c.HighGroundCover = 60, true, 0.3
 		},
 	},
+	// The carry valuation, found the wrong way round while stage 50 was being
+	// written: what a thing kept for later was worth came out as a loss, so
+	// nothing was ever picked up on purpose. The arm to read the fix against
+	// is the world every figure for stages 40 to 49 was measured in.
+	{
+		name:  "carryfix",
+		about: "what a held item is worth, reckoned as the meal it would be when needed",
+		apply: func(c *engine.Config) {},
+	},
+	{
+		name:  "carryback",
+		about: "the world stages 40-49 were measured in: that value with its sign the wrong way",
+		apply: func(c *engine.Config) { c.CarryPricedBackwards = true },
+	},
+	{
+		name:  "carryfixplayed",
+		about: "the fix on the played map",
+		apply: playedMap,
+	},
+	{
+		name:  "carrybackplayed",
+		about: "the pair for it on the played map",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.CarryPricedBackwards = true
+		},
+	},
+	// Stage 50: a place to put things, and knowing where it is. The stores are
+	// laid out the way the terrain is, so an arm has to put them there.
+	{
+		name:  "stores",
+		about: "50: caches on the played map, and knowing where one is has to be learned",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks = 30
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "storesnone",
+		about: "the pair for it: the same world with no caches in it",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks = 30
+		},
+	},
+	{
+		name:  "storesknown",
+		about: "the control: the caches are there and everybody knows every one of them",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.StoresKnownToAll = 30, true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "storesidle",
+		about: "the placebo: the caches are there, everybody knows them, nobody ever uses one",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.StoresKnownToAll, c.StoreValue = 30, true, 0
+		},
+		stores: playedStores,
+	},
+	{
+		name:   "storesflat",
+		about:  "50 on the flat world, which is at its food cap a tenth of the time",
+		apply:  func(c *engine.Config) { c.OfferTicks = 30 },
+		stores: flatStores,
+	},
+	{
+		name:  "storesflatnone",
+		about: "the pair for it: the flat world with no caches",
+		apply: func(c *engine.Config) { c.OfferTicks = 30 },
+	},
+	{
+		name:  "storesbig",
+		about: "caches that hold four times as much: is six items the limit that bites?",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.StoreCapacity = 30, 24
+		},
+		stores: playedStores,
+	},
 	// Stage 49: crying what is in the hand. The target was counted before the
 	// rule was written: 27% of bodies hold something and 85% of those are not
 	// hungry, so there is a surplus - but 52% of holders can already see a
@@ -2403,6 +2505,8 @@ var metricNames = []string{
 	"aimHeld", "aimReal",
 	"gifts", "giftRate", "giftsToKin", "giftsToMates", "giftsToStrangers", "giftStones",
 	"cryShare", "offerHeard", "offerDraw", "giftsCried",
+	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
+	"storeFound", "storeSeen", "storeTold", "storeBorn",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2679,6 +2783,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	v.apply(&cfg)
 
 	w := engine.NewWorld(cfg)
+	// The caches, if this arm has any (stage 50). Laid out after the world is
+	// built and before it runs, which is where an editor would put them, and
+	// they draw nothing from the random source - so an arm with no caches runs
+	// exactly as it did before this stage.
+	if v.stores != nil {
+		v.stores(w)
+	}
 	start := w.Stats()
 
 	// The membership tracker watches only the final fifth, for the same reason
@@ -2837,6 +2948,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	fr := fights.Result()
 	cen := census.Result()
 	fords := banks.Result()
+	stored := w.Stored()
 
 	// The rarest species is the one coexistence stands on: the others can look
 	// healthy while it goes. With humans alone it is the human population, and
@@ -2910,7 +3022,24 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"offerHeard": ratio(end.OffersHeard, end.Decisions),
 		"offerDraw":  ratio(end.OfferDraws, end.Decisions),
 		"giftsCried": share(end.GiftsCried, end.Gifts),
-		"joinShare":  ratio(end.Joins, end.Decisions),
+		// The caches (stage 50). storeIn and storeOut say whether the rule
+		// fires at all; storeKnown and storeKnowers say how far the knowledge
+		// got; and the three paths say how it travelled. Read them against
+		// the arm where everybody knows every cache, which leaves the storing
+		// and takes away the knowing (stage 49's lesson).
+		"storeHeld":    float64(stored.Held),
+		"storeKnown":   stored.Known,
+		"storeKnowers": stored.Knowers,
+		"storeIn":      float64(stored.Deposits),
+		"storeOut":     float64(stored.Withdrawals),
+		"storeFound":   float64(stored.Found),
+		"storeSeen":    float64(stored.Seen),
+		"storeTold":    float64(stored.Told),
+		// What is left when the three paths that can be counted are taken
+		// out is inheritance, which is the widest one and the reason a cache
+		// can end up belonging to a line.
+		"storeBorn": float64(stored.Learned - stored.Found - stored.Seen - stored.Told),
+		"joinShare": ratio(end.Joins, end.Decisions),
 		// The share of all decisions that were "go to country I think better
 		// of" - the one door a belief about a place has into a body, and so
 		// the ceiling on what stages 15b, 29 and 35 can do (stage 35).

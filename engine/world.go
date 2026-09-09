@@ -445,6 +445,17 @@ type World struct {
 	cries       int
 	offersHeard int
 	offerDraws  int
+
+	// The caches whoever laid this world out put on the ground (stage 50),
+	// and what has come of them: items put in, items taken out, and how many
+	// times anybody came to know a place, split by the path it came down.
+	stores       []store
+	stored       int
+	withdrawn    int
+	storeLearned int
+	storeFound   int
+	storeSeen    int
+	storeTold    int
 	// sawOffer is set by perceive when this look turned up somebody's wares,
 	// and read by the decision that look was for. It is a scratch flag rather
 	// than a second scan of the neighbours: the scan that builds the
@@ -876,6 +887,12 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	if a.Action.Kind == ActOffer {
 		w.cries++
 		a.criedAt = w.tick
+		// Somebody advertising is somebody saying where the goods are (stage
+		// 50, the pair to stage 49): everybody who can see the cry picks up
+		// the places the crier knows. It is the one path by which knowledge
+		// of a cache crosses a line of descent without anybody watching it be
+		// used.
+		w.tellStores(a)
 	}
 
 	switch a.Action.Kind {
@@ -1012,6 +1029,23 @@ func (w *World) perform(a *Agent) {
 
 	case ActOffer:
 		w.cry(a)
+
+	case ActStore:
+		// Putting something in a cache (stage 50). Close enough to reach into
+		// it, which is the reach everything else in the world is put down and
+		// picked up at, and nothing to agree with: a place has no opinion.
+		i := a.Action.TargetID
+		if len(a.carried) == 0 || i < 0 || i >= len(w.stores) || !w.knowsStore(a, i) {
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		st := &w.stores[i]
+		if dist2(a.X, a.Y, st.X, st.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
+			w.moveToward(a, st.X, st.Y, a.Action.Effort)
+			return
+		}
+		w.putInStore(a, i)
+		a.requestDecision(TriggerGoalReached)
 
 	case ActGive:
 		// Handing something over (stage 48). Close enough to put it in their
@@ -1641,6 +1675,10 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	if genius {
 		w.leapSkill(&child)
 	}
+	// And where its parents keep things (stage 50). This is the widest of the
+	// three ways of coming to know a place, and the reason a cache can end up
+	// belonging to a line rather than to the world.
+	w.inheritStores(&child, pa, pb)
 
 	// It starts as a small thing that keeps to one of the two. Which one does
 	// not matter to any rule; taking the first keeps it deterministic. Zero
@@ -1719,6 +1757,10 @@ func (w *World) eat(a *Agent, foodID int) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}
+	// If it came out of a cache, that is worth noticing (stage 50): it keeps
+	// the place fresh in this body's mind and teaches whoever saw it happen.
+	// Taking is not a rule of its own - this is eating, by the ordinary path.
+	w.tookFromStore(a, f)
 	// Part of it goes to the children it is rearing, if the rule is on
 	// (provision.go). What is divided is the mouthful, not the item: nothing
 	// about owning, racing for or fighting over food changes.

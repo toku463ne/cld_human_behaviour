@@ -44,6 +44,11 @@ func (w *World) Terrain() []string {
 	return append([]string(nil), w.cfg.TerrainMap...)
 }
 
+// Stores, SetStore and RemoveStore are in store.go with the rest of what a
+// cache is, but they belong to this file's footing: the simulation never puts
+// one there, and neither draws from the random source. A world laid out with
+// caches by an editor runs exactly as one laid out with them by a test.
+
 // SetRegion says what one block of the world provides: how sheltered resting
 // in it is and how well it grows plants, both relative to ordinary ground.
 //

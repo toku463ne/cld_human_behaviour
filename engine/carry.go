@@ -116,9 +116,11 @@ func (w *World) take(a *Agent, foodID int) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}
+	w.tookFromStore(a, f) // out of a cache, if that is where it was (stage 50)
 	held := *f
 	held.Claim = nil // in hand it is nobody else's business whose kill it was
 	held.ClaimUntil = 0
+	held.Store = 0 // and out of it for good: a hand is not the place
 	// A fish out of the water is dead, and dead flesh goes off (stage 49's
 	// aftermath). Landing one is the moment its clock starts: a fish the
 	// world planted is alive and keeps for ever, and there is no other way

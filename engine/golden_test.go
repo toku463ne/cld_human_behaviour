@@ -55,6 +55,25 @@ import (
 // every birth differ from the first tick, exactly as they did when calling
 // others in was added.
 //
+// And again when a body got a word for putting something in a cache, and when
+// what a thing kept for later is worth stopped coming out as a loss (stage 50,
+// 2026-09-10). Two changes in one place.
+//
+// The word is the thirteenth, and a world with no cache in it is bit-identical
+// - caches are laid out by whoever lays the world out, and the default world
+// has none. What the word moves is the width of the vocabulary a rule of thumb
+// can be about, as at stages 32, 40, 46 and 49; held at its old width the
+// default world does not move, which is how that was checked.
+//
+// The other one is a rule change and moves the world on purpose. Stage 40
+// wrote what a held item is worth as the difference between how a body stands
+// now and how it will stand when it runs short - a loss - where what was meant
+// was the good that eating it then would do. Of 138,310 carry options scored
+// in one run of this world, not one had a positive value. Measured over 48
+// seeds the fix is worth a quarter more picking up (takeRate +0.92 ***) and no
+// change to anything else; CarryPricedBackwards puts the old world back, which
+// is where every figure for stages 40 to 49 was measured.
+//
 // And again when a body got a word for crying what is in its hand (stage 49,
 // 2026-09-10). A twelfth word, and this one is off by default: no agent cries
 // in these runs and OfferTicks is zero. What moves the numbers is only the
@@ -98,9 +117,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 55, births: 31, deaths: 58, kills: 33, aging: 0, fights: 2032, gen: 2, power: 42.055532, vitality: 80.905414, hunger: 25.032907},
-	{seed: 2, pop: 41, births: 34, deaths: 73, kills: 64, aging: 0, fights: 6266, gen: 3, power: 41.543219, vitality: 118.959319, hunger: 19.958365},
-	{seed: 3, pop: 33, births: 22, deaths: 70, kills: 52, aging: 0, fights: 3912, gen: 2, power: 39.481722, vitality: 100.353095, hunger: 21.538241},
+	{seed: 1, pop: 47, births: 39, deaths: 70, kills: 56, aging: 0, fights: 5352, gen: 2, power: 39.846823, vitality: 93.174022, hunger: 22.274482},
+	{seed: 2, pop: 47, births: 35, deaths: 67, kills: 53, aging: 0, fights: 5703, gen: 2, power: 36.999582, vitality: 108.880861, hunger: 25.848264},
+	{seed: 3, pop: 46, births: 37, deaths: 66, kills: 50, aging: 0, fights: 4346, gen: 3, power: 27.936266, vitality: 86.084711, hunger: 23.420317},
 }
 
 const goldenTicks = 5000

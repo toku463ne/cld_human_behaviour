@@ -105,6 +105,8 @@ var (
 	colorCourtLink  = color.RGBA{0xf0, 0x8c, 0x00, 0xd0}
 	colorCallLink   = color.RGBA{0x1c, 0x9c, 0x5a, 0xd0}
 	colorWares      = color.RGBA{0xe8, 0xd0, 0x40, 0xd0}
+	colorStore      = color.RGBA{0x8a, 0x6a, 0x3a, 0xc0}
+	colorStoreFull  = color.RGBA{0xc8, 0x9a, 0x50, 0xd0}
 	// The ground (stage 20). These are premultiplied, like every colour the
 	// vector calls take: each channel is the colour already faded by its own
 	// alpha, and a channel brighter than the alpha does not draw at all
@@ -512,7 +514,7 @@ func (g *game) toggleEditor() {
 			g.say("a blank map to draw on. F3 to close, click to paint")
 			return
 		}
-		g.say("editing: click to paint, 1-0 pick a brush, g makes a genius, F3 to close")
+		g.say("editing: click to paint, 1-0 pick a brush, g makes a genius, k a cache, F3 to close")
 		return
 	}
 	g.paused = !g.wasRun
@@ -557,6 +559,8 @@ func (g *game) handleEditorInput() {
 		g.cycleDifficulty()
 	case inpututil.IsKeyJustPressed(ebiten.KeyG):
 		g.inspire()
+	case inpututil.IsKeyJustPressed(ebiten.KeyK):
+		g.placeStore()
 	case inpututil.IsKeyJustPressed(ebiten.KeySpace), inpututil.IsKeyJustPressed(ebiten.KeyRight):
 		// One tick, to see what the change did. The editor does not run the
 		// world; it lets it move one step at a time.
@@ -568,6 +572,33 @@ func (g *game) handleEditorInput() {
 			g.paint(mx, my)
 		}
 	}
+}
+
+// placeStore puts a cache where the cursor is, or takes away the one that is
+// already there (stage 50). It is the editor's hand like the terrain brush:
+// caches are a thing whoever lays a world out puts on it, and there is no
+// action for building one.
+func (g *game) placeStore() {
+	mx, my := ebiten.CursorPosition()
+	if mx >= worldWidth {
+		return
+	}
+	wx, wy := g.inWorld(mx, my)
+	for _, st := range g.world.Stores() {
+		if math.Hypot(st.X-wx, st.Y-wy) < 20 {
+			if err := g.world.RemoveStore(st.Index); err != nil {
+				g.say("%v", err)
+				return
+			}
+			g.say("cache gone; what was in it is lying where it stood")
+			return
+		}
+	}
+	if _, err := g.world.SetStore(wx, wy); err != nil {
+		g.say("%v", err)
+		return
+	}
+	g.say("a cache at %.0f,%.0f. nobody knows it is there yet", wx, wy)
 }
 
 // inspire is the genius event by hand, on whoever is selected (stage 22's
@@ -2351,6 +2382,24 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	g.drawTerrain(screen)
 	g.drawSight(screen)
 
+	// The caches (stage 50), under the food so that what is in one is drawn on
+	// top of it. A square, because everything else in this world is a circle
+	// and a cache is the one thing on the map that nobody put there by living:
+	// it is a thing whoever laid the world out placed, like the ground.
+	//
+	// It is drawn for the viewer and not for the played node - the panel says
+	// which ones that body can actually find, because knowing where a cache is
+	// is the whole of stage 50 and a screen that gives it away for free would
+	// be showing a player something its node does not know.
+	for _, st := range g.world.Stores() {
+		sx, sy := g.onScreen(st.X, st.Y)
+		r := g.long(7)
+		vector.StrokeRect(screen, sx-r, sy-r, r*2, r*2, g.long(1.5), colorStore, true)
+		if st.Held > 0 {
+			vector.DrawFilledRect(screen, sx-r/2, sy-r/2, r, r, colorStoreFull, true)
+		}
+	}
+
 	for _, f := range g.world.Foods() {
 		fx, fy := g.onScreen(f.X, f.Y)
 		// Fish are a paler blue-green (stage 42): they are in the water, and
@@ -2910,6 +2959,12 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		// What it is carrying (stage 40). Only worth a line when the world
 		// has hands in it at all: a flat zero on every node would be a line
 		// about the config rather than about the body.
+		// Which caches this one could find (stage 50). Only worth a line in a
+		// world that has any: a flat zero on every node would be a line about
+		// the config rather than about the body.
+		if known, total := g.world.StoresKnownBy(a.ID); total > 0 {
+			t.line("knows %d of %d caches", known, total)
+		}
 		if cfg.CarryCapacity > 0 {
 			held := a.CarriedCount()
 			t.line("carrying %d item(s)%s%s", held, map[bool]string{
@@ -3853,7 +3908,7 @@ var testMaps = map[string][]string{
 // on, the rules it was run under - so the flags that describe a world are
 // ignored when one is read from a file. Saying otherwise would let a world be
 // loaded into rules it was never run under and call the result the same world.
-func startWorld(cfg engine.Config, load, nodes string) (*engine.World, error) {
+func startWorld(cfg engine.Config, load, nodes, land string) (*engine.World, error) {
 	if load != "" {
 		f, err := os.Open(load)
 		if err != nil {
@@ -3868,6 +3923,20 @@ func startWorld(cfg engine.Config, load, nodes string) (*engine.World, error) {
 		return w, nil
 	}
 	w := engine.NewWorld(cfg)
+	// And caches on the map that is played on (stage 50). They go here rather
+	// than in the config for the same reason the terrain's own features do
+	// not: a cache is a thing whoever lays a world out puts on it, and the
+	// world's rules never make one. A flat world gets none - there is nothing
+	// to see if the whole of the map is the same.
+	if land != "" {
+		for _, at := range [][2]float64{
+			{200, 130}, {200, 500}, {640, 130}, {640, 500}, {1080, 130}, {1080, 500},
+		} {
+			if _, err := w.SetStore(at[0], at[1]); err != nil {
+				log.Printf("laying out a cache: %v", err)
+			}
+		}
+	}
 	if nodes != "" {
 		f, err := os.Open(nodes)
 		if err != nil {
@@ -4004,7 +4073,7 @@ func main() {
 	// empties an ordinary body in about half a minute of it, so it is a real
 	// choice rather than a free setting - but starting below it only made the
 	// game feel slow for a reason no player could see.
-	world, err := startWorld(cfg, *load, *nodes)
+	world, err := startWorld(cfg, *load, *nodes, *land)
 	if err != nil {
 		log.Fatal(err)
 	}
