@@ -90,6 +90,7 @@ var (
 	colorPanelEdge  = color.RGBA{0xc0, 0xc0, 0xba, 0xff}
 	colorFood       = color.RGBA{0x1b, 0xaf, 0x7a, 0xff}
 	colorFish       = color.RGBA{0x2f, 0xc8, 0xd8, 0xff}
+	colorCrop       = color.RGBA{0xc8, 0x8a, 0x1e, 0xff}
 	colorMale       = color.RGBA{0x2a, 0x78, 0xd6, 0xff}
 	colorFemale     = color.RGBA{0xe8, 0x7b, 0xa4, 0xff}
 	colorForage     = color.RGBA{0xc3, 0xc2, 0xb7, 0xff}
@@ -2353,6 +2354,12 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			c = colorFish
 		}
 		vector.DrawFilledCircle(screen, fx, fy, g.long(3), c, true)
+		// The awkward crop (stage 44) gets a ring: it is food that has to be
+		// known to be got, and a player watching a node fail at one three
+		// times over would otherwise be watching it do nothing.
+		if f.Special {
+			vector.StrokeCircle(screen, fx, fy, g.long(5), g.long(1), colorCrop, true)
+		}
 	}
 
 	g.drawAim(screen)
@@ -3186,7 +3193,14 @@ func (g *game) drawWhatItKnows(t *textBox, view engine.HumanView) {
 		if f.Heal > 0 {
 			mends = fmt.Sprintf("  mends %.0f", f.Heal)
 		}
-		t.line("  #%-4d %3.0f away  worth x%.2f%s%s", f.ID, f.Dist, f.Nutrition, mends, rival)
+		// What its chances are of actually getting it: a fish darts off, and
+		// the awkward crop comes apart in the hand (stages 43 and 44). Both
+		// are in Perception, so this is the node's own reckoning.
+		odds := ""
+		if f.Catch > 0 && f.Catch < 1 {
+			odds = fmt.Sprintf("  lands %.0f%%", f.Catch*100)
+		}
+		t.line("  #%-4d %3.0f away  worth x%.2f%s%s%s", f.ID, f.Dist, f.Nutrition, mends, odds, rival)
 	}
 }
 
@@ -3921,6 +3935,13 @@ func main() {
 		// what gives the two fishing skills something to be about, and a
 		// played world should have the water be work.
 		cfg.FishCatchWater, cfg.FishCatchBank = 0.75, 0.3
+		// And some of what grows takes knowing to get out of the ground
+		// (stage 44), unevenly, so that a body born in one part of the world
+		// can do something a body born elsewhere cannot. Measured as worth
+		// about ten population once anybody knows the trick - and as not
+		// making anybody settle anywhere, which is why it is a thing a
+		// hand-made world has rather than a default of the physics.
+		cfg.SpecialtyShare = 0.2
 		// And a body born in broken country knows something about crossing
 		// it (stage 38a). Like the three above, it is a thing a hand-made
 		// world has rather than a default of the physics: it needs terrain to

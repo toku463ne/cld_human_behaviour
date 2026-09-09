@@ -565,6 +565,33 @@ type Config struct {
 	// nothing.
 	SkillFishRelief float64
 
+	// SpecialtyShare is how much of what a region grows is the awkward crop
+	// of stage 44, and SpecialtySpread how unevenly that is spread over the
+	// regions. Both zero by default: an ordinary world grows one sort of
+	// plant and everybody can pick it.
+	//
+	// SpecialtyShare is also the ceiling on everything this stage can do.
+	// Stage 38 closed with "a skill is never worth more than the rule it
+	// cancels", so the share of the crop that needs knowing is written down
+	// as a figure rather than left to emerge: it is the target, and it can be
+	// read straight off the config.
+	SpecialtyShare  float64
+	SpecialtySpread float64
+
+	// SpecialtyCatch is the chance a body that has never learned the trick
+	// gets one out of the ground anyway; skill lifts it towards certainty.
+	// One is a crop nobody has to know anything about.
+	//
+	// It is never zero, and that is deliberate: a skill that switched a food
+	// on and off would be a discrete gate on a continuous gene, which is the
+	// trap of StrategyDepthUnlock and of the discrete-sight proposal.
+	SpecialtyCatch float64
+
+	// SkillHarvestRelief scales what knowing the trick is worth, the same way
+	// the other reliefs do. Zero is the control: the skill is learned, takes
+	// the room, and buys nothing.
+	SkillHarvestRelief float64
+
 	// FishForAll lets enemies fish too. False, because a second food for the
 	// species that lives on meat would make every population figure since
 	// stage 11 a different measurement; the arm is here to be run.
@@ -1568,6 +1595,9 @@ func DefaultConfig() Config {
 		CarryCost:       0.5,
 		CarryValue:      0.5,
 		FishShare:       0, // stage 42: what a map holds is the map author's to say
+		SpecialtyShare:  0, // stage 44: the same
+		SpecialtySpread: 0.6,
+		SpecialtyCatch:  0.25,
 		MeatSurplusFree: true,
 		MeatVitality:    0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
 		MeatHealKnown:   true,
@@ -1853,6 +1883,11 @@ func DefaultConfig() Config {
 			// is how long it can stay in it.
 			SkillFishLand:  GeneRationality,
 			SkillFishWater: GeneVitality,
+			// Getting an awkward thing out of the ground is working out how,
+			// which is what intelligence is for in this world - and it is the
+			// one gene no skill has been hung on yet, so what it can support
+			// has never been asked.
+			SkillHarvest: GeneIntelligence,
 		},
 		SkillForageRelief: 1,
 		SkillSwimRelief:   1,
@@ -1861,6 +1896,7 @@ func DefaultConfig() Config {
 		FishCatchWater:    1,
 		FishCatchBank:     1,
 		SkillFishRelief:   1,
+		SkillHarvestRelief: 1,
 		SkillsSpread:      true,
 		HintSlotCost:      5,
 		HintWeightStd:     6,

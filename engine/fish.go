@@ -181,8 +181,11 @@ func (w *World) catchFromBank(a *Agent) float64 {
 // first, and it says the wrong thing in the ordinary case: a body on dry land
 // far from the river would rate every fish in it at the bank's odds, when what
 // it is about to do is wade in.
-func (w *World) catchExpected(a *Agent, kind FoodKind) float64 {
-	if kind != FoodFish {
+func (w *World) catchExpected(a *Agent, f *Food) float64 {
+	if f.Special {
+		return w.harvestCatch(a, f) // stage 44: rooted, so there is no choice of side
+	}
+	if f.Kind != FoodFish {
 		return 1
 	}
 	return math.Max(w.catchWading(a), w.catchFromBank(a))

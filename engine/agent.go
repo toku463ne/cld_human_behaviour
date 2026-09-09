@@ -487,4 +487,10 @@ type Food struct {
 	// Genes is what a plant inherited from the one it grew from (plant.go).
 	// Meat has none: a carcass is not a lineage.
 	Genes plantGenes
+
+	// Special marks the awkward crop of stage 44: a plant that takes knowing
+	// to get out of the ground. It is a property of the item rather than a
+	// kind of its own, because it feeds a body exactly what a plant feeds a
+	// body - what differs is how often the attempt comes off.
+	Special bool
 }

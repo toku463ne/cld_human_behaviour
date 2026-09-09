@@ -437,7 +437,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Kind:      f.Kind,
 			Nutrition: p.Self.Nutrition[f.Kind],
 			Heal:      p.Self.Heal[f.Kind],
-			Catch:     w.catchExpected(a, f.Kind),
+			Catch:     w.catchExpected(a, f),
 			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),
 		})

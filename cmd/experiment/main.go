@@ -1501,6 +1501,47 @@ var variants = []variant{
 			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
 		},
 	},
+	// Stage 44: the awkward crop. The plant side of what an economy would
+	// need somebody to be able to do that somebody else cannot, and the
+	// second instance of the form stage 42 built. The control throughout is
+	// the same crop with the trick worth nothing: it is grown, it is awkward,
+	// and knowing about it buys no more of it.
+	{
+		name:  "special",
+		about: "44: a fifth of what grows needs knowing, unevenly spread, and bodies born where it grows learn the trick",
+		apply: func(c *engine.Config) { c.SpecialtyShare, c.SkillBirthplace = 0.2, 0.5 },
+	},
+	{
+		name:  "specialdead",
+		about: "control: the same crop, the same trick learned and taking the same room, worth nothing",
+		apply: func(c *engine.Config) {
+			c.SpecialtyShare, c.SkillBirthplace, c.SkillHarvestRelief = 0.2, 0.5, 0
+		},
+	},
+	{
+		name:  "specialnobody",
+		about: "control: the crop and nobody knowing anything - what an awkward crop costs a world on its own",
+		apply: func(c *engine.Config) { c.SpecialtyShare = 0.2 },
+	},
+	{
+		name:  "speciallots",
+		about: "half of what grows needs knowing: the target as large as it can be made",
+		apply: func(c *engine.Config) { c.SpecialtyShare, c.SkillBirthplace = 0.5, 0.5 },
+	},
+	{
+		name:  "speciallotsdead",
+		about: "control for it",
+		apply: func(c *engine.Config) {
+			c.SpecialtyShare, c.SkillBirthplace, c.SkillHarvestRelief = 0.5, 0.5, 0
+		},
+	},
+	{
+		name:  "specialflat",
+		about: "the same crop spread evenly over the world: nowhere is a place to be a specialist",
+		apply: func(c *engine.Config) {
+			c.SpecialtyShare, c.SkillBirthplace, c.SpecialtySpread = 0.2, 0.5, 0
+		},
+	},
 	// Stage 43: the two ways of fishing. One resource and two trades - in the
 	// river most attempts land and the drowning rule charges by the tick, on
 	// the bank nothing charges anything and most attempts fail - so what a
@@ -2057,6 +2098,7 @@ var metricNames = []string{
 	"fishItems", "fishShare", "foodInWater",
 	"bankHeld", "bankReal", "wadeHeld", "wadeReal", "anglerGap",
 	"fishMissRate",
+	"specialShare", "specialHeld", "specialReal", "specialGain", "harvestMissRate",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2194,6 +2236,10 @@ type sample struct {
 	// because what the drowning changes is where the water is, not where the
 	// dear ground is.
 	onWater float64
+
+	// The awkward crop (stage 44): its share of what grows, who knows the
+	// trick, what they make of it, and whether they have settled where it is.
+	specialShare, specialHeld, specialReal, specialGain float64
 
 	// The two ways of fishing (stage 43): who holds each, what their bodies
 	// can make of it, and the difference between the two - the figure that
@@ -2356,6 +2402,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		bank := w.Skills(engine.SkillFishLand)
 		wade := w.Skills(engine.SkillFishWater)
 		anglers := w.Anglers()
+		crop := w.Specialty()
 		tol := w.Skills(engine.SkillPoison)
 		shelter := w.Shelter()
 		rich := w.Richness()
@@ -2401,6 +2448,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			bankHeld:   bank.Held, bankReal: bank.Realised,
 			wadeHeld:   wade.Held, wadeReal: wade.Realised,
 			anglerGap:  wade.Realised - bank.Realised,
+			specialShare: crop.Share, specialHeld: crop.Held,
+			specialReal: crop.Realised, specialGain: crop.Gain,
 			wadersWet: anglers.InWater, bankersWet: anglers.OnBank,
 			anglerSplit: anglers.Split, waders: anglers.Waders, bankers: anglers.Bankers,
 			forageHeld: forage.Held, forageNominal: forage.Nominal,
@@ -2706,6 +2755,15 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// How often a fish gets away, against how often one is landed: the
 		// figure the two fishing skills are about (stage 43).
 		"fishMissRate": share(end.FishMissed, end.FishMissed+end.FishEaten),
+		// The awkward crop (stage 44): how much of what grows needs knowing,
+		// who knows it, what their bodies make of it, and - the figure the
+		// stage turns on - how much more of it grows where they are standing
+		// than the world's average.
+		"specialShare":    tail.specialShare,
+		"specialHeld":     tail.specialHeld,
+		"specialReal":     tail.specialReal,
+		"specialGain":     tail.specialGain,
+		"harvestMissRate": share(end.HarvestMissed, end.HarvestMissed+end.PlantsEaten),
 		"fishItems":   tail.fishItems,
 		"fishShare":   share(end.FishEaten, end.FishEaten+end.PlantsEaten+end.MeatEaten),
 		"foodInWater": tail.foodInWater,
@@ -2926,6 +2984,10 @@ func tailAverage(series []sample) sample {
 		out.speedHigh += s.speedHigh
 		out.speedLow += s.speedLow
 		out.highGap += s.highGap
+		out.specialShare += s.specialShare
+		out.specialHeld += s.specialHeld
+		out.specialReal += s.specialReal
+		out.specialGain += s.specialGain
 		out.wadersWet += s.wadersWet
 		out.bankersWet += s.bankersWet
 		out.anglerSplit += s.anglerSplit
@@ -3046,6 +3108,10 @@ func tailAverage(series []sample) sample {
 	out.speedHigh /= d
 	out.speedLow /= d
 	out.highGap /= d
+	out.specialShare /= d
+	out.specialHeld /= d
+	out.specialReal /= d
+	out.specialGain /= d
 	out.wadersWet /= d
 	out.bankersWet /= d
 	out.anglerSplit /= d

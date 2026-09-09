@@ -110,6 +110,10 @@ type Stats struct {
 	// (stage 43).
 	FishMissed int
 
+	// HarvestMissed is how many attempts at the awkward crop came to nothing
+	// (stage 44).
+	HarvestMissed int
+
 	MeatDropped int
 	MeatSpoiled int
 	// MeatHealing is all the vitality carcasses have mended (stage 39).
@@ -386,6 +390,7 @@ type World struct {
 	meatEatenFree int
 	fishEaten     int // stage 42: mouthfuls that came out of the water
 	fishMissed    int // stage 43: attempts that ended with the fish getting away
+	harvestMissed int // stage 44: attempts that failed to get the crop out
 
 	meatDropped int // items left by carcasses
 	meatSpoiled int // ... of those, the ones nobody got to in time
@@ -570,6 +575,7 @@ func (w *World) Stats() Stats {
 		MeatEatenFree:          w.meatEatenFree,
 		FishEaten:              w.fishEaten,
 		FishMissed:             w.fishMissed,
+		HarvestMissed:          w.harvestMissed,
 		MeatDropped:            w.meatDropped,
 		MeatSpoiled:            w.meatSpoiled,
 		MeatEaten:              w.meatEaten,
@@ -842,11 +848,16 @@ func (w *World) perform(a *Agent) {
 			w.moveToward(a, f.X, f.Y, a.Action.Effort)
 			return
 		}
-		// And whether it lands it. A fish is the only food in this world that
-		// can be reached and still not had.
+		// And whether it comes off. Two foods in this world can be reached and
+		// still not had: a fish, which darts away (stage 43), and the awkward
+		// crop, which stays where it is and has to be tried again (stage 44).
 		if f.Kind == FoodFish && w.rng.Float64() >= w.fishCatch(a, f.Kind) {
 			w.theFishGetsAway(f)
 			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		if f.Special && w.rng.Float64() >= w.harvestCatch(a, f) {
+			w.itCameApart(a)
 			return
 		}
 		w.eat(a, f.ID)
@@ -865,6 +876,10 @@ func (w *World) perform(a *Agent) {
 		if f.Kind == FoodFish && w.rng.Float64() >= w.fishCatch(a, f.Kind) {
 			w.theFishGetsAway(f)
 			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		if f.Special && w.rng.Float64() >= w.harvestCatch(a, f) {
+			w.itCameApart(a)
 			return
 		}
 		w.take(a, f.ID)
@@ -2054,7 +2069,14 @@ func (w *World) addPlant(x, y float64, genes plantGenes) int {
 	if w.countKind(FoodPlant) >= w.cfg.MaxFoodItems {
 		return 0
 	}
-	return w.putFood(Food{X: x, Y: y, Kind: FoodPlant, Genes: genes})
+	// Whether this one is the awkward crop (stage 44). It is decided where it
+	// comes up, because that is the whole of what makes the crop a local
+	// thing - and a world that grows none of it draws nothing deciding.
+	special := false
+	if share := w.specialShareAt(w.regionIndexAt(x, y)); share > 0 {
+		special = w.rng.Float64() < share
+	}
+	return w.putFood(Food{X: x, Y: y, Kind: FoodPlant, Genes: genes, Special: special})
 }
 
 // countKind is how many items of one kind are lying about. The two kinds have

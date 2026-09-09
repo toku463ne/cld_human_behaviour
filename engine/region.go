@@ -36,6 +36,12 @@ type region struct {
 	// place deliberately short of food - so a change that quietly altered the
 	// total would be measuring something else entirely.
 	Food float64
+
+	// Special is how much of what grows here is the awkward crop of stage 44,
+	// relative to an equal share. It is drawn like Food and it moves nothing
+	// about how much grows: what it changes is how much of the growing needs
+	// knowing.
+	Special float64
 }
 
 // regionsOf lays the world out in blocks and draws what each one is like.
@@ -49,7 +55,7 @@ func (w *World) buildRegions() {
 	cols, rows := max(cfg.RegionCols, 1), max(cfg.RegionRows, 1)
 	w.regions = make([]region, cols*rows)
 	for i := range w.regions {
-		w.regions[i] = region{Shelter: 1, Food: 1}
+		w.regions[i] = region{Shelter: 1, Food: 1, Special: 1}
 	}
 	// Each spread is skipped entirely when it is zero, so a world with one of
 	// them turned off consumes the random source exactly as a world without
@@ -64,6 +70,17 @@ func (w *World) buildRegions() {
 			w.regions[i].Food = clamp(w.randRange(1-cfg.FoodSpread, 1+cfg.FoodSpread), 0, 2)
 		}
 	}
+	// Where the awkward crop grows (stage 44). Drawn like the rest, and
+	// skipped entirely unless the world actually grows any - a spread with
+	// no crop behind it would take numbers from the random source to decide
+	// something nothing ever reads, and every figure recorded before this
+	// stage would move for nothing.
+	if cfg.SpecialtyShare > 0 && cfg.SpecialtySpread > 0 {
+		for i := range w.regions {
+			w.regions[i].Special = clamp(w.randRange(1-cfg.SpecialtySpread, 1+cfg.SpecialtySpread), 0, 2)
+		}
+	}
+
 	w.tieFoodToTheGround()
 	w.tieFoodToTheWater()
 

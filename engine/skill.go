@@ -82,6 +82,11 @@ const (
 	SkillFishLand
 	SkillFishWater
 
+	// SkillHarvest is knowing how to get the awkward crop of stage 44 out of
+	// the ground: the plant side of what an economy would need somebody to be
+	// able to do that somebody else cannot.
+	SkillHarvest
+
 	NumSkillKinds
 )
 
@@ -99,6 +104,8 @@ func (s SkillKind) String() string {
 		return "fishing from the bank"
 	case SkillFishWater:
 		return "fishing in the water"
+	case SkillHarvest:
+		return "harvesting"
 	}
 	return "none"
 }
@@ -283,6 +290,11 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 			return 0
 		}
 		share = w.regionWaterShare(i)
+	case SkillHarvest:
+		// How much of what grows there needs knowing. A body born where the
+		// awkward crop is the ordinary crop grows up knowing the trick, and
+		// one born where it does not grow never sees the thing.
+		share = w.specialShareAt(i)
 	case SkillPoison:
 		// What the crop standing in that region is carrying. A world whose
 		// plants have no defences teaches nobody anything about them, the
