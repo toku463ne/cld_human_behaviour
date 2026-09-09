@@ -233,6 +233,10 @@ type World struct {
 	// water without a figure to tune. Empty in a flat world.
 	water []cell
 
+	// rubble is every cell of broken ground, where the stones of stage 45
+	// lie. Worked out the same way and for the same reason as the water.
+	rubble []cell
+
 	// regions is the world's own coarse division of itself (region.go). It is
 	// drawn once and never changes; foodWeight is the sum of what the blocks
 	// grow, kept so that drawing a place for a plant does not add them up
@@ -468,7 +472,11 @@ func NewWorld(cfg Config) *World {
 	// something the population decides.
 	w.ground = buildTerrain(&w.cfg)
 	w.water = waterCells(w.ground)
+	w.rubble = stoneCells(w.ground)
 	w.buildRegions()
+	// The stones are laid out before anybody arrives (stage 45): they are
+	// part of what the ground is, not something the world keeps producing.
+	w.scatterStones()
 	for i := 0; i < cfg.InitialPopulation; i++ {
 		w.addAgent(w.randomAgent(SpeciesHuman))
 	}
@@ -1986,7 +1994,17 @@ func (w *World) spawnEnemyOfTick() {
 func (w *World) spawnFood() {
 	// Checked before drawing the position so that a full world does not consume
 	// randomness and shift the rest of the run.
-	if len(w.foods) >= w.cfg.MaxFoodItems {
+	//
+	// Stones do not count against it (stage 45). They are in the same list
+	// because that list is "things lying about", and a world given a lot of
+	// them grew nothing at all the first time they went in.
+	//
+	// Everything else in the list still does, carcasses included. That is
+	// older than this stage and looks like an oversight - the two allowances
+	// are meant to be separate (see MaxMeatItems) - but it is the world every
+	// figure in HISTORY.md was measured in, so it stays until it is changed
+	// on purpose and measured.
+	if len(w.foods)-w.countKind(FoodStone) >= w.cfg.MaxFoodItems {
 		return
 	}
 	// One of them comes up in the water instead (stage 42). It is asked first
@@ -2092,6 +2110,13 @@ func (w *World) countKind(kind FoodKind) int {
 		}
 	}
 	return n
+}
+
+// growingFood is how many of the things lying about are food that grew there:
+// plants and fish, which share one allowance because a fish is a plant that
+// did not come up.
+func (w *World) growingFood() int {
+	return w.countKind(FoodPlant) + w.countKind(FoodFish)
 }
 
 // kindAllowance is how many items of a kind the world will hold at once.

@@ -384,6 +384,7 @@ func Load(in io.Reader) (*World, error) {
 	w.rng, w.draws = replayTo(s.Seed, s.Draws)
 	w.ground = buildTerrain(&w.cfg)
 	w.water = waterCells(w.ground)
+	w.rubble = stoneCells(w.ground)
 	for i := range s.PendingSeeds {
 		p := &s.PendingSeeds[i]
 		w.pendingSeeds = append(w.pendingSeeds, pendingSeed{x: p.X, y: p.Y, genes: p.Genes})

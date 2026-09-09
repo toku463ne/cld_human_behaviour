@@ -331,6 +331,12 @@ type Perception struct {
 	Foods  []FoodView
 	Others []AgentView
 
+	// Stones is what is lying about that cannot be eaten (stage 45). Kept
+	// apart from Foods so that nothing about eating has to learn the word:
+	// how contested a patch feels, how rich the ground looks and when a meal
+	// was last in sight all count what is edible, and a stone is not.
+	Stones []FoodView
+
 	// Trigger is why the engine is asking. It is not a instruction - what to
 	// do about being hit is still for the controller to work out - but it is
 	// something the agent knows about its own situation, and one thing cannot
@@ -361,6 +367,7 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Cfg = &w.cfg
 	p.Rand = w.rng
 	p.Foods = p.Foods[:0]
+	p.Stones = p.Stones[:0]
 	p.Others = p.Others[:0]
 
 	ground := w.terrainAt(a.X, a.Y)
@@ -424,6 +431,17 @@ func (w *World) perceive(a *Agent) *Perception {
 			continue
 		}
 		d2 := dist2(a.X, a.Y, f.X, f.Y)
+		// A stone is in sight like everything else, and it is not food
+		// (stage 45). Nothing values one yet - what they are for is stage 46
+		// - so no option is made from this list; it is here because the body
+		// can see them, which is what the perception is.
+		if f.Kind == FoodStone {
+			p.Stones = append(p.Stones, FoodView{
+				ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
+				RivalDist: math.Inf(1),
+			})
+			continue
+		}
 		// What this agent cannot eat is not food to it: a carcass of its own
 		// kind, or somebody else's kill while the claim on it still stands.
 		if !w.canEat(a, f) {

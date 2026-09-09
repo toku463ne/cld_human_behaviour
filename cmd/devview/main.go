@@ -91,6 +91,7 @@ var (
 	colorFood       = color.RGBA{0x1b, 0xaf, 0x7a, 0xff}
 	colorFish       = color.RGBA{0x2f, 0xc8, 0xd8, 0xff}
 	colorCrop       = color.RGBA{0xc8, 0x8a, 0x1e, 0xff}
+	colorStone      = color.RGBA{0x77, 0x77, 0x82, 0xff}
 	colorMale       = color.RGBA{0x2a, 0x78, 0xd6, 0xff}
 	colorFemale     = color.RGBA{0xe8, 0x7b, 0xa4, 0xff}
 	colorForage     = color.RGBA{0xc3, 0xc2, 0xb7, 0xff}
@@ -2350,8 +2351,11 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// on a map with a river a green dot on blue ground is the one thing
 		// the eye needs to tell apart to see what the water is for.
 		c := colorFood
-		if f.Kind == engine.FoodFish {
+		switch f.Kind {
+		case engine.FoodFish:
 			c = colorFish
+		case engine.FoodStone:
+			c = colorStone
 		}
 		vector.DrawFilledCircle(screen, fx, fy, g.long(3), c, true)
 		// The awkward crop (stage 44) gets a ring: it is food that has to be
@@ -3935,6 +3939,11 @@ func main() {
 		// what gives the two fishing skills something to be about, and a
 		// played world should have the water be work.
 		cfg.FishCatchWater, cfg.FishCatchBank = 0.75, 0.3
+		// And there are stones lying on the broken ground (stage 45). What
+		// they are for is stage 46; a played world has them because where the
+		// ammunition is is a fact about the country.
+		cfg.Stones = 60
+
 		// And some of what grows takes knowing to get out of the ground
 		// (stage 44), unevenly, so that a body born in one part of the world
 		// can do something a body born elsewhere cannot. Measured as worth

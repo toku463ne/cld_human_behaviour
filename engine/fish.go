@@ -83,7 +83,7 @@ func (w *World) spawnFish() bool {
 // a fish is a plant that did not come up: two allowances would let the world
 // hold more food than FoodSpawnRate ever said it could.
 func (w *World) addFish(x, y float64) int {
-	if w.countKind(FoodPlant)+w.countKind(FoodFish) >= w.cfg.MaxFoodItems {
+	if w.growingFood() >= w.cfg.MaxFoodItems {
 		return 0
 	}
 	return w.putFood(Food{X: x, Y: y, Kind: FoodFish})

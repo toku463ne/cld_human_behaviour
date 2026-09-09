@@ -74,9 +74,9 @@ func (w *World) dietValue(a *Agent, kind FoodKind) float64 {
 // Plants and carcasses always; fish only where there is water to hold them.
 func (w *World) kindsOnOffer() int {
 	if w.cfg.FishShare > 0 && len(w.water) > 0 {
-		return int(NumFoodKinds)
+		return int(NumEdibleKinds)
 	}
-	return int(NumFoodKinds) - 1
+	return int(NumEdibleKinds) - 1
 }
 
 // dietValues is what every kind is worth to this agent now, for Perception.
@@ -130,7 +130,7 @@ func (w *World) Diet() DietUse {
 		n++
 
 		var total, best float64
-		for k := FoodKind(0); k < NumFoodKinds; k++ {
+		for k := FoodKind(0); k < NumEdibleKinds; k++ {
 			had := w.recentlyEaten(a, k)
 			total += had
 			if had > best {
@@ -155,7 +155,7 @@ func (w *World) Diet() DietUse {
 		return DietUse{Discount: 1}
 	}
 	out.Variety /= n
-	out.Discount /= n * float64(NumFoodKinds)
+	out.Discount /= n * float64(NumEdibleKinds)
 	return out
 }
 

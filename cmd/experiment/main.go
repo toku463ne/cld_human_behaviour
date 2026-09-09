@@ -1501,6 +1501,40 @@ var variants = []variant{
 			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
 		},
 	},
+	// Stage 45: stones. Nothing values one yet - what they are for is stage
+	// 46 - so what these arms measure is the supply: how many there are, how
+	// often a body has one in sight, and how far away the nearest is. A
+	// ranged attack nobody has a stone for is a rule that never fires, and
+	// that is worth knowing before it is written.
+	{
+		name:  "stones",
+		about: "45: sixty stones scattered over the broken ground of the played map",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.Stones = 60
+		},
+	},
+	{
+		name:  "stonesfew",
+		about: "a fifth as many: what the supply looks like when the ground is stingy",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.Stones = 12
+		},
+	},
+	{
+		name:  "stonesmany",
+		about: "three times as many, which is about one for every body alive",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.TerrainFoodCorrelation, c.WatersideFood = mapCountry, 1, 1
+			c.Stones = 180
+		},
+	},
+	{
+		name:  "stonesrough",
+		about: "the rough map rather than the played one: nothing but broken ground to lie on",
+		apply: func(c *engine.Config) { c.TerrainMap, c.Stones = mapRough, 60 },
+	},
 	// Stage 44: the awkward crop. The plant side of what an economy would
 	// need somebody to be able to do that somebody else cannot, and the
 	// second instance of the form stage 42 built. The control throughout is
@@ -2099,6 +2133,7 @@ var metricNames = []string{
 	"bankHeld", "bankReal", "wadeHeld", "wadeReal", "anglerGap",
 	"fishMissRate",
 	"specialShare", "specialHeld", "specialReal", "specialGain", "harvestMissRate",
+	"stonesLying", "stoneSeen", "stoneNear", "stoneHeld",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2240,6 +2275,10 @@ type sample struct {
 	// The awkward crop (stage 44): its share of what grows, who knows the
 	// trick, what they make of it, and whether they have settled where it is.
 	specialShare, specialHeld, specialReal, specialGain float64
+
+	// The supply of stones (stage 45): how many lie about, how often a body
+	// has one in sight, how far the nearest is, and how many are in hands.
+	stonesLying, stoneSeen, stoneNear, stoneHeld float64
 
 	// The two ways of fishing (stage 43): who holds each, what their bodies
 	// can make of it, and the difference between the two - the figure that
@@ -2403,6 +2442,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		wade := w.Skills(engine.SkillFishWater)
 		anglers := w.Anglers()
 		crop := w.Specialty()
+		rocks := w.Stones()
 		tol := w.Skills(engine.SkillPoison)
 		shelter := w.Shelter()
 		rich := w.Richness()
@@ -2448,6 +2488,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			bankHeld:   bank.Held, bankReal: bank.Realised,
 			wadeHeld:   wade.Held, wadeReal: wade.Realised,
 			anglerGap:  wade.Realised - bank.Realised,
+			stonesLying: float64(rocks.Lying), stoneSeen: rocks.InSight,
+			stoneNear: rocks.Nearest, stoneHeld: rocks.Carrying,
 			specialShare: crop.Share, specialHeld: crop.Held,
 			specialReal: crop.Realised, specialGain: crop.Gain,
 			wadersWet: anglers.InWater, bankersWet: anglers.OnBank,
@@ -2759,6 +2801,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// who knows it, what their bodies make of it, and - the figure the
 		// stage turns on - how much more of it grows where they are standing
 		// than the world's average.
+		// The supply of things to throw (stage 45).
+		"stonesLying": tail.stonesLying,
+		"stoneSeen":   tail.stoneSeen,
+		"stoneNear":   tail.stoneNear,
+		"stoneHeld":   tail.stoneHeld,
 		"specialShare":    tail.specialShare,
 		"specialHeld":     tail.specialHeld,
 		"specialReal":     tail.specialReal,
@@ -2984,6 +3031,10 @@ func tailAverage(series []sample) sample {
 		out.speedHigh += s.speedHigh
 		out.speedLow += s.speedLow
 		out.highGap += s.highGap
+		out.stonesLying += s.stonesLying
+		out.stoneSeen += s.stoneSeen
+		out.stoneNear += s.stoneNear
+		out.stoneHeld += s.stoneHeld
 		out.specialShare += s.specialShare
 		out.specialHeld += s.specialHeld
 		out.specialReal += s.specialReal
@@ -3108,6 +3159,10 @@ func tailAverage(series []sample) sample {
 	out.speedHigh /= d
 	out.speedLow /= d
 	out.highGap /= d
+	out.stonesLying /= d
+	out.stoneSeen /= d
+	out.stoneNear /= d
+	out.stoneHeld /= d
 	out.specialShare /= d
 	out.specialHeld /= d
 	out.specialReal /= d

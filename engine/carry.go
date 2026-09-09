@@ -95,14 +95,24 @@ func (a *Agent) carrySlots(cfg *Config) int {
 	return max(1, int(a.carryCapacity(cfg)))
 }
 
-// take moves an item out of the world and into a pair of hands.
+// canCarry says whether this agent may pick this item up.
 //
-// What may be picked up is what may be eaten: the claim on a carcass and the
-// rule that nobody eats its own kind are the same rules here as at the mouth,
-// so carrying opens no way round either.
+// For food it is the same question as whether it may eat it: the claim on a
+// carcass and the rule that nobody eats its own kind are the same rules here
+// as at the mouth, so carrying opens no way round either. For a stone (stage
+// 45) there is no such question - it is not food, nobody's kill and nobody's
+// kind - so anything may pick one up.
+func (w *World) canCarry(a *Agent, f *Food) bool {
+	if f.Kind == FoodStone {
+		return true
+	}
+	return w.canEat(a, f)
+}
+
+// take moves an item out of the world and into a pair of hands.
 func (w *World) take(a *Agent, foodID int) {
 	f := w.foodByID(foodID)
-	if f == nil || !w.canEat(a, f) || !a.canCarryMore(&w.cfg) {
+	if f == nil || !w.canCarry(a, f) || !a.canCarryMore(&w.cfg) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}

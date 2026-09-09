@@ -592,6 +592,16 @@ type Config struct {
 	// the room, and buys nothing.
 	SkillHarvestRelief float64
 
+	// Stones is how many are scattered over the broken ground when the world
+	// is built (stage 45). Zero by default, and zero in effect on any map
+	// with no rough country: where the ammunition is is the map author's to
+	// say, as what grows and what swims are.
+	//
+	// They are laid out once and not replenished. Nothing consumes one yet -
+	// what a stone is for arrives in stage 46 - so a world's supply is what
+	// it was given, moved between the ground and whatever hands pick it up.
+	Stones int
+
 	// FishForAll lets enemies fish too. False, because a second food for the
 	// species that lives on meat would make every population figure since
 	// stage 11 a different measurement; the arm is here to be run.
@@ -1598,6 +1608,7 @@ func DefaultConfig() Config {
 		SpecialtyShare:  0, // stage 44: the same
 		SpecialtySpread: 0.6,
 		SpecialtyCatch:  0.25,
+		Stones:          0, // stage 45: the map author scatters them
 		MeatSurplusFree: true,
 		MeatVitality:    0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
 		MeatHealKnown:   true,
