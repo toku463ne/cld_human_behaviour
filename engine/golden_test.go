@@ -55,6 +55,22 @@ import (
 // every birth differ from the first tick, exactly as they did when calling
 // others in was added.
 //
+// And again when what a body cannot eat stopped being a meal in its hand
+// (found in stage 51, 2026-09-10). That is a rule change and it moves the
+// world on purpose: gifts asked whether the receiver had a hand free and not
+// whether it could eat the thing, so an enemy could be handed a plant and eat
+// it (17,066 body-ticks of holding one in five thousand ticks) and a human
+// could be handed human meat. Both are refused at the mouth and always have
+// been. Now a gift is refused if the receiver could do nothing with it, and
+// what cannot be eaten is not a meal in the hand either.
+//
+// And again when money went in (stage 51, 2026-09-10). A fourteenth word, and
+// a world with no coins in it is bit-identical - coins are scattered by
+// whoever lays the world out and the default world has none. What moves the
+// numbers is the width of the vocabulary a rule of thumb can be about, as at
+// stages 32, 40, 46, 49 and 50; held at its old width the default world does
+// not move, which is how that was checked.
+//
 // And again when a body got a word for putting something in a cache, and when
 // what a thing kept for later is worth stopped coming out as a loss (stage 50,
 // 2026-09-10). Two changes in one place.
@@ -117,9 +133,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 47, births: 39, deaths: 70, kills: 56, aging: 0, fights: 5352, gen: 2, power: 39.846823, vitality: 93.174022, hunger: 22.274482},
-	{seed: 2, pop: 47, births: 35, deaths: 67, kills: 53, aging: 0, fights: 5703, gen: 2, power: 36.999582, vitality: 108.880861, hunger: 25.848264},
-	{seed: 3, pop: 46, births: 37, deaths: 66, kills: 50, aging: 0, fights: 4346, gen: 3, power: 27.936266, vitality: 86.084711, hunger: 23.420317},
+	{seed: 1, pop: 41, births: 24, deaths: 65, kills: 47, aging: 0, fights: 4810, gen: 2, power: 42.054951, vitality: 102.714171, hunger: 27.566267},
+	{seed: 2, pop: 47, births: 39, deaths: 69, kills: 56, aging: 0, fights: 5742, gen: 3, power: 39.088412, vitality: 93.314940, hunger: 26.678677},
+	{seed: 3, pop: 45, births: 32, deaths: 69, kills: 51, aging: 0, fights: 3055, gen: 3, power: 40.145344, vitality: 93.556899, hunger: 28.012042},
 }
 
 const goldenTicks = 5000

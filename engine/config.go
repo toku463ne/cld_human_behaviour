@@ -603,6 +603,40 @@ type Config struct {
 	// the room, and buys nothing.
 	SkillHarvestRelief float64
 
+	// --- money (stage 51) ---
+
+	// Coins is how many are scattered over the world when it is built, and
+	// zero is a world with no money in it. They are laid down uniformly and
+	// belong to no region on purpose (#73): money in one corner of the map is
+	// one more reason to be somewhere that is not food, and four measurements
+	// say food is the only thing that moves anybody.
+	//
+	// They are conserved. Nothing spawns them afterwards and nothing consumes
+	// them: a coin changes hands, is dropped when its holder dies, and is
+	// still there.
+	Coins int
+
+	// CoinValue is the discount on what a coin will buy: a meal at the moment
+	// this body runs short, times this (#73). Zero takes the value out and
+	// leaves the coins lying there, which is the placebo arm.
+	//
+	// This one figure decides the stage, which is what the plan predicted it
+	// would. At exactly one a coin is worth precisely the meal it claims and
+	// neither side of a sale gains anything by making it. Above one money is
+	// worth more than what it buys - hoarding for its own sake, a third goal
+	// by the back door, which #73 rules out. Below one every purchase is
+	// worth making to the buyer and none is worth making to the seller,
+	// except for the one thing left over: a coin weighs nothing (#66), and in
+	// a world whose only cost of holding a thing is its weight, that is what
+	// liquidity is.
+	//
+	// What saves it from being a knife edge is that the coin is valued by
+	// each side in its own terms. A meal is worth much more to a hungry body
+	// than to a fed one, so the same coin is worth more to the buyer than to
+	// the seller, and a sale between the two is not zero-sum. That is the
+	// oldest reason for trade there is, and it is the only one in here.
+	CoinValue float64
+
 	// CarryPricedBackwards puts back the world in which what a held item was
 	// worth came out the wrong way round (stage 40, found in stage 50).
 	//
@@ -1844,6 +1878,8 @@ func DefaultConfig() Config {
 		KillWitnessFactor:    2,
 		KillWitnessLooks:     true,
 		CallTicks:            30,
+		Coins:                0, // stage 51: the map author scatters them
+		CoinValue:            0.5,
 		CarryPricedBackwards: false,
 		StoreCapacity:        6,
 		MaxStores:            16,

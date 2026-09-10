@@ -449,9 +449,16 @@ type World struct {
 	// The caches whoever laid this world out put on the ground (stage 50),
 	// and what has come of them: items put in, items taken out, and how many
 	// times anybody came to know a place, split by the path it came down.
-	stores       []store
-	stored       int
-	withdrawn    int
+	stores    []store
+	stored    int
+	withdrawn int
+	// What the money came to (stage 51): sales made, and buyers turned away
+	// by somebody who would not part with what it was holding. The second is
+	// the one the stage turns on - it says whether the market failed for want
+	// of buyers or for want of sellers.
+	sales        int
+	salesRefused int
+
 	storeLearned int
 	storeFound   int
 	storeSeen    int
@@ -547,6 +554,7 @@ func NewWorld(cfg Config) *World {
 	// The stones are laid out before anybody arrives (stage 45): they are
 	// part of what the ground is, not something the world keeps producing.
 	w.scatterStones()
+	w.scatterCoins()
 	for i := 0; i < cfg.InitialPopulation; i++ {
 		w.addAgent(w.randomAgent(SpeciesHuman))
 	}
@@ -1029,6 +1037,23 @@ func (w *World) perform(a *Agent) {
 
 	case ActOffer:
 		w.cry(a)
+
+	case ActBuy:
+		// Buying (stage 51). Close enough to put one thing in each other's
+		// hands, which is the reach everything else is handed over at, and
+		// then the seller's own reckoning decides. A refusal is not an
+		// argument: the buyer is simply asked to think again.
+		o := w.agentByID(a.Action.TargetID)
+		if o == nil || !o.Alive {
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
+		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.GrabRadius*w.cfg.GrabRadius {
+			w.moveToward(a, o.X, o.Y, a.Action.Effort)
+			return
+		}
+		w.sell(a, o)
+		a.requestDecision(TriggerGoalReached)
 
 	case ActStore:
 		// Putting something in a cache (stage 50). Close enough to reach into
@@ -2171,16 +2196,18 @@ func (w *World) spawnFood() {
 	// Checked before drawing the position so that a full world does not consume
 	// randomness and shift the rest of the run.
 	//
-	// Stones do not count against it (stage 45). They are in the same list
-	// because that list is "things lying about", and a world given a lot of
-	// them grew nothing at all the first time they went in.
+	// Stones do not count against it (stage 45), and neither does money
+	// (stage 51). They are in the same list because that list is "things
+	// lying about", and a world given a lot of them grew nothing at all the
+	// first time the stones went in - which is the bug this line is here to
+	// have already fixed by the time the coins arrived.
 	//
 	// Everything else in the list still does, carcasses included. That is
 	// older than this stage and looks like an oversight - the two allowances
 	// are meant to be separate (see MaxMeatItems) - but it is the world every
 	// figure in HISTORY.md was measured in, so it stays until it is changed
 	// on purpose and measured.
-	if len(w.foods)-w.countKind(FoodStone) >= w.cfg.MaxFoodItems {
+	if len(w.foods)-w.countKind(FoodStone)-w.countKind(FoodCoin) >= w.cfg.MaxFoodItems {
 		return
 	}
 	// One of them comes up in the water instead (stage 42). It is asked first

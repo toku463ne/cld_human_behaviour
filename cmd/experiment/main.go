@@ -1627,6 +1627,75 @@ var variants = []variant{
 			c.Stones, c.Throwing, c.HighGroundCover = 60, true, 0.3
 		},
 	},
+	// Stage 51: money. The value is what it will buy and nothing else (#73),
+	// so the discount is the whole stage: at one a coin is worth exactly the
+	// meal it claims and nobody gains by trading, above one money is worth
+	// more than food, and below one every purchase is worth making to the
+	// buyer and none to the seller except for the weight it saves.
+	{
+		name:  "coins",
+		about: "51: money on the played map, worth half the meal it will buy",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinsnone",
+		about: "the pair for it: the same world with no money in it",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks = 30
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinsidle",
+		about: "the placebo: the coins are lying there and nobody values one",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.CoinValue = 30, 60, 0
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinsdeaf",
+		about: "the information taken out: money, and nobody crying what they have to sell",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.Coins = 60
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinspar",
+		about: "a coin worth exactly the meal it claims: the point where nobody gains",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.CoinValue = 30, 60, 1
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinscheap",
+		about: "a coin worth a fifth of the meal: good for buyers, bad for sellers",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.CoinValue = 30, 60, 0.2
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinsflat",
+		about: "51 on the flat world, which is richer and has more to spare",
+		apply: func(c *engine.Config) { c.OfferTicks, c.Coins = 30, 60 },
+	},
+	{
+		name:  "coinsflatnone",
+		about: "the pair for it: the flat world with no money",
+		apply: func(c *engine.Config) { c.OfferTicks = 30 },
+	},
 	// The carry valuation, found the wrong way round while stage 50 was being
 	// written: what a thing kept for later was worth came out as a loss, so
 	// nothing was ever picked up on purpose. The arm to read the fix against
@@ -2507,6 +2576,7 @@ var metricNames = []string{
 	"cryShare", "offerHeard", "offerDraw", "giftsCried",
 	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
+	"coinsLying", "coinsHeld", "coinHolders", "sales", "salesRefused", "saleRate",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2949,6 +3019,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	cen := census.Result()
 	fords := banks.Result()
 	stored := w.Stored()
+	money := w.Coins()
 
 	// The rarest species is the one coexistence stands on: the others can look
 	// healthy while it goes. With humans alone it is the human population, and
@@ -3039,7 +3110,17 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// out is inheritance, which is the widest one and the reason a cache
 		// can end up belonging to a line.
 		"storeBorn": float64(stored.Learned - stored.Found - stored.Seen - stored.Told),
-		"joinShare": ratio(end.Joins, end.Decisions),
+		// The money (stage 51). sales says whether a coin ever bought
+		// anything; salesRefused says whether the market failed for want of
+		// buyers or for want of sellers, which is the question the whole
+		// stage turns on.
+		"coinsLying":   float64(money.Lying),
+		"coinsHeld":    float64(money.Held),
+		"coinHolders":  money.Holders,
+		"sales":        float64(money.Sales),
+		"salesRefused": float64(money.Refused),
+		"saleRate":     perAgentLifetime(money.Sales, personTicks),
+		"joinShare":    ratio(end.Joins, end.Decisions),
 		// The share of all decisions that were "go to country I think better
 		// of" - the one door a belief about a place has into a body, and so
 		// the ceiling on what stages 15b, 29 and 35 can do (stage 35).

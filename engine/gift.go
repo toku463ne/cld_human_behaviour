@@ -36,6 +36,15 @@ func (w *World) giveItem(from, to *Agent) bool {
 		return false
 	}
 	item := from.carried[0]
+	// And it has to be something they can do anything with (found in stage
+	// 51). Receiving costs nothing was the rule here, and it was wrong for
+	// the one case nobody had thought of: a hand is the world's scarcest
+	// thing, and a plant given to something that lives on meat blocks it for
+	// good. It also got round two rules the world keeps at the mouth - what
+	// a species can digest, and that nobody eats its own kind.
+	if !w.canCarry(to, &item) {
+		return false
+	}
 	w.removeCarried(from, 0)
 	to.carried = append(to.carried, item)
 	w.heldKind[item.Kind]++

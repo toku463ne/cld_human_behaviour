@@ -49,6 +49,11 @@ func (a *Agent) carryCapacity(cfg *Config) float64 {
 // CarriedCount is how many items this agent is holding. For the viewer.
 func (a *Agent) CarriedCount() int { return len(a.carried) }
 
+// Carrying is what this agent is holding, for a viewer. The copy is the
+// caller's: what is in a hand is the world's, not something to be reached into
+// from outside it.
+func (a *Agent) Carrying() []Food { return append([]Food(nil), a.carried...) }
+
 // carryLoad is how full this body is, from 0 to 1. It is measured against the
 // continuous capacity rather than against what the body may actually pick up,
 // which is what makes the same item a lighter burden on a bigger body and a
@@ -58,7 +63,18 @@ func (a *Agent) carryLoad(cfg *Config) float64 {
 	if cap <= 0 {
 		return 0
 	}
-	return clamp(float64(len(a.carried))/cap, 0, 1)
+	// Money weighs nothing (#66, stage 51). It still takes a hand - a body
+	// holding a coin is a body not holding its dinner - but it is not part of
+	// what the legs are charged for, and in a world where the only cost of
+	// holding something is its weight, that is the whole of what makes money
+	// worth taking at all.
+	n := 0
+	for i := range a.carried {
+		if a.carried[i].Kind != FoodCoin {
+			n++
+		}
+	}
+	return clamp(float64(n)/cap, 0, 1)
 }
 
 // burden is the multiplier a load puts on the cost of moving. One for a body
@@ -103,7 +119,7 @@ func (a *Agent) carrySlots(cfg *Config) int {
 // 45) there is no such question - it is not food, nobody's kill and nobody's
 // kind - so anything may pick one up.
 func (w *World) canCarry(a *Agent, f *Food) bool {
-	if f.Kind == FoodStone {
+	if f.Kind == FoodStone || f.Kind == FoodCoin {
 		return true
 	}
 	return w.canEat(a, f)
@@ -163,7 +179,7 @@ func (w *World) dropCarried(a *Agent) {
 // that there is no item in the world to remove afterwards.
 func (w *World) eatCarried(a *Agent, foodID int) {
 	i := a.carriedIndex(foodID)
-	if i < 0 {
+	if i < 0 || !w.canEat(a, &a.carried[i]) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}
@@ -248,6 +264,20 @@ func (w *World) spoilCarried(a *Agent) {
 func (w *World) carriedViews(a *Agent, out []FoodView) []FoodView {
 	for i := range a.carried {
 		f := &a.carried[i]
+		// What it cannot eat is not a meal in its hand either.
+		//
+		// Nothing exercised this until stage 51, and then it turned out to
+		// matter twice over. Money went first: 59 coins out of 60 were eaten
+		// in eight thousand ticks. But counting what else was being held that
+		// could not be eaten turned up two rules of this world being got
+		// round through the hand - an enemy holding a plant (17,066 body-
+		// ticks in five thousand), and a human holding human meat - both of
+		// them handed over as gifts, which asked whether the receiver had a
+		// hand free and not whether it could eat the thing. At the mouth the
+		// world has always refused both.
+		if !w.canEat(a, f) {
+			continue
+		}
 		out = append(out, FoodView{
 			ID:        f.ID,
 			X:         a.X,

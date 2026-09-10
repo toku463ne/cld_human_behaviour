@@ -106,6 +106,7 @@ var (
 	colorCallLink   = color.RGBA{0x1c, 0x9c, 0x5a, 0xd0}
 	colorWares      = color.RGBA{0xe8, 0xd0, 0x40, 0xd0}
 	colorStore      = color.RGBA{0x8a, 0x6a, 0x3a, 0xc0}
+	colorCoin       = color.RGBA{0xf2, 0xc0, 0x30, 0xff}
 	colorStoreFull  = color.RGBA{0xc8, 0x9a, 0x50, 0xd0}
 	// The ground (stage 20). These are premultiplied, like every colour the
 	// vector calls take: each channel is the colour already faded by its own
@@ -2411,6 +2412,11 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			c = colorFish
 		case engine.FoodStone:
 			c = colorStone
+		case engine.FoodCoin:
+			// Money (stage 51). It is drawn small and bright: there is not
+			// much of it, it does not grow back, and the one thing a player
+			// wants to be able to see is where it went.
+			c = colorCoin
 		}
 		vector.DrawFilledCircle(screen, fx, fy, g.long(3), c, true)
 		// The awkward crop (stage 44) gets a ring: it is food that has to be
@@ -2967,6 +2973,19 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		}
 		if cfg.CarryCapacity > 0 {
 			held := a.CarriedCount()
+			// What is in the hand, by name (stage 51). "Carrying 1 item" and
+			// "carrying a coin" are different situations for a player, and
+			// the second one is the only reason to walk to a crier.
+			if held > 0 {
+				kinds := ""
+				for _, f := range a.Carrying() {
+					if kinds != "" {
+						kinds += ", "
+					}
+					kinds += f.Kind.String()
+				}
+				t.line("holding: %s", kinds)
+			}
 			t.line("carrying %d item(s)%s%s", held, map[bool]string{
 				true:  "",
 				false: "  (slowing it down)",
@@ -4065,6 +4084,12 @@ func main() {
 		// nothing - everything the cry appears to be worth is still there in
 		// the arm where nobody can read the hand.
 		cfg.OfferTicks = 30
+
+		// And money (stage 51). A played world has it for the same reason it
+		// has stones and crying: it is a verb a player can use. It is not a
+		// default of the physics, because what it is worth is a claim on a
+		// meal and the measurement of what that does to a world is an arm.
+		cfg.Coins = 60
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
 	}

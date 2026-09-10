@@ -53,6 +53,16 @@ const (
 	// world, eaten and picked up by the ordinary words.
 	ActStore
 
+	// ActBuy is handing a coin to somebody who is holding out a meal, and
+	// taking the meal (stage 51). The fourteenth word, added at the end like
+	// the six before it.
+	//
+	// The buyer is the one who acts, because the buyer is the one who wants
+	// something. Whether the seller parts with it is not a question put to a
+	// controller: it is worked out from the seller's own state when the buyer
+	// arrives, the same way a courtship is either accepted or not.
+	ActBuy
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -84,6 +94,8 @@ func (k ActionKind) String() string {
 		return "offer"
 	case ActStore:
 		return "store"
+	case ActBuy:
+		return "buy"
 	default:
 		return "rest"
 	}

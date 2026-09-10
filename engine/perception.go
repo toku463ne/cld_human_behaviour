@@ -82,6 +82,9 @@ type SelfView struct {
 
 	// Burden is what this body's load multiplies the cost of moving by
 	// (stage 40). One for empty hands, which is every body in a world with
+	// HasCoin says this body has money on it (stage 51).
+	HasCoin bool
+
 	// carrying off. Carried is how many items it is holding and CarryRoom
 	// whether there is space for one more: what a body knows about its own
 	// hands, and nothing about anybody else's.
@@ -308,6 +311,13 @@ type AgentView struct {
 	// option that cannot be taken is never scored.
 	ThrowHit float64
 
+	// Selling is set while this one is crying its wares and what it is
+	// holding out is food (stage 51). It is the same visible fact stage 49
+	// put in Offering, read from the other side: a body advertising a meal is
+	// a body somebody with a coin can walk up to. Nothing here says whether
+	// it will part with it - that is asked when the buyer arrives.
+	Selling bool
+
 	// CarryRoom says this one has a hand free (stage 48). Whether somebody
 	// can be handed a thing is as visible as whether they are carrying one.
 	CarryRoom bool
@@ -405,6 +415,11 @@ type Perception struct {
 	// store is exactly the one worth walking to with something in your hand.
 	Stores []StoreSight
 
+	// Coins is the money in sight (stage 51). Kept apart from Foods for the
+	// reason the stones are: none of the figures that count what is edible
+	// should count one, and money is the least edible thing in the world.
+	Coins []FoodView
+
 	// Trigger is why the engine is asking. It is not a instruction - what to
 	// do about being hit is still for the controller to work out - but it is
 	// something the agent knows about its own situation, and one thing cannot
@@ -427,21 +442,13 @@ type Perception struct {
 	Trace *DecisionTrace
 }
 
-// perceive fills the world's reusable perception buffer for one agent.
-func (w *World) perceive(a *Agent) *Perception {
-	p := &w.perception
-	p.Tick = w.tick
-	p.Trigger = TriggerNone
-	p.Cfg = &w.cfg
-	p.Rand = w.rng
-	p.Foods = p.Foods[:0]
-	p.Stones = p.Stones[:0]
-	p.Stores = p.Stores[:0]
-	p.Others = p.Others[:0]
-
+// selfView is what an agent knows about itself. It is pulled out of perceive
+// so that a rule which has to reckon on somebody else's terms can ask for it -
+// whether a seller would part with what it is holding (stage 51) is the first
+// such rule, and it is asked of the seller, not of the body doing the asking.
+func (w *World) selfView(a *Agent) SelfView {
 	ground := w.terrainAt(a.X, a.Y)
-
-	p.Self = SelfView{
+	return SelfView{
 		ID:           a.ID,
 		X:            a.X,
 		Y:            a.Y,
@@ -484,7 +491,24 @@ func (w *World) perceive(a *Agent) *Perception {
 		CarryCapacity:     a.carryCapacity(&w.cfg),
 		CarryRoom:         a.canCarryMore(&w.cfg),
 		HasStone:          a.canThrow(&w.cfg),
+		HasCoin:           a.carriedIndex2(FoodCoin) >= 0,
 	}
+}
+
+// perceive fills the world's reusable perception buffer for one agent.
+func (w *World) perceive(a *Agent) *Perception {
+	p := &w.perception
+	p.Tick = w.tick
+	p.Trigger = TriggerNone
+	p.Cfg = &w.cfg
+	p.Rand = w.rng
+	p.Foods = p.Foods[:0]
+	p.Stones = p.Stones[:0]
+	p.Stores = p.Stores[:0]
+	p.Coins = p.Coins[:0]
+	p.Others = p.Others[:0]
+
+	p.Self = w.selfView(a)
 
 	// The index narrows the world down to the cells sight could possibly reach;
 	// what is actually visible is still tested one by one below, exactly as it
@@ -511,6 +535,14 @@ func (w *World) perceive(a *Agent) *Perception {
 		// can see them, which is what the perception is.
 		if f.Kind == FoodStone {
 			p.Stones = append(p.Stones, FoodView{
+				ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
+				RivalDist: math.Inf(1),
+			})
+			continue
+		}
+		// And money, in its own list for the same reason (stage 51).
+		if f.Kind == FoodCoin {
+			p.Coins = append(p.Coins, FoodView{
 				ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
 				RivalDist: math.Inf(1),
 			})
@@ -629,6 +661,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
 			DeclaredFor: o.declaredFor(),
 			Offering:    offering,
+			Selling:     offering && offerKind < NumEdibleKinds,
 			OfferKind:   offerKind,
 			OfferLeft:   offerLeft,
 			OfferValue:  offerValue,

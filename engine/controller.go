@@ -157,6 +157,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addExplore(p)
 	c.addFood(p)
 	c.addStones(p)
+	c.addCoins(p)
 	c.addPutInStore(p)
 	c.addAgents(p, maxDepth)
 	c.addOffer(p)
@@ -582,6 +583,7 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 			c.addThrow(p, o)
 			c.addGive(p, o)
 			c.addGoToOffer(p, o)
+			c.addBuy(p, o)
 			if o.Prey && o.Meat >= 1 {
 				c.addInvite(p, o)
 			}
@@ -779,6 +781,82 @@ func (c *AIController) addPutInStore(p *Perception) {
 				TimeCost:     ticks * cfg.TimeCost,
 			})
 		}
+	}
+}
+
+// addCoins scores picking money up (stage 51).
+//
+// A coin is worth the meal it will buy when there is nothing about, which is
+// keepValue and nothing else (#73), discounted for the chance of finding
+// anybody willing to sell. That last figure is the one this whole stage turns
+// on, and it is not guessed: it is CoinValue, and the measurement is what it
+// takes for a sale to be worth making to the other side.
+//
+// Nothing here is a second reason to want money. A coin is not saved, not
+// counted, and not worth anything to a body that will never need a meal.
+func (c *AIController) addCoins(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if len(p.Coins) == 0 || !s.CarryRoom {
+		return
+	}
+	want := coinWorth(cfg, s) * clamp(s.FoodScarcity, 0, 3) / 3
+	if want <= 0 {
+		return
+	}
+	for i := range p.Coins {
+		if i >= maxFoodOptions {
+			break
+		}
+		f := &p.Coins[i]
+		for _, effort := range effortLevels {
+			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
+			cost := moveCost(cfg, s, effort) * ticks
+			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
+				Life:         Goal{Value: want, Chance: 1},
+				Vitality:     cost,
+				Ticks:        ticks,
+				VitalityCost: cost * cfg.VitalityWeight,
+				TimeCost:     ticks * cfg.TimeCost,
+			})
+		}
+	}
+}
+
+// addBuy scores walking up to somebody holding a meal out and paying for it
+// (stage 51).
+//
+// What the buyer gets is the meal, scored exactly as any other meal is. What
+// it gives up is the coin, which is worth what it would have bought later - so
+// a hungry body pays gladly and a fed one has no reason to, which is the right
+// way round and falls out of the same two figures the rest of the world uses.
+//
+// Only somebody crying their wares can be bought from, because a meal in a
+// hand is invisible until it is held out (stage 40, and stage 49's cry is what
+// makes it visible). That is the chain the plumbing was laid for: without the
+// crier there is no shop window.
+func (c *AIController) addBuy(p *Perception, o *AgentView) {
+	cfg, s := p.Cfg, &p.Self
+	if !s.HasCoin || !o.Selling || o.OfferValue <= 0 {
+		return
+	}
+	meal := mealValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal)
+	if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal); kept > meal {
+		meal = kept
+	}
+	gain := meal - coinWorth(cfg, s)
+	if gain <= 0 {
+		return
+	}
+	for _, effort := range effortLevels {
+		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
+		cost := moveCost(cfg, s, effort) * ticks
+		c.add(Action{Kind: ActBuy, TargetID: o.ID, Effort: effort}, Utility{
+			Life:         Goal{Value: gain, Chance: 1},
+			Vitality:     cost,
+			Ticks:        ticks,
+			VitalityCost: cost * cfg.VitalityWeight,
+			TimeCost:     ticks * cfg.TimeCost,
+		})
 	}
 }
 

@@ -44,11 +44,21 @@ const (
 	// a kind of food is the price of not writing a second one.
 	FoodStone = NumEdibleKinds
 
+	// FoodCoin is money (stage 51), and it is here for the same reason the
+	// stone is: it is a thing lying about that can be picked up, and the
+	// index, the carrying and the viewer already work on that list.
+	//
+	// It is not a kind of food in any other sense. Nothing eats it, it takes
+	// no room in the world's allowance for plants, and it weighs nothing to
+	// carry (#66) - which is the only thing it has going for it, and, as it
+	// turned out, the only reason anybody would ever take one.
+	FoodCoin = NumEdibleKinds + 1
+
 	// NumFoodKinds is how many there are, for the code that keeps one figure
 	// per kind (the diet rule of stage 16). It is not a kind, and it is
 	// spelled out rather than left to iota: the line above ends the run, and
 	// a bare name here would repeat it rather than carry on.
-	NumFoodKinds = FoodStone + 1
+	NumFoodKinds = FoodCoin + 1
 )
 
 func (k FoodKind) String() string {
@@ -59,6 +69,8 @@ func (k FoodKind) String() string {
 		return "fish"
 	case FoodStone:
 		return "stone"
+	case FoodCoin:
+		return "coin"
 	}
 	return "plant"
 }
@@ -78,8 +90,8 @@ func eatsMeat(s Species) bool   { return true }
 // canEat says whether this agent may take this item, at this moment.
 func (w *World) canEat(a *Agent, f *Food) bool {
 	switch f.Kind {
-	case FoodStone:
-		return false // nothing eats a stone
+	case FoodStone, FoodCoin:
+		return false // nothing eats a stone, and nobody eats money
 	case FoodFish:
 		return w.eatsFish(a.Species)
 	case FoodMeat:
