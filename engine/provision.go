@@ -31,6 +31,80 @@ import "math"
 //     it, and cannot be selected for doing it well. What selection sees is
 //     only the line: bodies that fed children left children.
 
+// Rearing is who is doing the rearing and who is feeding, by sex. Read only,
+// and the measurement stage 53 turns on: what the two roles actually come to,
+// as against what the rule says.
+type Rearing struct {
+	// Guardians is the share of children in their mother's keeping - one
+	// under stage 53a, and about a half in the world before it.
+	Guardians float64
+
+	// FeederMother and FeederFather are how often a body with a mouthful had
+	// a child of its own to hand part of it to, by sex, as a share of the
+	// children being reared. The second is what stage 53b opens: before it,
+	// it is zero by construction.
+	Near, NearOther float64
+
+	// Lifespan by sex, which is where a role that costs something shows up.
+	AgeFemale, AgeMale float64
+}
+
+// Rearing reports what the two roles come to.
+func (w *World) Rearing() Rearing {
+	var out Rearing
+	var kids, mothers, near, other float64
+	r2 := w.cfg.RearingRadius * w.cfg.RearingRadius
+	var fem, mal, nFem, nMal float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		if a.Species == SpeciesHuman {
+			if a.Sex == Female {
+				fem, nFem = fem+float64(a.Age), nFem+1
+			} else {
+				mal, nMal = mal+float64(a.Age), nMal+1
+			}
+		}
+		if !w.underCare(a) {
+			continue
+		}
+		kids++
+		g := w.agentByID(a.GuardianID)
+		if g == nil {
+			continue
+		}
+		if g.Sex == Female {
+			mothers++
+		}
+		if dist2(g.X, g.Y, a.X, a.Y) <= r2 {
+			near++
+		}
+		for _, pid := range a.ParentIDs {
+			if pid == 0 || pid == a.GuardianID {
+				continue
+			}
+			if p := w.agentByID(pid); p != nil && p.Alive &&
+				dist2(p.X, p.Y, a.X, a.Y) <= r2 {
+				other++
+			}
+		}
+	}
+	if kids > 0 {
+		out.Guardians = mothers / kids
+		out.Near = near / kids
+		out.NearOther = other / kids
+	}
+	if nFem > 0 {
+		out.AgeFemale = fem / nFem
+	}
+	if nMal > 0 {
+		out.AgeMale = mal / nMal
+	}
+	return out
+}
+
 // underCare reports whether this one is still a child in somebody's keeping.
 // It is the same question stillReared asks, without spending the tick of
 // childhood that stillReared spends: anything that only wants to know must ask
@@ -45,14 +119,21 @@ func (w *World) underCare(a *Agent) bool {
 	return a.RearingTimer > 0
 }
 
-// mouthsToFeed are the children this agent would hand part of a meal to: still
-// in its keeping, and close enough to be handed anything.
+// mouthsToFeed are the children this agent would hand part of a meal to: its
+// own, still small, and close enough to be handed anything.
 //
 // The distance is the leash's own (RearingRadius) rather than a number of its
 // own. A child that is being kept within a radius is by definition inside it
 // nearly all the time, so this is not a second rule about staying close - it
 // is what stops a mouthful reaching a child on the other side of the world in
 // the tick after its parent died to something over there.
+//
+// Being the guardian is not required (stage 53b). It was, and with stage 53a
+// making the mother the guardian that would have shut fathers out of feeding
+// altogether - a side effect of a rule about who rears, landing on a rule
+// about who provides. What is asked instead is the older question: is this
+// your child, is it still small, and are you here. No new ownership, no new
+// state, and the same passive share() that has never been anybody's decision.
 func (w *World) mouthsToFeed(a *Agent) []*Agent {
 	if w.cfg.ParentFeedShare <= 0 || len(a.ChildIDs) == 0 {
 		return nil
@@ -61,7 +142,10 @@ func (w *World) mouthsToFeed(a *Agent) []*Agent {
 	var out []*Agent
 	for _, id := range a.ChildIDs {
 		c := w.agentByID(id)
-		if c == nil || !c.Alive || c.GuardianID != a.ID || !w.underCare(c) {
+		if c == nil || !c.Alive || !w.underCare(c) {
+			continue
+		}
+		if !w.cfg.ParentFeedByKin && c.GuardianID != a.ID {
 			continue
 		}
 		if dist2(a.X, a.Y, c.X, c.Y) > r2 {

@@ -1690,6 +1690,32 @@ var variants = []variant{
 	// rather than on - and the one that turns it off is a placebo rather than
 	// a shorter vocabulary, because the word costs the same whether or not
 	// anybody uses it.
+	// Stage 53: who rears, and who may feed. The feeding rule is off by
+	// default, so the arms that mean anything turn it on - and the three of
+	// them have to be read together, because 53b exists to undo a side effect
+	// of 53a rather than on its own account.
+	{
+		name:  "feedboth",
+		about: "53: the mother rears and either parent may feed, with feeding on",
+		apply: func(c *engine.Config) { c.ParentFeedShare = 0.5 },
+	},
+	{
+		name:  "feedmother",
+		about: "53a without 53b: the mother rears and only the guardian may feed, which shuts fathers out",
+		apply: func(c *engine.Config) { c.ParentFeedShare, c.ParentFeedByKin = 0.5, false },
+	},
+	{
+		name:  "feedold",
+		about: "the world before 53a: whichever parent came first rears, and only it may feed",
+		apply: func(c *engine.Config) {
+			c.ParentFeedShare, c.ParentFeedByKin, c.GuardianIsMother = 0.5, false, false
+		},
+	},
+	{
+		name:  "rearold",
+		about: "53a on its own, with feeding off as it is by default: only who rears changes",
+		apply: func(c *engine.Config) { c.GuardianIsMother = false },
+	},
 	// Stage 54: a mood. The default has none, so the arms turn it on; the
 	// pair that matters is not on-against-off but the sign, because the same
 	// size of lean with the sign reversed says whether the structure is doing
@@ -2733,6 +2759,7 @@ var metricNames = []string{
 	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
 	"coinsLying", "coinsHeld", "coinHolders", "sales", "salesRefused", "saleRate",
+	"motherRears", "mumNear", "dadNear", "ageFemale", "ageMale",
 	"dread", "cheer", "afraid",
 	"cooked", "cookRate", "cookedMeat", "cookedEaten", "cookedHanded",
 	"cookStanding", "cookSplit", "cookHeld", "cookReal",
@@ -3190,6 +3217,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	money := w.Coins()
 	kitchen := w.Cooking()
 	feeling := w.Mood()
+	rearing := w.Rearing()
 
 	// The rarest species is the one coexistence stands on: the others can look
 	// healthy while it goes. With humans alone it is the human population, and
@@ -3306,12 +3334,20 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// How the population is feeling (stage 54). afraid is the one that
 		// says whether the lean is a signal or a constant: near one is a mood
 		// that never changes, and a constant changes no ranking.
-		"dread":     feeling.Dread,
-		"cheer":     feeling.Cheer,
-		"afraid":    feeling.Afraid,
-		"cookHeld":  tail.cookHeld,
-		"cookReal":  tail.cookReal,
-		"joinShare": ratio(end.Joins, end.Decisions),
+		// Who rears and who feeds (stage 53). motherRears is one under 53a and
+		// about a half before it; dadNear is the target 53b opens, as the
+		// share of reared children with their other parent inside the leash.
+		"motherRears": rearing.Guardians,
+		"mumNear":     rearing.Near,
+		"dadNear":     rearing.NearOther,
+		"ageFemale":   rearing.AgeFemale,
+		"ageMale":     rearing.AgeMale,
+		"dread":       feeling.Dread,
+		"cheer":       feeling.Cheer,
+		"afraid":      feeling.Afraid,
+		"cookHeld":    tail.cookHeld,
+		"cookReal":    tail.cookReal,
+		"joinShare":   ratio(end.Joins, end.Decisions),
 		// The share of all decisions that were "go to country I think better
 		// of" - the one door a belief about a place has into a body, and so
 		// the ceiling on what stages 15b, 29 and 35 can do (stage 35).

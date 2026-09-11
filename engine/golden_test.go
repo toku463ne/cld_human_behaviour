@@ -97,6 +97,13 @@ import (
 // 32, 40 and 46 - held at its old width, the world with the rule off is
 // bit-identical, which is how that was checked.
 //
+// And again when the mother became the one a child keeps close to (stage 53a,
+// 2026-09-11). It was whichever parent came first, with a comment saying it
+// mattered to no rule, and measured that made a father the guardian 50.5% of
+// the time. It costs about four population in the world these numbers come
+// from and buys a tenth of a point of clumping - and it is in because the rest
+// of stage 53 is derived from the role rather than from an idea about sexes.
+//
 // And again when a body could make what it was holding into something that
 // mends (stage 52, 2026-09-11). A fifteenth word, and this one is used in
 // these very runs: average vitality is up and average hunger is down in all
@@ -140,9 +147,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 40, births: 30, deaths: 68, kills: 50, aging: 0, fights: 3850, gen: 2, power: 41.987425, vitality: 104.465993, hunger: 18.782416},
-	{seed: 2, pop: 68, births: 57, deaths: 70, kills: 55, aging: 0, fights: 7456, gen: 3, power: 42.256537, vitality: 115.323942, hunger: 24.638980},
-	{seed: 3, pop: 46, births: 41, deaths: 73, kills: 56, aging: 0, fights: 5790, gen: 2, power: 36.393468, vitality: 117.523227, hunger: 24.402088},
+	{seed: 1, pop: 63, births: 49, deaths: 63, kills: 45, aging: 0, fights: 4347, gen: 2, power: 41.297747, vitality: 96.706904, hunger: 27.380615},
+	{seed: 2, pop: 50, births: 41, deaths: 71, kills: 54, aging: 0, fights: 6384, gen: 3, power: 41.110861, vitality: 112.904396, hunger: 27.240167},
+	{seed: 3, pop: 40, births: 32, deaths: 73, kills: 57, aging: 0, fights: 3591, gen: 2, power: 34.000702, vitality: 116.091563, hunger: 26.487398},
 }
 
 const goldenTicks = 5000

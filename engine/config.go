@@ -686,6 +686,34 @@ type Config struct {
 	// cooks; what it does not get is the part SkillCook buys back.
 	CookQuality float64
 
+	// --- who rears, and who may feed (stage 53) ---
+
+	// GuardianIsMother makes the mother the parent a child keeps close to.
+	// False is the world before stage 53a, where it was whichever parent came
+	// first and a father had the job 50.5% of the time - every figure
+	// recorded before 2026-09-11 is from that world.
+	//
+	// It is structure rather than decoration: the whole of stage 53's gene
+	// bias is derived from what being tied to a radius asks of a body, so the
+	// role has to exist before the bias means anything.
+	GuardianIsMother bool
+
+	// ParentFeedByKin lets the parent that is not the guardian feed a child
+	// too, as long as it is that child's parent and near enough to hand it
+	// anything (stage 53b).
+	//
+	// It exists because stage 53a would otherwise shut fathers out of feeding
+	// altogether: mouthsToFeed asked whether the eater was the guardian, and
+	// with the mother always the guardian the answer for a father is never.
+	// Nothing new is built for it - the same passive share() of stage 7d, the
+	// same radius, no ownership and no decision.
+	//
+	// It is not a small repair. Counted before it was written: a guardian is
+	// inside the radius 0.774 of the time and the other parent 0.475 (0.516
+	// of the time it is alive at all), so this is something like 1.6 times as
+	// many chances to feed anybody, and it has to be measured on its own.
+	ParentFeedByKin bool
+
 	// --- how a body is feeling (stage 54) ---
 
 	// MoodWeight is how far a mood leans what a body makes of being worn
@@ -1998,7 +2026,9 @@ func DefaultConfig() Config {
 		CookVitality:         0.5, // the same as a carcass, so the two never stack
 		CookQuality:          1,   // anybody can cook; a map that wants otherwise says so
 		CookSurvivesHands:    true,
-		MoodWeight:           0, // stage 54: measured before it is a default
+		GuardianIsMother:     true, // stage 53a
+		ParentFeedByKin:      true, // stage 53b: and never one without the other
+		MoodWeight:           0,    // stage 54: measured before it is a default
 		MoodDreadGain:        1,
 		MoodCheerGain:        1,
 		MoodHalfLife:         150,

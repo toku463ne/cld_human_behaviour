@@ -1723,13 +1723,27 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	// belonging to a line rather than to the world.
 	w.inheritStores(&child, pa, pb)
 
-	// It starts as a small thing that keeps to one of the two. Which one does
-	// not matter to any rule; taking the first keeps it deterministic. Zero
-	// ticks still means no childcare under either rule, which is what the
-	// arm that takes childcare away is: naming a guardian at all is what
-	// RearingUntilGrown reads.
+	// It starts as a small thing that keeps to one of the two, and which one
+	// is now a rule (stage 53a): the mother. Bearing and rearing being the
+	// same body's work is the asymmetry the rest of this stage is derived
+	// from - a body tied to a radius reads its neighbours, and a body free to
+	// range brings things back - so it is put in as structure first and the
+	// genes follow from it.
+	//
+	// Before this it was whichever of the two came first, with a comment
+	// saying it mattered to no rule, and measured that made a father the
+	// guardian 50.5% of the time. Zero ticks still means no childcare under
+	// either rule, which is what the arm that takes childcare away is: naming
+	// a guardian at all is what RearingUntilGrown reads.
 	if w.cfg.ChildRearingTicks > 0 {
 		child.GuardianID = pa.ID
+		if w.cfg.GuardianIsMother {
+			if pa.Sex == Female {
+				child.GuardianID = pa.ID
+			} else {
+				child.GuardianID = pb.ID
+			}
+		}
 	}
 	child.RearingTimer = w.cfg.ChildRearingTicks
 
