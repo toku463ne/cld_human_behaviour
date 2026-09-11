@@ -200,6 +200,14 @@ type Agent struct {
 	attackerID     int
 	lastAttackTick int
 
+	// The one this body thinks best of and can see, and which way it went
+	// when it could not (stage 55a). A direction and never a place: dearID is
+	// only who is being kept track of this moment, and what outlives the
+	// sighting is the unit vector and when it was taken.
+	dearID         int
+	lostDX, lostDY float64
+	lostAt         int // the tick it was lost, plus one; zero means in sight
+
 	// How this body is doing, and when that was last brought up to date
 	// (stage 54). Two scalars for the whole body rather than one per face:
 	// a record of who frightened it would be a grudge, and this world has

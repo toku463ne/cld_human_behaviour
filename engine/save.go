@@ -165,6 +165,13 @@ type agentSnap struct {
 	FrailTicks     int
 	CourtStartTick int
 
+	// Which way the one it thinks best of went, and when (stage 55a). The
+	// direction fades on reading, but the next tick depends on it, so a world
+	// that came back without it would not be the world that was saved.
+	DearID         int
+	LostDX, LostDY float64
+	LostAt         int
+
 	// How the body is feeling, and when that was last settled (stage 54).
 	// It fades on reading, but it is a figure the next tick depends on, so a
 	// world that came back without it would not be the world that was saved.
@@ -317,6 +324,10 @@ func snapAgent(a *Agent) agentSnap {
 		Agent:              *a,
 		FrailTicks:         a.frailTicks,
 		CourtStartTick:     a.courtStartTick,
+		DearID:             a.dearID,
+		LostDX:             a.lostDX,
+		LostDY:             a.lostDY,
+		LostAt:             a.lostAt,
 		Dread:              a.dread,
 		Cheer:              a.cheer,
 		MoodAt:             a.moodAt,
@@ -475,6 +486,7 @@ func loadAgent(s *agentSnap) Agent {
 	a.frailTicks = s.FrailTicks
 	a.courtStartTick = s.CourtStartTick
 	a.dread, a.cheer, a.moodAt = s.Dread, s.Cheer, s.MoodAt
+	a.dearID, a.lostDX, a.lostDY, a.lostAt = s.DearID, s.LostDX, s.LostDY, s.LostAt
 	a.reproReady = s.ReproReady
 	a.lastDecisionTick = s.LastDecisionTick
 	a.vitalityAtDecision = s.VitalityAtDecision

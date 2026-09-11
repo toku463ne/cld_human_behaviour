@@ -75,6 +75,17 @@ type SelfView struct {
 	// it is sick of something.
 	Nutrition [NumFoodKinds]float64
 
+	// Missing is how much the direction the body it thinks best of went in is
+	// still worth, from 0 to 1, and MissingDX/DY is that direction (stage
+	// 55a). Zero when there is nobody to miss, when the one it thinks best of
+	// is in sight, or when the direction has gone stale.
+	//
+	// A direction and never a place: there is nothing here to walk to, check
+	// or tell anybody, which is what keeps this out of the coordinate-level
+	// knowledge that is still shelved (#70).
+	Missing              float64
+	MissingDX, MissingDY float64
+
 	// CookQuality is how well this body cooks, from 0 to 1 (stage 52). A body
 	// knows its own hands: this is the same reading Self.Ground is of the
 	// ground underfoot, and it is what makes one body's work worth more than
@@ -603,6 +614,11 @@ func (w *World) perceive(a *Agent) *Perception {
 	// How badly this one reads anything, worked out once for the whole crowd.
 	unit := w.judgementScale(a)
 
+	// And who, of the ones it can see, it thinks best of (stage 55a). It is
+	// filled in as the crowd is walked and settled at the end: seeing them is
+	// what clears a direction, and not seeing them is what writes one.
+	dearest, dearX, dearY, dearest0 := 0, 0.0, 0.0, 0.0
+
 	for _, i := range w.nearAgents {
 		o := &w.agents[i]
 		if !o.Alive || o.ID == a.ID {
@@ -663,6 +679,10 @@ func (w *World) perceive(a *Agent) *Perception {
 			w.sawOffer = true
 		}
 
+		if affinity > dearest0 {
+			dearest, dearX, dearY, dearest0 = o.ID, o.X, o.Y, affinity
+		}
+
 		blur := w.noise(unit, w.cfg.JudgementNoise)
 		p.Others = append(p.Others, AgentView{
 			ID:          o.ID,
@@ -698,6 +718,11 @@ func (w *World) perceive(a *Agent) *Perception {
 			Fitness:     fitness(o, &w.cfg) + w.noise(unit, w.cfg.JudgementNoise*0.5),
 		})
 	}
+	// Whether the one it thinks best of is still there (stage 55a). Passing
+	// the last place it was seen is what turns into a direction; nothing
+	// keeps the place itself.
+	w.noteDearest(a, dearest, dearX, dearY)
+	p.Self.Missing, p.Self.MissingDX, p.Self.MissingDY = w.missing(a)
 
 	// Whoever else can get to those wares first (stage 49). An advertised
 	// item is a contested item - it goes to one pair of hands and everybody

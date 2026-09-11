@@ -104,6 +104,13 @@ type AIController struct {
 	betterGroundOpt   int
 	ChoseBetterGround bool
 
+	// The same pair for the walk after whoever went out of sight (stage 55a),
+	// and for the same reason: a remembered direction can only reach a body
+	// through this one option, so how often it wins is the ceiling on what
+	// the whole rule can do.
+	lonelyOpt    int
+	ChoseMissing bool
+
 	// Who has declared for what, worked out once in survey (stage 32): for
 	// each target somebody has called about or is already hitting, the
 	// trust-weighted strength and damage that side of the fight can count on.
@@ -142,6 +149,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.tracing = p.Trace != nil
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
 	c.betterGroundOpt, c.ChoseBetterGround = -1, false
+	c.lonelyOpt, c.ChoseMissing = -1, false
 	c.offerOpts, c.WentToOffer = c.offerOpts[:0], false
 	c.bestGiftGain, c.bestGiftDist = 0, 0
 	c.allies, c.JoinedDeclared = c.allies[:0], false
@@ -429,6 +437,24 @@ func (c *AIController) addExplore(p *Perception) {
 	// The agent proposes a direction for one step; whether it keeps going that
 	// way is decided again next time it thinks, with whatever it has seen
 	// since. Nothing here searches a route or commits to a destination.
+	// And, for one that has lost sight of whoever it thinks best of, the way
+	// they went (stage 55a). It is the same shape as the walk to better
+	// country directly below - one more direction to propose, scored and
+	// costed like any other - and the chance on it is how much the direction
+	// is still worth, which falls as it ages.
+	//
+	// Nothing here is about children or mates. What it follows is the highest
+	// affinity this body holds, which is as often somebody it hunted with as
+	// somebody it is related to.
+	if s.Missing > 0 && cfg.LonelyValue > 0 {
+		c.lonelyOpt = len(c.opts)
+		c.add(Action{Kind: ActMove, DX: s.MissingDX, DY: s.MissingDY, Effort: effort}, Utility{
+			Lore:         Goal{Value: cfg.LonelyValue, Chance: s.Missing},
+			Vitality:     cost,
+			VitalityCost: cost * cfg.VitalityWeight,
+		})
+	}
+
 	if s.BetterGround > 0 && cfg.RegionDrawValue > 0 {
 		ddx, ddy := s.BetterGroundX-s.X, s.BetterGroundY-s.Y
 		if d := math.Hypot(ddx, ddy); d > 1e-9 {
@@ -1467,6 +1493,7 @@ func (c *AIController) pick(p *Perception) Action {
 		p.Trace.Chosen = best
 	}
 	c.ChoseBetterGround = best == c.betterGroundOpt
+	c.ChoseMissing = best == c.lonelyOpt
 	for _, i := range c.offerOpts {
 		if i == best {
 			c.WentToOffer = true

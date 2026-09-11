@@ -1704,6 +1704,36 @@ var variants = []variant{
 	// rather than on - and the one that turns it off is a placebo rather than
 	// a shorter vocabulary, because the word costs the same whether or not
 	// anybody uses it.
+	// Stage 55a: the way somebody went. The pair that matters is not on
+	// against off but the direction, in the shape stage 54 found works: the
+	// same candidate, the same weight, the same price, pointing the wrong
+	// way. If that does as well, what the option buys is having somewhere to
+	// go rather than having remembered where they went.
+	{
+		name:  "missing",
+		about: "55a: after the one it thinks best of, the way it went",
+		apply: func(c *engine.Config) { c.LonelyValue = 20 },
+	},
+	{
+		name:  "missingwrong",
+		about: "the control: the same candidate at the same price, pointing the wrong way",
+		apply: func(c *engine.Config) { c.LonelyValue, c.LonelyWrongWay = 20, true },
+	},
+	{
+		name:  "missingweak",
+		about: "the same, worth a quarter as much: the low end of the dose",
+		apply: func(c *engine.Config) { c.LonelyValue = 5 },
+	},
+	{
+		name:  "missingstrong",
+		about: "the same, worth three times as much",
+		apply: func(c *engine.Config) { c.LonelyValue = 60 },
+	},
+	{
+		name:  "missinglong",
+		about: "a direction that takes four times as long to go stale",
+		apply: func(c *engine.Config) { c.LonelyValue, c.LonelyHalfLife = 20, 1600 },
+	},
 	// Stage 53: who rears, and who may feed. The feeding rule is off by
 	// default, so the arms that mean anything turn it on - and the three of
 	// them have to be read together, because 53b exists to undo a side effect
@@ -2803,6 +2833,7 @@ var metricNames = []string{
 	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
 	"coinsLying", "coinsHeld", "coinHolders", "sales", "salesRefused", "saleRate",
+	"lostSight", "missingDir", "lonelyDraw",
 	"motherRears", "mumNear", "dadNear", "ageFemale", "ageMale",
 	"dread", "cheer", "afraid",
 	"cooked", "cookRate", "cookedMeat", "cookedEaten", "cookedHanded",
@@ -3262,6 +3293,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	kitchen := w.Cooking()
 	feeling := w.Mood()
 	rearing := w.Rearing()
+	apart := w.Loneliness()
 
 	// The rarest species is the one coexistence stands on: the others can look
 	// healthy while it goes. With humans alone it is the human population, and
@@ -3381,6 +3413,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// Who rears and who feeds (stage 53). motherRears is one under 53a and
 		// about a half before it; dadNear is the target 53b opens, as the
 		// share of reared children with their other parent inside the leash.
+		// Losing sight of the one a body thinks best of (stage 55a). lonelyDraw
+		// is the ceiling on what the whole rule can do: a direction can only
+		// reach a body through that one option.
+		"lostSight":   float64(apart.Lost),
+		"missingDir":  apart.Missing,
+		"lonelyDraw":  apart.Draws,
 		"motherRears": rearing.Guardians,
 		"mumNear":     rearing.Near,
 		"dadNear":     rearing.NearOther,

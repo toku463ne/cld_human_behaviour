@@ -731,6 +731,30 @@ type Config struct {
 	// worth as a mate.
 	SexBias [NumGenes]float64
 
+	// --- which way somebody went (stage 55a) ---
+
+	// LonelyValue is what heading after the body this one thinks best of is
+	// worth, when it has gone out of sight. Zero takes it out of the world:
+	// nothing is remembered, no candidate is offered, and no random number is
+	// drawn either way.
+	//
+	// It is scored as one more way to wander, in exactly the shape stage 15b's
+	// walk to better country takes - value times how much the direction is
+	// still worth, less what walking costs - so it is beaten by anything
+	// better and overrides nothing.
+	LonelyValue float64
+
+	// LonelyHalfLife is how long that direction takes to be worth half as
+	// much. It is what stops a body walking after somebody for the rest of its
+	// life: below a twentieth the memory is dropped outright.
+	LonelyHalfLife int
+
+	// LonelyWrongWay is the control, in the shape stage 54 found works: the
+	// same candidate, the same weight, the same cost, pointing the wrong way.
+	// If that does as well, what the option buys is having somewhere to go
+	// rather than having remembered where they went.
+	LonelyWrongWay bool
+
 	// --- how a body is feeling (stage 54) ---
 
 	// MoodWeight is how far a mood leans what a body makes of being worn
@@ -2043,6 +2067,8 @@ func DefaultConfig() Config {
 		CookVitality:         0.5, // the same as a carcass, so the two never stack
 		CookQuality:          1,   // anybody can cook; a map that wants otherwise says so
 		CookSurvivesHands:    true,
+		LonelyValue:          0, // stage 55a: measured before it is a default
+		LonelyHalfLife:       400,
 		GuardianIsMother:     true,                // stage 53a
 		SexBias:              [NumGenes]float64{}, // stage 53: measured before it is a default
 		ParentFeedByKin:      true,                // stage 53b: and never one without the other

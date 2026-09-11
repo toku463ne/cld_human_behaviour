@@ -459,6 +459,11 @@ type World struct {
 	sales        int
 	salesRefused int
 
+	// Losing sight of the one a body thinks best of (stage 55a), and how
+	// often a decision was a walk along the direction that left.
+	lostSight   int
+	lonelyDraws int
+
 	// What the cooking came to (stage 52): items prepared, how much of it was
 	// a carcass, and where the cooked thing ended up. The last two are the
 	// monopoly question - cooking that never leaves the cook is cooking no
@@ -880,6 +885,9 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	if ai, ok := c.(*AIController); ok {
 		if ai.ChoseBetterGround {
 			w.regionDraws++
+		}
+		if ai.ChoseMissing {
+			w.lonelyDraws++
 		}
 		if ai.JoinedDeclared {
 			w.joins++
