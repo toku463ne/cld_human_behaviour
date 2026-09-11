@@ -200,7 +200,10 @@ func (w *World) eatCarried(a *Agent, foodID int) {
 			return
 		}
 	}
-	w.mend(a, f.Kind, kept)
+	w.mend(a, &f, kept)
+	if f.Cooked > 0 {
+		w.cookedEaten++
+	}
 	if f.Kind == FoodFish {
 		w.fishEaten++
 	}
@@ -287,7 +290,8 @@ func (w *World) carriedViews(a *Agent, out []FoodView) []FoodView {
 			Held:      true,
 			Nutrition: w.mealValues(a)[f.Kind],
 			Catch:     1, // in the hand already: there is nothing left to land
-			Heal:      w.mealHeals(a)[f.Kind],
+			Heal:      w.itemHealKnown(a, f),
+			Cooked:    f.Cooked,
 			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),
 		})

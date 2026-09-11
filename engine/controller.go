@@ -159,6 +159,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addStones(p)
 	c.addCoins(p)
 	c.addPutInStore(p)
+	c.addCook(p)
 	c.addAgents(p, maxDepth)
 	c.addOffer(p)
 
@@ -782,6 +783,69 @@ func (c *AIController) addPutInStore(p *Perception) {
 			})
 		}
 	}
+}
+
+// addCook scores making something of what is in the hand (stage 52).
+//
+// It is priced with nothing new. What cooking does is raise what one item
+// mends, and what mending is worth is already the difference between two
+// readings of the same meal - so this is that meal scored twice, once as it is
+// and once as it would be, and the option is the gap between them.
+//
+// That gap is the whole reason this stage exists. Everything stages 50 and 51
+// could offer a body was worth the gradient of present death risk, and that
+// gradient is flat in a body that is not hungry - which is every body with
+// anything to spare. Mending is not read off hunger: it is read off what the
+// body is missing, capped there. So a full and battered body, which is the
+// commonest sort to be holding something, has a use for this when it has a use
+// for nothing else.
+//
+// Nothing here knows about trade. A body cooks because a cooked meal is worth
+// more to it, and what makes cooking the beginning of an exchange is that the
+// same item is then worth more to somebody else as well - most of all to
+// somebody hurt, which the body holding it may well not be. Comparative
+// advantage, out of the ceiling and not out of a rule about markets.
+func (c *AIController) addCook(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if !s.CanCook || cfg.CookTicks <= 0 || cfg.CookVitality <= 0 {
+		return
+	}
+	// The item ActCook works on is the first one in the hands, which is the
+	// one every other rule about hands works on.
+	held := -1
+	for i := range p.Foods {
+		if p.Foods[i].Held {
+			held = i
+			break
+		}
+	}
+	if held < 0 {
+		return
+	}
+	f := &p.Foods[held]
+	// What it would mend once it is done. The quality is the body's own, and
+	// it is the figure Self.CanCook was decided on, so nothing here has to
+	// ask the world a second time.
+	cookedHeal := cfg.CookVitality * s.CookQuality * s.MaxVitality * f.Nutrition
+	if cookedHeal <= f.Heal {
+		return
+	}
+	ticks := float64(cfg.CookTicks)
+	incoming := c.incomingDmg
+	// Scored at the hunger this body will be at when the cooking is done,
+	// because that is when the meal is: one trajectory carried forward, the
+	// same shape as every other estimate here.
+	hunger := s.Hunger + s.HungerRate*ticks
+	gain := mealValueAt(cfg, s, incoming, hunger, f.Nutrition, cookedHeal) -
+		mealValueAt(cfg, s, incoming, hunger, f.Nutrition, f.Heal)
+	if gain <= 0 {
+		return
+	}
+	c.add(Action{Kind: ActCook}, Utility{
+		Life:     Goal{Value: gain, Chance: 1},
+		Ticks:    ticks,
+		TimeCost: ticks * cfg.TimeCost,
+	})
 }
 
 // addCoins scores picking money up (stage 51).

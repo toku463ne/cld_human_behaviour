@@ -39,39 +39,67 @@ func (w *World) meatWorth(kind FoodKind) float64 {
 	return w.cfg.MeatNutrition
 }
 
-// mealHeal is the vitality one item of this kind would put back into this
-// body, before the ceiling of what it is missing.
+// itemHeal is the vitality this one item would put back into this body,
+// before the ceiling of what it is missing.
+//
+// It asks about the item and not about its kind, because since stage 52 two
+// things of the same kind can be worth different amounts: one of them has been
+// cooked and the other has not. What share of a body it mends is healShare
+// (cook.go), which takes the better of what it is and what was done to it.
 //
 // It carries the same two discounts the hunger side carries, and for the same
 // reasons: a body sick of meat gets less out of the next piece of it (stage
 // 16), and a parent feeding children keeps only its share of the mouthful
 // (provision.go). Writing it any other way would say that the sameness rule
 // is about stomachs rather than about mouthfuls.
-func (w *World) mealHeal(a *Agent, kind FoodKind) float64 {
-	if kind != FoodMeat || w.cfg.MeatVitality <= 0 {
+func (w *World) itemHeal(a *Agent, f *Food) float64 {
+	share := w.healShare(f)
+	if share <= 0 {
 		return 0
 	}
-	return w.cfg.MeatVitality * a.MaxVitality(&w.cfg) * w.dietValue(a, kind)
+	return share * a.MaxVitality(&w.cfg) * w.dietValue(a, f.Kind)
 }
 
-// mealHeals is the same for every kind, for Perception. The agent is told
-// exactly what the world will do to it, the way stage 16 tells it what a
-// mouthful is worth: this is the ordinary case, and lifespan remains the one
-// deliberate exception.
-func (w *World) mealHeals(a *Agent) [NumFoodKinds]float64 {
-	var out [NumFoodKinds]float64
-	if w.cfg.MeatVitality <= 0 || !w.cfg.MeatHealKnown {
-		return out
+// itemHealKnown is the same figure as the agent is told it. The carcass half
+// can be hidden, which is stage 39's control arm for telling selection from
+// choice; the cooking half never is, because a body can see what has been done
+// to what it is holding.
+func (w *World) itemHealKnown(a *Agent, f *Food) float64 {
+	if !w.cfg.MeatHealKnown && f.Cooked <= 0 {
+		return 0
 	}
-	for k := range out {
-		out[k] = w.mealHeal(a, FoodKind(k))
+	heal := w.itemHeal(a, f)
+	if !w.cfg.MeatHealKnown && f.Kind == FoodMeat && w.cfg.CookVitality > 0 {
+		// Only what the cooking is worth, since the flesh is the part being
+		// kept from it.
+		raw := Food{Kind: FoodMeat}
+		heal -= w.itemHeal(a, &raw)
+		if heal < 0 {
+			heal = 0
+		}
 	}
 	if w.cfg.ParentFeedKnown {
 		if kept := w.keptShare(a); kept != 1 {
-			for k := range out {
-				out[k] *= kept
-			}
+			heal *= kept
 		}
+	}
+	return heal
+}
+
+// mealHeals is what an uncooked item of each kind would mend, for Perception.
+// The agent is told exactly what the world will do to it, the way stage 16
+// tells it what a mouthful is worth: this is the ordinary case, and lifespan
+// remains the one deliberate exception.
+//
+// What an item in front of this body is actually worth goes through
+// itemHealKnown, because since stage 52 that depends on the item. This array
+// is the figure for the kind, which is what a body knows about food in
+// general rather than about one piece of it.
+func (w *World) mealHeals(a *Agent) [NumFoodKinds]float64 {
+	var out [NumFoodKinds]float64
+	for k := range out {
+		f := Food{Kind: FoodKind(k)}
+		out[k] = w.itemHealKnown(a, &f)
 	}
 	return out
 }
@@ -79,8 +107,8 @@ func (w *World) mealHeals(a *Agent) [NumFoodKinds]float64 {
 // mend puts a share of an item's healing into a body, up to what it is
 // missing. Called for the eater with what it kept, and for each child with
 // what it was given.
-func (w *World) mend(a *Agent, kind FoodKind, share float64) {
-	heal := share * w.mealHeal(a, kind)
+func (w *World) mend(a *Agent, f *Food, share float64) {
+	heal := share * w.itemHeal(a, f)
 	if heal <= 0 {
 		return
 	}

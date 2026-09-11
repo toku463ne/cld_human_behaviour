@@ -649,6 +649,54 @@ type Config struct {
 	// world, which is why the way back is kept.
 	CarryPricedBackwards bool
 
+	// --- cooking (stage 52) ---
+
+	// CookTicks is how long a body stands there preparing what is in its
+	// hand. Zero takes the word out of the world: nothing is scored and
+	// nothing is ever cooked.
+	//
+	// The price is time and only time, in the shape stage 32's call and stage
+	// 49's cry already use (#76). No new parallel machinery, and nothing is
+	// half-cooked: an interrupted cooking is time spent for nothing, exactly
+	// as an interrupted cry is.
+	CookTicks int
+
+	// CookVitality is what one cooked item mends, as a share of the eater's
+	// own ceiling - the same units MeatVitality is in, and deliberately the
+	// same figure by default.
+	//
+	// Equal figures mean cooking a carcass buys nothing, because the two do
+	// not stack (cook.go). That is not an oversight: it puts the cooking on
+	// the food everybody has instead of the food a hunting party has, which
+	// is the only kind an exchange could be built on.
+	//
+	// Zero is the placebo arm. The word still exists and still costs the
+	// vocabulary what it costs, nobody ever chooses it, and no random number
+	// is drawn either way - so an arm with this at zero is the world without
+	// this stage, bit for bit. Stage 50 showed how much that is worth: it is
+	// what makes a difference somewhere else believable.
+	CookVitality float64
+
+	// CookQuality is how well a body that has learned nothing about it cooks,
+	// from 0 to 1. One by default - anybody can cook - and lowering it is the
+	// map-maker's to do, the same way stage 43 leaves the two fishing chances
+	// at one until a world is laid out that wants them lower.
+	//
+	// It is a floor and not a gate (#80). A body that knows nothing still
+	// cooks; what it does not get is the part SkillCook buys back.
+	CookQuality float64
+
+	// CookSurvivesHands is whether what has been prepared stays prepared when
+	// it changes hands. True, because a cooked plant is a cooked plant
+	// whoever is holding it.
+	//
+	// False is the control arm this stage turns on, and it is the same shape
+	// as stage 49's WaresSeen: the act still happens, at the same price, and
+	// only what it is worth to somebody else is taken away. A difference
+	// between the two arms is cooking as a trade; no difference is cooking as
+	// a private act that nobody else was ever going to benefit from.
+	CookSurvivesHands bool
+
 	// --- a place to put things (stage 50) ---
 
 	// StoreCapacity is how many items one store holds. Zero takes stores out
@@ -1316,6 +1364,26 @@ type Config struct {
 	// fast it crosses. Zero is the same kind of arm as the one above.
 	SkillSwimRelief float64
 
+	// SkillCookRelief is how much of what an ignorant cook wastes a fully
+	// mastered, fully suited body gets back (stage 52b). It is a yield and
+	// not a speed: what being good at this means is that what comes out is
+	// better, not that it takes less time - the correction stage 43 had to
+	// make about fishing, kept here from the start.
+	//
+	// The gene behind it is intelligence, which is the gene the awkward crop
+	// already hangs on: knowing a way of doing something is a matter of how
+	// well the body judges the doing. Two skills on one gene is not new
+	// (throwing and fishing from the bank both hang on rationality).
+	//
+	// And this is the one skill with nothing to read off the ground. Every
+	// other one is seeded by where a body was born - the rough share, the
+	// water share, what grows there - and five measurements running have said
+	// that a skill so seeded does not move where bodies live. Cooking is
+	// seeded flat, at SkillBirthplace for everybody, so the whole of the
+	// spread in it comes from the leaps and the copying. It is the first
+	// skill in this world whose distribution owes geography nothing.
+	SkillCookRelief float64
+
 	// SkillGeniusJump is how much further than its line a genius child goes
 	// at something the line already does (GeniusRate, world.go). It reuses
 	// the event the world already has for a rare, large change rather than
@@ -1870,16 +1938,23 @@ func DefaultConfig() Config {
 		// is slower than the risk memory's: what somebody did for you outlasts
 		// what they did to you, which is the only reason a group could hold
 		// together for longer than a grudge.
-		AffinityPairBond:     18,
-		AffinityBirth:        18,
-		AffinityKin:          22,
-		AffinityHunt:         6,
-		AffinityWitnessKill:  2,
-		KillWitnessFactor:    2,
-		KillWitnessLooks:     true,
-		CallTicks:            30,
-		Coins:                0, // stage 51: the map author scatters them
-		CoinValue:            0.5,
+		AffinityPairBond:    18,
+		AffinityBirth:       18,
+		AffinityKin:         22,
+		AffinityHunt:        6,
+		AffinityWitnessKill: 2,
+		KillWitnessFactor:   2,
+		KillWitnessLooks:    true,
+		CallTicks:           30,
+		Coins:               0, // stage 51: the map author scatters them
+		CoinValue:           0.5,
+		// Stage 52. The word costs the vocabulary whether or not anybody uses
+		// it, so a world without cooking is CookVitality at zero rather than
+		// a world with a shorter list.
+		CookTicks:            20,
+		CookVitality:         0.5, // the same as a carcass, so the two never stack
+		CookQuality:          1,   // anybody can cook; a map that wants otherwise says so
+		CookSurvivesHands:    true,
 		CarryPricedBackwards: false,
 		StoreCapacity:        6,
 		MaxStores:            16,
@@ -2124,6 +2199,10 @@ func DefaultConfig() Config {
 			// power, which would make the skill a second name for the gene
 			// that already decides what the stone does on arrival (#71).
 			SkillThrow: GeneRationality,
+			// Knowing a way of doing something is a matter of how well the
+			// body judges the doing, which is the same reading that put the
+			// awkward crop on this gene.
+			SkillCook: GeneIntelligence,
 		},
 		SkillForageRelief:  1,
 		SkillSwimRelief:    1,
@@ -2133,6 +2212,7 @@ func DefaultConfig() Config {
 		FishCatchBank:      1,
 		SkillFishRelief:    1,
 		SkillHarvestRelief: 1,
+		SkillCookRelief:    1,
 		SkillThrowRelief:   1,
 		SkillsSpread:       true,
 		HintSlotCost:       5,

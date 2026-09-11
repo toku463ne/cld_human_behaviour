@@ -105,7 +105,7 @@ func (w *World) willSell(seller *Agent, item *Food) bool {
 	coin := coinWorth(cfg, &s)
 	// What the food in hand is worth to it: eaten now, or kept.
 	nutrition := w.mealValues(seller)[item.Kind]
-	heal := w.mealHeals(seller)[item.Kind]
+	heal := w.itemHealKnown(seller, item)
 	food := mealValue(cfg, &s, 0, nutrition, heal)
 	if kept := keepValue(cfg, &s, 0, nutrition, heal); kept > food {
 		food = kept
@@ -146,6 +146,12 @@ func (w *World) sell(buyer, seller *Agent) bool {
 	w.heldKind[f.Kind]++
 	w.heldKind[c.Kind]++
 	w.sales++
+	if f.Cooked > 0 {
+		w.cookedHanded++
+		if !w.cfg.CookSurvivesHands {
+			buyer.carried[len(buyer.carried)-1].Cooked = 0
+		}
+	}
 	return true
 }
 

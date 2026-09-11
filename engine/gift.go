@@ -60,6 +60,12 @@ func (w *World) giveItem(from, to *Agent) bool {
 	if item.Kind == FoodStone {
 		w.giftStones++
 	}
+	if item.Cooked > 0 {
+		w.cookedHanded++
+		if !w.cfg.CookSurvivesHands {
+			to.carried[len(to.carried)-1].Cooked = 0
+		}
+	}
 
 	// What it earns, both ways, and through the ordinary machinery: the same
 	// call the shared kill makes.

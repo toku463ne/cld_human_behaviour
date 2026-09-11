@@ -63,6 +63,16 @@ const (
 	// arrives, the same way a courtship is either accepted or not.
 	ActBuy
 
+	// ActCook is standing still and making what is in the hand into
+	// something that mends (stage 52). The fifteenth word, added at the end
+	// like the seven before it.
+	//
+	// It is the first word whose whole product is an item that is worth more
+	// to somebody else than it was before - which is the thing an exchange
+	// needs and the thing stages 48 to 51 could not find. What it costs is
+	// time, in the shape stage 32 and stage 49 already use.
+	ActCook
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -96,6 +106,8 @@ func (k ActionKind) String() string {
 		return "store"
 	case ActBuy:
 		return "buy"
+	case ActCook:
+		return "cook"
 	default:
 		return "rest"
 	}

@@ -512,4 +512,12 @@ type Food struct {
 	// kind of its own, because it feeds a body exactly what a plant feeds a
 	// body - what differs is how often the attempt comes off.
 	Special bool
+
+	// Cooked is how well this item was prepared (stage 52), zero for
+	// everything the world grew and everything nobody has done anything to.
+	// It is a property of the item for the same reason Special is, and it
+	// holds a figure rather than a flag because how good it is is the whole
+	// point: it is set from the cook's own skill, so what changes hands is
+	// somebody else's work and not merely somebody else's dinner.
+	Cooked float64
 }

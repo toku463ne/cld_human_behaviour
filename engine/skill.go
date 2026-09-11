@@ -94,6 +94,16 @@ const (
 	// may touch is the accuracy distance takes away (#71).
 	SkillThrow
 
+	// SkillCook is knowing how to make food out of food (stage 52). What it
+	// buys is what an ignorant cook wastes, and what caps it is intelligence.
+	//
+	// It is the one skill with nothing to read off the ground. The other
+	// seven are seeded by where a body was born, and five measurements
+	// running have said that a skill seeded that way does not move where
+	// bodies live; this one is seeded flat, so every bit of spread in it is
+	// the leaps and the copying.
+	SkillCook
+
 	NumSkillKinds
 )
 
@@ -115,6 +125,8 @@ func (s SkillKind) String() string {
 		return "harvesting"
 	case SkillThrow:
 		return "throwing"
+	case SkillCook:
+		return "cooking"
 	}
 	return "none"
 }
@@ -319,6 +331,15 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 			return 0
 		}
 		share = w.regionPoison(i)
+	case SkillCook:
+		// Nothing about the place at all: one for everybody, so the figure a
+		// body starts with is the same wherever it was born, and the whole of
+		// what separates one cook from another afterwards is the rare leap
+		// and who it has stood near. It is the deliberate exception to the
+		// other seven, and the reason is that seeding this one off the ground
+		// would be a sixth go at a question five measurements have already
+		// answered (see SkillCookRelief).
+		share = 1
 	}
 	return clamp(share*w.cfg.SkillBirthplace, 0, 1)
 }

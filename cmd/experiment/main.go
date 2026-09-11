@@ -1686,6 +1686,76 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	// Stage 52: cooking. The default world has it, so the arms turn it off
+	// rather than on - and the one that turns it off is a placebo rather than
+	// a shorter vocabulary, because the word costs the same whether or not
+	// anybody uses it.
+	{
+		name:  "nocook",
+		about: "52: the placebo - cooking is worth nothing, so nobody ever does it",
+		apply: func(c *engine.Config) { c.CookVitality = 0 },
+	},
+	{
+		name:  "cookprivate",
+		about: "cooking that does not survive changing hands: the trade half taken out",
+		apply: func(c *engine.Config) { c.CookSurvivesHands = false },
+	},
+	// The pair that isolates the trade half without letting anybody cook the
+	// same thing twice. cookprivate takes the cooking off an item when it
+	// changes hands, which the receiver can undo for twenty ticks; these two
+	// take away the reason to hand anything over at all, and read against
+	// nocook and nocookmean they say how much of cooking's worth needs
+	// somebody else.
+	{
+		name:  "cookmean",
+		about: "cooking, and no reason to hand anything to anybody",
+		apply: func(c *engine.Config) { c.AffinityGift = 0 },
+	},
+	{
+		name:  "nocookmean",
+		about: "the pair for it: no cooking either, so the two differences can be read against each other",
+		apply: func(c *engine.Config) { c.AffinityGift, c.CookVitality = 0, 0 },
+	},
+	{
+		name:  "cookslow",
+		about: "cooking at three times the price in time",
+		apply: func(c *engine.Config) { c.CookTicks = 60 },
+	},
+	{
+		name:  "cookweak",
+		about: "cooking worth a fifth of a body rather than half of one",
+		apply: func(c *engine.Config) { c.CookVitality = 0.1 },
+	},
+	{
+		name:   "cookplayed",
+		about:  "52 on the map that is played, where food is scarce",
+		apply:  playedMap,
+		stores: playedStores,
+	},
+	{
+		name:   "cookplayednone",
+		about:  "the pair for it: the played map with cooking worth nothing",
+		apply:  func(c *engine.Config) { playedMap(c); c.CookVitality = 0 },
+		stores: playedStores,
+	},
+	{
+		name:  "cookskill",
+		about: "52b: the played map where an ignorant cook wastes half of it, and the skill buys it back",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.SkillBirthplace, c.CookQuality = 0.5, 0.5
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "cookskillnone",
+		about: "the pair for it: the same world where knowing how to cook buys nothing",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.SkillBirthplace, c.CookQuality, c.SkillCookRelief = 0.5, 0.5, 0
+		},
+		stores: playedStores,
+	},
 	{
 		name:  "coinsflat",
 		about: "51 on the flat world, which is richer and has more to spare",
@@ -2577,6 +2647,8 @@ var metricNames = []string{
 	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
 	"coinsLying", "coinsHeld", "coinHolders", "sales", "salesRefused", "saleRate",
+	"cooked", "cookRate", "cookedMeat", "cookedEaten", "cookedHanded",
+	"cookStanding", "cookSplit", "cookHeld", "cookReal",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
 	"flees", "escapeShare",
@@ -2725,6 +2797,11 @@ type sample struct {
 	// Knowing how to throw (stage 47): who has it and what their bodies make
 	// of it.
 	aimHeld, aimReal float64
+
+	// Cooking (stage 52): who knows how, what their bodies make of it, how
+	// far apart cooking and foraging are across the population (the division
+	// of labour), and how much cooked food is standing about in hands.
+	cookHeld, cookReal, cookSplit, cookStanding float64
 
 	// The supply of stones (stage 45): how many lie about, how often a body
 	// has one in sight, how far the nearest is, and how many are in hands.
@@ -2901,6 +2978,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		crop := w.Specialty()
 		rocks := w.Stones()
 		aim := w.Skills(engine.SkillThrow)
+		chef := w.Skills(engine.SkillCook)
+		kitchen := w.Cooking()
 		given := w.Gifts()
 		tol := w.Skills(engine.SkillPoison)
 		shelter := w.Shelter()
@@ -2950,6 +3029,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			giftsToKin: given.ToKin, giftsToMates: given.ToMates,
 			giftsToStrangers: given.ToStrange, giftStones: given.Stones,
 			aimHeld: aim.Held, aimReal: aim.Realised,
+			cookHeld: chef.Held, cookReal: chef.Realised,
+			cookSplit: kitchen.Split, cookStanding: kitchen.Standing,
 			stonesLying: float64(rocks.Lying), stoneSeen: rocks.InSight,
 			stoneNear: rocks.Nearest, stoneHeld: rocks.Carrying,
 			specialShare: crop.Share, specialHeld: crop.Held,
@@ -3020,6 +3101,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	fords := banks.Result()
 	stored := w.Stored()
 	money := w.Coins()
+	kitchen := w.Cooking()
 
 	// The rarest species is the one coexistence stands on: the others can look
 	// healthy while it goes. With humans alone it is the human population, and
@@ -3120,6 +3202,21 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"sales":        float64(money.Sales),
 		"salesRefused": float64(money.Refused),
 		"saleRate":     perAgentLifetime(money.Sales, personTicks),
+		// The cooking (stage 52). cooked says whether the word is ever used;
+		// cookedHanded is the monopoly question, as hand-overs of cooked food
+		// per cooking - cooking that never leaves the cook is cooking no
+		// exchange can be built on; cookSplit is the division of labour, as
+		// the correlation between being good at this and being good at
+		// foraging.
+		"cooked":       float64(kitchen.Cooked),
+		"cookRate":     perAgentLifetime(kitchen.Cooked, personTicks),
+		"cookedMeat":   kitchen.Meat,
+		"cookedEaten":  kitchen.Eaten,
+		"cookedHanded": kitchen.Handed,
+		"cookStanding": tail.cookStanding,
+		"cookSplit":    tail.cookSplit,
+		"cookHeld":     tail.cookHeld,
+		"cookReal":     tail.cookReal,
 		"joinShare":    ratio(end.Joins, end.Decisions),
 		// The share of all decisions that were "go to country I think better
 		// of" - the one door a belief about a place has into a body, and so
@@ -3558,6 +3655,10 @@ func tailAverage(series []sample) sample {
 		out.giftStones += s.giftStones
 		out.aimHeld += s.aimHeld
 		out.aimReal += s.aimReal
+		out.cookHeld += s.cookHeld
+		out.cookReal += s.cookReal
+		out.cookSplit += s.cookSplit
+		out.cookStanding += s.cookStanding
 		out.stonesLying += s.stonesLying
 		out.stoneSeen += s.stoneSeen
 		out.stoneNear += s.stoneNear
@@ -3691,6 +3792,10 @@ func tailAverage(series []sample) sample {
 	out.giftsToStrangers /= d
 	out.giftStones /= d
 	out.aimHeld /= d
+	out.cookHeld /= d
+	out.cookReal /= d
+	out.cookSplit /= d
+	out.cookStanding /= d
 	out.aimReal /= d
 	out.stonesLying /= d
 	out.stoneSeen /= d

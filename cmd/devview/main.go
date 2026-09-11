@@ -105,6 +105,7 @@ var (
 	colorCourtLink  = color.RGBA{0xf0, 0x8c, 0x00, 0xd0}
 	colorCallLink   = color.RGBA{0x1c, 0x9c, 0x5a, 0xd0}
 	colorWares      = color.RGBA{0xe8, 0xd0, 0x40, 0xd0}
+	colorCooking    = color.RGBA{0xff, 0x8c, 0x30, 0xd0}
 	colorStore      = color.RGBA{0x8a, 0x6a, 0x3a, 0xc0}
 	colorCoin       = color.RGBA{0xf2, 0xc0, 0x30, 0xff}
 	colorStoreFull  = color.RGBA{0xc8, 0x9a, 0x50, 0xd0}
@@ -2518,6 +2519,11 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			vector.StrokeCircle(screen, x, y, radius+4, 1, colorWares, true)
 			vector.StrokeCircle(screen, x, y, radius+7, 1, colorWares, true)
 		}
+		// A body cooking (stage 52), for the same reason: it is standing
+		// still with something in its hand, which looks like doing nothing.
+		if a.Action.Kind == engine.ActCook {
+			vector.StrokeCircle(screen, x, y, radius+4, 1, colorCooking, true)
+		}
 		if hunger := float32(a.Hunger / 100); hunger > 0.01 {
 			bar := g.long(12)
 			vector.StrokeLine(screen, x-bar/2, y+radius+3, x-bar/2+bar*hunger, y+radius+3, 2, colorHungerBar, true)
@@ -2983,6 +2989,9 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 						kinds += ", "
 					}
 					kinds += f.Kind.String()
+					if f.Cooked > 0 {
+						kinds += fmt.Sprintf(" (cooked %.0f%%)", f.Cooked*100)
+					}
 				}
 				t.line("holding: %s", kinds)
 			}
@@ -2993,6 +3002,9 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 				true:  "  CRYING ITS WARES",
 				false: "",
 			}[a.Action.Kind == engine.ActOffer])
+			if a.Action.Kind == engine.ActCook {
+				t.line("  COOKING")
+			}
 		}
 		// What it assumes, as against what it knows about anybody in
 		// particular. The counts say whether it has seen anything: with

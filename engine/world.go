@@ -459,6 +459,15 @@ type World struct {
 	sales        int
 	salesRefused int
 
+	// What the cooking came to (stage 52): items prepared, how much of it was
+	// a carcass, and where the cooked thing ended up. The last two are the
+	// monopoly question - cooking that never leaves the cook is cooking no
+	// exchange can be built on.
+	cooked       int
+	cookedMeat   int
+	cookedEaten  int
+	cookedHanded int
+
 	storeLearned int
 	storeFound   int
 	storeSeen    int
@@ -1037,6 +1046,12 @@ func (w *World) perform(a *Agent) {
 
 	case ActOffer:
 		w.cry(a)
+
+	case ActCook:
+		// Making something of what is in the hand (stage 52). Nothing to walk
+		// to and nobody to agree with: the whole of the price is standing
+		// there, the same shape the cry uses.
+		w.cook(a)
 
 	case ActBuy:
 		// Buying (stage 51). Close enough to put one thing in each other's
@@ -1824,7 +1839,10 @@ func (w *World) eat(a *Agent, foodID int) {
 	// After the bite that fails, not before it: nothing meat carries can be
 	// spat out today, but a mouthful that was never swallowed must not mend
 	// anybody the day something can.
-	w.mend(a, f.Kind, kept)
+	w.mend(a, f, kept)
+	if f.Cooked > 0 {
+		w.cookedEaten++
+	}
 	if f.Kind == FoodFish {
 		w.fishEaten++
 	}

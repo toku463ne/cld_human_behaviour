@@ -97,6 +97,13 @@ import (
 // 32, 40 and 46 - held at its old width, the world with the rule off is
 // bit-identical, which is how that was checked.
 //
+// And again when a body could make what it was holding into something that
+// mends (stage 52, 2026-09-11). A fifteenth word, and this one is used in
+// these very runs: average vitality is up and average hunger is down in all
+// three, which is the whole of what cooking does. Measured over 48 seeds it is
+// worth about twenty-one population - the largest a single rule has been in
+// this world.
+//
 // And again when a body could hand what it was holding to somebody else
 // (stage 48, 2026-09-09). An eleventh word, and this one is used: measured
 // over 48 seeds it is worth about nine population in the world these numbers
@@ -133,9 +140,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 41, births: 24, deaths: 65, kills: 47, aging: 0, fights: 4810, gen: 2, power: 42.054951, vitality: 102.714171, hunger: 27.566267},
-	{seed: 2, pop: 47, births: 39, deaths: 69, kills: 56, aging: 0, fights: 5742, gen: 3, power: 39.088412, vitality: 93.314940, hunger: 26.678677},
-	{seed: 3, pop: 45, births: 32, deaths: 69, kills: 51, aging: 0, fights: 3055, gen: 3, power: 40.145344, vitality: 93.556899, hunger: 28.012042},
+	{seed: 1, pop: 40, births: 30, deaths: 68, kills: 50, aging: 0, fights: 3850, gen: 2, power: 41.987425, vitality: 104.465993, hunger: 18.782416},
+	{seed: 2, pop: 68, births: 57, deaths: 70, kills: 55, aging: 0, fights: 7456, gen: 3, power: 42.256537, vitality: 115.323942, hunger: 24.638980},
+	{seed: 3, pop: 46, births: 41, deaths: 73, kills: 56, aging: 0, fights: 5790, gen: 2, power: 36.393468, vitality: 117.523227, hunger: 24.402088},
 }
 
 const goldenTicks = 5000

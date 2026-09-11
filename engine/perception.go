@@ -75,6 +75,19 @@ type SelfView struct {
 	// it is sick of something.
 	Nutrition [NumFoodKinds]float64
 
+	// CookQuality is how well this body cooks, from 0 to 1 (stage 52). A body
+	// knows its own hands: this is the same reading Self.Ground is of the
+	// ground underfoot, and it is what makes one body's work worth more than
+	// another's.
+	CookQuality float64
+
+	// CanCook says there is something in this body's hands that it could
+	// make better than it is (stage 52). It is a fact about the hands and the
+	// body's own skill, which is why it is worked out here rather than in the
+	// controller: what a body can do with what it is holding is not a
+	// judgement.
+	CanCook bool
+
 	// HasStone says there is something to throw in this body's hand (stage
 	// 46). What it would be worth throwing at is on the other side, in
 	// AgentView.
@@ -237,6 +250,14 @@ type FoodView struct {
 	// now, which is the same assumption about the ground ahead that every
 	// other estimate here makes.
 	Catch float64
+
+	// Cooked is how well this one has been prepared (stage 52), zero for
+	// anything nobody has done anything to. It is not hidden: what has been
+	// done to a thing is written on the outside of it, the same way what it
+	// is is. What it is worth is already in Heal - this is here so that an
+	// agent can tell whether there is anything left to do to it, and so that
+	// a human player can see the same.
+	Cooked float64
 
 	// Held says this one is already in the agent's own hands (stage 40).
 	// Nothing about how it is scored changes - it is a meal at no distance
@@ -491,6 +512,8 @@ func (w *World) selfView(a *Agent) SelfView {
 		CarryCapacity:     a.carryCapacity(&w.cfg),
 		CarryRoom:         a.canCarryMore(&w.cfg),
 		HasStone:          a.canThrow(&w.cfg),
+		CanCook:           w.canCook(a),
+		CookQuality:       w.cookQuality(a),
 		HasCoin:           a.carriedIndex2(FoodCoin) >= 0,
 	}
 }
@@ -569,7 +592,8 @@ func (w *World) perceive(a *Agent) *Perception {
 			Kind:      f.Kind,
 			Store:     f.Store,
 			Nutrition: p.Self.Nutrition[f.Kind],
-			Heal:      p.Self.Heal[f.Kind],
+			Heal:      w.itemHealKnown(a, f),
+			Cooked:    f.Cooked,
 			Catch:     w.catchExpected(a, f),
 			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),
@@ -635,7 +659,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		if item := w.offering(o); item != nil && w.canEat(a, item) {
 			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
 			offerValue = p.Self.Nutrition[item.Kind]
-			offerHeal = p.Self.Heal[item.Kind]
+			offerHeal = w.itemHealKnown(a, item)
 			w.sawOffer = true
 		}
 

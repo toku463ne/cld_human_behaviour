@@ -107,7 +107,7 @@ func (w *World) share(a *Agent, f *Food) float64 {
 		// does, mending included (stage 39). Splitting it any other way
 		// would make provisioning a rule about calories rather than about
 		// food.
-		w.mend(c, f.Kind, each)
+		w.mend(c, f, each)
 		if w.cfg.PlantDefence && f.Kind == FoodPlant {
 			c.Vitality -= each * f.Genes.Poison * w.cfg.PoisonDamage
 		}
