@@ -118,7 +118,47 @@ func (a *Agent) AgeFactor(cfg *Config) float64 {
 // what breeding passes on and what the experiments measure, because selection
 // acts on what is inherited, not on how old the holder happens to be.
 func (a *Agent) Ability(g Gene, cfg *Config) float64 {
-	return a.Gene(g) * a.AgeFactor(cfg)
+	return a.Gene(g) * a.AgeFactor(cfg) * a.sexFactor(g, cfg)
+}
+
+// sexFactor is what this body's sex does to one gene (stage 53).
+//
+// One when the world has no such difference in it, which is the default and
+// every figure recorded before 2026-09-11. It is a third multiplication in the
+// one place multiplication happens, next to the age factor and for the same
+// reason: there is one answer to "how strong is this one", never two.
+//
+// What it is not. It is not inheritance - Genome, inheritGene, inheritBudget
+// and drawGenomeFor never look at sex, so both sexes are drawn from the one
+// pool and #4's refusal of sex chromosomes stands. It is not a gate either:
+// the means are nudged apart and the distributions still overlap almost
+// entirely.
+//
+// Which way each gene leans is derived from the roles of 53a rather than from
+// any idea about sexes (#85). The mother is tied to a radius, so she reads the
+// ground around her (rationality), takes what comes to her (defence), and
+// depends on who is nearby (memory). The father ranges, so he goes where it is
+// dangerous (power), covers the distance (speed), and picks between ways of
+// doing it (intelligence) - intelligence rather than rationality because
+// rationality is already hers, and the roles do not double up.
+//
+// And there is a ceiling on what any of this can do, which #4 put there:
+// without sex chromosomes, a gene that pays for one sex and costs the other is
+// blended in the next generation. So the figure to read is not the difference
+// between the sexes - that is put in by hand and proves nothing - but where
+// the population's whole budget share goes against the arm without it.
+func (a *Agent) sexFactor(g Gene, cfg *Config) float64 {
+	if int(g) >= len(cfg.SexBias) {
+		return 1
+	}
+	bias := cfg.SexBias[g]
+	if bias == 0 {
+		return 1
+	}
+	if a.Sex == Female {
+		return 1 + bias
+	}
+	return 1 - bias
 }
 
 // The genes that have a job, named so that the rules read as rules rather than

@@ -124,3 +124,53 @@ func TestNobodyFeedsSomebodyElsesChild(t *testing.T) {
 		t.Fatal("a stranger's meal fed somebody else's child")
 	}
 }
+
+// The split of stage 53: what a body expresses leans by sex, what it inherits
+// and passes on does not.
+func TestTheSexBiasLeansExpressionAndNotInheritance(t *testing.T) {
+	cfg := growthConfig()
+	cfg.SexBias[GeneMemory] = 0.2 // the mother's
+	cfg.SexBias[GeneSpeed] = -0.2 // the father's
+	w := NewWorld(cfg)
+	f := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, Sex: Female, X: 100, Y: 100,
+		Vitality: 90, Genome: genomeOf(50, 50, 50)}))
+	m := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, Sex: Male, X: 300, Y: 300,
+		Vitality: 90, Genome: genomeOf(50, 50, 50)}))
+	for _, g := range []Gene{GeneMemory, GeneSpeed} {
+		if f.Gene(g) != m.Gene(g) {
+			t.Fatalf("the two were built with different %v: %v and %v", g, f.Gene(g), m.Gene(g))
+		}
+	}
+	if f.Ability(GeneMemory, &w.cfg) <= m.Ability(GeneMemory, &w.cfg) {
+		t.Fatalf("memory: mother expresses %v, father %v",
+			f.Ability(GeneMemory, &w.cfg), m.Ability(GeneMemory, &w.cfg))
+	}
+	if f.Ability(GeneSpeed, &w.cfg) >= m.Ability(GeneSpeed, &w.cfg) {
+		t.Fatalf("speed: mother expresses %v, father %v",
+			f.Ability(GeneSpeed, &w.cfg), m.Ability(GeneSpeed, &w.cfg))
+	}
+	// Untouched genes are untouched, and breeding reads the inheritance.
+	if f.Ability(GeneAttack, &w.cfg) != m.Ability(GeneAttack, &w.cfg) {
+		t.Fatal("a gene with no bias on it came out different by sex")
+	}
+}
+
+// And a world with no bias in it is the world before stage 53's split, to the
+// bit: nothing is drawn and nothing is multiplied.
+func TestNoSexBiasIsTheWorldWithoutIt(t *testing.T) {
+	run := func(f func(*Config)) Stats {
+		cfg := DefaultConfig()
+		cfg.Seed = 11
+		f(&cfg)
+		w := NewWorld(cfg)
+		for i := 0; i < 3000; i++ {
+			w.Step()
+		}
+		return w.Stats()
+	}
+	plain := run(func(*Config) {})
+	zeroed := run(func(c *Config) { c.SexBias = [NumGenes]float64{} })
+	if plain != zeroed {
+		t.Fatalf("an explicitly zeroed bias is not the default:\n %+v\n %+v", plain, zeroed)
+	}
+}

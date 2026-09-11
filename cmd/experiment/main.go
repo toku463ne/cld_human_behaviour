@@ -187,6 +187,20 @@ var (
 	}
 )
 
+// sexSplit leans the genes by sex the way stage 53's roles ask for: the mother
+// reads the ground around her, takes what comes to her and depends on who is
+// nearby; the father goes where it is dangerous, covers the distance and picks
+// between ways of doing it. Positive favours the mother, so a negative figure
+// hands each role the other one's body.
+func sexSplit(c *engine.Config, by float64) {
+	c.SexBias[engine.GeneRationality] = by
+	c.SexBias[engine.GeneDefence] = by
+	c.SexBias[engine.GeneMemory] = by
+	c.SexBias[engine.GeneAttack] = -by
+	c.SexBias[engine.GeneSpeed] = -by
+	c.SexBias[engine.GeneIntelligence] = -by
+}
+
 // playedMap is the world cmd/devview lays out to be played on: terrain, food
 // tied to the ground and the water, fish, the awkward crop and stones. Stage
 // 44 showed that a rule which spends food can be worth a population on the
@@ -1715,6 +1729,36 @@ var variants = []variant{
 		name:  "rearold",
 		about: "53a on its own, with feeding off as it is by default: only who rears changes",
 		apply: func(c *engine.Config) { c.GuardianIsMother = false },
+	},
+	// Stage 53: the split itself. The directions come from the roles of 53a
+	// (#85): the mother is tied to a radius and the father ranges. The arm to
+	// read it against is the one with the roles and no split, because the
+	// difference between the sexes is put in by hand and proves nothing - what
+	// is worth reading is where the population's whole budget goes.
+	{
+		name:  "sexes",
+		about: "53: the mother reads and remembers, the father ranges and picks",
+		apply: func(c *engine.Config) { sexSplit(c, 0.15) },
+	},
+	{
+		name:  "sexesstrong",
+		about: "the same split, twice as far",
+		apply: func(c *engine.Config) { sexSplit(c, 0.3) },
+	},
+	{
+		name:  "sexesswapped",
+		about: "the control: the same split with the sexes exchanged, so the roles and the genes disagree",
+		apply: func(c *engine.Config) { sexSplit(c, -0.15) },
+	},
+	{
+		name:  "sexesfed",
+		about: "53 in a world where parents feed their children, which is where the roles bite",
+		apply: func(c *engine.Config) { sexSplit(c, 0.15); c.ParentFeedShare = 0.5 },
+	},
+	{
+		name:  "sexesnonefed",
+		about: "the pair for it: the same feeding world with no split",
+		apply: func(c *engine.Config) { c.ParentFeedShare = 0.5 },
 	},
 	// Stage 54: a mood. The default has none, so the arms turn it on; the
 	// pair that matters is not on-against-off but the sign, because the same

@@ -714,6 +714,23 @@ type Config struct {
 	// many chances to feed anybody, and it has to be measured on its own.
 	ParentFeedByKin bool
 
+	// SexBias is how far each gene leans by sex, as a fraction: the expressed
+	// value is what was inherited times one plus this for a female and one
+	// minus it for a male (stage 53). Positive favours the mother.
+	//
+	// All zero by default, which is the world where sex does nothing but
+	// decide who can pair with whom - every figure recorded before
+	// 2026-09-11 - and it is deliberately measured against that arm rather
+	// than made a default, because a difference put in by hand is not a
+	// finding.
+	//
+	// The directions come from the roles of 53a and not from anywhere else
+	// (#85); see sexFactor for the derivation. Vitality, evasion and looks
+	// are left alone: both roles want them equally, and looks in particular
+	// would touch stage 26's line that no real ability enters what a body is
+	// worth as a mate.
+	SexBias [NumGenes]float64
+
 	// --- how a body is feeling (stage 54) ---
 
 	// MoodWeight is how far a mood leans what a body makes of being worn
@@ -2026,9 +2043,10 @@ func DefaultConfig() Config {
 		CookVitality:         0.5, // the same as a carcass, so the two never stack
 		CookQuality:          1,   // anybody can cook; a map that wants otherwise says so
 		CookSurvivesHands:    true,
-		GuardianIsMother:     true, // stage 53a
-		ParentFeedByKin:      true, // stage 53b: and never one without the other
-		MoodWeight:           0,    // stage 54: measured before it is a default
+		GuardianIsMother:     true,                // stage 53a
+		SexBias:              [NumGenes]float64{}, // stage 53: measured before it is a default
+		ParentFeedByKin:      true,                // stage 53b: and never one without the other
+		MoodWeight:           0,                   // stage 54: measured before it is a default
 		MoodDreadGain:        1,
 		MoodCheerGain:        1,
 		MoodHalfLife:         150,
