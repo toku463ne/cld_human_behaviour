@@ -1315,8 +1315,11 @@ func (w *World) resolveAttacks() {
 		damage *= 1 - to.defence(&w.cfg)*composure
 		to.Vitality -= damage
 
-		// The one taking the hits remembers exactly what they cost.
+		// The one taking the hits remembers exactly what they cost - and is
+		// shaken by it, which is a different thing (stage 54): the memory is
+		// of one body, and the fright is of the world.
 		w.rememberDamage(to, from.ID, damage)
+		w.frighten(to, damage)
 		to.attackerID = from.ID
 		to.lastAttackTick = w.tick
 
@@ -1839,6 +1842,10 @@ func (w *World) eat(a *Agent, foodID int) {
 	// After the bite that fails, not before it: nothing meat carries can be
 	// spat out today, but a mouthful that was never swallowed must not mend
 	// anybody the day something can.
+	// What the mouthful actually did, for a body's sense of how things are
+	// going (stage 54). After the bite that fails, for the same reason the
+	// mending is: a plant that was spat out fed nobody.
+	w.please(a, hungerBefore-a.Hunger, 0)
 	w.mend(a, f, kept)
 	if f.Cooked > 0 {
 		w.cookedEaten++

@@ -493,7 +493,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		AcceptChance:      a.lore.accept.mean,
 		RiskWeight:        a.lore.riskWeight,
 		CompetitionWeight: a.lore.competitionWeight,
-		ShockRisk:         a.lore.shockRisk,
+		ShockRisk:         w.shockRiskFelt(a),
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),

@@ -686,6 +686,49 @@ type Config struct {
 	// cooks; what it does not get is the part SkillCook buys back.
 	CookQuality float64
 
+	// --- how a body is feeling (stage 54) ---
+
+	// MoodWeight is how far a mood leans what a body makes of being worn
+	// down. Zero is the placebo: the two scalars stay at nothing, no lean is
+	// applied, no random number is drawn, and the world is the one before
+	// this stage bit for bit.
+	//
+	// A negative figure is the control this stage turns on, and it is the
+	// cheapest one there is: the same size of lean with the sign reversed, so
+	// that a frightened body grows bold. If that does as well, then what
+	// matters is the size of the bias and not its structure - which is the
+	// difference between a feeling and a coin toss.
+	//
+	// It leans a preference and not a fact. ShockRisk is one of the three
+	// quantities stage 12a set aside as having no right answer in the world,
+	// so a body reading it high is not wrong about anything it could check.
+	MoodWeight float64
+
+	// MoodDreadGain and MoodCheerGain are how much one blow and one mouthful
+	// move the two scalars, in units of the body's own ceiling: a blow worth
+	// a tenth of a body adds a tenth times the first to its dread. Both
+	// scalars are capped at one, so no run of luck either way can take a body
+	// past being wholly one thing.
+	//
+	// They are separate because the two sides of this turned out to be
+	// nothing like the same size. Measured: cheer sits at 0.12 against dread
+	// at 0.02, because meals are frequent and large in a body's own units
+	// while blows are rare and small - so with both on, the mood is a
+	// near-constant lean towards boldness rather than a signal. Setting the
+	// cheer to nothing is the arm that asks stage 12a's question properly:
+	// does a fear of something that is not there hold a world together?
+	MoodDreadGain float64
+	MoodCheerGain float64
+
+	// MoodHalfLife is how long the lean takes to fade by half. It is the whole
+	// design, and the count taken before this was built says why: the share of
+	// body-samples inside so many ticks of a beating runs 0.199 (50), 0.346
+	// (150), 0.466 (300), 0.585 (600), 0.673 (1200) against a ceiling of 0.713
+	// for having ever been hit at all. A mood that stands two thirds of the
+	// time is a constant, and a constant changes no ranking - so a long memory
+	// for fear should do less than a short one, not more.
+	MoodHalfLife int
+
 	// CookSurvivesHands is whether what has been prepared stays prepared when
 	// it changes hands. True, because a cooked plant is a cooked plant
 	// whoever is holding it.
@@ -1955,6 +1998,10 @@ func DefaultConfig() Config {
 		CookVitality:         0.5, // the same as a carcass, so the two never stack
 		CookQuality:          1,   // anybody can cook; a map that wants otherwise says so
 		CookSurvivesHands:    true,
+		MoodWeight:           0, // stage 54: measured before it is a default
+		MoodDreadGain:        1,
+		MoodCheerGain:        1,
+		MoodHalfLife:         150,
 		CarryPricedBackwards: false,
 		StoreCapacity:        6,
 		MaxStores:            16,

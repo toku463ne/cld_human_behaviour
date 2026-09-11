@@ -3014,6 +3014,28 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 			as.Retaliation, as.RetaliationSeen, as.Accept, as.AcceptSeen)
 		t.line("wants:   risk x%.2f   rival %.3f   empty %.2f",
 			as.RiskWeight, as.Competition, as.ShockRisk)
+		// And how it is feeling, which leans the last of those three (stage
+		// 54). Both figures are shown because the difference between them is
+		// the whole of what a mood is: what the body inherited, and what it
+		// is making of it after the last few hundred ticks. Nobody else can
+		// see this - a feeling is not written on the outside of a body - so
+		// it is on the panel of the node being followed only.
+		if cfg.MoodWeight != 0 {
+			mood := g.world.MoodOf(a.ID)
+			how := "settled"
+			switch {
+			case mood < -0.2:
+				how = "FRIGHTENED"
+			case mood < -0.05:
+				how = "shaken"
+			case mood > 0.2:
+				how = "BOLD"
+			case mood > 0.05:
+				how = "pleased"
+			}
+			t.line("feels:   %s (%+.2f), so empty weighs %.2f",
+				how, mood, as.ShockRisk*(1-mood*cfg.MoodWeight))
+		}
 		// One rule of thumb per line: they are the least self explanatory
 		// thing on the panel, and running them together made the line longer
 		// than the panel is wide.
@@ -4102,6 +4124,15 @@ func main() {
 		// default of the physics, because what it is worth is a claim on a
 		// meal and the measurement of what that does to a world is an arm.
 		cfg.Coins = 60
+
+		// And a mood (stage 54). A played world has one because being
+		// frightened is a thing a player will recognise in a body, and
+		// because the panel can show what a body is making of the world as
+		// against what it inherited. It is not a default of the physics: what
+		// it is worth is about eight population against the arm with no
+		// feeling in it, and that is a weak enough figure to leave the
+		// world's own baseline where it is.
+		cfg.MoodWeight, cfg.MoodDreadGain, cfg.MoodCheerGain = 0.5, 30, 3
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
 	}

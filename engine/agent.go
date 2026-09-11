@@ -200,6 +200,15 @@ type Agent struct {
 	attackerID     int
 	lastAttackTick int
 
+	// How this body is doing, and when that was last brought up to date
+	// (stage 54). Two scalars for the whole body rather than one per face:
+	// a record of who frightened it would be a grudge, and this world has
+	// refused to keep one since stage 5. They fade on reading, in the same
+	// shape as the risk and affinity it holds about other bodies, so this is
+	// bookkeeping and not a new thing a body is made of.
+	dread, cheer float64
+	moodAt       int
+
 	// carried is what this body is holding (stage 40): the fifth state axis,
 	// and the only one whose contents are the world's own items rather than a
 	// number. It is not exported - the viewer asks through Perception like

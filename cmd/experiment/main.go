@@ -1690,6 +1690,92 @@ var variants = []variant{
 	// rather than on - and the one that turns it off is a placebo rather than
 	// a shorter vocabulary, because the word costs the same whether or not
 	// anybody uses it.
+	// Stage 54: a mood. The default has none, so the arms turn it on; the
+	// pair that matters is not on-against-off but the sign, because the same
+	// size of lean with the sign reversed says whether the structure is doing
+	// the work or only the magnitude.
+	{
+		name:  "mood",
+		about: "54: a frightened body weighs being worn down higher, a fed one lower",
+		apply: func(c *engine.Config) { c.MoodWeight = 0.5 },
+	},
+	{
+		name:  "moodinverted",
+		about: "the control: the same lean with the sign reversed, so fright makes bodies bold",
+		apply: func(c *engine.Config) { c.MoodWeight = -0.5 },
+	},
+	{
+		name:  "moodstrong",
+		about: "the same lean, twice as far",
+		apply: func(c *engine.Config) { c.MoodWeight = 1 },
+	},
+	{
+		name:  "moodfear",
+		about: "dread only: the arm that asks stage 12a's question, since cheer is six times the size of fear and swamps it",
+		apply: func(c *engine.Config) { c.MoodWeight, c.MoodCheerGain = 0.5, 0 },
+	},
+	{
+		name:  "moodfearlong",
+		about: "dread only, fading in six hundred ticks rather than a hundred and fifty",
+		apply: func(c *engine.Config) { c.MoodWeight, c.MoodCheerGain, c.MoodHalfLife = 0.5, 0, 600 },
+	},
+	{
+		name:  "moodfearhard",
+		about: "dread only, at a gain that makes it a mood rather than a rounding error",
+		apply: func(c *engine.Config) {
+			c.MoodWeight, c.MoodCheerGain, c.MoodDreadGain = 0.5, 0, 30
+		},
+	},
+	{
+		name:  "moodhard",
+		about: "both, at gains that make the two sides the same size",
+		apply: func(c *engine.Config) {
+			c.MoodWeight, c.MoodDreadGain, c.MoodCheerGain = 0.5, 30, 3
+		},
+	},
+	{
+		name:  "moodhardinverted",
+		about: "the control for it: the same sizes, the sign reversed",
+		apply: func(c *engine.Config) {
+			c.MoodWeight, c.MoodDreadGain, c.MoodCheerGain = -0.5, 30, 3
+		},
+	},
+	{
+		name: "moodflat",
+		about: "the control that matters: the same average lean, held constant, with no " +
+			"history in it at all - if this does as well, what works is the boldness and not the feeling",
+		apply: func(c *engine.Config) { c.ShockRisk *= 1 - 0.5*0.07 },
+	},
+	{
+		name:  "moodcheer",
+		about: "cheer only: the pair for it",
+		apply: func(c *engine.Config) { c.MoodWeight, c.MoodDreadGain = 0.5, 0 },
+	},
+	{
+		name:  "moodshort",
+		about: "a mood that fades in fifty ticks: standing a fifth of the time",
+		apply: func(c *engine.Config) { c.MoodWeight, c.MoodHalfLife = 0.5, 50 },
+	},
+	{
+		name:  "moodlong",
+		about: "a mood that fades in twelve hundred: standing two thirds of the time, which is nearly a constant",
+		apply: func(c *engine.Config) { c.MoodWeight, c.MoodHalfLife = 0.5, 1200 },
+	},
+	{
+		name:  "moodplayed",
+		about: "54 on the map that is played",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.MoodWeight, c.MoodDreadGain, c.MoodCheerGain = 0.5, 30, 3
+		},
+		stores: playedStores,
+	},
+	{
+		name:   "moodplayednone",
+		about:  "the pair for it: the played map with no mood",
+		apply:  playedMap,
+		stores: playedStores,
+	},
 	{
 		name:  "nocook",
 		about: "52: the placebo - cooking is worth nothing, so nobody ever does it",
@@ -2647,6 +2733,7 @@ var metricNames = []string{
 	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
 	"coinsLying", "coinsHeld", "coinHolders", "sales", "salesRefused", "saleRate",
+	"dread", "cheer", "afraid",
 	"cooked", "cookRate", "cookedMeat", "cookedEaten", "cookedHanded",
 	"cookStanding", "cookSplit", "cookHeld", "cookReal",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
@@ -3102,6 +3189,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	stored := w.Stored()
 	money := w.Coins()
 	kitchen := w.Cooking()
+	feeling := w.Mood()
 
 	// The rarest species is the one coexistence stands on: the others can look
 	// healthy while it goes. With humans alone it is the human population, and
@@ -3215,9 +3303,15 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"cookedHanded": kitchen.Handed,
 		"cookStanding": tail.cookStanding,
 		"cookSplit":    tail.cookSplit,
-		"cookHeld":     tail.cookHeld,
-		"cookReal":     tail.cookReal,
-		"joinShare":    ratio(end.Joins, end.Decisions),
+		// How the population is feeling (stage 54). afraid is the one that
+		// says whether the lean is a signal or a constant: near one is a mood
+		// that never changes, and a constant changes no ranking.
+		"dread":     feeling.Dread,
+		"cheer":     feeling.Cheer,
+		"afraid":    feeling.Afraid,
+		"cookHeld":  tail.cookHeld,
+		"cookReal":  tail.cookReal,
+		"joinShare": ratio(end.Joins, end.Decisions),
 		// The share of all decisions that were "go to country I think better
 		// of" - the one door a belief about a place has into a body, and so
 		// the ceiling on what stages 15b, 29 and 35 can do (stage 35).

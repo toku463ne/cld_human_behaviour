@@ -119,4 +119,7 @@ func (w *World) mend(a *Agent, f *Food, share float64) {
 	got := math.Min(heal, room)
 	a.Vitality += got
 	w.meatHealing += got
+	// And it is a good thing to have happened (stage 54), in the body's own
+	// units and at the line where the figure already exists.
+	w.please(a, 0, got)
 }
