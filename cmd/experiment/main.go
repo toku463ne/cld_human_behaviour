@@ -1795,6 +1795,81 @@ var variants = []variant{
 	// size of lean with the sign reversed says whether the structure is doing
 	// the work or only the magnitude.
 	{
+		name: "richcountry",
+		about: "61: the map decides how much grows, not only where - the river country with " +
+			"the total following its own weights",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, 1
+			c.FoodRenormalize, c.FoodTotalFromMap = false, true
+		},
+	},
+	{
+		name: "richcountryfixed",
+		about: "the control: the same country, the same ties, and the total held where it " +
+			"always was (the world before stage 61)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, 1
+		},
+	},
+	{
+		name: "countrymorefood",
+		about: "the check on stage 61's surprise: the same country with a tenth more food, " +
+			"turned up with the old knob rather than the new one",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, 1
+			c.FoodSpawnRate *= 1.13
+		},
+	},
+	{
+		name:  "countrylessfood",
+		about: "and the other way: six per cent less, again with the old knob",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, 1
+			c.FoodSpawnRate *= 0.94
+		},
+	},
+	{
+		name: "richcountryshape",
+		about: "the arm that splits the two: the renormalising off but the total still fixed, " +
+			"so only the clamped shape of the weights changes",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, 1
+			c.FoodRenormalize = false
+		},
+	},
+	{
+		name:  "poorcountryshape",
+		about: "the same split on the barren-banked country",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, -0.6
+			c.FoodRenormalize = false
+		},
+	},
+	{
+		name: "poorcountry",
+		about: "the other side of the same knob: a country whose banks are barren, with the " +
+			"total following that too",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, -0.6
+			c.FoodRenormalize, c.FoodTotalFromMap = false, true
+		},
+	},
+	{
+		name:  "poorcountryfixed",
+		about: "the control for it: barren banks with the total held fixed",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, -0.6
+		},
+	},
+	{
 		name:  "homebound",
 		about: "64: an enemy pays for being away from the country it came into the world in",
 		apply: func(c *engine.Config) { c.EnemySpread = 0.6; c.EnemyHomeCost = 2 },
@@ -2973,6 +3048,7 @@ var metricNames = []string{
 	"prowlArrive", "prowlGain", "prowlKept", "enemyBorn", "humanProwl", "enemyCrowd", "prowlBite",
 	"kinds", "kindMix", "kindGap", "kindHomed",
 	"enemyAway", "enemyAtHome", "homeShare",
+	"plantRate", "foodMean",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -3135,6 +3211,9 @@ type sample struct {
 	// How far the enemies have got from where they came into the world, and
 	// how often the walk back was what they chose (stage 64).
 	enemyAway, enemyAtHome, homeShare float64
+
+	// How much the world grows and what the map made of it (stage 61).
+	plantRate, foodMean float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3339,6 +3418,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		prowl := w.Prowl()
 		sorts := w.Kinds()
 		roam := w.Roaming()
+		grows, fromMap := w.PlantSupply()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
@@ -3356,6 +3436,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			prowlGain: prowl.EnemyGain, humanProwl: prowl.HumanGain,
 			prowlArrive: prowl.ArriveGain, enemyBorn: prowl.BornShare,
 			enemyAway: roam.Away, enemyAtHome: roam.AtHome, homeShare: roam.Draws,
+			plantRate: grows, foodMean: fromMap,
 			kinds: float64(sorts.Kinds), kindMix: sorts.MixError,
 			kindGap: sorts.BudgetGap, kindHomed: sorts.Homed,
 			enemyCrowd: prowl.Crowding, prowlBite: prowl.Bite,
@@ -3887,6 +3968,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"enemyAway":   tail.enemyAway,
 		"enemyAtHome": tail.enemyAtHome,
 		"homeShare":   tail.homeShare,
+		// How much the world grows and the mean weight it comes from (stage
+		// 61). The second is the dose of any arm that lets the map decide the
+		// total: the ties clamp each weight to [0, 2], so where the mean lands
+		// is a fact about the map rather than something to guess.
+		"plantRate": tail.plantRate,
+		"foodMean":  tail.foodMean,
 		"regionsSeen": roaming.Mean,
 		"oneRegion":   roaming.Alone,
 		"regionShare": roaming.Share,
@@ -4096,6 +4183,8 @@ func tailAverage(series []sample) sample {
 		out.prowlGain += s.prowlGain
 		out.prowlArrive += s.prowlArrive
 		out.enemyBorn += s.enemyBorn
+		out.plantRate += s.plantRate
+		out.foodMean += s.foodMean
 		out.enemyAway += s.enemyAway
 		out.enemyAtHome += s.enemyAtHome
 		out.homeShare += s.homeShare
@@ -4250,6 +4339,8 @@ func tailAverage(series []sample) sample {
 	out.prowlGain /= d
 	out.prowlArrive /= d
 	out.enemyBorn /= d
+	out.plantRate /= d
+	out.foodMean /= d
 	out.enemyAway /= d
 	out.enemyAtHome /= d
 	out.homeShare /= d

@@ -225,7 +225,7 @@ func (w *World) tieFoodToTheGround() {
 		w.regions[i].Food = clamp(w.regions[i].Food*(1-w.cfg.TerrainFoodCorrelation*dev), 0, 2)
 		after += w.regions[i].Food
 	}
-	if after <= 0 || before <= 0 {
+	if after <= 0 || before <= 0 || !w.cfg.FoodRenormalize {
 		return
 	}
 	for i := range w.regions {
@@ -271,7 +271,7 @@ func (w *World) tieFoodToTheWater() {
 		w.regions[i].Food = clamp(w.regions[i].Food*(1+w.cfg.WatersideFood*share), 0, 2)
 		after += w.regions[i].Food
 	}
-	if after <= 0 {
+	if after <= 0 || !w.cfg.FoodRenormalize {
 		return
 	}
 	for i := range w.regions {
@@ -757,6 +757,22 @@ func (w *World) Standing() Standing {
 	}
 	out.Gain = out.Humans - out.All
 	return out
+}
+
+// PlantSupply is how much the world grows and what the map made of it (stage
+// 61): the rate per tick, and the mean of the region weights it comes from.
+//
+// The second is the dose for every arm that lets the map decide the total,
+// and it is not guessable from the map: the ties of stages 33 and 36 clamp
+// each weight to [0, 2], so rough country can be clamped to nothing at the
+// bottom and rich country cut off at the top, and the mean lands where it
+// lands. Read it before reading anything else about such an arm.
+func (w *World) PlantSupply() (rate, mean float64) {
+	rate = w.plantRate()
+	if len(w.regions) > 0 {
+		mean = w.foodWeight / float64(len(w.regions))
+	}
+	return rate, mean
 }
 
 // FootingOf is what the ground is doing to this body right now (stage 57), for

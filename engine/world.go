@@ -2305,11 +2305,28 @@ func (w *World) removeDead() {
 // spawnFoodOfTick grows food at the configured rate, carrying the fractional
 // part over to the next tick.
 func (w *World) spawnFoodOfTick() {
-	w.foodAccum += w.cfg.FoodSpawnRate
+	w.foodAccum += w.plantRate()
 	for w.foodAccum >= 1 {
 		w.spawnFood()
 		w.foodAccum--
 	}
+}
+
+// plantRate is how much the world grows per tick (stage 61).
+//
+// FoodSpawnRate on its own, which is every world before this stage: whatever
+// the map says, the same amount comes up and the map only decides where. With
+// FoodTotalFromMap it follows the map's own weights instead, so a wet country
+// is richer than a dry one rather than only differently arranged.
+//
+// This is the one place the world's oldest conservation law is loosened, and
+// it is off by default for that reason: every figure recorded before
+// 2026-09-12 was taken with the total fixed.
+func (w *World) plantRate() float64 {
+	if !w.cfg.FoodTotalFromMap || len(w.regions) == 0 {
+		return w.cfg.FoodSpawnRate
+	}
+	return w.cfg.FoodSpawnRate * w.foodWeight / float64(len(w.regions))
 }
 
 // spawnEnemyOfTick lets one enemy in from outside the map now and then. See

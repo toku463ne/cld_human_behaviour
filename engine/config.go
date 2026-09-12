@@ -123,6 +123,23 @@ type Config struct {
 	// had before that rule existed.
 	FoodSpread float64
 
+	// FoodRenormalize keeps the world growing exactly as much food after the
+	// map has had its say as before (stage 15a's rule, applied by stages 33
+	// and 36). True is every figure recorded before stage 61.
+	//
+	// FoodTotalFromMap is the other half and the one that actually loosens
+	// anything: with it on, how much the world grows follows the map's own
+	// weights rather than being fixed by FoodSpawnRate alone, so a poor
+	// country is poor rather than merely poorer than its neighbours.
+	//
+	// The pair exists because the first one on its own turned out to do
+	// almost nothing (measured 2026-09-12): the region weights are only ever
+	// used as proportions, so scaling them all back to their old total leaves
+	// every proportion where it was. What it changes is the clamp, and
+	// nothing else.
+	FoodRenormalize  bool
+	FoodTotalFromMap bool
+
 	// EnemyKinds are the sorts of enemy this map has (stage 59, enemykind.go).
 	//
 	// Empty is the world as it was: one sort, drawn from EnemyBudgetMean and
@@ -2305,6 +2322,7 @@ func DefaultConfig() Config {
 		GeneBudgetStd:       30,
 		GeneInitAlpha:       0.8,
 		InitialEnemies:      10,
+		FoodRenormalize:     true, // the world grows as much as it did (stage 15a)
 		EnemyBudgetMean:     520, // over the human 360, so a carcass feeds several
 		EnemyBudgetStd:      90,
 		EnemySpawnTicks:     400,
