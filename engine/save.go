@@ -154,6 +154,13 @@ type counterSnap struct {
 	// What the world has put in from outside and what it grew itself (stages
 	// 58, 59), saved for the same reason: a world that came back with its
 	// tallies reset would report a different past.
+	// What the bond handed on (stage 65), and how far apart the pairs that
+	// made a child were.
+	MateExchanges int     `json:",omitempty"`
+	MateBirthLore int     `json:",omitempty"`
+	MateGapSum    float64 `json:",omitempty"`
+	MateGaps      int     `json:",omitempty"`
+
 	EnemyArrivals   float64   `json:",omitempty"`
 	EnemyArrivalSum float64   `json:",omitempty"`
 	EnemyBorn       float64   `json:",omitempty"`
@@ -327,6 +334,8 @@ func (w *World) Save(out io.Writer) error {
 			Flees: w.flees, Escapes: w.escapes,
 			Exchanges: w.exchanges, HintsCopied: w.hintsCopied,
 			Tolls: snapTolls(w.tolls),
+			MateExchanges: w.mateExchanges, MateBirthLore: w.mateBirthLore,
+			MateGapSum: w.mateGapSum, MateGaps: w.mateGaps,
 			EnemyArrivals: w.enemyArrivals, EnemyArrivalSum: w.enemyArrivalSum,
 			EnemyBorn: w.enemyBorn, EnemyByKind: w.enemyArrivalsByKind,
 		},
@@ -515,6 +524,8 @@ func Load(in io.Reader) (*World, error) {
 	w.courtships, w.courtshipsAccepted = c.Courtships, c.CourtshipsAccepted
 	w.flees, w.escapes = c.Flees, c.Escapes
 	w.exchanges, w.hintsCopied = c.Exchanges, c.HintsCopied
+	w.mateExchanges, w.mateBirthLore = c.MateExchanges, c.MateBirthLore
+	w.mateGapSum, w.mateGaps = c.MateGapSum, c.MateGaps
 	w.enemyArrivals, w.enemyArrivalSum = c.EnemyArrivals, c.EnemyArrivalSum
 	w.enemyBorn = c.EnemyBorn
 	w.enemyArrivalsByKind = append([]float64(nil), c.EnemyByKind...)

@@ -262,6 +262,13 @@ func (w *World) exchangeLore(a, o *Agent) {
 	moved += w.exchangeRegions(a, o)
 
 	w.exchanges++
+	// And how many of the trades are between two who are bonded (stage 65).
+	// Measurement only: this function does not ask who anybody is, and the
+	// count is here to say how much of the handing-on already happens between
+	// mates before any rule puts a trade at the birth itself.
+	if !w.inBirthTrade && (a.PartnerID == o.ID || o.PartnerID == a.ID) {
+		w.mateExchanges++
+	}
 	o.timesTaught++
 	a.timesTaught++
 
@@ -441,3 +448,103 @@ func (w *World) Lore() LoreView {
 }
 
 func square(x float64) float64 { return x * x }
+
+// noteMateGap records how far apart the two making a child are, in what they
+// believe and what they want (stage 65).
+//
+// Read at the birth and before any trade, so that it says how far apart two
+// who breed together were rather than how near the rule just put them. The
+// five are on different scales, so each gap is taken against the world's own
+// figure for that value - the same normalisation exchangeLore uses to add
+// them up.
+func (w *World) noteMateGap(a, o *Agent) {
+	cfg := &w.cfg
+	gap := 0.0
+	add := func(x, y, centre float64) {
+		if centre > 0 {
+			gap += abs(x-y) / centre
+		}
+	}
+	add(a.lore.retaliation.mean, o.lore.retaliation.mean, cfg.Retaliation)
+	add(a.lore.accept.mean, o.lore.accept.mean, cfg.AcceptChance)
+	add(a.lore.riskWeight, o.lore.riskWeight, cfg.RiskWeight)
+	add(a.lore.competitionWeight, o.lore.competitionWeight, cfg.CompetitionWeight)
+	add(a.lore.shockRisk, o.lore.shockRisk, cfg.ShockRisk)
+	// In percent, because the whole of this stage lives in the third decimal
+	// place of a relative distance and a table of 0.02s says nothing.
+	w.mateGapSum += 100 * gap / 5
+	w.mateGaps++
+}
+
+// Mating is what the bond hands on (stage 65).
+//
+// Gap is the figure the stage turns on: how far apart, on average, two who
+// make a child are at the moment they make it. A world where the handing-on
+// runs through mating should read lower than one where it does not - not
+// because any one couple was pushed together, but because their parents were.
+type Mating struct {
+	Gap    float64 // mean distance between two parents' five figures, at the birth, in percent
+	Trades float64 // trades the birth itself put there, over the run
+	Mates  float64 // trades between two who were bonded, not counting the birth's own
+
+	// Spread is the same distance taken over the whole population rather than
+	// over a couple: the standard deviation of each of the five against the
+	// world's own figure for it, averaged, in percent. Read it beside Gap -
+	// a rule that only pushes couples together shows in the first and not the
+	// second, and one that mixes the population shows in both.
+	Spread float64
+}
+
+// Mating reports it. Read only.
+func (w *World) Mating() Mating {
+	out := Mating{
+		Trades: float64(w.mateBirthLore),
+		Mates:  float64(w.mateExchanges),
+	}
+	if w.mateGaps > 0 {
+		out.Gap = w.mateGapSum / float64(w.mateGaps)
+	}
+	out.Spread = w.loreSpread()
+	return out
+}
+
+// loreSpread is how far apart the living are in what they believe and what
+// they want, on the same scale noteMateGap uses (stage 65).
+func (w *World) loreSpread() float64 {
+	cfg := &w.cfg
+	type col struct {
+		get    func(*Agent) float64
+		centre float64
+	}
+	cols := []col{
+		{func(a *Agent) float64 { return a.lore.retaliation.mean }, cfg.Retaliation},
+		{func(a *Agent) float64 { return a.lore.accept.mean }, cfg.AcceptChance},
+		{func(a *Agent) float64 { return a.lore.riskWeight }, cfg.RiskWeight},
+		{func(a *Agent) float64 { return a.lore.competitionWeight }, cfg.CompetitionWeight},
+		{func(a *Agent) float64 { return a.lore.shockRisk }, cfg.ShockRisk},
+	}
+	out := 0.0
+	for _, c := range cols {
+		if c.centre <= 0 {
+			continue
+		}
+		var n, sum, sq float64
+		for i := range w.agents {
+			a := &w.agents[i]
+			if !a.Alive {
+				continue
+			}
+			v := c.get(a)
+			n++
+			sum += v
+			sq += v * v
+		}
+		if n < 2 {
+			continue
+		}
+		mean := sum / n
+		variance := math.Max(sq/n-mean*mean, 0)
+		out += 100 * math.Sqrt(variance) / c.centre
+	}
+	return out / float64(len(cols))
+}

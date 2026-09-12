@@ -579,6 +579,22 @@ type World struct {
 	// How many trades of what agents assume have taken place (stage 12b), and
 	// how many ideas were copied in the course of them (stage 12c).
 	exchanges   int
+
+	// mateExchanges is how many of those were between two who were bonded at
+	// the time (stage 65), and mateBirthLore how many trades the birth itself
+	// put there. Measurements; nothing reads them.
+	mateExchanges int
+	mateBirthLore int
+
+	// And how far apart the two making a child were, summed over births
+	// (stage 65), so that the mean can be read without keeping the list.
+	mateGapSum float64
+	mateGaps   int
+
+	// inBirthTrade says the trade running right now is the one the birth put
+	// there (stage 65), so that it is not also counted as a trade the pair
+	// made on its own.
+	inBirthTrade bool
 	hintsCopied int
 }
 
@@ -1732,6 +1748,20 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	}
 	pa.Vitality -= share
 	pb.Vitality -= share
+
+	// What the two of them tell each other, once, at the one moment this
+	// world has for it (stage 65). Measured before anything is handed over,
+	// because what the figure is for is how far apart two who breed together
+	// are - and after the trade they are nearer by construction.
+	w.noteMateGap(pa, pb)
+	if w.cfg.MateLoreChance > 0 && w.rng.Float64() < w.cfg.MateLoreChance {
+		w.inBirthTrade = true
+		for n := max(w.cfg.MateLoreTrades, 1); n > 0; n-- {
+			w.exchangeLore(pa, pb)
+			w.mateBirthLore++
+		}
+		w.inBirthTrade = false
+	}
 
 	// Drawn into variables rather than inline, so that the order the random
 	// source is consumed in is on the page instead of in the argument

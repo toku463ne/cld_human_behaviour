@@ -1477,6 +1477,29 @@ type Config struct {
 	// population spread by being taught or by being survived.
 	LoreExchangeRate float64
 
+	// MateLoreChance is how often a birth also hands something on between the
+	// two parents (stage 65). Zero is every world before it, and the default.
+	//
+	// It exists because a bonded pair trades nothing at all. While the timer
+	// runs, stepPaired only walks them together - no decision is taken and no
+	// watching happens - so exchangeLore is never reached, and the count of
+	// trades between two who are bonded is exactly nought (measured). And
+	// since mating and birth are the same instant in this world, tryBirth is
+	// the only place that instant can be pointed at.
+	//
+	// What it does is call the same exchangeLore everything else calls. There
+	// is no separate trade for mates and nothing chosen for them to hand on:
+	// the one new thing here is how often it is called. That is deliberate -
+	// the function has never asked who two agents are to each other, and a
+	// rule about families would be the thing this stage must not become.
+	MateLoreChance float64
+
+	// MateLoreTrades is how many trades that one moment is worth (stage 65),
+	// and one unless a measurement asks otherwise. It is the arm that says
+	// whether what limits this rule is the rate rather than the rule: a bond
+	// that ran its whole timer watching would manage several.
+	MateLoreTrades int
+
 	// AffinityLore is what a trade is worth to the two in it, per unit of what
 	// actually changed hands (measured as a share of the world's own figure,
 	// so that the five values, which are on quite different scales, can be

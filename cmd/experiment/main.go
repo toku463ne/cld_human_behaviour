@@ -1945,6 +1945,23 @@ var variants = []variant{
 		},
 	},
 	{
+		name:  "matelore",
+		about: "65: a birth also hands something on between the two parents, one time in four",
+		apply: func(c *engine.Config) { c.MateLoreChance = 0.25 },
+	},
+	{
+		name:  "matelorealways",
+		about: "the same at every birth",
+		apply: func(c *engine.Config) { c.MateLoreChance = 1 },
+	},
+	{
+		name: "matelorefive",
+		about: "the dose that asks whether the once-per-birth rate is what limits it: five " +
+			"trades at every birth, which is what a bond would manage if the pair watched " +
+			"each other while it ran",
+		apply: func(c *engine.Config) { c.MateLoreChance = 1; c.MateLoreTrades = 5 },
+	},
+	{
 		name: "grazers",
 		about: "60: the enemies can eat what the humans live on, and think little of it " +
 			"(a quarter of a mouthful of meat)",
@@ -3168,6 +3185,7 @@ var metricNames = []string{
 	"looksCorr", "looksCorrHuman", "looksCeiling",
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
+	"mateGap", "loreSpread", "mateTrades", "mateWatch",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
 	"skillHeld", "skillNominal", "skillReal", "skillSlots", "skillGap",
 	"skillBornRate", "skillCopyRate", "skillLeaps",
@@ -3310,6 +3328,10 @@ type sample struct {
 	// prowlBite whether the dying is more violent where they arrive.
 	prowlGain, humanProwl, enemyCrowd, prowlBite float64
 	prowlArrive, enemyBorn float64
+
+	// What the bond hands on (stage 65): how far apart two making a child
+	// are, and how many trades the birth itself and the bond put there.
+	mateGap, loreSpread, mateTrades, mateWatch float64
 
 	// What the table of enemy sorts produced (stage 59). Written so that they
 	// mean the same thing whatever the table's length is.
@@ -3539,6 +3561,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		roam := w.Roaming()
 		grows, fromMap := w.PlantSupply()
 		fed := w.Feeding()
+		bond := w.Mating()
 		ward := w.Skills(engine.SkillWard)
 		known := w.RegionKnowledge()
 		diet := w.Diet()
@@ -3558,6 +3581,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			prowlArrive: prowl.ArriveGain, enemyBorn: prowl.BornShare,
 			enemyAway: roam.Away, enemyAtHome: roam.AtHome, homeShare: roam.Draws,
 			plantRate: grows, foodMean: fromMap,
+			mateGap: bond.Gap, loreSpread: bond.Spread,
+			mateTrades: bond.Trades, mateWatch: bond.Mates,
 			humanKillShare: fed.HumanKillShare, enemyKillShare: fed.EnemyKillShare,
 			humansByEnemy: fed.HumansByEnemy,
 			enemiesWet: fed.EnemiesOnWater, humansWet: fed.HumansOnWater,
@@ -4103,6 +4128,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// 61). The second is the dose of any arm that lets the map decide the
 		// total: the ties clamp each weight to [0, 2], so where the mean lands
 		// is a fact about the map rather than something to guess.
+		// What the bond hands on (stage 65). mateGap is read at each birth and
+		// before the trade, so it says how far apart two who breed together
+		// were rather than how near the rule just put them.
+		"mateGap":    tail.mateGap,
+		"loreSpread": tail.loreSpread,
+		"mateTrades": tail.mateTrades,
+		"mateWatch":  tail.mateWatch,
 		"plantRate": tail.plantRate,
 		"foodMean":  tail.foodMean,
 		// Who dies of what, by species (stage 60), and the rule's own firing
@@ -4341,6 +4373,10 @@ func tailAverage(series []sample) sample {
 		out.humansByEnemy += s.humansByEnemy
 		out.plantsToEnemy += s.plantsToEnemy
 		out.plantSeenByEnemy += s.plantSeenByEnemy
+		out.mateGap += s.mateGap
+		out.loreSpread += s.loreSpread
+		out.mateTrades += s.mateTrades
+		out.mateWatch += s.mateWatch
 		out.plantRate += s.plantRate
 		out.foodMean += s.foodMean
 		out.enemyAway += s.enemyAway
@@ -4507,6 +4543,10 @@ func tailAverage(series []sample) sample {
 	out.humansByEnemy /= d
 	out.plantsToEnemy /= d
 	out.plantSeenByEnemy /= d
+	out.mateGap /= d
+	out.loreSpread /= d
+	out.mateTrades /= d
+	out.mateWatch /= d
 	out.plantRate /= d
 	out.foodMean /= d
 	out.enemyAway /= d
