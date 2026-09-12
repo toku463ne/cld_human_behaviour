@@ -116,6 +116,15 @@ type Utility struct {
 	// cost this one: the river is not somebody.
 	Hazard float64
 
+	// Roam is what being away from where this body came into the world costs
+	// it (stage 64), charged per tick the option would take and worse the
+	// further out it is - the same shape as Hazard above, which is why it sits
+	// next to it rather than inside Risk.
+	//
+	// It is not a Goal either: there is nothing to aim at, and heading home
+	// wins by costing less rather than by being worth something.
+	Roam float64
+
 	// The two costs of the formula, already weighted, plus what they were
 	// worked out from so that a trace can show both.
 	VitalityCost float64
@@ -129,7 +138,7 @@ type Utility struct {
 func (u Utility) Total() float64 {
 	return u.Life.Score() + u.Stake.Score() + u.Rival.Score() +
 		u.Offspring.Score() + u.Info.Score() + u.Explore.Score() + u.Lore.Score() +
-		u.Hint - u.Risk - u.Hazard - u.VitalityCost - u.TimeCost
+		u.Hint - u.Risk - u.Hazard - u.Roam - u.VitalityCost - u.TimeCost
 }
 
 // NamedGoal is a goal together with the name it goes by, for display.

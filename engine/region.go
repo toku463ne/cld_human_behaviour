@@ -446,6 +446,50 @@ type Prowl struct {
 	BornShare float64
 }
 
+// Roaming is how far the enemies have got from where they came into the world
+// (stage 64), and how often the walk back is what they chose.
+//
+// It is the figure the stage turns on. Stage 58 put the arrivals where the map
+// asked and the world lost them within a lifetime - mean distance from where
+// they started was more than a region wide - so what has to move here is this,
+// and Prowl.EnemyGain is what it would buy.
+type Roaming struct {
+	Away   float64 // mean distance from home, in region widths
+	AtHome float64 // share of the enemies standing in their own block
+	Draws  float64 // share of decisions that were "head back"
+}
+
+// Roaming reports how far the enemies have strayed. Read only.
+func (w *World) Roaming() Roaming {
+	var out Roaming
+	span := max(w.cfg.Width/float64(max(w.cfg.RegionCols, 1)), 1)
+	var enemies, away, home float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Species != SpeciesEnemy {
+			continue
+		}
+		enemies++
+		if a.HomeRegion < 0 || a.HomeRegion >= len(w.regions) {
+			continue
+		}
+		minX, minY, maxX, maxY := w.regionBounds(a.HomeRegion)
+		hx, hy := (minX+maxX)/2, (minY+maxY)/2
+		away += math.Hypot(a.X-hx, a.Y-hy) / span
+		if w.regionIndexAt(a.X, a.Y) == a.HomeRegion {
+			home++
+		}
+	}
+	if enemies == 0 {
+		return out
+	}
+	out.Away, out.AtHome = away/enemies, home/enemies
+	if w.decisions > 0 {
+		out.Draws = float64(w.homeDraws) / float64(w.decisions)
+	}
+	return out
+}
+
 // Prowl reports where the enemies are and what it costs to be near them. Read
 // only.
 func (w *World) Prowl() Prowl {
@@ -822,6 +866,45 @@ func (w *World) Suits() Suits {
 	out.Gain = 100 * (out.Here - out.All)
 	out.Ceiling = 100 * best / bodies
 	return out
+}
+
+// homeFor is where this body came into the world and what being away from it
+// costs it (stage 64). A pull of zero is a body tied to nowhere: every human,
+// and every enemy in a world that has not asked for the rule.
+//
+// Home is the middle of the block it came into the world in rather than the
+// exact spot: the finest thing this world says about a place is a region
+// (#53), and a body that wandered ten paces from where it was born is not
+// away from home.
+func (w *World) homeFor(a *Agent) (x, y, pull float64) {
+	if w.cfg.EnemyHomeCost <= 0 || a.Species != SpeciesEnemy {
+		return 0, 0, 0
+	}
+	if a.HomeRegion < 0 || a.HomeRegion >= len(w.regions) {
+		return 0, 0, 0
+	}
+	homely := w.kindOf(a).Homely
+	if homely <= 0 {
+		return 0, 0, 0
+	}
+	minX, minY, maxX, maxY := w.regionBounds(a.HomeRegion)
+	return (minX + maxX) / 2, (minY + maxY) / 2, w.cfg.EnemyHomeCost * homely
+}
+
+// AwayFromHome is how far this body has got from the country it came into the
+// world in, in the width of a region, and what it is being charged for it
+// (stage 64). For the viewer; a pull of zero is a body tied to nowhere.
+func (w *World) AwayFromHome(id int) (away, pull float64) {
+	a := w.agentByID(id)
+	if a == nil {
+		return 0, 0
+	}
+	hx, hy, pull := w.homeFor(a)
+	if pull <= 0 {
+		return 0, 0
+	}
+	span := max(w.cfg.Width/float64(max(w.cfg.RegionCols, 1)), 1)
+	return math.Hypot(a.X-hx, a.Y-hy) / span, pull
 }
 
 // ProwlAt is how many of the world's arriving enemies turn up around this

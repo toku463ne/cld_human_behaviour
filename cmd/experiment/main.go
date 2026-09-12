@@ -1795,6 +1795,21 @@ var variants = []variant{
 	// size of lean with the sign reversed says whether the structure is doing
 	// the work or only the magnitude.
 	{
+		name:  "homebound",
+		about: "64: an enemy pays for being away from the country it came into the world in",
+		apply: func(c *engine.Config) { c.EnemySpread = 0.6; c.EnemyHomeCost = 2 },
+	},
+	{
+		name:  "homeboundweak",
+		about: "the same at a quarter of the price",
+		apply: func(c *engine.Config) { c.EnemySpread = 0.6; c.EnemyHomeCost = 0.5 },
+	},
+	{
+		name:  "homeboundhard",
+		about: "the same at four times the price: what a leash looks like without being one",
+		apply: func(c *engine.Config) { c.EnemySpread = 0.6; c.EnemyHomeCost = 8 },
+	},
+	{
 		name: "kinds",
 		about: "59: two sorts of enemy - light ones anywhere, heavy ones in the bad country - " +
 			"with the arrivals split three to one",
@@ -2957,6 +2972,7 @@ var metricNames = []string{
 	"standGain", "suitGain", "suitCeiling", "regionsSeen", "oneRegion", "regionShare",
 	"prowlArrive", "prowlGain", "prowlKept", "enemyBorn", "humanProwl", "enemyCrowd", "prowlBite",
 	"kinds", "kindMix", "kindGap", "kindHomed",
+	"enemyAway", "enemyAtHome", "homeShare",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -3115,6 +3131,10 @@ type sample struct {
 	// What the table of enemy sorts produced (stage 59). Written so that they
 	// mean the same thing whatever the table's length is.
 	kinds, kindMix, kindGap, kindHomed float64
+
+	// How far the enemies have got from where they came into the world, and
+	// how often the walk back was what they chose (stage 64).
+	enemyAway, enemyAtHome, homeShare float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3318,6 +3338,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		suited := w.Suits()
 		prowl := w.Prowl()
 		sorts := w.Kinds()
+		roam := w.Roaming()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
@@ -3334,6 +3355,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			standGain: stand.Gain, suitGain: suited.Gain, suitCeiling: suited.Ceiling,
 			prowlGain: prowl.EnemyGain, humanProwl: prowl.HumanGain,
 			prowlArrive: prowl.ArriveGain, enemyBorn: prowl.BornShare,
+			enemyAway: roam.Away, enemyAtHome: roam.AtHome, homeShare: roam.Draws,
 			kinds: float64(sorts.Kinds), kindMix: sorts.MixError,
 			kindGap: sorts.BudgetGap, kindHomed: sorts.Homed,
 			enemyCrowd: prowl.Crowding, prowlBite: prowl.Bite,
@@ -3859,6 +3881,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"kindMix":   tail.kindMix,
 		"kindGap":   tail.kindGap,
 		"kindHomed": tail.kindHomed,
+		// How far the enemies stray (stage 64). enemyAway is in region
+		// widths; homeShare is how often heading back won, which is the
+		// ceiling on what the rule can do.
+		"enemyAway":   tail.enemyAway,
+		"enemyAtHome": tail.enemyAtHome,
+		"homeShare":   tail.homeShare,
 		"regionsSeen": roaming.Mean,
 		"oneRegion":   roaming.Alone,
 		"regionShare": roaming.Share,
@@ -4068,6 +4096,9 @@ func tailAverage(series []sample) sample {
 		out.prowlGain += s.prowlGain
 		out.prowlArrive += s.prowlArrive
 		out.enemyBorn += s.enemyBorn
+		out.enemyAway += s.enemyAway
+		out.enemyAtHome += s.enemyAtHome
+		out.homeShare += s.homeShare
 		out.kinds += s.kinds
 		out.kindMix += s.kindMix
 		out.kindGap += s.kindGap
@@ -4219,6 +4250,9 @@ func tailAverage(series []sample) sample {
 	out.prowlGain /= d
 	out.prowlArrive /= d
 	out.enemyBorn /= d
+	out.enemyAway /= d
+	out.enemyAtHome /= d
+	out.homeShare /= d
 	out.kinds /= d
 	out.kindMix /= d
 	out.kindGap /= d

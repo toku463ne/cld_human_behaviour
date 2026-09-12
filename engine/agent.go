@@ -105,6 +105,14 @@ type Agent struct {
 	// Species is what kind of node this is; see the type. Always human today.
 	Species Species
 
+	// HomeRegion is the block of the world this body came into it in (stage
+	// 64), as an index, and -1 for a body from a world with no blocks.
+	//
+	// Fixed once, like Kind: where it arrived or was born, never where it has
+	// got to since. Nothing moves it and nothing reads it but the cost of
+	// being away from it - a region is still not a wall.
+	HomeRegion int
+
 	// Kind is which row of Config.EnemyKinds this body came from (stage 59).
 	// Zero for humans, and zero for every enemy in a world with one kind.
 	//

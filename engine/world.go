@@ -541,6 +541,11 @@ type World struct {
 	// to where a body stands (stage 35).
 	decisions     int
 	regionDraws   int
+
+	// homeDraws is the same count for "head back to the country I came into
+	// the world in" (stage 64): the one option that rule can reach a body
+	// through, so its share is the ceiling on what the rule can do.
+	homeDraws int
 	matured       int
 	childDeaths   int
 	fights        int
@@ -914,6 +919,9 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 		}
 		if ai.ChoseMissing {
 			w.lonelyDraws++
+		}
+		if ai.ChoseHome {
+			w.homeDraws++
 		}
 		if ai.JoinedDeclared {
 			w.joins++
@@ -2233,6 +2241,13 @@ func (w *World) addAgent(a Agent) int {
 	}
 	// And what the ground where it arrived does to it (stage 57), so that a
 	// body that is read before the world has taken a step is read right.
+	// Where it came into the world (stage 64). Arrivals get where they were
+	// put, the world's own young get where they were born, and it never
+	// changes after this.
+	a.HomeRegion = -1
+	if len(w.regions) > 0 {
+		a.HomeRegion = w.regionIndexAt(a.X, a.Y)
+	}
 	if w.groundHasAnOpinion() {
 		w.footOn(&a)
 	}

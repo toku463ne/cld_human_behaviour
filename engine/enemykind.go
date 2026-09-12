@@ -44,6 +44,16 @@ type EnemyKind struct {
 	// of its own to draw, because the map's dangerous country is one place
 	// and two kinds disagreeing about where it is would make it two.
 	Homing float64
+
+	// Homely is how much of EnemyHomeCost this kind pays (stage 64): one is
+	// a sort that keeps to the country it came into the world in, zero one
+	// that goes wherever it likes. An unset row is zero - a kind that was
+	// never told to stay anywhere does not.
+	//
+	// This is the field the comment at the top of this file was written for:
+	// "how far it strays" is a number on a row, so that a homebody and a
+	// wanderer are two rows rather than two cases.
+	Homely float64
 }
 
 // enemyKinds is the table as the world actually uses it: the configured rows,
@@ -64,6 +74,7 @@ func (w *World) enemyKinds() []EnemyKind {
 		BudgetMean: w.cfg.EnemyBudgetMean,
 		BudgetStd:  w.cfg.EnemyBudgetStd,
 		Homing:     1,
+		Homely:     1,
 	}}
 }
 

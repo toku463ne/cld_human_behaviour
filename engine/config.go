@@ -136,6 +136,23 @@ type Config struct {
 	// rule anywhere asks which kind a body is.
 	EnemyKinds []EnemyKind
 
+	// EnemyHomeCost is what being far from where it came into the world costs
+	// an enemy (stage 64), per region's width of distance and per tick spent
+	// out there. Zero is the world before this rule, and the default.
+	//
+	// It is a cost and not a leash. The rearing radius pulls a child back by
+	// hand, which is fine for a child that has no say in anything, but an
+	// enemy runs the same decision engine as everybody else: a hard edge
+	// would be exactly the sort of threshold this world refuses to write, and
+	// it would show as bodies turning round on the spot at a border (the
+	// problem stage 13 avoided when the sight went to a grid).
+	//
+	// So it is charged the way the water is (stage 34): so much per tick,
+	// worse the further out, and the option of heading back is scored against
+	// everything else. A short chase past the border is affordable and a long
+	// one stops being worth it.
+	EnemyHomeCost float64
+
 	// EnemySpread is how much the regions differ in how many of the world's
 	// enemies turn up in them (stage 58). Each region draws a weight from
 	// 1 +/- spread and arrivals are shared out in proportion, exactly as the

@@ -94,6 +94,16 @@ type AIController struct {
 	// everywhere but in the water, and zero in every world with no map, which
 	// is why nothing about a flat world changed.
 	drownChance float64
+
+	// Where home is and how far out this body is (stage 64), in the width of
+	// a region, with the direction and speed needed to charge an option for
+	// where it would take the body.
+	homePull  float64
+	homeAway  float64
+	homeUX    float64
+	homeUY    float64
+	homeSpan  float64
+	homeSpeed float64
 	lifeValue   float64
 
 	// Which option, if any, was the one that goes to better country (stage
@@ -110,6 +120,12 @@ type AIController struct {
 	// the whole rule can do.
 	lonelyOpt    int
 	ChoseMissing bool
+
+	// And for the walk back to the country it came into the world in (stage
+	// 64). Same reason again: it is the one option the rule can reach a body
+	// through, so how often it wins is the ceiling on what the rule can do.
+	homeOpt   int
+	ChoseHome bool
 
 	// Who has declared for what, worked out once in survey (stage 32): for
 	// each target somebody has called about or is already hitting, the
@@ -150,6 +166,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
 	c.betterGroundOpt, c.ChoseBetterGround = -1, false
 	c.lonelyOpt, c.ChoseMissing = -1, false
+	c.homeOpt, c.ChoseHome = -1, false
 	c.offerOpts, c.WentToOffer = c.offerOpts[:0], false
 	c.bestGiftGain, c.bestGiftDist = 0, 0
 	c.allies, c.JoinedDeclared = c.allies[:0], false
@@ -158,6 +175,21 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.hints = p.Self.Hints
 	c.feats.readSelf(p)
 	c.drownChance, c.lifeValue = p.Self.Drown, p.Cfg.LifeValue
+	// And how far from home this body is (stage 64), in the width of a
+	// region, with the direction home kept so that an option can be charged
+	// for where it would take the body rather than only for where it is.
+	c.homePull, c.homeAway, c.homeUX, c.homeUY = 0, 0, 0, 0
+	if p.Self.HomePull > 0 {
+		dx, dy := p.Self.X-p.Self.HomeX, p.Self.Y-p.Self.HomeY
+		if d := math.Hypot(dx, dy); d > 1e-9 {
+			span := max(p.Cfg.Width/float64(max(p.Cfg.RegionCols, 1)), 1)
+			c.homePull = p.Self.HomePull
+			c.homeAway = d / span
+			c.homeUX, c.homeUY = dx/d, dy/d
+			c.homeSpan = span
+			c.homeSpeed = p.Self.MaxSpeed
+		}
+	}
 	maxDepth := strategyDepth(p.Cfg, p.Self.Intelligence)
 
 	c.survey(p)
@@ -320,6 +352,31 @@ func (c *AIController) add(a Action, u Utility) {
 		}
 		u.Hazard = clamp(c.drownChance*ticks, 0, 1) * c.lifeValue
 	}
+
+	// And what being away from home costs it (stage 64), charged the same
+	// way: per tick, and worse the further out. What tells the options apart
+	// is the second half - an option that carries the body further out is
+	// charged for where it would be, and one that heads back is charged less,
+	// which is the whole of "it stops being worth it" without a threshold
+	// anywhere.
+	//
+	// Free inside its own region: home is a block, not a spot (#53).
+	if c.homePull > 0 {
+		ticks := u.Ticks
+		if ticks < 1 {
+			ticks = 1
+		}
+		away := c.homeAway
+		if a.Kind == ActMove && c.homeSpan > 0 {
+			// How much further out this heading would take it, in the same
+			// units, over the ticks it would take.
+			radial := a.DX*c.homeUX + a.DY*c.homeUY
+			away += radial * c.homeSpeed * a.Effort * ticks / c.homeSpan
+		}
+		if away > 0.5 {
+			u.Roam = c.homePull * (away - 0.5) * ticks
+		}
+	}
 	c.opts = append(c.opts, option{action: a, util: u.Total()})
 	if c.tracing {
 		c.terms = append(c.terms, u)
@@ -453,6 +510,27 @@ func (c *AIController) addExplore(p *Perception) {
 			Vitality:     cost,
 			VitalityCost: cost * cfg.VitalityWeight,
 		})
+	}
+
+	// And, for a body that has wandered out of the country it came into the
+	// world in, the way back (stage 64). One more direction to propose, in
+	// the same shape as the two above.
+	//
+	// It carries no value of its own: what makes it win is that add() charges
+	// every option for where it would take the body, so heading home is the
+	// cheap one and everything else is dear. Without it the charge would only
+	// make a body far from home dislike all of its options equally, which is
+	// the failure stage 55a found from the other side - a cost with nothing
+	// to spend it on changes nothing.
+	if s.HomePull > 0 {
+		hdx, hdy := s.HomeX-s.X, s.HomeY-s.Y
+		if d := math.Hypot(hdx, hdy); d > 1e-9 {
+			c.homeOpt = len(c.opts)
+			c.add(Action{Kind: ActMove, DX: hdx / d, DY: hdy / d, Effort: effort}, Utility{
+				Vitality:     cost,
+				VitalityCost: cost * cfg.VitalityWeight,
+			})
+		}
 	}
 
 	if s.BetterGround > 0 && cfg.RegionDrawValue > 0 {
@@ -1494,6 +1572,7 @@ func (c *AIController) pick(p *Perception) Action {
 	}
 	c.ChoseBetterGround = best == c.betterGroundOpt
 	c.ChoseMissing = best == c.lonelyOpt
+	c.ChoseHome = best == c.homeOpt
 	for _, i := range c.offerOpts {
 		if i == best {
 			c.WentToOffer = true

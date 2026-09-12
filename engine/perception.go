@@ -169,6 +169,17 @@ type SelfView struct {
 	// A player is shown the same figure and no more (stage 19).
 	Ground float64
 
+	// HomeX, HomeY and HomePull are where this body came into the world and
+	// what it costs to be away from it (stage 64). Pull at zero is a body
+	// tied to nowhere, which is every human and every enemy in a world
+	// without the rule.
+	//
+	// This is the one piece of country an agent knows without having walked
+	// it, and it is knowledge about itself rather than about the map: where
+	// it started. Nothing here says what is at home or anywhere else.
+	HomeX, HomeY float64
+	HomePull     float64
+
 	// Footing is what standing here does to what this body can do (stage 57),
 	// as a multiplier: the factors on its nine genes, weighted by how much of
 	// itself each of them is. One is ordinary ground, which is the whole of a
@@ -494,6 +505,7 @@ type Perception struct {
 // such rule, and it is asked of the seller, not of the body doing the asking.
 func (w *World) selfView(a *Agent) SelfView {
 	ground := w.terrainAt(a.X, a.Y)
+	homeX, homeY, homePull := w.homeFor(a)
 	return SelfView{
 		ID:           a.ID,
 		X:            a.X,
@@ -523,6 +535,9 @@ func (w *World) selfView(a *Agent) SelfView {
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),
 		Footing:           weighted(a, func(g Gene) float64 { return a.groundFactor(g) }),
+		HomeX:             homeX,
+		HomeY:             homeY,
+		HomePull:          homePull,
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
 		CourtedBy:         a.courtedBy,
