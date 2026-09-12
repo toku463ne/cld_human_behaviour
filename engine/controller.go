@@ -1472,6 +1472,11 @@ func (c *AIController) survey(p *Perception) {
 	for i := range p.Others {
 		o := &p.Others[i]
 		threat := damagePerTick(cfg, o.EstStrength, 1)
+		// And what knowing this sort of beast takes off its blows (stage 62).
+		// It is applied to the threat rather than to the estimate of how hard
+		// it hits: the other one is as strong as it is, and what this body
+		// knows is what it can do about it.
+		threat *= 1 - o.Ward
 
 		// Somebody who has taken a target on, and how much of its weight this
 		// agent can count on (stage 32). Trust, not affinity: what is being

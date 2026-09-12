@@ -104,6 +104,22 @@ const (
 	// the leaps and the copying.
 	SkillCook
 
+	// SkillWard is knowing how to handle one sort of beast (stage 62): how it
+	// comes at you and what to do about it. What it buys is what its blows
+	// take off you, and - through the same figure - what a body reckons
+	// standing near one costs it.
+	//
+	// Which sort it is about is the map's to say: a kind's row names the
+	// skill that wards it (EnemyKind.Ward), so a world can have one sort
+	// worth knowing about, or two sorts warded by the same lore, and a second
+	// ward for a world that wants to tell them apart is one more entry here.
+	//
+	// The ceiling is defence, which is already "how much of a blow this body
+	// keeps off itself". Power was refused for stage 47's reason: the gene
+	// that decides what a blow does when it lands must not also decide
+	// whether it lands.
+	SkillWard
+
 	NumSkillKinds
 )
 
@@ -127,6 +143,8 @@ func (s SkillKind) String() string {
 		return "throwing"
 	case SkillCook:
 		return "cooking"
+	case SkillWard:
+		return "handling beasts"
 	}
 	return "none"
 }
@@ -331,6 +349,13 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 			return 0
 		}
 		share = w.regionPoison(i)
+	case SkillWard:
+		// How much of the warded sort turns up where this one was born
+		// (stage 62). It is the map's own weighting (stage 58) times the
+		// share of arrivals that are worth knowing about (stage 59), so a
+		// childhood spent in the country the beasts come from teaches this
+		// and one spent anywhere else does not.
+		share = w.regionWardShare(i)
 	case SkillCook:
 		// Nothing about the place at all: one for everybody, so the figure a
 		// body starts with is the same wherever it was born, and the whole of
@@ -549,4 +574,48 @@ func (w *World) Skills(kind SkillKind) SkillUse {
 		out.Slots = held / slots
 	}
 	return out
+}
+
+// regionWardShare is how much of the warded sort of beast turns up in this
+// block, relative to an even share of them (stage 62). Zero in a world where
+// no kind is warded, which is why a map without beasts worth knowing about
+// teaches nobody how to handle them.
+func (w *World) regionWardShare(i int) float64 {
+	kinds := w.enemyKinds()
+	var warded, total float64
+	for j := range kinds {
+		share := max(kinds[j].Share, 0)
+		total += share
+		if kinds[j].Ward != SkillNone {
+			warded += share
+		}
+	}
+	if total <= 0 || warded <= 0 || i < 0 || i >= len(w.regions) {
+		return 0
+	}
+	weight := 1.0
+	if w.regions[i].Enemies > 0 {
+		weight = w.regions[i].Enemies
+	}
+	return clamp(weight*warded/total, 0, 1)
+}
+
+// wardAgainst is how much of this attacker's blow the defender turns aside by
+// knowing what it is dealing with (stage 62), from 0 to 1.
+//
+// The one figure both halves of the skill share, the way poisonResist is: what
+// the body actually keeps off itself, and what it therefore knocks off what
+// standing near one of these looks like it will cost.
+func (w *World) wardAgainst(defender, attacker *Agent) float64 {
+	if w.cfg.SkillWardRelief <= 0 || attacker == nil || defender == nil {
+		return 0
+	}
+	if attacker.Species != SpeciesEnemy {
+		return 0
+	}
+	ward := w.kindOf(attacker).Ward
+	if ward == SkillNone {
+		return 0
+	}
+	return clamp(defender.skillAt(&w.cfg, ward)*w.cfg.SkillWardRelief, 0, 1)
 }

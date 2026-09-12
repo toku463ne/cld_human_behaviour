@@ -1585,6 +1585,13 @@ type Config struct {
 	// body willing to eat, not one that makes the mouthful cheaper.
 	SkillPoisonRelief float64
 
+	// SkillWardRelief is how much of a warded beast's blow a fully mastered,
+	// fully suited body turns aside (stage 62), and how much it knocks off
+	// what standing near one looks like it will cost. Zero is a world where
+	// knowing the beasts buys nothing, which is the arm this is measured
+	// against.
+	SkillWardRelief float64
+
 	// SkillSwimRelief is how much of the chance that a tick in the water is
 	// the last one (stage 34) a fully mastered, fully suited body escapes.
 	//
@@ -2420,6 +2427,7 @@ func DefaultConfig() Config {
 			SkillForage: GeneMemory,
 			SkillSwim:   GeneVitality,
 			SkillPoison: GeneVitality,
+			SkillWard:   GeneDefence,
 			// Fishing from the bank is patience and a good eye - reading
 			// where the fish is from outside the water - so it is capped by
 			// rationality, the gene for how well a body reads the world.
@@ -2446,6 +2454,7 @@ func DefaultConfig() Config {
 		SkillForageRelief:  1,
 		SkillSwimRelief:    1,
 		SkillPoisonRelief:  1,
+		SkillWardRelief:    0.5,
 		SkillFishReach:     2,
 		FishCatchWater:     1,
 		FishCatchBank:      1,

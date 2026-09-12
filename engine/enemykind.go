@@ -57,6 +57,15 @@ type EnemyKind struct {
 	CanEatPlants  bool
 	PlantAppetite float64
 
+	// Ward is the skill that knowing this sort of beast buys protection
+	// against (stage 62), or SkillNone for a sort nobody has lore about.
+	//
+	// It is on the row rather than in the engine for the reason the rest of
+	// this table is: which beasts are worth knowing about is a thing a map
+	// says, and a second sort warded by the same lore is a second row
+	// pointing at the same skill.
+	Ward SkillKind
+
 	// Homely is how much of EnemyHomeCost this kind pays (stage 64): one is
 	// a sort that keeps to the country it came into the world in, zero one
 	// that goes wherever it likes. An unset row is zero - a kind that was

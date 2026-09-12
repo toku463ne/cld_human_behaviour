@@ -347,6 +347,16 @@ type AgentView struct {
 	Prey bool
 	Meat float64
 
+	// Ward is how much of this one's blows the observer turns aside by
+	// knowing what sort of beast it is (stage 62), from 0 to 1. Zero for
+	// another human, for an unwarded sort, and for a body that has never
+	// learnt the lore.
+	//
+	// It is knowledge about itself rather than about the other one: what it
+	// would take off, not what the other one is. The other one's attack is
+	// still a hidden parameter.
+	Ward float64
+
 	Paired  bool
 	Seeking bool // looks like it is after a mate, though not of whom
 	Resting bool // lying down, which is visible and matters (stage 18)
@@ -723,6 +733,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Species:     o.Species,
 			Prey:        o.Species != a.Species && eatsMeat(a.Species),
 			Meat:        w.meatFrom(o),
+			Ward:        w.wardAgainst(a, o),
 			Vitality:    o.Vitality,
 			Appearance:  seen,
 			Paired:      o.PartnerID != 0,

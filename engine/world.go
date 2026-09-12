@@ -1365,6 +1365,10 @@ func (w *World) resolveAttacks() {
 			continue
 		}
 		damage *= 1 - to.defence(&w.cfg)*composure
+		// And what knowing this sort of beast keeps off (stage 62). It is
+		// separate from defence on purpose: defence is what a body is, and
+		// this is what it has learnt about one particular attacker.
+		damage *= 1 - w.wardAgainst(to, from)
 		to.Vitality -= damage
 
 		// The one taking the hits remembers exactly what they cost - and is

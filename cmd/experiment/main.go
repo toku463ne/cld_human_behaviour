@@ -1870,6 +1870,40 @@ var variants = []variant{
 		},
 	},
 	{
+		name: "beastlore",
+		about: "62: one sort of beast is worth knowing about, and the country it comes from " +
+			"teaches how to handle it",
+		apply: func(c *engine.Config) {
+			c.EnemySpread = 0.6
+			c.SkillBirthplace = 0.5
+			c.EnemyKinds = []engine.EnemyKind{
+				{Name: "brute", Share: 1, Homing: 1, Homely: 1, Ward: engine.SkillWard},
+			}
+		},
+	},
+	{
+		name: "beastlorenone",
+		about: "the control: the same table and the same teaching, with nothing worth knowing " +
+			"about - so the arms differ in the lore and not in the skills being on",
+		apply: func(c *engine.Config) {
+			c.EnemySpread = 0.6
+			c.SkillBirthplace = 0.5
+			c.EnemyKinds = []engine.EnemyKind{{Name: "brute", Share: 1, Homing: 1, Homely: 1}}
+		},
+	},
+	{
+		name:  "beastlorehard",
+		about: "the same lore, worth twice as much off a blow",
+		apply: func(c *engine.Config) {
+			c.EnemySpread = 0.6
+			c.SkillBirthplace = 0.5
+			c.SkillWardRelief = 1
+			c.EnemyKinds = []engine.EnemyKind{
+				{Name: "brute", Share: 1, Homing: 1, Homely: 1, Ward: engine.SkillWard},
+			}
+		},
+	},
+	{
 		name: "grazers",
 		about: "60: the enemies can eat what the humans live on, and think little of it " +
 			"(a quarter of a mouthful of meat)",
@@ -3079,6 +3113,7 @@ var metricNames = []string{
 	"enemyAway", "enemyAtHome", "homeShare",
 	"plantRate", "foodMean",
 	"humanKillShare", "enemyKillShare", "humansByEnemy", "plantsToEnemy", "plantSeenByEnemy",
+	"wardHeld", "wardReal", "wardGap",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -3250,6 +3285,9 @@ type sample struct {
 	// question about one pair.
 	humanKillShare, enemyKillShare, humansByEnemy float64
 	plantsToEnemy, plantSeenByEnemy float64
+
+	// What the lore about the beasts is doing (stage 62).
+	wardHeld, wardReal, wardGap float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3456,6 +3494,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		roam := w.Roaming()
 		grows, fromMap := w.PlantSupply()
 		fed := w.Feeding()
+		ward := w.Skills(engine.SkillWard)
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
@@ -3476,6 +3515,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			plantRate: grows, foodMean: fromMap,
 			humanKillShare: fed.HumanKillShare, enemyKillShare: fed.EnemyKillShare,
 			humansByEnemy: fed.HumansByEnemy,
+			wardHeld: ward.Held, wardReal: ward.Realised,
+			wardGap: ward.Dear - ward.Open,
 			plantsToEnemy: fed.PlantsToEnemy, plantSeenByEnemy: fed.SeenByEnemy,
 			kinds: float64(sorts.Kinds), kindMix: sorts.MixError,
 			kindGap: sorts.BudgetGap, kindHomed: sorts.Homed,
@@ -4025,6 +4066,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"humansByEnemy":    tail.humansByEnemy,
 		"plantsToEnemy":    tail.plantsToEnemy,
 		"plantSeenByEnemy": tail.plantSeenByEnemy,
+		// The lore about the beasts (stage 62): how many hold it, what it is
+		// worth once the body's defence has capped it, and whether the ones
+		// who hold it are standing where the beasts are.
+		"wardHeld": tail.wardHeld,
+		"wardReal": tail.wardReal,
+		"wardGap":  tail.wardGap,
 		"regionsSeen": roaming.Mean,
 		"oneRegion":   roaming.Alone,
 		"regionShare": roaming.Share,
@@ -4234,6 +4281,9 @@ func tailAverage(series []sample) sample {
 		out.prowlGain += s.prowlGain
 		out.prowlArrive += s.prowlArrive
 		out.enemyBorn += s.enemyBorn
+		out.wardHeld += s.wardHeld
+		out.wardReal += s.wardReal
+		out.wardGap += s.wardGap
 		out.humanKillShare += s.humanKillShare
 		out.enemyKillShare += s.enemyKillShare
 		out.humansByEnemy += s.humansByEnemy
@@ -4395,6 +4445,9 @@ func tailAverage(series []sample) sample {
 	out.prowlGain /= d
 	out.prowlArrive /= d
 	out.enemyBorn /= d
+	out.wardHeld /= d
+	out.wardReal /= d
+	out.wardGap /= d
 	out.humanKillShare /= d
 	out.enemyKillShare /= d
 	out.humansByEnemy /= d
