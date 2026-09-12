@@ -542,6 +542,16 @@ type World struct {
 	decisions     int
 	regionDraws   int
 
+	// How each kind of body dies (stage 60): deaths, of which violent, and of
+	// which at the hands of the other species. World-wide killShare says
+	// nothing about a rule that only touches one pair, which is why this is
+	// here rather than being worked out from the totals.
+	tollOf [2]speciesToll
+
+	// And how many plants the enemies ate (stage 60), which is the rule's own
+	// firing rate.
+	plantsToEnemies float64
+
 	// homeDraws is the same count for "head back to the country I came into
 	// the world in" (stage 64): the one option that rule can reach a body
 	// through, so its share is the ceiling on what the rule can do.
@@ -1829,6 +1839,9 @@ func (w *World) kill(a *Agent) {
 	if toll != nil {
 		toll.deaths++
 	}
+	// And the same by species (stage 60).
+	kindToll := &w.tollOf[speciesIndex(a.Species)]
+	kindToll.deaths++
 	// Whatever it was holding falls where it fell (stage 40). Food carried
 	// out of the world would be a leak in a total the world has kept fixed
 	// since stage 15a.
@@ -1846,6 +1859,7 @@ func (w *World) kill(a *Agent) {
 	// are the target. Read only: nothing in the world turns on it.
 	if !a.drowned && a.lastAttackTick < w.tick-1 && a.Lifespan > 0 {
 		w.starvedDeaths++
+		kindToll.starved++
 		if a.sawFoodTick > 0 && float64(w.tick-a.sawFoodTick) <= w.cfg.PlanHorizon {
 			w.starvedFoodSeen++
 		}
@@ -1857,6 +1871,16 @@ func (w *World) kill(a *Agent) {
 		w.kills++
 		if toll != nil {
 			toll.kills++
+		}
+		kindToll.kills++
+		// And whether the other species did it, which is the pair this stage
+		// is about. The list is the one the carcass is shared out to, before
+		// the filter that keeps only those who can eat it.
+		for _, id := range a.recentAttackers(w.tick, w.cfg.HuntCreditTicks) {
+			if other := w.agentByID(id); other != nil && other.Species != a.Species {
+				kindToll.byOther++
+				break
+			}
 		}
 		// What the people who were standing there make of it (stage 31).
 		// Before the body is taken out of the world, for the same reason a
@@ -1896,6 +1920,10 @@ func (w *World) eat(a *Agent, foodID int) {
 	// (stage 16). Nothing else changes: hunger falls by less, and everything
 	// downstream of hunger follows from that on its own.
 	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind))
+	// What the enemies are taking off the humans' table (stage 60).
+	if a.Species == SpeciesEnemy && f.Kind == FoodPlant {
+		w.plantsToEnemies++
+	}
 	// And whatever it was defended with (stage 17b). The plant's poison is a
 	// hidden parameter: this is where an agent finds out what it actually ate,
 	// as against what the warning said.

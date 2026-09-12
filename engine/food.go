@@ -104,7 +104,10 @@ func (w *World) canEat(a *Agent, f *Food) bool {
 		}
 		return f.claimedBy(a.ID, w.tick)
 	default:
-		return eatsPlants(a.Species)
+		// What this body can digest (stage 60). For a human that is what it
+		// always was; for an enemy it is what its row says, which is the same
+		// line stage 11 drew between the species, drawn one level finer.
+		return w.eatsPlantsFor(a)
 	}
 }
 

@@ -67,7 +67,11 @@ func (w *World) dietValue(a *Agent, kind FoodKind) float64 {
 	if cfg.SkillForageRelief > 0 {
 		penalty *= 1 - clamp(a.skillAt(cfg, SkillForage)*cfg.SkillForageRelief, 0, 1)
 	}
-	return 1 - penalty*share
+	// And what this sort of body makes of this sort of food (stage 60). It
+	// goes here rather than in the estimate alone because this is the one
+	// multiplier both the estimate and the mouthful pass through: a body that
+	// expected more than it got would be a body lied to about itself.
+	return (1 - penalty*share) * w.appetiteFor(a, kind)
 }
 
 // kindsOnOffer is how many kinds of food this world can actually produce.

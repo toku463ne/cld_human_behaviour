@@ -45,6 +45,18 @@ type EnemyKind struct {
 	// and two kinds disagreeing about where it is would make it two.
 	Homing float64
 
+	// CanEatPlants is whether this sort can digest what the humans live on
+	// (stage 60), and PlantAppetite what a plant is worth to it against a
+	// mouthful of meat - one for a body that finds them as good, a small
+	// figure for one that will only bother when it is starving. Unset is one.
+	//
+	// The pair is stage 25's division: what a body cannot do is a gate on the
+	// candidates, and what is not worth doing is left to the comparison. There
+	// is no coin flip anywhere - "it rarely bothers" has to come out of the
+	// utility being low, so that a starving one still does.
+	CanEatPlants  bool
+	PlantAppetite float64
+
 	// Homely is how much of EnemyHomeCost this kind pays (stage 64): one is
 	// a sort that keeps to the country it came into the world in, zero one
 	// that goes wherever it likes. An unset row is zero - a kind that was
@@ -247,4 +259,108 @@ func (w *World) KindNameOf(id int) string {
 		return ""
 	}
 	return w.kindOf(a).Name
+}
+
+// eatsPlantsFor says whether this body can digest what the humans live on
+// (stage 60). For a human, always; for an enemy, what its row says.
+//
+// This is the same line stage 11 drew - what tells the species apart is the
+// range it is drawn from and what it eats - generalised so that the second
+// half can differ within a species too.
+func (w *World) eatsPlantsFor(a *Agent) bool {
+	if a.Species != SpeciesEnemy {
+		return eatsPlants(a.Species)
+	}
+	return w.kindOf(a).CanEatPlants
+}
+
+// appetiteFor is what a plant is worth to this body against a mouthful of
+// meat (stage 60). One for anything that lives on them.
+func (w *World) appetiteFor(a *Agent, kind FoodKind) float64 {
+	if kind != FoodPlant || a.Species != SpeciesEnemy {
+		return 1
+	}
+	k := w.kindOf(a)
+	if !k.CanEatPlants || k.PlantAppetite <= 0 {
+		return 1
+	}
+	return clamp(k.PlantAppetite, 0, 1)
+}
+
+// speciesToll is how one species has been dying (stage 60).
+type speciesToll struct {
+	deaths  float64
+	kills   float64
+	starved float64
+	byOther float64 // killed with the other species among its attackers
+}
+
+// speciesIndex is which slot a species keeps its tally in.
+func speciesIndex(s Species) int {
+	if s == SpeciesEnemy {
+		return 1
+	}
+	return 0
+}
+
+// Feeding is what each species dies of and what the enemies are eating
+// (stage 60).
+//
+// The world-wide killShare cannot answer this stage's question: a rule that
+// puts the two species on the same food changes who kills whom, and that is
+// invisible in a total that mixes both. Hence a tally per species, and the
+// share of each one's violent deaths that the other species had a hand in.
+type Feeding struct {
+	HumanKillShare float64 // of the humans that died, how many were killed
+	EnemyKillShare float64 // ... and of the enemies
+	HumansByEnemy  float64 // of the humans killed, how many with an enemy among the attackers
+	EnemiesByHuman float64 // ... and the other way round
+	PlantsToEnemy  float64 // plants eaten by enemies, over the run
+
+	// SeenByEnemy is the rule's own target: how many of the enemies have a
+	// plant in sight at all. A rule that can only fire where a body can see
+	// what it is now allowed to eat is capped by this (stage 45's habit of
+	// counting the supply before building on it).
+	SeenByEnemy float64
+}
+
+// Feeding reports it. Read only.
+func (w *World) Feeding() Feeding {
+	out := Feeding{PlantsToEnemy: w.plantsToEnemies}
+	h, e := &w.tollOf[0], &w.tollOf[1]
+	if h.deaths > 0 {
+		out.HumanKillShare = h.kills / h.deaths
+	}
+	if e.deaths > 0 {
+		out.EnemyKillShare = e.kills / e.deaths
+	}
+	if h.kills > 0 {
+		out.HumansByEnemy = h.byOther / h.kills
+	}
+	if e.kills > 0 {
+		out.EnemiesByHuman = e.byOther / e.kills
+	}
+
+	var enemies, withPlant float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Species != SpeciesEnemy {
+			continue
+		}
+		enemies++
+		for j := range w.foods {
+			f := &w.foods[j]
+			if f.Kind != FoodPlant {
+				continue
+			}
+			if w.canSee(a.X, a.Y, f.X, f.Y) {
+				withPlant++
+				break
+			}
+		}
+	}
+	if enemies > 0 {
+		out.SeenByEnemy = withPlant / enemies
+	}
+	return out
 }

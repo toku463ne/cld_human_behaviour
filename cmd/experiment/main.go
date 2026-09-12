@@ -1870,6 +1870,35 @@ var variants = []variant{
 		},
 	},
 	{
+		name: "grazers",
+		about: "60: the enemies can eat what the humans live on, and think little of it " +
+			"(a quarter of a mouthful of meat)",
+		apply: func(c *engine.Config) {
+			c.EnemyKinds = []engine.EnemyKind{{
+				Name: "grazer", Share: 1, Homing: 1, Homely: 1,
+				CanEatPlants: true, PlantAppetite: 0.25,
+			}}
+		},
+	},
+	{
+		name:  "grazershungry",
+		about: "the same, finding a plant as good as meat",
+		apply: func(c *engine.Config) {
+			c.EnemyKinds = []engine.EnemyKind{{
+				Name: "grazer", Share: 1, Homing: 1, Homely: 1,
+				CanEatPlants: true, PlantAppetite: 1,
+			}}
+		},
+	},
+	{
+		name: "grazersnone",
+		about: "the control: the same one-row table with nothing on the plants, so the arms " +
+			"differ in the rule and not in the table",
+		apply: func(c *engine.Config) {
+			c.EnemyKinds = []engine.EnemyKind{{Name: "grazer", Share: 1, Homing: 1, Homely: 1}}
+		},
+	},
+	{
 		name:  "homebound",
 		about: "64: an enemy pays for being away from the country it came into the world in",
 		apply: func(c *engine.Config) { c.EnemySpread = 0.6; c.EnemyHomeCost = 2 },
@@ -3008,7 +3037,7 @@ var metricNames = []string{
 	"gap", "gapP10", "gapRel",
 	"halfLife", "together", "censored",
 	"fightCompanion", "fightStranger", "fightRatio",
-	"species", "rareShare", "rareTrough", "rareSwing",
+	"species", "humans", "enemies", "rareShare", "rareTrough", "rareSwing",
 	"remembered", "friends", "memFull", "restNear",
 	"power", "rationality", "intelligence",
 	"sdPower", "sdRationality", "sdIntelligence",
@@ -3049,6 +3078,7 @@ var metricNames = []string{
 	"kinds", "kindMix", "kindGap", "kindHomed",
 	"enemyAway", "enemyAtHome", "homeShare",
 	"plantRate", "foodMean",
+	"humanKillShare", "enemyKillShare", "humansByEnemy", "plantsToEnemy", "plantSeenByEnemy",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -3214,6 +3244,12 @@ type sample struct {
 
 	// How much the world grows and what the map made of it (stage 61).
 	plantRate, foodMean float64
+
+	// Who dies of what, by species, and what the enemies are eating (stage
+	// 60). The world-wide killShare mixes the two and so cannot answer a
+	// question about one pair.
+	humanKillShare, enemyKillShare, humansByEnemy float64
+	plantsToEnemy, plantSeenByEnemy float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3419,6 +3455,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		sorts := w.Kinds()
 		roam := w.Roaming()
 		grows, fromMap := w.PlantSupply()
+		fed := w.Feeding()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
@@ -3437,6 +3474,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			prowlArrive: prowl.ArriveGain, enemyBorn: prowl.BornShare,
 			enemyAway: roam.Away, enemyAtHome: roam.AtHome, homeShare: roam.Draws,
 			plantRate: grows, foodMean: fromMap,
+			humanKillShare: fed.HumanKillShare, enemyKillShare: fed.EnemyKillShare,
+			humansByEnemy: fed.HumansByEnemy,
+			plantsToEnemy: fed.PlantsToEnemy, plantSeenByEnemy: fed.SeenByEnemy,
 			kinds: float64(sorts.Kinds), kindMix: sorts.MixError,
 			kindGap: sorts.BudgetGap, kindHomed: sorts.Homed,
 			enemyCrowd: prowl.Crowding, prowlBite: prowl.Bite,
@@ -3712,6 +3752,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"fightStranger":  fr.Stranger * 100,
 		"fightRatio":     fr.Ratio,
 		"species":        float64(cen.Living()),
+		// The two species apart (stage 60). pop is both together, so a rule
+		// that feeds one of them can raise it without a single extra human.
+		"humans":  speciesMean(cen, engine.SpeciesHuman),
+		"enemies": speciesMean(cen, engine.SpeciesEnemy),
 		"rareShare":      rare.Share,
 		"rareTrough":     rare.Trough,
 		"rareSwing":      rare.Swing,
@@ -3974,6 +4018,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// is a fact about the map rather than something to guess.
 		"plantRate": tail.plantRate,
 		"foodMean":  tail.foodMean,
+		// Who dies of what, by species (stage 60), and the rule's own firing
+		// rate: how many of the enemies can even see a plant.
+		"humanKillShare":   tail.humanKillShare,
+		"enemyKillShare":   tail.enemyKillShare,
+		"humansByEnemy":    tail.humansByEnemy,
+		"plantsToEnemy":    tail.plantsToEnemy,
+		"plantSeenByEnemy": tail.plantSeenByEnemy,
 		"regionsSeen": roaming.Mean,
 		"oneRegion":   roaming.Alone,
 		"regionShare": roaming.Share,
@@ -4183,6 +4234,11 @@ func tailAverage(series []sample) sample {
 		out.prowlGain += s.prowlGain
 		out.prowlArrive += s.prowlArrive
 		out.enemyBorn += s.enemyBorn
+		out.humanKillShare += s.humanKillShare
+		out.enemyKillShare += s.enemyKillShare
+		out.humansByEnemy += s.humansByEnemy
+		out.plantsToEnemy += s.plantsToEnemy
+		out.plantSeenByEnemy += s.plantSeenByEnemy
 		out.plantRate += s.plantRate
 		out.foodMean += s.foodMean
 		out.enemyAway += s.enemyAway
@@ -4339,6 +4395,11 @@ func tailAverage(series []sample) sample {
 	out.prowlGain /= d
 	out.prowlArrive /= d
 	out.enemyBorn /= d
+	out.humanKillShare /= d
+	out.enemyKillShare /= d
+	out.humansByEnemy /= d
+	out.plantsToEnemy /= d
+	out.plantSeenByEnemy /= d
 	out.plantRate /= d
 	out.foodMean /= d
 	out.enemyAway /= d
@@ -4568,6 +4629,16 @@ func kept(part, whole float64) float64 {
 		return 0
 	}
 	return part / whole
+}
+
+// speciesMean is the mean population of one species over the census window.
+func speciesMean(c engine.Census, s engine.Species) float64 {
+	for i := range c.Species {
+		if c.Species[i].Species == s {
+			return c.Species[i].Mean
+		}
+	}
+	return 0
 }
 
 func share(part, whole int) float64 {
