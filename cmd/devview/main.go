@@ -4067,6 +4067,7 @@ func main() {
 	land := flag.String("terrain", "", "lay the world out on a piece of country: none (default, flat), rough, river, plateau or country (stage 20)")
 	footing := flag.Float64("footing", 0, "how far apart the regions are in what a body standing in them can do (stage 57; 0 = every region the same, which is the default world)")
 	homebound := flag.Float64("homebound", 0, "what being away from the country it came into the world in costs an enemy, per region width per tick (stage 64; 0 = the default world)")
+	lurkers := flag.Bool("lurkers", false, "something lives in the river and hunts (stage 63; needs -terrain river or country)")
 	kinds := flag.Bool("kinds", false, "two sorts of enemy: light ones anywhere, heavy ones in the bad country (stage 59)")
 	prowl := flag.Float64("prowl", 0, "how unevenly the world's enemies arrive across the regions (stage 58; 0 = everywhere alike, which is the default world)")
 	favour := flag.Float64("favour", 0, "how far apart the regions are in which genes they favour, averaging to one (stage 57c; 0 = no region has a taste in builds)")
@@ -4095,6 +4096,15 @@ func main() {
 	// Two sorts of enemy (stage 59), which is what the panel's "sort:" line is
 	// for. The same table the experiment measures, so what is on the screen is
 	// what the figures are about.
+	// Something in the water (stage 63). Two sorts, one of which comes out of
+	// the river: what is worth looking at is where they are, so the panel's
+	// "sort:" line and the map between them say which is which.
+	if *lurkers {
+		cfg.EnemyKinds = []engine.EnemyKind{
+			{Name: "brute", Share: 2, Homing: 1, Homely: 1},
+			{Name: "lurker", Share: 1, Homing: 1, Homely: 1, Water: true},
+		}
+	}
 	if *kinds {
 		cfg.EnemyKinds = []engine.EnemyKind{
 			{Name: "stray", Share: 3, BudgetMean: 380, BudgetStd: 60, Homing: 0},

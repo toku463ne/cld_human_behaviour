@@ -391,8 +391,20 @@ func (w *World) spawnSpotFor(species Species, kind int) (float64, float64) {
 		return x, y
 	}
 	homing := 1.0
+	water := false
 	if kinds := w.enemyKinds(); kind >= 0 && kind < len(kinds) {
-		homing = kinds[kind].Homing
+		homing, water = kinds[kind].Homing, kinds[kind].Water
+	}
+	// A creature of the water arrives in the water (stage 63), drawn from the
+	// same list of cells the fish come up in. It is the one sort whose place
+	// is decided by the ground rather than by the map's weighting - the shape
+	// is the same, a weighted draw over places, and the weights here are flat
+	// over the water.
+	if water && len(w.water) > 0 {
+		c := w.water[w.rng.Intn(len(w.water))]
+		x := clamp(c.x+w.randRange(-c.w/2, c.w/2), 20, w.cfg.Width-20)
+		y := clamp(c.y+w.randRange(-c.h/2, c.h/2), 20, w.cfg.Height-20)
+		return x, y
 	}
 	// Nothing to follow: no weighting in the map, or a kind that ignores it.
 	// The old uniform draw, down to the number of values taken.

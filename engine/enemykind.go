@@ -57,6 +57,21 @@ type EnemyKind struct {
 	CanEatPlants  bool
 	PlantAppetite float64
 
+	// Water makes this sort a creature of the water (stage 63): it arrives in
+	// a water cell rather than by the map's region weighting, and the water
+	// does not drown it.
+	//
+	// Two meanings on one flag, and they are the same fact: a thing that
+	// lives in the river is not at risk in the river. It says nothing about
+	// what it eats - the fish of stages 42 and 43 are food items and this is
+	// a body, and they do not meet (#95).
+	//
+	// A map with no water in it cannot hold one, and a row that asks for it
+	// anyway arrives like any other sort rather than not arriving at all:
+	// quietly dropping arrivals would change how many enemies the world has
+	// without saying so.
+	Water bool
+
 	// Ward is the skill that knowing this sort of beast buys protection
 	// against (stage 62), or SkillNone for a sort nobody has lore about.
 	//
@@ -326,6 +341,13 @@ type Feeding struct {
 	EnemiesByHuman float64 // ... and the other way round
 	PlantsToEnemy  float64 // plants eaten by enemies, over the run
 
+	// EnemiesOnWater is how many of the enemies are standing in the water
+	// (stage 63), and HumansOnWater the same for the humans - the figure
+	// three stages running have failed to move, now that there is something
+	// in the river that hunts.
+	EnemiesOnWater float64
+	HumansOnWater  float64
+
 	// SeenByEnemy is the rule's own target: how many of the enemies have a
 	// plant in sight at all. A rule that can only fire where a body can see
 	// what it is now allowed to eat is capped by this (stage 45's habit of
@@ -350,13 +372,24 @@ func (w *World) Feeding() Feeding {
 		out.EnemiesByHuman = e.byOther / e.kills
 	}
 
-	var enemies, withPlant float64
+	var enemies, withPlant, wetEnemies float64
+	var humans, wetHumans float64
 	for i := range w.agents {
 		a := &w.agents[i]
-		if !a.Alive || a.Species != SpeciesEnemy {
+		if !a.Alive {
+			continue
+		}
+		if a.Species != SpeciesEnemy {
+			humans++
+			if w.terrainAt(a.X, a.Y).Kind == GroundWater {
+				wetHumans++
+			}
 			continue
 		}
 		enemies++
+		if w.terrainAt(a.X, a.Y).Kind == GroundWater {
+			wetEnemies++
+		}
 		for j := range w.foods {
 			f := &w.foods[j]
 			if f.Kind != FoodPlant {
@@ -370,6 +403,10 @@ func (w *World) Feeding() Feeding {
 	}
 	if enemies > 0 {
 		out.SeenByEnemy = withPlant / enemies
+		out.EnemiesOnWater = wetEnemies / enemies
+	}
+	if humans > 0 {
+		out.HumansOnWater = wetHumans / humans
 	}
 	return out
 }

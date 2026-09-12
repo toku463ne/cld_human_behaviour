@@ -1870,6 +1870,47 @@ var variants = []variant{
 		},
 	},
 	{
+		name: "rivermonster",
+		about: "63: something lives in the river and hunts - the same country, with a third of " +
+			"the arrivals coming out of the water",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, 1
+			c.FishShare = 0.25
+			c.EnemyKinds = []engine.EnemyKind{
+				{Name: "brute", Share: 2, Homing: 1, Homely: 1},
+				{Name: "lurker", Share: 1, Homing: 1, Homely: 1, Water: true},
+			}
+		},
+	},
+	{
+		name: "rivermonsternone",
+		about: "the control: the same two-row table with nothing living in the water, so the " +
+			"arms differ in where one sort arrives and nothing else",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, 1
+			c.FishShare = 0.25
+			c.EnemyKinds = []engine.EnemyKind{
+				{Name: "brute", Share: 2, Homing: 1, Homely: 1},
+				{Name: "lurker", Share: 1, Homing: 1, Homely: 1},
+			}
+		},
+	},
+	{
+		name:  "rivermonsterlots",
+		about: "the same, with two thirds of the arrivals coming out of the water",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = mapCountry
+			c.TerrainFoodCorrelation, c.WatersideFood = 1, 1
+			c.FishShare = 0.25
+			c.EnemyKinds = []engine.EnemyKind{
+				{Name: "brute", Share: 1, Homing: 1, Homely: 1},
+				{Name: "lurker", Share: 2, Homing: 1, Homely: 1, Water: true},
+			}
+		},
+	},
+	{
 		name: "beastlore",
 		about: "62: one sort of beast is worth knowing about, and the country it comes from " +
 			"teaches how to handle it",
@@ -3114,6 +3155,7 @@ var metricNames = []string{
 	"plantRate", "foodMean",
 	"humanKillShare", "enemyKillShare", "humansByEnemy", "plantsToEnemy", "plantSeenByEnemy",
 	"wardHeld", "wardReal", "wardGap",
+	"enemiesWet", "humansWet",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -3288,6 +3330,9 @@ type sample struct {
 
 	// What the lore about the beasts is doing (stage 62).
 	wardHeld, wardReal, wardGap float64
+
+	// Who is standing in the water (stage 63).
+	enemiesWet, humansWet float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3515,6 +3560,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			plantRate: grows, foodMean: fromMap,
 			humanKillShare: fed.HumanKillShare, enemyKillShare: fed.EnemyKillShare,
 			humansByEnemy: fed.HumansByEnemy,
+			enemiesWet: fed.EnemiesOnWater, humansWet: fed.HumansOnWater,
 			wardHeld: ward.Held, wardReal: ward.Realised,
 			wardGap: ward.Dear - ward.Open,
 			plantsToEnemy: fed.PlantsToEnemy, plantSeenByEnemy: fed.SeenByEnemy,
@@ -4069,6 +4115,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// The lore about the beasts (stage 62): how many hold it, what it is
 		// worth once the body's defence has capped it, and whether the ones
 		// who hold it are standing where the beasts are.
+		// Who stands in the water (stage 63). humansWet is the figure stages
+		// 34, 35 and 36 between them could only move with food.
+		"enemiesWet": tail.enemiesWet,
+		"humansWet":  tail.humansWet,
 		"wardHeld": tail.wardHeld,
 		"wardReal": tail.wardReal,
 		"wardGap":  tail.wardGap,
@@ -4281,6 +4331,8 @@ func tailAverage(series []sample) sample {
 		out.prowlGain += s.prowlGain
 		out.prowlArrive += s.prowlArrive
 		out.enemyBorn += s.enemyBorn
+		out.enemiesWet += s.enemiesWet
+		out.humansWet += s.humansWet
 		out.wardHeld += s.wardHeld
 		out.wardReal += s.wardReal
 		out.wardGap += s.wardGap
@@ -4445,6 +4497,8 @@ func tailAverage(series []sample) sample {
 	out.prowlGain /= d
 	out.prowlArrive /= d
 	out.enemyBorn /= d
+	out.enemiesWet /= d
+	out.humansWet /= d
 	out.wardHeld /= d
 	out.wardReal /= d
 	out.wardGap /= d

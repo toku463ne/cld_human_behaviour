@@ -268,7 +268,16 @@ func (w *World) TerrainSize() (cols, rows int, cellW, cellH float64) {
 // in there, and a body that knows the water spends them at a lower rate rather
 // than getting across sooner.
 func (w *World) drownChanceFor(a *Agent, t terrain) float64 {
-	if t.Drown <= 0 || w.cfg.SkillSwimRelief <= 0 || a == nil {
+	if a == nil || t.Drown <= 0 {
+		return t.Drown
+	}
+	// A creature of the water is not at risk in the water (stage 63). It is
+	// the same flag that puts it there: what lives in the river is not
+	// something the river takes.
+	if a.Species == SpeciesEnemy && w.kindOf(a).Water {
+		return 0
+	}
+	if w.cfg.SkillSwimRelief <= 0 {
 		return t.Drown
 	}
 	relief := clamp(a.skillAt(&w.cfg, SkillSwim)*w.cfg.SkillSwimRelief, 0, 1)
