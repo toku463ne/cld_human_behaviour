@@ -338,13 +338,28 @@ func correlation(xs, ys []float64) float64 {
 // many of them turn up there. Like pickFoodRegion it is only reached when the
 // regions actually differ, so a world without the rule keeps the old uniform
 // draw down to the number of values taken from the random source.
-func (w *World) pickEnemyRegion() int {
+func (w *World) pickEnemyRegion() int { return w.pickEnemyRegionFor(1) }
+
+// pickEnemyRegionFor is the same draw blended towards an even one (stage 59):
+// a weight of 1 + homing*(w-1), which is the map's own weighting at one and a
+// flat map at zero.
+func (w *World) pickEnemyRegionFor(homing float64) int {
 	if w.enemyWeight <= 0 {
 		return 0
 	}
-	r := w.rng.Float64() * w.enemyWeight
+	weight := func(i int) float64 {
+		return max(1+homing*(w.regions[i].Enemies-1), 0)
+	}
+	total := 0.0
 	for i := range w.regions {
-		r -= w.regions[i].Enemies
+		total += weight(i)
+	}
+	if total <= 0 {
+		return 0
+	}
+	r := w.rng.Float64() * total
+	for i := range w.regions {
+		r -= weight(i)
 		if r <= 0 {
 			return i
 		}
@@ -358,12 +373,35 @@ func (w *World) pickEnemyRegion() int {
 // enemies' own. With no spread it is the uniform draw the world always made,
 // in the same order and the same number of draws.
 func (w *World) spawnSpot(species Species) (float64, float64) {
-	if species != SpeciesEnemy || w.cfg.EnemySpread <= 0 || len(w.regions) == 0 {
+	return w.spawnSpotFor(species, 0)
+}
+
+// spawnSpotFor is the same for one sort of enemy (stage 59). How closely it
+// follows the map's weighting is the row's own Homing: one is the full
+// weighting of stage 58, zero is anywhere at all.
+//
+// A kind that follows nothing still draws its region - it just draws it
+// evenly - because a table where one row takes a value from the random source
+// and another does not would make the arms depend on the order the sorts
+// happened to arrive in.
+func (w *World) spawnSpotFor(species Species, kind int) (float64, float64) {
+	if species != SpeciesEnemy || len(w.regions) == 0 {
 		x := w.randRange(20, w.cfg.Width-20)
 		y := w.randRange(20, w.cfg.Height-20)
 		return x, y
 	}
-	minX, minY, maxX, maxY := w.regionBounds(w.pickEnemyRegion())
+	homing := 1.0
+	if kinds := w.enemyKinds(); kind >= 0 && kind < len(kinds) {
+		homing = kinds[kind].Homing
+	}
+	// Nothing to follow: no weighting in the map, or a kind that ignores it.
+	// The old uniform draw, down to the number of values taken.
+	if w.cfg.EnemySpread <= 0 || homing <= 0 {
+		x := w.randRange(20, w.cfg.Width-20)
+		y := w.randRange(20, w.cfg.Height-20)
+		return x, y
+	}
+	minX, minY, maxX, maxY := w.regionBounds(w.pickEnemyRegionFor(homing))
 	x := clamp(w.randRange(minX, maxX), 20, w.cfg.Width-20)
 	y := clamp(w.randRange(minY, maxY), 20, w.cfg.Height-20)
 	return x, y

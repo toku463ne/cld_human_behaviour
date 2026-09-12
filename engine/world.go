@@ -288,6 +288,12 @@ type World struct {
 	enemyArrivalSum float64
 	enemyBorn       float64
 
+	// And how many of each sort arrived (stage 59). The mix the table asks
+	// for is about what the world puts in; what is standing about later is
+	// the world's own doing, and with a handful of enemies alive it drifts
+	// far enough to say nothing.
+	enemyArrivalsByKind []float64
+
 	// pendingSeeds are seeds that have been carried somewhere in an animal
 	// and are waiting for the world's next planting (stage 17c).
 	pendingSeeds []pendingSeed
@@ -1734,6 +1740,17 @@ func (w *World) tryBirth(pa, pb *Agent) {
 		0, // and whoever is born has it all to do
 	)
 	child.Species = pa.Species
+	// And its sort (stage 59), from one parent or the other - the same coin
+	// the budget is taken with (#2). Kinds are not species: courtship is
+	// within a species and pays no attention to the row, so two sorts do meet
+	// and their young are one or the other rather than something between.
+	//
+	// The coin is only tossed when the parents differ, so a world with one
+	// sort takes nothing from the random source.
+	child.Kind = pa.Kind
+	if pa.Kind != pb.Kind && w.rng.Float64() < 0.5 {
+		child.Kind = pb.Kind
+	}
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
 	child.lore = w.inheritLore(pa, pb)
 	child.chronotype = w.inheritChronotype(pa, pb)
@@ -2136,20 +2153,32 @@ func (w *World) newAgent(x, y float64, sex Sex, genome []float64, generation int
 func (w *World) randomAgent(species Species) Agent {
 	// Where it turns up. Enemies arrive where the map says they do (stage
 	// 58); nothing else in the world comes in from outside.
-	x, y := w.spawnSpot(species)
+	// Which sort of enemy this is (stage 59), before anything else: where it
+	// turns up and what it is built like both come off its row. A world with
+	// one sort chooses nothing and so draws nothing.
+	kind := 0
+	if species == SpeciesEnemy {
+		kind = w.pickEnemyKind()
+	}
+	x, y := w.spawnSpotFor(species, kind)
 	if species == SpeciesEnemy {
 		w.enemyArrivals++
 		w.enemyArrivalSum += w.prowlAt(x, y)
+		for len(w.enemyArrivalsByKind) <= kind {
+			w.enemyArrivalsByKind = append(w.enemyArrivalsByKind, 0)
+		}
+		w.enemyArrivalsByKind[kind]++
 	}
 	a := w.newAgent(
 		x,
 		y,
 		w.randomSex(),
-		w.drawGenomeFor(species),
+		w.drawGenomeOf(species, kind),
 		0,
 		1, // whoever the world puts in from outside arrives grown
 	)
 	a.Species = species
+	a.Kind = uint8(kind)
 	a.lore = w.newLore()
 	a.chronotype = w.drawChronotype()
 	a.hintSlots = w.drawHintSlots()

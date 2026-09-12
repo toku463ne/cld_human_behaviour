@@ -1795,6 +1795,42 @@ var variants = []variant{
 	// size of lean with the sign reversed says whether the structure is doing
 	// the work or only the magnitude.
 	{
+		name: "kinds",
+		about: "59: two sorts of enemy - light ones anywhere, heavy ones in the bad country - " +
+			"with the arrivals split three to one",
+		apply: func(c *engine.Config) {
+			c.EnemySpread = 0.6
+			c.EnemyKinds = []engine.EnemyKind{
+				{Name: "stray", Share: 3, BudgetMean: 380, BudgetStd: 60, Homing: 0},
+				{Name: "brute", Share: 1, BudgetMean: 700, BudgetStd: 90, Homing: 1},
+			}
+		},
+	},
+	{
+		name: "kindssame",
+		about: "the control: two sorts that are the same creature under two names - " +
+			"what the table itself costs, before any sort differs from another",
+		apply: func(c *engine.Config) {
+			c.EnemySpread = 0.6
+			mean, std := engine.DefaultConfig().EnemyBudgetMean, engine.DefaultConfig().EnemyBudgetStd
+			c.EnemyKinds = []engine.EnemyKind{
+				{Name: "one", Share: 1, BudgetMean: mean, BudgetStd: std, Homing: 1},
+				{Name: "two", Share: 1, BudgetMean: mean, BudgetStd: std, Homing: 1},
+			}
+		},
+	},
+	{
+		name: "kindsheavy",
+		about: "the same two sorts with the heavy one half of the arrivals rather than a quarter",
+		apply: func(c *engine.Config) {
+			c.EnemySpread = 0.6
+			c.EnemyKinds = []engine.EnemyKind{
+				{Name: "stray", Share: 1, BudgetMean: 380, BudgetStd: 60, Homing: 0},
+				{Name: "brute", Share: 1, BudgetMean: 700, BudgetStd: 90, Homing: 1},
+			}
+		},
+	},
+	{
 		name:  "prowl",
 		about: "58: the enemies arrive in some regions more than others - the map's own dangerous country",
 		apply: func(c *engine.Config) { c.EnemySpread = 0.6 },
@@ -2920,6 +2956,7 @@ var metricNames = []string{
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
 	"standGain", "suitGain", "suitCeiling", "regionsSeen", "oneRegion", "regionShare",
 	"prowlArrive", "prowlGain", "prowlKept", "enemyBorn", "humanProwl", "enemyCrowd", "prowlBite",
+	"kinds", "kindMix", "kindGap", "kindHomed",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -3074,6 +3111,10 @@ type sample struct {
 	// prowlBite whether the dying is more violent where they arrive.
 	prowlGain, humanProwl, enemyCrowd, prowlBite float64
 	prowlArrive, enemyBorn float64
+
+	// What the table of enemy sorts produced (stage 59). Written so that they
+	// mean the same thing whatever the table's length is.
+	kinds, kindMix, kindGap, kindHomed float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3276,6 +3317,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		stand := w.Standing()
 		suited := w.Suits()
 		prowl := w.Prowl()
+		sorts := w.Kinds()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
@@ -3292,6 +3334,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			standGain: stand.Gain, suitGain: suited.Gain, suitCeiling: suited.Ceiling,
 			prowlGain: prowl.EnemyGain, humanProwl: prowl.HumanGain,
 			prowlArrive: prowl.ArriveGain, enemyBorn: prowl.BornShare,
+			kinds: float64(sorts.Kinds), kindMix: sorts.MixError,
+			kindGap: sorts.BudgetGap, kindHomed: sorts.Homed,
 			enemyCrowd: prowl.Crowding, prowlBite: prowl.Bite,
 			regionKnown: known.Known, regionTold: known.Told,
 			regionCostRank: known.CostRank,
@@ -3809,6 +3853,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"humanProwl": tail.humanProwl,
 		"enemyCrowd": tail.enemyCrowd,
 		"prowlBite":  tail.prowlBite,
+		// What the table of enemy sorts produced (stage 59). kindMix is over
+		// the arrivals rather than the standing population, which drifts.
+		"kinds":     tail.kinds,
+		"kindMix":   tail.kindMix,
+		"kindGap":   tail.kindGap,
+		"kindHomed": tail.kindHomed,
 		"regionsSeen": roaming.Mean,
 		"oneRegion":   roaming.Alone,
 		"regionShare": roaming.Share,
@@ -4018,6 +4068,10 @@ func tailAverage(series []sample) sample {
 		out.prowlGain += s.prowlGain
 		out.prowlArrive += s.prowlArrive
 		out.enemyBorn += s.enemyBorn
+		out.kinds += s.kinds
+		out.kindMix += s.kindMix
+		out.kindGap += s.kindGap
+		out.kindHomed += s.kindHomed
 		out.humanProwl += s.humanProwl
 		out.enemyCrowd += s.enemyCrowd
 		out.prowlBite += s.prowlBite
@@ -4165,6 +4219,10 @@ func tailAverage(series []sample) sample {
 	out.prowlGain /= d
 	out.prowlArrive /= d
 	out.enemyBorn /= d
+	out.kinds /= d
+	out.kindMix /= d
+	out.kindGap /= d
+	out.kindHomed /= d
 	out.humanProwl /= d
 	out.enemyCrowd /= d
 	out.prowlBite /= d

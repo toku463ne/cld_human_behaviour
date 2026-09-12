@@ -150,6 +150,14 @@ type counterSnap struct {
 	// counters are: a world that comes back with its tallies reset would
 	// report a different past.
 	Tolls []tollSnap `json:",omitempty"`
+
+	// What the world has put in from outside and what it grew itself (stages
+	// 58, 59), saved for the same reason: a world that came back with its
+	// tallies reset would report a different past.
+	EnemyArrivals   float64   `json:",omitempty"`
+	EnemyArrivalSum float64   `json:",omitempty"`
+	EnemyBorn       float64   `json:",omitempty"`
+	EnemyByKind     []float64 `json:",omitempty"`
 	Exchanges, HintsCopied                       int
 }
 
@@ -319,6 +327,8 @@ func (w *World) Save(out io.Writer) error {
 			Flees: w.flees, Escapes: w.escapes,
 			Exchanges: w.exchanges, HintsCopied: w.hintsCopied,
 			Tolls: snapTolls(w.tolls),
+			EnemyArrivals: w.enemyArrivals, EnemyArrivalSum: w.enemyArrivalSum,
+			EnemyBorn: w.enemyBorn, EnemyByKind: w.enemyArrivalsByKind,
 		},
 	}
 	for i := range w.pendingSeeds {
@@ -505,6 +515,9 @@ func Load(in io.Reader) (*World, error) {
 	w.courtships, w.courtshipsAccepted = c.Courtships, c.CourtshipsAccepted
 	w.flees, w.escapes = c.Flees, c.Escapes
 	w.exchanges, w.hintsCopied = c.Exchanges, c.HintsCopied
+	w.enemyArrivals, w.enemyArrivalSum = c.EnemyArrivals, c.EnemyArrivalSum
+	w.enemyBorn = c.EnemyBorn
+	w.enemyArrivalsByKind = append([]float64(nil), c.EnemyByKind...)
 	for i := range c.Tolls {
 		if i < len(w.tolls) {
 			w.tolls[i] = regionToll{deaths: c.Tolls[i].Deaths, kills: c.Tolls[i].Kills}

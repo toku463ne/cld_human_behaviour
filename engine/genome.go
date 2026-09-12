@@ -329,10 +329,14 @@ func (w *World) drawGenome() []float64 { return w.drawGenomeFor(SpeciesHuman) }
 // the range the budget comes from; the allocation is drawn the same way for
 // everybody, and every rule downstream reads the same genes.
 func (w *World) drawGenomeFor(species Species) []float64 {
-	mean, std := w.cfg.GeneBudgetMean, w.cfg.GeneBudgetStd
-	if species == SpeciesEnemy {
-		mean, std = w.cfg.EnemyBudgetMean, w.cfg.EnemyBudgetStd
-	}
+	return w.drawGenomeOf(species, 0)
+}
+
+// drawGenomeOf is the same for one sort of enemy (stage 59): the row decides
+// the range, and an unset row is the world's own figures, so a table with one
+// default sort in it draws exactly what the world drew before kinds existed.
+func (w *World) drawGenomeOf(species Species, kind int) []float64 {
+	mean, std := w.budgetRangeFor(species, kind)
 	budget := mean + w.rng.NormFloat64()*std
 	g := w.dirichlet(NumGenes, w.cfg.GeneInitAlpha)
 

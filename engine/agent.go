@@ -105,6 +105,14 @@ type Agent struct {
 	// Species is what kind of node this is; see the type. Always human today.
 	Species Species
 
+	// Kind is which row of Config.EnemyKinds this body came from (stage 59).
+	// Zero for humans, and zero for every enemy in a world with one kind.
+	//
+	// Fixed when it arrives and never touched again - the same standing as
+	// GuardianID: a reference decided at the start, not a state that
+	// accumulates. Newborns take their parents' row, so a kind breeds true.
+	Kind uint8
+
 	// Genome is everything this agent inherited, addressed by Gene; see
 	// genome.go. The roles are kept apart: attack is how much damage a unit of
 	// effort buys, rationality is how accurately the agent reads the world,

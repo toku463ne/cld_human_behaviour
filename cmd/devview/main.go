@@ -3073,6 +3073,11 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		// And how much of the world's enemies arrive around here (stage 58).
 		// Only where the map has such a thing in it: a line reading x1.00 for
 		// ever teaches the eye to skip the whole block.
+		// Which sort of enemy this is (stage 59). Only where the map has more
+		// than one, since "enemy" on every enemy teaches the eye nothing.
+		if name := g.world.KindNameOf(a.ID); name != "" {
+			t.line("sort: %s", name)
+		}
 		if prowl := g.world.ProwlAt(a.X, a.Y); prowl != 1 {
 			t.line("             and %.0f%% of the world's enemies arrive hereabouts",
 				prowl*100)
@@ -4052,6 +4057,7 @@ func main() {
 	boost := flag.Bool("boost", true, "bring the played body up to the world's average speed, paid for with new budget (a gift, shown on the panel)")
 	land := flag.String("terrain", "", "lay the world out on a piece of country: none (default, flat), rough, river, plateau or country (stage 20)")
 	footing := flag.Float64("footing", 0, "how far apart the regions are in what a body standing in them can do (stage 57; 0 = every region the same, which is the default world)")
+	kinds := flag.Bool("kinds", false, "two sorts of enemy: light ones anywhere, heavy ones in the bad country (stage 59)")
 	prowl := flag.Float64("prowl", 0, "how unevenly the world's enemies arrive across the regions (stage 58; 0 = everywhere alike, which is the default world)")
 	favour := flag.Float64("favour", 0, "how far apart the regions are in which genes they favour, averaging to one (stage 57c; 0 = no region has a taste in builds)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
@@ -4073,6 +4079,18 @@ func main() {
 	// dangerous country rather than a harder world: the same number of them
 	// arrive either way.
 	cfg.EnemySpread = *prowl
+	// Two sorts of enemy (stage 59), which is what the panel's "sort:" line is
+	// for. The same table the experiment measures, so what is on the screen is
+	// what the figures are about.
+	if *kinds {
+		cfg.EnemyKinds = []engine.EnemyKind{
+			{Name: "stray", Share: 3, BudgetMean: 380, BudgetStd: 60, Homing: 0},
+			{Name: "brute", Share: 1, BudgetMean: 700, BudgetStd: 90, Homing: 1},
+		}
+		if cfg.EnemySpread == 0 {
+			cfg.EnemySpread = 0.6
+		}
+	}
 	if m, ok := testMaps[*land]; ok {
 		cfg.TerrainMap = m
 		// A hand-made world gets a coherent landscape: broken country is also

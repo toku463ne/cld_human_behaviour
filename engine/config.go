@@ -123,6 +123,19 @@ type Config struct {
 	// had before that rule existed.
 	FoodSpread float64
 
+	// EnemyKinds are the sorts of enemy this map has (stage 59, enemykind.go).
+	//
+	// Empty is the world as it was: one sort, drawn from EnemyBudgetMean and
+	// EnemyBudgetStd and arriving wherever EnemySpread sends it. Filling it in
+	// is how a map says "there are weak ones everywhere and heavy ones in the
+	// bad country", and adding another sort later is another entry and no
+	// code.
+	//
+	// It is not a third species. What tells one kind from another is what is
+	// on its row - the same way stage 11 tells a human from an enemy - and no
+	// rule anywhere asks which kind a body is.
+	EnemyKinds []EnemyKind
+
 	// EnemySpread is how much the regions differ in how many of the world's
 	// enemies turn up in them (stage 58). Each region draws a weight from
 	// 1 +/- spread and arrivals are shared out in proportion, exactly as the
