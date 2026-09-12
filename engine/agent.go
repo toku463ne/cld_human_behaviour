@@ -252,6 +252,14 @@ type Agent struct {
 	sawFood bool
 	sawMate bool
 
+	// regionBias is what the ground this agent is standing on does to what it
+	// can do (stage 57). Written once a tick by World.standOnGround and read
+	// by Agent.Ability; zero means nobody has said, and reads as one.
+	//
+	// It is not a state axis and nothing accumulates in it: it is a copy of a
+	// property of the ground, kept here because Ability is on the hot path.
+	regionBias float64
+
 	// chronotype is the hour of the world's day this agent sleeps best at, on
 	// a circle from 0 to 1 (stage 18, clock.go). Deliberately not one of the
 	// budget genes: those are quantities you can buy more of, and an hour is a

@@ -42,6 +42,18 @@ type region struct {
 	// about how much grows: what it changes is how much of the growing needs
 	// knowing.
 	Special float64
+
+	// Ability multiplies what a body standing here can do (stage 57): its
+	// attack, its defence, how well it reads the world, how good a move it
+	// picks. One is the ordinary world.
+	//
+	// It is the one thing the ground gives that cannot be carried away. A
+	// skill goes on working wherever its holder walks - which is why five of
+	// them in a row failed to make anywhere worth staying in - and this stops
+	// working the moment its holder leaves.
+	//
+	// What it does not move is what a body holds: see Agent.capacity.
+	Ability float64
 }
 
 // regionsOf lays the world out in blocks and draws what each one is like.
@@ -55,7 +67,7 @@ func (w *World) buildRegions() {
 	cols, rows := max(cfg.RegionCols, 1), max(cfg.RegionRows, 1)
 	w.regions = make([]region, cols*rows)
 	for i := range w.regions {
-		w.regions[i] = region{Shelter: 1, Food: 1, Special: 1}
+		w.regions[i] = region{Shelter: 1, Food: 1, Special: 1, Ability: 1}
 	}
 	// Each spread is skipped entirely when it is zero, so a world with one of
 	// them turned off consumes the random source exactly as a world without
@@ -68,6 +80,11 @@ func (w *World) buildRegions() {
 	if cfg.FoodSpread > 0 {
 		for i := range w.regions {
 			w.regions[i].Food = clamp(w.randRange(1-cfg.FoodSpread, 1+cfg.FoodSpread), 0, 2)
+		}
+	}
+	if cfg.RegionAbilitySpread > 0 {
+		for i := range w.regions {
+			w.regions[i].Ability = clamp(w.randRange(1-cfg.RegionAbilitySpread, 1+cfg.RegionAbilitySpread), 0, 2)
 		}
 	}
 	// Where the awkward crop grows (stage 44). Drawn like the rest, and
@@ -260,6 +277,9 @@ type RegionView struct {
 	MinX, MinY, MaxX, MaxY float64
 	Shelter                float64
 	Food                   float64
+
+	// Ability is what standing here does to what a body can do (stage 57).
+	Ability float64
 }
 
 // Regions reports the blocks the world is divided into. Read only.
@@ -274,6 +294,7 @@ func (w *World) Regions() []RegionView {
 			MaxX: float64(c+1) * cw, MaxY: float64(r+1) * ch,
 			Shelter: w.regions[i].Shelter,
 			Food:    w.regions[i].Food,
+			Ability: w.regions[i].Ability,
 		})
 	}
 	return out
@@ -283,6 +304,97 @@ func (w *World) Regions() []RegionView {
 func (w *World) richnessAt(x, y float64) float64 {
 	if r := w.regionAt(x, y); r != nil {
 		return r.Food
+	}
+	return 1
+}
+
+// abilityAt is what the ground at this spot does to what a body can do
+// (stage 57). One everywhere in a world without the rule, which is why an
+// agent that has never been told otherwise carries a factor of one.
+func (w *World) abilityAt(x, y float64) float64 {
+	if r := w.regionAt(x, y); r != nil && r.Ability > 0 {
+		return r.Ability
+	}
+	return 1
+}
+
+// standOnGround tells every living body what the ground under it is worth to
+// it today (stage 57), once a tick and before anybody decides anything.
+//
+// It is held on the agent rather than looked up inside Agent.Ability because
+// Ability is asked hundreds of times a tick and knows nothing about the world
+// it is in. A tick's worth of staleness is the price, and it is the same price
+// the rest of the tick pays: everything an agent decides this tick, it decides
+// about where it was when the tick began.
+//
+// A world with no such difference in it never enters the loop, so it is not
+// only unchanged but untouched.
+func (w *World) standOnGround() {
+	if w.cfg.RegionAbilitySpread <= 0 || w.cfg.RegionAbilityCarried {
+		return
+	}
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		a.regionBias = w.abilityAt(a.X, a.Y)
+	}
+}
+
+// Standing is where the population is, measured by what the ground there does
+// to it (stage 57).
+//
+// Gain is the figure the stage turns on, and it is the same shape as stage
+// 44's: how much better the ground under the humans is than the ground taken
+// at random. A population that has settled where it is at its best reads above
+// zero; one that walks about regardless reads zero however large the spread
+// is. Five carried skills all read zero on their own version of this.
+type Standing struct {
+	Humans float64 // mean ground ability where the humans are
+	All    float64 // ... and averaged over the whole world
+	Gain   float64 // Humans - All
+}
+
+// Standing reports where the population stands. Read only.
+func (w *World) Standing() Standing {
+	out := Standing{Humans: 1, All: 1}
+	if len(w.regions) == 0 {
+		return out
+	}
+	sum := 0.0
+	for i := range w.regions {
+		sum += w.regions[i].Ability
+	}
+	out.All = sum / float64(len(w.regions))
+
+	var humans, ground float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Species != SpeciesHuman {
+			continue
+		}
+		humans++
+		ground += w.abilityAt(a.X, a.Y)
+	}
+	// Nobody alive is no evidence about where the living stand, rather than
+	// evidence that they stand on the worst ground there is (stage 14's
+	// mistake, which is not being made twice).
+	if humans > 0 {
+		out.Humans = ground / humans
+	} else {
+		out.Humans = out.All
+	}
+	out.Gain = out.Humans - out.All
+	return out
+}
+
+// FootingOf is what the ground is doing to this body right now (stage 57), for
+// the viewer. One is ordinary ground and the whole of a world without the
+// rule; an agent that is not there at all reads one as well.
+func (w *World) FootingOf(id int) float64 {
+	if a := w.agentByID(id); a != nil {
+		return a.groundFactor()
 	}
 	return 1
 }

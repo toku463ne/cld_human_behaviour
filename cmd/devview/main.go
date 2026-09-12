@@ -3067,6 +3067,12 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		}
 		shelter, food := g.world.GroundAt(a.X, a.Y)
 		t.line("ground here: resting x%.2f, plants x%.2f (1 = ordinary)", shelter, food)
+		// What standing here is worth to this body (stage 57). Only shown
+		// where the world has such a thing in it, because a line reading x1.00
+		// for ever is a line that teaches the eye to skip it.
+		if footing := g.world.FootingOf(a.ID); footing != 1 {
+			t.line("             and this body does everything x%.2f while it stands here", footing)
+		}
 		if d := g.world.DietOf(a.ID); d[engine.FoodPlant] < 1 || d[engine.FoodMeat] < 1 ||
 			d[engine.FoodFish] < 1 {
 			t.line("sick of it: a plant is worth x%.2f, meat x%.2f, a fish x%.2f",
@@ -4038,6 +4044,7 @@ func main() {
 	ask := flag.Bool("ask", false, "play it the other way: the node decides for itself and asks you at the turning points (h twice)")
 	boost := flag.Bool("boost", true, "bring the played body up to the world's average speed, paid for with new budget (a gift, shown on the panel)")
 	land := flag.String("terrain", "", "lay the world out on a piece of country: none (default, flat), rough, river, plateau or country (stage 20)")
+	footing := flag.Float64("footing", 0, "how far apart the regions are in what a body standing in them can do (stage 57; 0 = every region the same, which is the default world)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
 	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
 	flag.Parse()
@@ -4045,6 +4052,10 @@ func main() {
 	cfg := engine.DefaultConfig()
 	cfg.Width, cfg.Height = worldWidth, worldHeight
 	cfg.Seed = *seed
+	// The ground's own opinion of a body (stage 57). Off by default because it
+	// measured as doing nothing at all - what it is here for is looking at it:
+	// the panel says what the ground under the followed node is worth to it.
+	cfg.RegionAbilitySpread = *footing
 	if m, ok := testMaps[*land]; ok {
 		cfg.TerrainMap = m
 		// A hand-made world gets a coherent landscape: broken country is also

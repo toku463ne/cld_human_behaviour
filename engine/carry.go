@@ -43,7 +43,7 @@ func (a *Agent) carryCapacity(cfg *Config) float64 {
 	if cfg.CarryCapacity <= 0 {
 		return 0
 	}
-	return cfg.CarryCapacity * a.Ability(GeneVitality, cfg) / midAbility
+	return cfg.CarryCapacity * a.capacity(GeneVitality, cfg) / midAbility
 }
 
 // CarriedCount is how many items this agent is holding. For the viewer.

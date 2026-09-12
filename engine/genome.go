@@ -118,7 +118,36 @@ func (a *Agent) AgeFactor(cfg *Config) float64 {
 // what breeding passes on and what the experiments measure, because selection
 // acts on what is inherited, not on how old the holder happens to be.
 func (a *Agent) Ability(g Gene, cfg *Config) float64 {
+	return a.capacity(g, cfg) * a.groundFactor()
+}
+
+// capacity is the same reading for the genes that say how much a body holds
+// rather than how well it does something: what it inherited, grown into and
+// since lost, and nothing about where it happens to be standing.
+//
+// The two readings only differ once the ground has an opinion (stage 57). The
+// line between them is that the ground moves what a body can do today and
+// never what the body is: a maximum that moved with the ground would leave an
+// agent whose vitality is over its own maximum after one step across a border,
+// and a room for memories that moved with it would have a body forget faces by
+// walking. What goes through here is MaxVitality, MaxSpeed, MemoryCapacity and
+// the hands (carrySlots); everything else goes through Ability.
+func (a *Agent) capacity(g Gene, cfg *Config) float64 {
 	return a.Gene(g) * a.AgeFactor(cfg) * a.sexFactor(g, cfg)
+}
+
+// groundFactor is what the ground under this agent is doing to it (stage 57).
+//
+// The world writes it once a tick (World.standOnGround) rather than this
+// asking the world, because Ability is on the hot path and an Agent knows
+// nothing about the world it stands in. Zero is an agent nobody has told
+// anything to - a bare Agent in a test, or any agent at all in a world without
+// the rule - and it reads as the ordinary one.
+func (a *Agent) groundFactor() float64 {
+	if a.regionBias <= 0 {
+		return 1
+	}
+	return a.regionBias
 }
 
 // sexFactor is what this body's sex does to one gene (stage 53).
@@ -176,11 +205,11 @@ func (a *Agent) Intelligence(cfg *Config) float64 { return a.Ability(GeneIntelli
 // They are the two places the budget bites hardest: a body that holds more
 // vitality is a body that is slower, unless its budget stretches to both.
 func (a *Agent) MaxVitality(cfg *Config) float64 {
-	return cfg.MaxVitality * a.Ability(GeneVitality, cfg) / midAbility
+	return cfg.MaxVitality * a.capacity(GeneVitality, cfg) / midAbility
 }
 
 func (a *Agent) MaxSpeed(cfg *Config) float64 {
-	return cfg.MaxSpeed * a.Ability(GeneSpeed, cfg) / midAbility
+	return cfg.MaxSpeed * a.capacity(GeneSpeed, cfg) / midAbility
 }
 
 // MemoryCapacity is how many others this agent can hold an opinion about at
@@ -197,7 +226,7 @@ func (a *Agent) MemoryCapacity(cfg *Config) int {
 	if cfg.MemoryCapacity <= 0 {
 		return 0
 	}
-	return max(int(float64(cfg.MemoryCapacity)*a.Ability(GeneMemory, cfg)/midAbility), 1)
+	return max(int(float64(cfg.MemoryCapacity)*a.capacity(GeneMemory, cfg)/midAbility), 1)
 }
 
 func (a *Agent) MemoryBandwidth(cfg *Config) int {

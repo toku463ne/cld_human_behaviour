@@ -169,6 +169,19 @@ type SelfView struct {
 	// A player is shown the same figure and no more (stage 19).
 	Ground float64
 
+	// Footing is what standing here does to what this body can do (stage 57),
+	// as a multiplier. One is ordinary ground, which is the whole of a world
+	// without the rule.
+	//
+	// The figures above it already have it in them - Attack, Rationality and
+	// the rest are what this body can do today, where it is - so nothing reads
+	// this to decide anything. It is here for the same reason Ground is: an
+	// agent knows what it is standing on, and a player is shown what the agent
+	// knows and no more (stage 19). And as with Ground, it says nothing about
+	// what the next region is worth, which is why the utility comparison
+	// cannot price leaving.
+	Footing float64
+
 	// PoisonResist is how much of a plant's dose this body turns aside (stage
 	// 38b). It is here rather than folded into each plant's Danger because
 	// the two are different things: Danger is what the warning says, which is
@@ -508,6 +521,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),
+		Footing:           a.groundFactor(),
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
 		CourtedBy:         a.courtedBy,

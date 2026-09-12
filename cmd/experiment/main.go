@@ -1795,6 +1795,36 @@ var variants = []variant{
 	// size of lean with the sign reversed says whether the structure is doing
 	// the work or only the magnitude.
 	{
+		name:  "ground",
+		about: "57: some ground makes a body better at everything while it stands on it",
+		apply: func(c *engine.Config) { c.RegionAbilitySpread = 0.3 },
+	},
+	{
+		name:  "groundweak",
+		about: "the same, half as far apart",
+		apply: func(c *engine.Config) { c.RegionAbilitySpread = 0.15 },
+	},
+	{
+		name:  "groundhard",
+		about: "the same, twice as far apart",
+		apply: func(c *engine.Config) { c.RegionAbilitySpread = 0.6 },
+	},
+	{
+		name: "groundcarried",
+		about: "the control that matters: the same multiplier, drawn from the ground a body " +
+			"was born on and then carried for life - the variation without the reason to stay",
+		apply: func(c *engine.Config) {
+			c.RegionAbilitySpread, c.RegionAbilityCarried = 0.3, true
+		},
+	},
+	{
+		name:  "groundcarriedhard",
+		about: "the pair for groundhard",
+		apply: func(c *engine.Config) {
+			c.RegionAbilitySpread, c.RegionAbilityCarried = 0.6, true
+		},
+	},
+	{
 		name:  "mood",
 		about: "54: a frightened body weighs being worn down higher, a fed one lower",
 		apply: func(c *engine.Config) { c.MoodWeight = 0.5 },
@@ -2843,6 +2873,7 @@ var metricNames = []string{
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
+	"standGain", "regionsSeen", "oneRegion", "regionShare",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -2979,6 +3010,12 @@ type sample struct {
 	// The awkward crop (stage 44): its share of what grows, who knows the
 	// trick, what they make of it, and whether they have settled where it is.
 	specialShare, specialHeld, specialReal, specialGain float64
+
+	// standGain is how much better the ground under the humans is at making
+	// them capable than ground taken at random (stage 57). Zero in a world
+	// where every region is the same, and zero in a world where they differ
+	// and nobody stays anywhere.
+	standGain float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3144,6 +3181,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	// that has to be caught when it happens, because a window that has moved
 	// past a death cannot see it.
 	census := engine.NewCensusTracker(engine.DefaultCensusWindow)
+	// How much of the world one body covers in a lifetime (stage 57). It runs
+	// over the whole run rather than the tail, because a lifetime is longer
+	// than the tail and a body has to be watched for a while before its answer
+	// means anything.
+	visits := engine.NewRegionVisitTracker(engine.DefaultVisitSamples)
 	watchFrom := ticks - max(ticks/5, 1)
 
 	var series []sample
@@ -3173,6 +3215,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		tol := w.Skills(engine.SkillPoison)
 		shelter := w.Shelter()
 		rich := w.Richness()
+		stand := w.Standing()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
@@ -3186,6 +3229,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
 			humanRich: rich.Humans, enemyRich: rich.Enemies, allRich: rich.All,
+			standGain: stand.Gain,
 			regionKnown: known.Known, regionTold: known.Told,
 			regionCostRank: known.CostRank,
 			dangerRank:     known.DangerRank, dangerKnown: known.DangerKnown,
@@ -3276,6 +3320,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		if w.Tick()%engine.DefaultCensusStep == 0 {
 			census.Observe(w)
 		}
+		if w.Tick()%engine.DefaultVisitStep == 0 {
+			visits.Observe(w)
+		}
 	}
 
 	end := w.Stats()
@@ -3288,6 +3335,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	fr := fights.Result()
 	cen := census.Result()
 	fords := banks.Result()
+	roaming := visits.Result(w)
 	stored := w.Stored()
 	money := w.Coins()
 	kitchen := w.Cooking()
@@ -3679,6 +3727,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"humanRich":     tail.humanRich,
 		"enemyRich":     tail.enemyRich,
 		"richGain":      tail.humanRich - tail.allRich,
+		// Where the population stands, by what the ground does to what a body
+		// can do (stage 57), and how much of the world one body covers in a
+		// lifetime. oneRegion is the share of bodies that never left the block
+		// they were born in - the figure a rule about staying put has to move.
+		"standGain":   tail.standGain,
+		"regionsSeen": roaming.Mean,
+		"oneRegion":   roaming.Alone,
+		"regionShare": roaming.Share,
 		"enemyRichGain": tail.enemyRich - tail.allRich,
 		// What the population has made of the ground. regionRank is the one
 		// that says whether any of it is true: the correlation between what
@@ -3879,6 +3935,7 @@ func tailAverage(series []sample) sample {
 		out.specialHeld += s.specialHeld
 		out.specialReal += s.specialReal
 		out.specialGain += s.specialGain
+		out.standGain += s.standGain
 		out.wadersWet += s.wadersWet
 		out.bankersWet += s.bankersWet
 		out.anglerSplit += s.anglerSplit
@@ -4017,6 +4074,7 @@ func tailAverage(series []sample) sample {
 	out.specialHeld /= d
 	out.specialReal /= d
 	out.specialGain /= d
+	out.standGain /= d
 	out.wadersWet /= d
 	out.bankersWet /= d
 	out.anglerSplit /= d

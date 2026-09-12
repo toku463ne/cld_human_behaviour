@@ -123,6 +123,37 @@ type Config struct {
 	// had before that rule existed.
 	FoodSpread float64
 
+	// RegionAbilitySpread is how much the regions differ in what a body
+	// standing in them can do (stage 57): each draws a multiplier on every
+	// expressed gene from 1 +/- spread. Zero makes every region ordinary and
+	// takes nothing from the random source, like the two spreads above.
+	//
+	// What it is for. Five skills were tried as a reason to stay somewhere and
+	// none of them was one, because a skill is carried: it goes on working
+	// wherever its holder walks, so it can make a body better without making
+	// one place better than another. This is the first thing the ground gives
+	// that is lost by leaving.
+	//
+	// What it does not touch is what a body holds rather than how well it does
+	// something - MaxVitality, MaxSpeed, the memory's room and the hands (see
+	// Agent.capacity). A cap that moved with the ground would mean a body
+	// whose vitality is over its own maximum after one step across a border,
+	// and speed is kept out for the older reason too: terrain was deliberately
+	// put on the cost of moving rather than on the speed of it (stage 20), so
+	// that effort and the ground are not counted twice.
+	RegionAbilitySpread float64
+
+	// RegionAbilityCarried is the control the stage turns on: the same
+	// multiplier, drawn from the ground a body was born on, and then carried
+	// for life wherever it goes.
+	//
+	// That is exactly what the five skills were - something the ground gives
+	// and the body keeps - so this arm has the variation without the reason to
+	// stay. It draws from the random source in the same places and the same
+	// order as the arm it controls, so the two run on the same stream and
+	// differ in one thing only: whether leaving costs anything.
+	RegionAbilityCarried bool
+
 	// --- what an agent makes of the ground (stages 15b, 15c) ---
 	//
 	// RegionLearnRate is how far one look moves an agent's estimate of the

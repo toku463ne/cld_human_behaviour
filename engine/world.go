@@ -749,6 +749,10 @@ func (w *World) Step() {
 	w.spawnFoodOfTick()
 	w.spawnEnemyOfTick()
 
+	// What the ground under each body is worth to it this tick (stage 57),
+	// before anybody decides anything with it.
+	w.standOnGround()
+
 	for i := range w.agents {
 		a := &w.agents[i]
 		if !a.Alive || a.PartnerID != 0 {
@@ -2158,6 +2162,11 @@ func (w *World) addAgent(a Agent) int {
 	// an agent draws nothing from the random source.
 	if a.lore.unset() {
 		a.lore = w.plainLore()
+	}
+	// And what the ground where it arrived does to it (stage 57), so that a
+	// body that is read before the world has taken a step is read right.
+	if w.cfg.RegionAbilitySpread > 0 {
+		a.regionBias = w.abilityAt(a.X, a.Y)
 	}
 	w.index[a.ID] = len(w.agents)
 	w.agents = append(w.agents, a)

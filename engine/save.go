@@ -478,6 +478,10 @@ func Load(in io.Reader) (*World, error) {
 			w.heldKind[f.Kind]++
 		}
 	}
+	// And what the ground is doing to each body, for the same reason: it is a
+	// copy of a property of the ground the agent is standing on (stage 57),
+	// so it is worked out from where they are rather than saved.
+	w.standOnGround()
 	return w, nil
 }
 
