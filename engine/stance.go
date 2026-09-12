@@ -97,7 +97,10 @@ func (a *Agent) evasion(cfg *Config) float64 {
 	if cfg.MaxSpeed <= 0 {
 		return 0
 	}
-	quick := clamp(a.MaxSpeed(cfg)/cfg.MaxSpeed, 0, 2)
+	// The speed it can actually make today, not the one it was born for
+	// (stage 66): a body that is moving slower is a body that is easier to
+	// hit, and the three readings of a speed have to agree.
+	quick := clamp(a.speedNow(cfg)/cfg.MaxSpeed, 0, 2)
 	return clamp(cfg.EvasionCap*(a.Gene(GeneEvasion)/MaxAbility)*a.mix().Evasion*quick, 0, cfg.EvasionCap)
 }
 

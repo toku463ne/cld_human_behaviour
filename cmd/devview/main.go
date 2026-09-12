@@ -3080,6 +3080,11 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		}
 		// How far out it has got, in the width of a region (stage 64). Only
 		// for a body that is actually charged for it.
+		// Whether it is being slowed by a child at its heel (stage 66).
+		if g.world.NursingNow(a.ID) {
+			t.line("nursing: a child is at her heel, so she is moving at x%.2f",
+				g.world.Config().NursingSpeedShare)
+		}
 		if away, pull := g.world.AwayFromHome(a.ID); pull > 0 {
 			where := "in its own country"
 			if away > 0.5 {
@@ -4067,6 +4072,7 @@ func main() {
 	land := flag.String("terrain", "", "lay the world out on a piece of country: none (default, flat), rough, river, plateau or country (stage 20)")
 	footing := flag.Float64("footing", 0, "how far apart the regions are in what a body standing in them can do (stage 57; 0 = every region the same, which is the default world)")
 	homebound := flag.Float64("homebound", 0, "what being away from the country it came into the world in costs an enemy, per region width per tick (stage 64; 0 = the default world)")
+	nursing := flag.Float64("nursing", 0, "how fast a mother goes while a child of hers is at her heel, as a share of her own speed (stage 66; 0 or 1 = the default world)")
 	lurkers := flag.Bool("lurkers", false, "something lives in the river and hunts (stage 63; needs -terrain river or country)")
 	kinds := flag.Bool("kinds", false, "two sorts of enemy: light ones anywhere, heavy ones in the bad country (stage 59)")
 	prowl := flag.Float64("prowl", 0, "how unevenly the world's enemies arrive across the regions (stage 58; 0 = everywhere alike, which is the default world)")
@@ -4093,6 +4099,11 @@ func main() {
 	// And what leaving it costs (stage 64). A cost rather than a leash: a
 	// short chase past the border is affordable, a long one is not.
 	cfg.EnemyHomeCost = *homebound
+	// A mother with a child at her heel (stage 66). The panel says so, and
+	// the trail behind her - which is drawn from her speed - gets shorter.
+	if *nursing > 0 && *nursing < 1 {
+		cfg.NursingSpeedShare = *nursing
+	}
 	// Two sorts of enemy (stage 59), which is what the panel's "sort:" line is
 	// for. The same table the experiment measures, so what is on the screen is
 	// what the figures are about.

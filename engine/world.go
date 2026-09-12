@@ -591,6 +591,12 @@ type World struct {
 	mateGapSum float64
 	mateGaps   int
 
+	// How long mothers have been slowed and what the pair got out of it
+	// (stage 66). Measurements; nothing reads them.
+	nursingTicks int
+	rearTrades   int
+	rearMoved    float64
+
 	// inBirthTrade says the trade running right now is the one the birth put
 	// there (stage 65), so that it is not also counted as a trade the pair
 	// made on its own.
@@ -805,6 +811,10 @@ func (w *World) Step() {
 	// What the ground under each body is worth to it this tick (stage 57),
 	// before anybody decides anything with it.
 	w.standOnGround()
+
+	// And which mothers have a child at their heel (stage 66), read before
+	// anybody moves so that the slowing applies to the tick it is about.
+	w.nurse()
 
 	for i := range w.agents {
 		a := &w.agents[i]
@@ -2143,7 +2153,7 @@ func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 		return
 	}
 	effort = clamp(effort, 0, 1)
-	speed := speedAt(a.MaxSpeed(&w.cfg), effort)
+	speed := speedAt(a.speedNow(&w.cfg), effort)
 	stepX, stepY := dx/d*speed, dy/d*speed
 	a.VX, a.VY = dx/d, dy/d
 

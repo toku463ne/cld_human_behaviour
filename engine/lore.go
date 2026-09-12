@@ -269,6 +269,15 @@ func (w *World) exchangeLore(a, o *Agent) {
 	if !w.inBirthTrade && (a.PartnerID == o.ID || o.PartnerID == a.ID) {
 		w.mateExchanges++
 	}
+	// And how many were between a child and the one rearing it (stage 66),
+	// with how much they moved: that pair is what slowing a mother down is
+	// supposed to buy. Measurement only, and it asks about the pair rather
+	// than about kinship - a guardian is a role the world hands out, not a
+	// family this function knows about.
+	if a.GuardianID == o.ID || o.GuardianID == a.ID {
+		w.rearTrades++
+		w.rearMoved += moved
+	}
 	o.timesTaught++
 	a.timesTaught++
 

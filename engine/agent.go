@@ -105,6 +105,15 @@ type Agent struct {
 	// Species is what kind of node this is; see the type. Always human today.
 	Species Species
 
+	// Nursing says a child of this one's is within the rearing radius right
+	// now (stage 66), which is what slows it down. Written once a tick by
+	// World.nurse and read by Agent.speedNow.
+	//
+	// Not a state axis and nothing accumulates in it: like the footing of
+	// stage 57 it is a copy of a fact about this tick, kept on the agent so
+	// that the methods which know only the config can reach it.
+	Nursing bool
+
 	// HomeRegion is the block of the world this body came into it in (stage
 	// 64), as an index, and -1 for a body from a world with no blocks.
 	//

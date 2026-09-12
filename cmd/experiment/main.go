@@ -1945,6 +1945,31 @@ var variants = []variant{
 		},
 	},
 	{
+		name:  "nursing",
+		about: "66: a mother with a child at her heel moves at half speed",
+		apply: func(c *engine.Config) { c.NursingSpeedShare = 0.5 },
+	},
+	{
+		name:  "nursingmild",
+		about: "the same at three quarters",
+		apply: func(c *engine.Config) { c.NursingSpeedShare = 0.75 },
+	},
+	{
+		name:  "nursingheavy",
+		about: "the same at a quarter: what a mother who is barely moving buys",
+		apply: func(c *engine.Config) { c.NursingSpeedShare = 0.25 },
+	},
+	{
+		name: "nursingflat",
+		about: "the control that matters: the same slowness on average, with no connection to " +
+			"whether the child is there - a guardian is slowed for the whole rearing",
+		apply: func(c *engine.Config) {
+			// The structured arm is in force about four ticks in five, so the
+			// flat one is set so that the two slow by the same amount overall.
+			c.NursingSpeedShare, c.NursingAlways = 0.5925, true
+		},
+	},
+	{
 		name:  "matelore",
 		about: "65: a birth also hands something on between the two parents, one time in four",
 		apply: func(c *engine.Config) { c.MateLoreChance = 0.25 },
@@ -3186,6 +3211,7 @@ var metricNames = []string{
 	"retal", "trueRetal", "retalErr", "accept", "trueAccept", "acceptErr",
 	"loreRate", "taught", "teachTop",
 	"mateGap", "loreSpread", "mateTrades", "mateWatch",
+	"rearNear", "rearTrades", "rearMoved", "nursedTicks",
 	"hintSlots", "hintsHeld", "hintKinds", "hintEntropy", "hintCopyRate",
 	"skillHeld", "skillNominal", "skillReal", "skillSlots", "skillGap",
 	"skillBornRate", "skillCopyRate", "skillLeaps",
@@ -3332,6 +3358,9 @@ type sample struct {
 	// What the bond hands on (stage 65): how far apart two making a child
 	// are, and how many trades the birth itself and the bond put there.
 	mateGap, loreSpread, mateTrades, mateWatch float64
+
+	// What slowing a nursing mother buys (stage 66).
+	rearNear, rearTrades, rearMoved, nursedTicks float64
 
 	// What the table of enemy sorts produced (stage 59). Written so that they
 	// mean the same thing whatever the table's length is.
@@ -3562,6 +3591,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		grows, fromMap := w.PlantSupply()
 		fed := w.Feeding()
 		bond := w.Mating()
+		rear := w.Nursing()
 		ward := w.Skills(engine.SkillWard)
 		known := w.RegionKnowledge()
 		diet := w.Diet()
@@ -3581,6 +3611,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			prowlArrive: prowl.ArriveGain, enemyBorn: prowl.BornShare,
 			enemyAway: roam.Away, enemyAtHome: roam.AtHome, homeShare: roam.Draws,
 			plantRate: grows, foodMean: fromMap,
+			rearNear: rear.Near, rearTrades: rear.Trades,
+			rearMoved: rear.Moved, nursedTicks: rear.Ticks,
 			mateGap: bond.Gap, loreSpread: bond.Spread,
 			mateTrades: bond.Trades, mateWatch: bond.Mates,
 			humanKillShare: fed.HumanKillShare, enemyKillShare: fed.EnemyKillShare,
@@ -4131,6 +4163,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// What the bond hands on (stage 65). mateGap is read at each birth and
 		// before the trade, so it says how far apart two who breed together
 		// were rather than how near the rule just put them.
+		// What slowing a nursing mother buys (stage 66). rearNear is the share
+		// of reared children inside the radius - the figure the rule raises -
+		// and rearMoved how much lore actually passed between the pair.
+		"rearNear":    tail.rearNear,
+		"rearTrades":  tail.rearTrades,
+		"rearMoved":   tail.rearMoved,
+		"nursedTicks": tail.nursedTicks,
 		"mateGap":    tail.mateGap,
 		"loreSpread": tail.loreSpread,
 		"mateTrades": tail.mateTrades,
@@ -4373,6 +4412,10 @@ func tailAverage(series []sample) sample {
 		out.humansByEnemy += s.humansByEnemy
 		out.plantsToEnemy += s.plantsToEnemy
 		out.plantSeenByEnemy += s.plantSeenByEnemy
+		out.rearNear += s.rearNear
+		out.rearTrades += s.rearTrades
+		out.rearMoved += s.rearMoved
+		out.nursedTicks += s.nursedTicks
 		out.mateGap += s.mateGap
 		out.loreSpread += s.loreSpread
 		out.mateTrades += s.mateTrades
@@ -4543,6 +4586,10 @@ func tailAverage(series []sample) sample {
 	out.humansByEnemy /= d
 	out.plantsToEnemy /= d
 	out.plantSeenByEnemy /= d
+	out.rearNear /= d
+	out.rearTrades /= d
+	out.rearMoved /= d
+	out.nursedTicks /= d
 	out.mateGap /= d
 	out.loreSpread /= d
 	out.mateTrades /= d

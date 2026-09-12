@@ -1477,6 +1477,26 @@ type Config struct {
 	// population spread by being taught or by being survived.
 	LoreExchangeRate float64
 
+	// NursingSpeedShare is how fast a mother goes while a child of hers is
+	// within the rearing radius, as a share of her own speed (stage 66). One
+	// is every world before it, and the default.
+	//
+	// It is not a leash and not a rule about families: what it changes is one
+	// number in her body, and whether the child stays beside her is left to
+	// the comparison it was always left to (see nursing.go).
+	NursingSpeedShare float64
+
+	// NursingAlways is the control (stage 66): a guardian is slowed for the
+	// whole of the rearing whether or not its child is anywhere near.
+	//
+	// The same slowness with the structure taken out of it, which is stage
+	// 54's shape of control: if the flat arm does as well, what the rule buys
+	// is a slower mother and not time spent beside a child. Set the share so
+	// that the two arms slow by the same amount on average - the structured
+	// one is only in force while the child is within the radius, which is
+	// about four ticks in five.
+	NursingAlways bool
+
 	// MateLoreChance is how often a birth also hands something on between the
 	// two parents (stage 65). Zero is every world before it, and the default.
 	//
@@ -2352,6 +2372,7 @@ func DefaultConfig() Config {
 		GeneBudgetStd:       30,
 		GeneInitAlpha:       0.8,
 		InitialEnemies:      10,
+		NursingSpeedShare:   1, // a mother is as quick as anybody (stage 66)
 		FoodRenormalize:     true, // the world grows as much as it did (stage 15a)
 		EnemyBudgetMean:     520, // over the human 360, so a carcass feeds several
 		EnemyBudgetStd:      90,
