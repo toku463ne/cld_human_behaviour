@@ -54,6 +54,29 @@ type region struct {
 	//
 	// What it does not move is what a body holds: see Agent.capacity.
 	Ability float64
+
+	// Favour is the same thing per gene (stage 57c): what this ground does to
+	// each of the nine, with the nine scaled so that their mean is one.
+	//
+	// It exists because the scalar above cancels. It is common to everybody
+	// standing here, and everybody a body ever compares itself with is
+	// standing here too, so it drops out of every fight and every race. This
+	// does not drop out: no region is better than another, but a region suits
+	// some builds and not others, and two neighbours built differently get
+	// different factors.
+	//
+	// Nil in a world without the rule, and read through favourOf so that nil
+	// reads as ones.
+	Favour []float64
+}
+
+// favourOf is what this region does to one gene. One when the world has no
+// such rule in it.
+func (r *region) favourOf(g Gene) float64 {
+	if int(g) >= len(r.Favour) || r.Favour[g] <= 0 {
+		return 1
+	}
+	return r.Favour[g]
 }
 
 // regionsOf lays the world out in blocks and draws what each one is like.
@@ -85,6 +108,28 @@ func (w *World) buildRegions() {
 	if cfg.RegionAbilitySpread > 0 {
 		for i := range w.regions {
 			w.regions[i].Ability = clamp(w.randRange(1-cfg.RegionAbilitySpread, 1+cfg.RegionAbilitySpread), 0, 2)
+		}
+	}
+	// And what it favours, gene by gene (stage 57c). The nine are scaled to a
+	// mean of one afterwards, which is what keeps this about which build the
+	// ground suits rather than about how good the ground is: how good it is
+	// already has a rule, and that one is the scalar above.
+	if cfg.RegionFavourSpread > 0 {
+		for i := range w.regions {
+			f := make([]float64, NumGenes)
+			sum := 0.0
+			for g := range f {
+				f[g] = clamp(w.randRange(1-cfg.RegionFavourSpread, 1+cfg.RegionFavourSpread), 0, 2)
+				sum += f[g]
+			}
+			if sum <= 0 {
+				continue
+			}
+			scale := float64(NumGenes) / sum
+			for g := range f {
+				f[g] *= scale
+			}
+			w.regions[i].Favour = f
 		}
 	}
 	// Where the awkward crop grows (stage 44). Drawn like the rest, and
@@ -330,7 +375,7 @@ func (w *World) abilityAt(x, y float64) float64 {
 // A world with no such difference in it never enters the loop, so it is not
 // only unchanged but untouched.
 func (w *World) standOnGround() {
-	if w.cfg.RegionAbilitySpread <= 0 || w.cfg.RegionAbilityCarried {
+	if !w.groundHasAnOpinion() || w.cfg.RegionAbilityCarried {
 		return
 	}
 	for i := range w.agents {
@@ -338,8 +383,47 @@ func (w *World) standOnGround() {
 		if !a.Alive {
 			continue
 		}
-		a.regionBias = w.abilityAt(a.X, a.Y)
+		w.footOn(a)
 	}
+}
+
+// groundHasAnOpinion says whether any of this stage's rules are switched on.
+func (w *World) groundHasAnOpinion() bool {
+	return w.cfg.RegionAbilitySpread > 0 || w.cfg.RegionFavourSpread > 0
+}
+
+// footOn writes what the ground under this body is worth to each of its genes.
+func (w *World) footOn(a *Agent) {
+	r := w.regionAt(a.X, a.Y)
+	if r == nil {
+		return
+	}
+	scalar := 1.0
+	if r.Ability > 0 {
+		scalar = r.Ability
+	}
+	for g := 0; g < NumGenes; g++ {
+		a.footing[g] = scalar * r.favourOf(Gene(g))
+	}
+}
+
+// carriedFooting is a body's own footing when that is a thing it owns rather
+// than a copy of the ground beneath it, and nil otherwise (stage 57). Only the
+// carried arm has any, which is the only arm where saving a world and loading
+// it again would otherwise lose something.
+func carriedFooting(a *Agent) []float64 {
+	out := make([]float64, 0, NumGenes)
+	any := false
+	for _, f := range a.footing {
+		out = append(out, f)
+		if f > 0 {
+			any = true
+		}
+	}
+	if !any {
+		return nil
+	}
+	return out
 }
 
 // Standing is where the population is, measured by what the ground there does
@@ -390,13 +474,112 @@ func (w *World) Standing() Standing {
 }
 
 // FootingOf is what the ground is doing to this body right now (stage 57), for
-// the viewer. One is ordinary ground and the whole of a world without the
+// the viewer: the factors on its nine genes, weighted by how much of itself
+// each of them is. One is ordinary ground and the whole of a world without the
 // rule; an agent that is not there at all reads one as well.
+//
+// Weighting by the body's own build is what makes one number honest under
+// 57c, where the ground favours some genes and not others: ground that is
+// kind to a gene this body barely has is not kind to this body.
 func (w *World) FootingOf(id int) float64 {
-	if a := w.agentByID(id); a != nil {
-		return a.groundFactor()
+	a := w.agentByID(id)
+	if a == nil {
+		return 1
 	}
-	return 1
+	return weighted(a, func(g Gene) float64 { return a.groundFactor(g) })
+}
+
+// weighted averages something per gene over a body's own build: how much of
+// its budget each gene is.
+func weighted(a *Agent, of func(Gene) float64) float64 {
+	budget := a.Budget()
+	if budget <= 0 {
+		return 1
+	}
+	out := 0.0
+	for g := 0; g < NumGenes; g++ {
+		out += a.Gene(Gene(g)) / budget * of(Gene(g))
+	}
+	return out
+}
+
+// Suits is whether bodies are standing where the ground suits them (stage
+// 57c).
+//
+// It is the figure 57a could not have: with one factor for everybody, "good
+// ground" means the same thing to every body and the measurement is just
+// where the population is. Here it is per body - what this ground does to
+// this build - so the question is whether the two have found each other.
+//
+// Gain is a body's own footing where it stands, less the same body's footing
+// averaged over every region there is. A world that sorts reads above zero; a
+// world where bodies walk about regardless reads zero however far apart the
+// regions are.
+type Suits struct {
+	Here float64 // mean footing where the bodies actually are
+	All  float64 // ... and the same bodies averaged over the whole map
+	Gain float64 // Here - All, as a percentage of an ordinary body
+
+	// Ceiling is how much there was to be had: how much better each body's
+	// best region would be than the average one, on the same scale. Gain
+	// against Ceiling is the share of the sorting that actually happened,
+	// which is the reading that means anything - a gain of a tenth of a per
+	// cent says nothing until it is set against what was on offer.
+	Ceiling float64
+}
+
+// Suits reports whether the ground and the bodies on it have found each other.
+// Read only.
+func (w *World) Suits() Suits {
+	out := Suits{Here: 1, All: 1}
+	if len(w.regions) == 0 {
+		return out
+	}
+	var bodies float64
+	var here, all, best float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Species != SpeciesHuman {
+			continue
+		}
+		bodies++
+		here += weighted(a, func(g Gene) float64 { return a.groundFactor(g) })
+		// The same body, laid over every region in turn: what it would be
+		// worth anywhere, which is what "where it is" has to be read against.
+		mean := 0.0
+		for r := range w.regions {
+			scalar := 1.0
+			if w.regions[r].Ability > 0 {
+				scalar = w.regions[r].Ability
+			}
+			mean += weighted(a, func(g Gene) float64 { return scalar * w.regions[r].favourOf(g) })
+		}
+		mean /= float64(len(w.regions))
+		all += mean
+		// And the best this body could have done, which is what its actual
+		// ground has to be read against.
+		top := -1.0
+		for r := range w.regions {
+			scalar := 1.0
+			if w.regions[r].Ability > 0 {
+				scalar = w.regions[r].Ability
+			}
+			v := weighted(a, func(g Gene) float64 { return scalar * w.regions[r].favourOf(g) })
+			if v > top {
+				top = v
+			}
+		}
+		best += top - mean
+	}
+	if bodies == 0 {
+		return out
+	}
+	out.Here, out.All = here/bodies, all/bodies
+	// In percent, because the whole of this stage lives in the third decimal
+	// place of a multiplier and a table of zeroes says nothing.
+	out.Gain = 100 * (out.Here - out.All)
+	out.Ceiling = 100 * best / bodies
+	return out
 }
 
 // GroundAt is what the ground at this spot is like, for the viewer: how

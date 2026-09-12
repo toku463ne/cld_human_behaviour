@@ -170,8 +170,9 @@ type SelfView struct {
 	Ground float64
 
 	// Footing is what standing here does to what this body can do (stage 57),
-	// as a multiplier. One is ordinary ground, which is the whole of a world
-	// without the rule.
+	// as a multiplier: the factors on its nine genes, weighted by how much of
+	// itself each of them is. One is ordinary ground, which is the whole of a
+	// world without the rule.
 	//
 	// The figures above it already have it in them - Attack, Rationality and
 	// the rest are what this body can do today, where it is - so nothing reads
@@ -521,7 +522,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),
-		Footing:           a.groundFactor(),
+		Footing:           weighted(a, func(g Gene) float64 { return a.groundFactor(g) }),
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
 		CourtedBy:         a.courtedBy,

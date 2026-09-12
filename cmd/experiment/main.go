@@ -1795,6 +1795,36 @@ var variants = []variant{
 	// size of lean with the sign reversed says whether the structure is doing
 	// the work or only the magnitude.
 	{
+		name:  "favour",
+		about: "57c: the ground favours some genes over others, averaging to one, so that it suits some builds and not others",
+		apply: func(c *engine.Config) { c.RegionFavourSpread = 0.3 },
+	},
+	{
+		name:  "favourweak",
+		about: "the same taste, half as strong",
+		apply: func(c *engine.Config) { c.RegionFavourSpread = 0.15 },
+	},
+	{
+		name:  "favourhard",
+		about: "the same taste, twice as strong",
+		apply: func(c *engine.Config) { c.RegionFavourSpread = 0.6 },
+	},
+	{
+		name: "favourcarried",
+		about: "the control: the same taste, drawn from the ground a body was born on and carried for life " +
+			"- the variation without anywhere suiting anybody",
+		apply: func(c *engine.Config) {
+			c.RegionFavourSpread, c.RegionAbilityCarried = 0.3, true
+		},
+	},
+	{
+		name:  "favourcarriedhard",
+		about: "the pair for favourhard",
+		apply: func(c *engine.Config) {
+			c.RegionFavourSpread, c.RegionAbilityCarried = 0.6, true
+		},
+	},
+	{
 		name:  "ground",
 		about: "57: some ground makes a body better at everything while it stands on it",
 		apply: func(c *engine.Config) { c.RegionAbilitySpread = 0.3 },
@@ -2873,7 +2903,7 @@ var metricNames = []string{
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
-	"standGain", "regionsSeen", "oneRegion", "regionShare",
+	"standGain", "suitGain", "suitCeiling", "regionsSeen", "oneRegion", "regionShare",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -3016,6 +3046,11 @@ type sample struct {
 	// where every region is the same, and zero in a world where they differ
 	// and nobody stays anywhere.
 	standGain float64
+
+	// suitGain is the same question per body (stage 57c): what the ground
+	// where it stands does to its own build, less what the whole map would do
+	// to that same build. It is the figure the scalar could not have.
+	suitGain, suitCeiling float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3216,6 +3251,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		shelter := w.Shelter()
 		rich := w.Richness()
 		stand := w.Standing()
+		suited := w.Suits()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
@@ -3229,7 +3265,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			taught: teach.Rate, teachTop: teach.TopShare,
 			restShelter: shelter.Resting, shelterAll: shelter.All,
 			humanRich: rich.Humans, enemyRich: rich.Enemies, allRich: rich.All,
-			standGain: stand.Gain,
+			standGain: stand.Gain, suitGain: suited.Gain, suitCeiling: suited.Ceiling,
 			regionKnown: known.Known, regionTold: known.Told,
 			regionCostRank: known.CostRank,
 			dangerRank:     known.DangerRank, dangerKnown: known.DangerKnown,
@@ -3732,6 +3768,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// lifetime. oneRegion is the share of bodies that never left the block
 		// they were born in - the figure a rule about staying put has to move.
 		"standGain":   tail.standGain,
+		"suitGain":    tail.suitGain,
+		"suitCeiling": tail.suitCeiling,
 		"regionsSeen": roaming.Mean,
 		"oneRegion":   roaming.Alone,
 		"regionShare": roaming.Share,
@@ -3936,6 +3974,8 @@ func tailAverage(series []sample) sample {
 		out.specialReal += s.specialReal
 		out.specialGain += s.specialGain
 		out.standGain += s.standGain
+		out.suitGain += s.suitGain
+		out.suitCeiling += s.suitCeiling
 		out.wadersWet += s.wadersWet
 		out.bankersWet += s.bankersWet
 		out.anglerSplit += s.anglerSplit
@@ -4075,6 +4115,8 @@ func tailAverage(series []sample) sample {
 	out.specialReal /= d
 	out.specialGain /= d
 	out.standGain /= d
+	out.suitGain /= d
+	out.suitCeiling /= d
 	out.wadersWet /= d
 	out.bankersWet /= d
 	out.anglerSplit /= d

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"math"
 	"testing"
 )
@@ -59,8 +60,8 @@ func TestNoGroundSpreadLeavesTheWorldExactlyAsItWas(t *testing.T) {
 		}
 	}
 	for _, a := range w.Agents() {
-		if a.groundFactor() != 1 {
-			t.Fatalf("an agent stands on ground worth %v with no spread, want 1", a.groundFactor())
+		if a.groundFactor(GeneAttack) != 1 {
+			t.Fatalf("an agent stands on ground worth %v with no spread, want 1", a.groundFactor(GeneAttack))
 		}
 	}
 }
@@ -124,10 +125,10 @@ func TestACarriedGroundIsTheOneThatDoesNotChangeWhenTheBodyMoves(t *testing.T) {
 	for _, carried := range []bool{false, true} {
 		w, id, highX, highY := build(carried)
 		a := mustAgent(t, w, id)
-		before := a.groundFactor()
+		before := a.groundFactor(GeneAttack)
 		a.X, a.Y = highX, highY
 		w.Step()
-		after := mustAgent(t, w, id).groundFactor()
+		after := mustAgent(t, w, id).groundFactor(GeneAttack)
 
 		moved := math.Abs(after-before) > 1e-9
 		if carried && moved {
@@ -157,5 +158,113 @@ func TestStandingReadsNothingWhereThereIsNothingToRead(t *testing.T) {
 	stand := w.Standing()
 	if stand.All <= 0 {
 		t.Fatalf("a world with varied ground reports an average of %v", stand.All)
+	}
+}
+
+// 57c: the ground favours some genes over others, and the nine average to one
+// so that no region is simply better than another. That is what stops it
+// cancelling - two neighbours built differently get different factors, where
+// the scalar gave them the same one.
+func TestGroundFavoursBuildsWithoutFavouringRegions(t *testing.T) {
+	cfg := quietConfig()
+	cfg.RegionFavourSpread = 0.5
+	w := NewWorld(cfg)
+
+	for _, r := range w.regions {
+		if len(r.Favour) != NumGenes {
+			t.Fatalf("a region favours %d genes, want %d", len(r.Favour), NumGenes)
+		}
+		sum := 0.0
+		for _, f := range r.Favour {
+			sum += f
+		}
+		if mean := sum / float64(NumGenes); math.Abs(mean-1) > 1e-9 {
+			t.Fatalf("a region's favour averages %v, want 1", mean)
+		}
+	}
+
+	// Two bodies in the same place, built oppositely, do not get the same
+	// factor - which is the whole of the difference from 57a.
+	regions := w.Regions()
+	mid := regions[0]
+	x, y := (mid.MinX+mid.MaxX)/2, (mid.MinY+mid.MaxY)/2
+
+	fighter := newGenome()
+	thinker := newGenome()
+	for g := range fighter {
+		fighter[g], thinker[g] = 1, 1
+	}
+	fighter[GeneAttack], thinker[GeneIntelligence] = 100, 100
+
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: x, Y: y, Genome: fighter}))
+	b := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: x, Y: y, Genome: thinker}))
+	w.Step()
+	a, b = mustAgent(t, w, a.ID), mustAgent(t, w, b.ID)
+
+	if math.Abs(w.FootingOf(a.ID)-w.FootingOf(b.ID)) < 1e-6 {
+		t.Fatalf("two different builds on the same ground both read %v", w.FootingOf(a.ID))
+	}
+}
+
+// And the arm it is measured against takes nothing from the random source.
+func TestNoFavourSpreadLeavesTheWorldExactlyAsItWas(t *testing.T) {
+	run := func(spread float64) Stats {
+		cfg := DefaultConfig()
+		cfg.Seed = 9
+		cfg.RegionFavourSpread = spread
+		w := NewWorld(cfg)
+		for i := 0; i < 1500; i++ {
+			w.Step()
+		}
+		return w.Stats()
+	}
+	flat := run(0)
+	if flat != run(0) {
+		t.Fatal("the same world twice gave different runs")
+	}
+	if varied := run(0.5); varied == flat {
+		t.Fatal("giving the regions a taste in builds changed nothing at all")
+	}
+
+	cfg := DefaultConfig()
+	w := NewWorld(cfg)
+	if got := w.Suits(); math.Abs(got.Gain) > 1e-9 {
+		t.Fatalf("ground with no taste reports a gain of %v", got.Gain)
+	}
+}
+
+// A carried footing is the one thing this stage adds that the world cannot
+// work out again from where a body is standing, so it has to survive being
+// saved (stage 21's rule: a saved world comes back the same world).
+func TestACarriedFootingSurvivesBeingSaved(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Seed = 11
+	cfg.RegionFavourSpread = 0.5
+	cfg.RegionAbilityCarried = true
+	w := NewWorld(cfg)
+	for i := 0; i < 300; i++ {
+		w.Step()
+	}
+
+	var buf bytes.Buffer
+	if err := w.Save(&buf); err != nil {
+		t.Fatalf("saving: %v", err)
+	}
+	back, err := Load(&buf)
+	if err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+
+	for _, a := range w.Agents() {
+		got := back.agentByID(a.ID)
+		if got == nil {
+			t.Fatalf("agent %d did not come back", a.ID)
+		}
+		for g := 0; g < NumGenes; g++ {
+			if got.footing[g] != a.footing[g] {
+				t.Fatalf("agent %d came back standing on %v rather than %v",
+					a.ID, got.footing[g], a.footing[g])
+			}
+		}
 	}
 }

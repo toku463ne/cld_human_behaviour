@@ -4045,6 +4045,7 @@ func main() {
 	boost := flag.Bool("boost", true, "bring the played body up to the world's average speed, paid for with new budget (a gift, shown on the panel)")
 	land := flag.String("terrain", "", "lay the world out on a piece of country: none (default, flat), rough, river, plateau or country (stage 20)")
 	footing := flag.Float64("footing", 0, "how far apart the regions are in what a body standing in them can do (stage 57; 0 = every region the same, which is the default world)")
+	favour := flag.Float64("favour", 0, "how far apart the regions are in which genes they favour, averaging to one (stage 57c; 0 = no region has a taste in builds)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
 	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
 	flag.Parse()
@@ -4056,6 +4057,10 @@ func main() {
 	// measured as doing nothing at all - what it is here for is looking at it:
 	// the panel says what the ground under the followed node is worth to it.
 	cfg.RegionAbilitySpread = *footing
+	// And the ground's taste in builds (stage 57c), which is the same rule
+	// per gene: no region is better than another, but a region suits some
+	// bodies and not others.
+	cfg.RegionFavourSpread = *favour
 	if m, ok := testMaps[*land]; ok {
 		cfg.TerrainMap = m
 		// A hand-made world gets a coherent landscape: broken country is also

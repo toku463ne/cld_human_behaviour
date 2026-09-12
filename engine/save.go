@@ -191,6 +191,11 @@ type agentSnap struct {
 
 	SawFood, SawMate bool
 	Chronotype       float64
+	// Footing is only real state in the arm where it is carried (stage 57):
+	// everywhere else the world works it out from where the body is standing
+	// and this is left out. An old world without it reads as ordinary ground,
+	// which is what it was.
+	Footing []float64 `json:",omitempty"`
 
 	Seed      plantGenes
 	SeedDueAt int
@@ -337,6 +342,7 @@ func snapAgent(a *Agent) agentSnap {
 		NeedsDecision:      a.needsDecision,
 		PendingTrigger:     a.pendingTrigger,
 		AttackerID:         a.attackerID,
+		Footing:            carriedFooting(a),
 		LastAttackTick:     a.lastAttackTick,
 		Lore: loreSnap{
 			RetaliationMean: a.lore.retaliation.mean, RetaliationN: a.lore.retaliation.n,
@@ -509,6 +515,11 @@ func loadAgent(s *agentSnap) Agent {
 	a.hintSlots = s.HintSlots
 	a.sawFood, a.sawMate = s.SawFood, s.SawMate
 	a.chronotype = s.Chronotype
+	for g := range s.Footing {
+		if g < len(a.footing) {
+			a.footing[g] = s.Footing[g]
+		}
+	}
 	a.seed, a.seedDueAt = s.Seed, s.SeedDueAt
 	a.recentFood, a.dietTick = s.RecentFood, s.DietTick
 	a.carried = s.Carried

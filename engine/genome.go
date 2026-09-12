@@ -118,7 +118,7 @@ func (a *Agent) AgeFactor(cfg *Config) float64 {
 // what breeding passes on and what the experiments measure, because selection
 // acts on what is inherited, not on how old the holder happens to be.
 func (a *Agent) Ability(g Gene, cfg *Config) float64 {
-	return a.capacity(g, cfg) * a.groundFactor()
+	return a.capacity(g, cfg) * a.groundFactor(g)
 }
 
 // capacity is the same reading for the genes that say how much a body holds
@@ -143,11 +143,11 @@ func (a *Agent) capacity(g Gene, cfg *Config) float64 {
 // nothing about the world it stands in. Zero is an agent nobody has told
 // anything to - a bare Agent in a test, or any agent at all in a world without
 // the rule - and it reads as the ordinary one.
-func (a *Agent) groundFactor() float64 {
-	if a.regionBias <= 0 {
+func (a *Agent) groundFactor(g Gene) float64 {
+	if int(g) >= len(a.footing) || a.footing[g] <= 0 {
 		return 1
 	}
-	return a.regionBias
+	return a.footing[g]
 }
 
 // sexFactor is what this body's sex does to one gene (stage 53).

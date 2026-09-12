@@ -143,6 +143,25 @@ type Config struct {
 	// that effort and the ground are not counted twice.
 	RegionAbilitySpread float64
 
+	// RegionFavourSpread is the second try at the same question (stage 57c),
+	// and the answer to why the first one did nothing.
+	//
+	// The scalar above is common to everybody standing in a region, and every
+	// comparison that decides anything in this world is with somebody standing
+	// in the same region: every pair close enough to fight is in one, and 97%
+	// of pairs within the clustering distance are. A factor on both sides of a
+	// fight cancels, so a third of a body's strength can hang on the ground
+	// and nothing happens.
+	//
+	// This one does not cancel, because it is not the same for everybody: each
+	// region draws a multiplier per gene from 1 +/- spread and the nine are
+	// then scaled so that their mean is exactly one. No region is better than
+	// another - a region suits some builds and not others, and two neighbours
+	// with different builds get different factors.
+	//
+	// Zero takes nothing from the random source, like every other spread here.
+	RegionFavourSpread float64
+
 	// RegionAbilityCarried is the control the stage turns on: the same
 	// multiplier, drawn from the ground a body was born on, and then carried
 	// for life wherever it goes.
