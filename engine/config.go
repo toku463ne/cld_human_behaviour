@@ -123,6 +123,26 @@ type Config struct {
 	// had before that rule existed.
 	FoodSpread float64
 
+	// EnemySpread is how much the regions differ in how many of the world's
+	// enemies turn up in them (stage 58). Each region draws a weight from
+	// 1 +/- spread and arrivals are shared out in proportion, exactly as the
+	// plants are (FoodSpread). Zero keeps the old uniform draw down to the
+	// number of values taken from the random source.
+	//
+	// It changes where they arrive and never how many: the world puts in
+	// exactly as many enemies as it did, so this is the map's own dangerous
+	// country rather than a harder world (stage 15a's rule, and the test that
+	// pins it).
+	//
+	// Only enemies are placed this way. Humans are not put into the world
+	// after it starts - they are born into it - so there is nothing to weight.
+	//
+	// It is deliberately not called danger: that word is taken by what an
+	// agent believes about a region killing it (regionlore.go, stage 35), and
+	// the two must not be confused. This one is a fact about where enemies
+	// come from and nothing an agent is ever told.
+	EnemySpread float64
+
 	// RegionAbilitySpread is how much the regions differ in what a body
 	// standing in them can do (stage 57): each draws a multiplier on every
 	// expressed gene from 1 +/- spread. Zero makes every region ordinary and

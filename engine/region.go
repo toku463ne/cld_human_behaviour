@@ -1,5 +1,7 @@
 package engine
 
+import "math"
+
 // Regions are the world's own coarse divisions (decision #38).
 //
 // There is one kind of region and everything that varies by place uses it: how
@@ -55,6 +57,14 @@ type region struct {
 	// What it does not move is what a body holds: see Agent.capacity.
 	Ability float64
 
+	// Enemies is how many of the world's arriving enemies turn up here (stage
+	// 58), relative to an equal share. Like Food it moves where they come
+	// from and not how many there are.
+	//
+	// A region with a lot of them is the map's dangerous country. Nothing
+	// tells an agent which region that is - what it can do is meet them.
+	Enemies float64
+
 	// Favour is the same thing per gene (stage 57c): what this ground does to
 	// each of the nine, with the nine scaled so that their mean is one.
 	//
@@ -90,7 +100,7 @@ func (w *World) buildRegions() {
 	cols, rows := max(cfg.RegionCols, 1), max(cfg.RegionRows, 1)
 	w.regions = make([]region, cols*rows)
 	for i := range w.regions {
-		w.regions[i] = region{Shelter: 1, Food: 1, Special: 1, Ability: 1}
+		w.regions[i] = region{Shelter: 1, Food: 1, Special: 1, Ability: 1, Enemies: 1}
 	}
 	// Each spread is skipped entirely when it is zero, so a world with one of
 	// them turned off consumes the random source exactly as a world without
@@ -108,6 +118,13 @@ func (w *World) buildRegions() {
 	if cfg.RegionAbilitySpread > 0 {
 		for i := range w.regions {
 			w.regions[i].Ability = clamp(w.randRange(1-cfg.RegionAbilitySpread, 1+cfg.RegionAbilitySpread), 0, 2)
+		}
+	}
+	// Where the enemies turn up (stage 58), drawn like the plants and skipped
+	// at zero for the same reason.
+	if cfg.EnemySpread > 0 {
+		for i := range w.regions {
+			w.regions[i].Enemies = clamp(w.randRange(1-cfg.EnemySpread, 1+cfg.EnemySpread), 0, 2)
 		}
 	}
 	// And what it favours, gene by gene (stage 57c). The nine are scaled to a
@@ -146,9 +163,12 @@ func (w *World) buildRegions() {
 	w.tieFoodToTheGround()
 	w.tieFoodToTheWater()
 
+	w.tolls = make([]regionToll, len(w.regions))
 	w.foodWeight = 0
+	w.enemyWeight = 0
 	for i := range w.regions {
 		w.foodWeight += w.regions[i].Food
+		w.enemyWeight += w.regions[i].Enemies
 	}
 }
 
@@ -277,6 +297,185 @@ func (w *World) pickFoodRegion() int {
 	return len(w.regions) - 1
 }
 
+// regionToll is what has died in one block of the world and how much of it
+// was violent (stage 58). A measurement: no rule reads it.
+type regionToll struct {
+	deaths float64
+	kills  float64
+}
+
+// tollAt is the tally for the block this spot is in, or nil in a world with no
+// blocks in it.
+func (w *World) tollAt(x, y float64) *regionToll {
+	if len(w.tolls) == 0 {
+		return nil
+	}
+	return &w.tolls[w.regionIndexAt(x, y)]
+}
+
+// correlation is Pearson's, and zero when there is nothing to correlate.
+func correlation(xs, ys []float64) float64 {
+	n := float64(len(xs))
+	if n < 3 {
+		return 0
+	}
+	var sx, sy, sxx, syy, sxy float64
+	for i := range xs {
+		sx += xs[i]
+		sy += ys[i]
+		sxx += xs[i] * xs[i]
+		syy += ys[i] * ys[i]
+		sxy += xs[i] * ys[i]
+	}
+	den := math.Sqrt((n*sxx - sx*sx) * (n*syy - sy*sy))
+	if den <= 0 {
+		return 0
+	}
+	return (n*sxy - sx*sy) / den
+}
+
+// pickEnemyRegion draws a region for an arriving enemy, in proportion to how
+// many of them turn up there. Like pickFoodRegion it is only reached when the
+// regions actually differ, so a world without the rule keeps the old uniform
+// draw down to the number of values taken from the random source.
+func (w *World) pickEnemyRegion() int {
+	if w.enemyWeight <= 0 {
+		return 0
+	}
+	r := w.rng.Float64() * w.enemyWeight
+	for i := range w.regions {
+		r -= w.regions[i].Enemies
+		if r <= 0 {
+			return i
+		}
+	}
+	return len(w.regions) - 1
+}
+
+// spawnSpot is where something the world puts in from outside arrives.
+//
+// Humans never come through here - they are born - so the weighting is the
+// enemies' own. With no spread it is the uniform draw the world always made,
+// in the same order and the same number of draws.
+func (w *World) spawnSpot(species Species) (float64, float64) {
+	if species != SpeciesEnemy || w.cfg.EnemySpread <= 0 || len(w.regions) == 0 {
+		x := w.randRange(20, w.cfg.Width-20)
+		y := w.randRange(20, w.cfg.Height-20)
+		return x, y
+	}
+	minX, minY, maxX, maxY := w.regionBounds(w.pickEnemyRegion())
+	x := clamp(w.randRange(minX, maxX), 20, w.cfg.Width-20)
+	y := clamp(w.randRange(minY, maxY), 20, w.cfg.Height-20)
+	return x, y
+}
+
+// prowlAt is how many of the world's enemies turn up where this is.
+func (w *World) prowlAt(x, y float64) float64 {
+	if r := w.regionAt(x, y); r != nil && r.Enemies > 0 {
+		return r.Enemies
+	}
+	return 1
+}
+
+// Prowl is where the dangerous country is and what being in it comes to
+// (stage 58).
+//
+// The stage's own figures are the first two: the enemies should end up where
+// the map says they arrive, and the question worth asking is whether the
+// humans end up anywhere else. Nothing tells them where the enemies come
+// from, so HumanGain moving at all would be them feeling it rather than
+// knowing it.
+//
+// Bite is what it costs to be there: across regions, how much the share of
+// deaths that were kills goes with how many enemies arrive. It is cumulative
+// - a region's tally over the whole run - because deaths are rare enough that
+// an instant says nothing.
+type Prowl struct {
+	EnemyGain float64 // mean arrival weight where the enemies are, less the map's mean
+	HumanGain float64 // ... and where the humans are
+	Crowding  float64 // how unevenly the enemies are spread: 1 is even, higher is piled up
+	Bite      float64 // correlation across regions between arrivals and the kill share of deaths
+
+	// ArriveGain is the weighting as it goes in: the mean weight where the
+	// enemies were put, less the map's mean. It is what the rule did, and
+	// EnemyGain against it is how much of that the world still has - a
+	// figure that has to be read as a pair, because a rule that works
+	// perfectly at the moment it fires can still leave nothing behind.
+	ArriveGain float64
+
+	// BornShare is how many of the enemies the world made itself rather than
+	// put in, which is the part of them the weighting never touched.
+	BornShare float64
+}
+
+// Prowl reports where the enemies are and what it costs to be near them. Read
+// only.
+func (w *World) Prowl() Prowl {
+	out := Prowl{Crowding: 1}
+	n := len(w.regions)
+	if n == 0 {
+		return out
+	}
+	mean := w.enemyWeight / float64(n)
+
+	counts := make([]float64, n)
+	var humans, enemies, humanWeight, enemyWeight float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		r := w.regionIndexAt(a.X, a.Y)
+		if a.Species == SpeciesEnemy {
+			enemies++
+			enemyWeight += w.regions[r].Enemies
+			counts[r]++
+		} else {
+			humans++
+			humanWeight += w.regions[r].Enemies
+		}
+	}
+	// Nobody of a kind is no evidence about where that kind stands (stage
+	// 14's mistake, not made twice).
+	if enemies > 0 {
+		out.EnemyGain = enemyWeight/enemies - mean
+		share := 0.0
+		for _, c := range counts {
+			p := c / enemies
+			share += p * p
+		}
+		out.Crowding = share * float64(n)
+	}
+	if humans > 0 {
+		out.HumanGain = humanWeight/humans - mean
+	}
+	out.Bite = w.killShareGoesWithArrivals()
+	if w.enemyArrivals > 0 {
+		out.ArriveGain = w.enemyArrivalSum/w.enemyArrivals - mean
+	}
+	if made := w.enemyArrivals + w.enemyBorn; made > 0 {
+		out.BornShare = w.enemyBorn / made
+	}
+	return out
+}
+
+// killShareGoesWithArrivals correlates, across regions, how many enemies turn
+// up there with how much of the dying there was violent.
+func (w *World) killShareGoesWithArrivals() float64 {
+	var xs, ys []float64
+	for i := range w.regions {
+		t := w.tolls[i]
+		if t.deaths < 8 {
+			// Too few to say anything about, and a region nobody died in
+			// would otherwise read as a perfectly peaceful one.
+			continue
+		}
+		xs = append(xs, w.regions[i].Enemies)
+		ys = append(ys, t.kills/t.deaths)
+	}
+	return correlation(xs, ys)
+}
+
 // regionBounds is the ground one block covers.
 func (w *World) regionBounds(i int) (minX, minY, maxX, maxY float64) {
 	cols, rows := max(w.cfg.RegionCols, 1), max(w.cfg.RegionRows, 1)
@@ -325,6 +524,10 @@ type RegionView struct {
 
 	// Ability is what standing here does to what a body can do (stage 57).
 	Ability float64
+
+	// Enemies is how many of the world's arriving enemies turn up here
+	// (stage 58), relative to an equal share.
+	Enemies float64
 }
 
 // Regions reports the blocks the world is divided into. Read only.
@@ -340,6 +543,7 @@ func (w *World) Regions() []RegionView {
 			Shelter: w.regions[i].Shelter,
 			Food:    w.regions[i].Food,
 			Ability: w.regions[i].Ability,
+			Enemies: w.regions[i].Enemies,
 		})
 	}
 	return out
@@ -581,6 +785,11 @@ func (w *World) Suits() Suits {
 	out.Ceiling = 100 * best / bodies
 	return out
 }
+
+// ProwlAt is how many of the world's arriving enemies turn up around this
+// spot, relative to an equal share (stage 58), for the viewer. One everywhere
+// in a world where they arrive alike. No agent is ever told this.
+func (w *World) ProwlAt(x, y float64) float64 { return w.prowlAt(x, y) }
 
 // GroundAt is what the ground at this spot is like, for the viewer: how
 // exposed resting on it is, and how well it grows plants. Read only. An agent

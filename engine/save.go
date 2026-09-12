@@ -112,6 +112,7 @@ type snapshot struct {
 	Stores []store `json:"stores,omitempty"`
 
 	FoodWeight   float64    `json:"foodWeight"`
+	EnemyWeight  float64    `json:"enemyWeight,omitempty"`
 	PendingSeeds []seedSnap `json:"pendingSeeds,omitempty"`
 
 	Counters counterSnap `json:"counters"`
@@ -143,6 +144,12 @@ type counterSnap struct {
 	BlowsSeen, BlowsAnswered                     int
 	Courtships, CourtshipsAccepted               int
 	Flees, Escapes                               int
+
+	// What has died in each block and how much of it was violent (stage 58).
+	// A measurement rather than a rule, saved for the same reason the other
+	// counters are: a world that comes back with its tallies reset would
+	// report a different past.
+	Tolls []tollSnap `json:",omitempty"`
 	Exchanges, HintsCopied                       int
 }
 
@@ -288,6 +295,7 @@ func (w *World) Save(out io.Writer) error {
 		Stores:      w.stores,
 		Regions:     w.regions,
 		FoodWeight:  w.foodWeight,
+		EnemyWeight: w.enemyWeight,
 		Counters: counterSnap{
 			Births: w.births, Evaded: w.evaded, Hunts: w.hunts,
 			HuntParty: w.huntParty, JointHunts: w.jointHunts,
@@ -310,6 +318,7 @@ func (w *World) Save(out io.Writer) error {
 			Courtships: w.courtships, CourtshipsAccepted: w.courtshipsAccepted,
 			Flees: w.flees, Escapes: w.escapes,
 			Exchanges: w.exchanges, HintsCopied: w.hintsCopied,
+			Tolls: snapTolls(w.tolls),
 		},
 	}
 	for i := range w.pendingSeeds {
@@ -322,6 +331,27 @@ func (w *World) Save(out io.Writer) error {
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", " ")
 	return enc.Encode(&s)
+}
+
+// tollSnap is one block's tally, written out (stage 58).
+type tollSnap struct {
+	Deaths float64
+	Kills  float64
+}
+
+func snapTolls(tolls []regionToll) []tollSnap {
+	out := make([]tollSnap, 0, len(tolls))
+	any := false
+	for _, t := range tolls {
+		out = append(out, tollSnap{Deaths: t.deaths, Kills: t.kills})
+		if t.deaths > 0 {
+			any = true
+		}
+	}
+	if !any {
+		return nil
+	}
+	return out
 }
 
 func snapAgent(a *Agent) agentSnap {
@@ -430,6 +460,8 @@ func Load(in io.Reader) (*World, error) {
 		foodAccum:   s.FoodAccum,
 		regions:     s.Regions,
 		foodWeight:  s.FoodWeight,
+		enemyWeight: s.EnemyWeight,
+		tolls:       make([]regionToll, len(s.Regions)),
 	}
 	w.rng, w.draws = replayTo(s.Seed, s.Draws)
 	w.ground = buildTerrain(&w.cfg)
@@ -473,6 +505,11 @@ func Load(in io.Reader) (*World, error) {
 	w.courtships, w.courtshipsAccepted = c.Courtships, c.CourtshipsAccepted
 	w.flees, w.escapes = c.Flees, c.Escapes
 	w.exchanges, w.hintsCopied = c.Exchanges, c.HintsCopied
+	for i := range c.Tolls {
+		if i < len(w.tolls) {
+			w.tolls[i] = regionToll{deaths: c.Tolls[i].Deaths, kills: c.Tolls[i].Kills}
+		}
+	}
 
 	// How much food is in somebody's hands is worked out from the hands
 	// rather than saved (stage 40): it is a tally of what the agents already

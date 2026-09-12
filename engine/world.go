@@ -272,6 +272,22 @@ type World struct {
 	regions    []region
 	foodWeight float64
 
+	// enemyWeight is the same sum for where the enemies arrive (stage 58),
+	// and tolls is what has died in each region and how much of it was
+	// violent. The tolls are a measurement and nothing in the world reads
+	// them: they are here because deaths are too rare to read at an instant,
+	// so the only way to ask what a dangerous region costs is to keep count.
+	enemyWeight float64
+	tolls       []regionToll
+
+	// What the weighting actually put in, against what is standing about
+	// later (stage 58): how many enemies the world has put in from outside,
+	// the arrival weight summed over them, and how many were born here
+	// instead. Measurements; no rule reads them.
+	enemyArrivals   float64
+	enemyArrivalSum float64
+	enemyBorn       float64
+
 	// pendingSeeds are seeds that have been carried somewhere in an animal
 	// and are waiting for the world's next planting (stage 17c).
 	pendingSeeds []pendingSeed
@@ -1770,11 +1786,24 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	w.rememberAffinity(pb, pa.ID, w.cfg.AffinityBirth)
 	w.newborns = append(w.newborns, child)
 	w.births++
+	// How many of the enemies the world has are its own rather than arrivals
+	// (stage 58): what is born starts where its parents were, so the map's
+	// weighting says nothing about it.
+	if child.Species == SpeciesEnemy {
+		w.enemyBorn++
+	}
 }
 
 func (w *World) kill(a *Agent) {
 	a.Alive = false
 	w.deaths++
+	// Which block of the world it died in, for the measurement (stage 58).
+	// Counted for both kinds: what a dangerous region costs is a question
+	// about everything living in it.
+	toll := w.tollAt(a.X, a.Y)
+	if toll != nil {
+		toll.deaths++
+	}
 	// Whatever it was holding falls where it fell (stage 40). Food carried
 	// out of the world would be a leak in a total the world has kept fixed
 	// since stage 15a.
@@ -1801,6 +1830,9 @@ func (w *World) kill(a *Agent) {
 	}
 	if !a.drowned && a.lastAttackTick >= w.tick-1 {
 		w.kills++
+		if toll != nil {
+			toll.kills++
+		}
 		// What the people who were standing there make of it (stage 31).
 		// Before the body is taken out of the world, for the same reason a
 		// drowning is told to the bank while the victim is still in the
@@ -2102,9 +2134,16 @@ func (w *World) newAgent(x, y float64, sex Sex, genome []float64, generation int
 }
 
 func (w *World) randomAgent(species Species) Agent {
+	// Where it turns up. Enemies arrive where the map says they do (stage
+	// 58); nothing else in the world comes in from outside.
+	x, y := w.spawnSpot(species)
+	if species == SpeciesEnemy {
+		w.enemyArrivals++
+		w.enemyArrivalSum += w.prowlAt(x, y)
+	}
 	a := w.newAgent(
-		w.randRange(20, w.cfg.Width-20),
-		w.randRange(20, w.cfg.Height-20),
+		x,
+		y,
 		w.randomSex(),
 		w.drawGenomeFor(species),
 		0,

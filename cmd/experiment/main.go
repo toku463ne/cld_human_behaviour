@@ -1795,6 +1795,21 @@ var variants = []variant{
 	// size of lean with the sign reversed says whether the structure is doing
 	// the work or only the magnitude.
 	{
+		name:  "prowl",
+		about: "58: the enemies arrive in some regions more than others - the map's own dangerous country",
+		apply: func(c *engine.Config) { c.EnemySpread = 0.6 },
+	},
+	{
+		name:  "prowlweak",
+		about: "the same, half as far apart",
+		apply: func(c *engine.Config) { c.EnemySpread = 0.3 },
+	},
+	{
+		name:  "prowlhard",
+		about: "as far apart as it goes: some regions take almost none of them",
+		apply: func(c *engine.Config) { c.EnemySpread = 0.9 },
+	},
+	{
 		name:  "favour",
 		about: "57c: the ground favours some genes over others, averaging to one, so that it suits some builds and not others",
 		apply: func(c *engine.Config) { c.RegionFavourSpread = 0.3 },
@@ -2904,6 +2919,7 @@ var metricNames = []string{
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
 	"standGain", "suitGain", "suitCeiling", "regionsSeen", "oneRegion", "regionShare",
+	"prowlArrive", "prowlGain", "prowlKept", "enemyBorn", "humanProwl", "enemyCrowd", "prowlBite",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
@@ -3051,6 +3067,13 @@ type sample struct {
 	// where it stands does to its own build, less what the whole map would do
 	// to that same build. It is the figure the scalar could not have.
 	suitGain, suitCeiling float64
+
+	// Where the dangerous country is (stage 58). prowlGain is whether the
+	// enemies ended up where the map sends them, humanProwl whether the
+	// humans ended up anywhere else, enemyCrowd how piled up they are, and
+	// prowlBite whether the dying is more violent where they arrive.
+	prowlGain, humanProwl, enemyCrowd, prowlBite float64
+	prowlArrive, enemyBorn float64
 
 	// Where the gifts went (stage 48).
 	giftsToKin, giftsToMates, giftsToStrangers, giftStones float64
@@ -3252,6 +3275,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		rich := w.Richness()
 		stand := w.Standing()
 		suited := w.Suits()
+		prowl := w.Prowl()
 		known := w.RegionKnowledge()
 		diet := w.Diet()
 		carry := w.Carrying()
@@ -3266,6 +3290,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			restShelter: shelter.Resting, shelterAll: shelter.All,
 			humanRich: rich.Humans, enemyRich: rich.Enemies, allRich: rich.All,
 			standGain: stand.Gain, suitGain: suited.Gain, suitCeiling: suited.Ceiling,
+			prowlGain: prowl.EnemyGain, humanProwl: prowl.HumanGain,
+			prowlArrive: prowl.ArriveGain, enemyBorn: prowl.BornShare,
+			enemyCrowd: prowl.Crowding, prowlBite: prowl.Bite,
 			regionKnown: known.Known, regionTold: known.Told,
 			regionCostRank: known.CostRank,
 			dangerRank:     known.DangerRank, dangerKnown: known.DangerKnown,
@@ -3770,6 +3797,18 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"standGain":   tail.standGain,
 		"suitGain":    tail.suitGain,
 		"suitCeiling": tail.suitCeiling,
+		// Where the enemies are (stage 58). prowlGain near zero with a spread
+		// switched on means the arrivals are not sticking; humanProwl is the
+		// one nothing tells them, so it moving at all is them feeling it.
+		"prowlArrive": tail.prowlArrive,
+		"prowlGain":   tail.prowlGain,
+		// How much of what the rule did is still there. Read the two above as
+		// a pair: a rule that fires perfectly can leave nothing behind.
+		"prowlKept":  kept(tail.prowlGain, tail.prowlArrive),
+		"enemyBorn":  tail.enemyBorn,
+		"humanProwl": tail.humanProwl,
+		"enemyCrowd": tail.enemyCrowd,
+		"prowlBite":  tail.prowlBite,
 		"regionsSeen": roaming.Mean,
 		"oneRegion":   roaming.Alone,
 		"regionShare": roaming.Share,
@@ -3976,6 +4015,12 @@ func tailAverage(series []sample) sample {
 		out.standGain += s.standGain
 		out.suitGain += s.suitGain
 		out.suitCeiling += s.suitCeiling
+		out.prowlGain += s.prowlGain
+		out.prowlArrive += s.prowlArrive
+		out.enemyBorn += s.enemyBorn
+		out.humanProwl += s.humanProwl
+		out.enemyCrowd += s.enemyCrowd
+		out.prowlBite += s.prowlBite
 		out.wadersWet += s.wadersWet
 		out.bankersWet += s.bankersWet
 		out.anglerSplit += s.anglerSplit
@@ -4117,6 +4162,12 @@ func tailAverage(series []sample) sample {
 	out.standGain /= d
 	out.suitGain /= d
 	out.suitCeiling /= d
+	out.prowlGain /= d
+	out.prowlArrive /= d
+	out.enemyBorn /= d
+	out.humanProwl /= d
+	out.enemyCrowd /= d
+	out.prowlBite /= d
 	out.wadersWet /= d
 	out.bankersWet /= d
 	out.anglerSplit /= d
@@ -4327,6 +4378,15 @@ func drain(total, personTicks float64) float64 {
 // share is what fraction of the deaths were killings. It is the headline
 // figure for the cooperation work: the point of that work is to get it down
 // without simply feeding everybody, which is why it sits next to starved.
+// kept is how much of what a rule did is still there, for two figures that
+// are already real numbers.
+func kept(part, whole float64) float64 {
+	if whole == 0 {
+		return 0
+	}
+	return part / whole
+}
+
 func share(part, whole int) float64 {
 	if whole == 0 {
 		return 0
