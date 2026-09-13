@@ -754,6 +754,22 @@ type Config struct {
 	// oldest reason for trade there is, and it is the only one in here.
 	CoinValue float64
 
+	// CoinPricedCertain puts back the world in which money was scored as a
+	// sure thing (stage 51 as it was measured, found in stage 67).
+	//
+	// Picking a coin up was given a chance of one and no race, and it was
+	// charged no weight because it has none. A berry on the same ground was
+	// scored at CarryValue x the meal, times the odds of getting there first,
+	// less what lugging it costs - so a coin paid one discount where two
+	// conditions have to hold (this body running short, and somebody willing
+	// to sell when it does), and beat an identical meal seven times out of
+	// ten. What that bought was hands full of money and empty of dinner, and
+	// with them went the giving, the cooking and the caches.
+	//
+	// True is that world, kept because every figure recorded for stages 51
+	// and 68 was measured in it.
+	CoinPricedCertain bool
+
 	// CarryPricedBackwards puts back the world in which what a held item was
 	// worth came out the wrong way round (stage 40, found in stage 50).
 	//
@@ -2320,6 +2336,7 @@ func DefaultConfig() Config {
 		CallTicks:           30,
 		Coins:               0, // stage 51: the map author scatters them
 		CoinValue:           0.5,
+		CoinPricedCertain:   false, // stage 51's pricing, put right
 		// Stage 52. The word costs the vocabulary whether or not anybody uses
 		// it, so a world without cooking is CookVitality at zero rather than
 		// a world with a shorter list.

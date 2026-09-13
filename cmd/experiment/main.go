@@ -1664,6 +1664,31 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	// The pricing put right (stage 51, found in stage 67). The fixed world is
+	// the "coins" arm above; these two are what it was measured in, so that
+	// what the correction did can be read off a pair rather than against a
+	// record taken in a different world.
+	{
+		name:  "coinscertain",
+		about: "the world 51 was measured in: a coin scored as a sure thing, unraced",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CoinPricedCertain = true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinslookcertain",
+		about: "the same old pricing in the world that can see ahead (67): where the economy went",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHorizons = 1
+			c.CoinPricedCertain = true
+		},
+		stores: playedStores,
+	},
 	{
 		name:  "coinsidle",
 		about: "the placebo: the coins are lying there and nobody values one",

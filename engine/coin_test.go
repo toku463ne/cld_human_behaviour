@@ -334,3 +334,113 @@ func TestASaleLeavesBothOnBetterTerms(t *testing.T) {
 		}
 	}
 }
+
+// scoredTraced is scored() with the breakdown kept, so that a test can read
+// what an option was reckoned to be worth rather than only what it came to
+// after the costs.
+func scoredTraced(t *testing.T, w *World, id int) (*AIController, *Perception) {
+	t.Helper()
+	p := w.perceive(mustAgent(t, w, id))
+	p.Trace = &DecisionTrace{}
+	c := &AIController{}
+	c.Decide(p)
+	p.Trace = nil
+	return c, p
+}
+
+// coinAndMeal is what this body reckoned picking up the money and picking up
+// the food were worth, before either was charged for the walk.
+func coinAndMeal(t *testing.T, w *World, id, coinID, foodID int) (coin, meal Goal) {
+	t.Helper()
+	c, _ := scoredTraced(t, w, id)
+	for i := range c.opts {
+		o := &c.opts[i]
+		if o.action.Kind != ActTake {
+			continue
+		}
+		switch o.action.TargetID {
+		case coinID:
+			coin = c.terms[i].Life
+		case foodID:
+			meal = c.terms[i].Life
+		}
+	}
+	return coin, meal
+}
+
+// A coin is a claim on a meal, so it cannot be worth more than the meal it
+// claims. coin.go has said so since the day it was written, and the scoring
+// did not obey it: picking money up was given a chance of one and no race,
+// where picking the same meal up pays CarryValue, the race and the weight. Two
+// conditions have to hold before a coin feeds anybody - this body running
+// short, and somebody willing to sell when it does - and the old pricing paid
+// one discount for both. Found in stage 67, put right afterwards.
+func TestACoinIsNeverWorthMoreThanTheMealItClaims(t *testing.T) {
+	cfg := coinConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Hunger: 85, Genome: genomeOf(50, 50, 50)})
+	coinID := w.putFood(Food{X: 110, Y: 100, Kind: FoodCoin})
+	foodID := w.putFood(Food{X: 90, Y: 100, Kind: FoodPlant})
+	// Somebody else in sight, the same distance from both: what is kept for
+	// later is worth nothing at all in a patch with nobody to lose it to, and
+	// that is true of a coin and a berry alike.
+	w.addAgent(Agent{Maturity: 1, X: 100, Y: 160, Vitality: 90,
+		Hunger: 85, Genome: genomeOf(50, 50, 50)})
+
+	coin, meal := coinAndMeal(t, w, id, coinID, foodID)
+	if coin.Value <= 0 || meal.Value <= 0 {
+		t.Fatalf("nothing was worth having: coin %+v meal %+v", coin, meal)
+	}
+	if coin.Score() > meal.Score() {
+		t.Fatalf("a coin outscores the meal it is a claim on: coin %+v meal %+v", coin, meal)
+	}
+	if coin.Chance >= 1 {
+		t.Fatalf("money is a sure thing: %+v", coin)
+	}
+
+	// And the world it was measured in is still there, where it is the other
+	// way round.
+	cfg.CoinPricedCertain = true
+	old := NewWorld(cfg)
+	id = old.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Hunger: 85, Genome: genomeOf(50, 50, 50)})
+	coinID = old.putFood(Food{X: 110, Y: 100, Kind: FoodCoin})
+	foodID = old.putFood(Food{X: 90, Y: 100, Kind: FoodPlant})
+	old.addAgent(Agent{Maturity: 1, X: 100, Y: 160, Vitality: 90,
+		Hunger: 85, Genome: genomeOf(50, 50, 50)})
+	coin, meal = coinAndMeal(t, old, id, coinID, foodID)
+	if coin.Chance != 1 {
+		t.Fatalf("the old pricing is not a sure thing any more: %+v", coin)
+	}
+	if coin.Score() <= meal.Score() {
+		t.Fatalf("the old pricing no longer beats the meal: coin %+v meal %+v", coin, meal)
+	}
+}
+
+// Money lying about is raced for like anything else lying about. Both worlds
+// have exactly one other body in sight, so what is compared is where it is
+// standing and nothing else - how crowded the patch feels is the same figure
+// in both.
+func TestMoneyOnTheGroundIsRacedFor(t *testing.T) {
+	chanceOf := func(rivalX, rivalY float64) float64 {
+		w := NewWorld(coinConfig())
+		id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+			Hunger: 85, Genome: genomeOf(50, 50, 50)})
+		coinID := w.putFood(Food{X: 150, Y: 100, Kind: FoodCoin})
+		w.addAgent(Agent{Maturity: 1, X: rivalX, Y: rivalY, Vitality: 90,
+			Hunger: 85, Genome: genomeOf(50, 50, 50)})
+		c, _ := scoredTraced(t, w, id)
+		for i := range c.opts {
+			if c.opts[i].action.Kind == ActTake && c.opts[i].action.TargetID == coinID {
+				return c.terms[i].Life.Chance
+			}
+		}
+		t.Fatal("nobody scored the coin")
+		return 0
+	}
+	far, near := chanceOf(100, 150), chanceOf(152, 100)
+	if near >= far {
+		t.Fatalf("a body standing on the coin is no rival for it: %v with one there, %v with one away", near, far)
+	}
+}

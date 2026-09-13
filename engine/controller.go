@@ -447,6 +447,60 @@ func (c *AIController) addRest(p *Perception) {
 	})
 }
 
+// raceChance is the odds of getting to something before the nearest other body
+// does. One place, because whatever is lying about is raced for on the same
+// terms: a meal (stage 40) and money (stage 51) alike.
+//
+// Whoever gets there first is whoever takes less time to arrive, which is not
+// the same question as who is nearer. The agent knows how fast it is; it knows
+// nothing about the other one's legs - speed is a hidden ability like every
+// other - so it assumes an ordinary body, the same shape of assumption the
+// population prior makes about a stranger's strength. Being faster than
+// average is what wins races, and it is the first thing the gene has ever
+// bought.
+//
+// Both sides are assumed to be travelling the same way, so the effort cancels
+// and only the difference in legs is left. Scoring the agent's own effort
+// against a rival assumed to be sprinting was tried and is much worse: the one
+// nearby is only the nearest agent, who may well be asleep, and treating every
+// one of them as racing makes strolling over to a contested item look
+// hopeless. It cost two thirds of the population (see HISTORY.md).
+func raceChance(cfg *Config, s *SelfView, dist, rivalDist float64) float64 {
+	if math.IsInf(rivalDist, 1) {
+		return 1 // nobody else can see it
+	}
+	mine, theirs := dist/s.MaxSpeed, rivalDist/cfg.MaxSpeed
+	if cfg.RaceOnDistance {
+		mine, theirs = dist, rivalDist
+	}
+	// clamp, written out: this is scored for every item in sight, and the
+	// same figure through math.Min and math.Max is too dear for the compiler
+	// to put back where it came from.
+	odds := theirs / (theirs + mine + 1e-9)
+	if odds < 0.05 {
+		return 0.05
+	}
+	if odds > 1 {
+		return 1
+	}
+	return odds
+}
+
+// carryNeed is how likely it is that having a thing later will matter: the
+// discount stage 40 charges on anything kept rather than eaten, scaled by how
+// contested the food around this body is. A body in a patch with more food
+// than neighbours has little use for a berry in its hand; one where the food
+// is contested may well find nothing when it next looks, and FoodScarcity is
+// the only reading it has of that.
+//
+// One place, because a coin is the same bet with one more thing that has to go
+// right (stage 51): money is a claim on a meal at the moment of running short,
+// so it is worth nothing at all to a body that never runs short, exactly as a
+// berry in the hand is.
+func carryNeed(cfg *Config, s *SelfView) float64 {
+	return cfg.CarryValue * clamp(s.FoodScarcity, 0, 3) / 3
+}
+
 // mealValue is what one item of food is worth to this agent right now, in the
 // same units the food options are scored in: how much less likely it makes
 // dying inside the planning horizon.
@@ -601,21 +655,6 @@ func (c *AIController) addFood(p *Perception) {
 		}
 		f := &p.Foods[i]
 
-		// Whoever gets there first is whoever takes less time to arrive, which
-		// is not the same question as who is nearer. The agent knows how fast
-		// it is; it knows nothing about the other one's legs - speed is a
-		// hidden ability like every other - so it assumes an ordinary body,
-		// the same shape of assumption the population prior makes about a
-		// stranger's strength. Being faster than average is what wins races,
-		// and it is the first thing the gene has ever bought.
-		//
-		// Both sides are assumed to be travelling the same way, so the effort
-		// cancels and only the difference in legs is left. Scoring the agent's
-		// own effort against a rival assumed to be sprinting was tried and is
-		// much worse: the one nearby is only the nearest agent, who may well
-		// be asleep, and treating every one of them as racing makes strolling
-		// over to a contested item look hopeless. It cost two thirds of the
-		// population (see HISTORY.md).
 		// Whether it can be landed at all (stage 43). A fish reached is not a
 		// fish taken, and the chance of it depends on where this body would
 		// be standing and what it has learned about fishing there.
@@ -623,15 +662,7 @@ func (c *AIController) addFood(p *Perception) {
 		if f.Catch > 0 && f.Catch < 1 {
 			pGet = f.Catch
 		}
-		if !math.IsInf(f.RivalDist, 1) {
-			if cfg.RaceOnDistance {
-				pGet *= clamp(f.RivalDist/(f.RivalDist+f.Dist+1e-9), 0.05, 1)
-			} else {
-				mine := f.Dist / s.MaxSpeed
-				theirs := f.RivalDist / cfg.MaxSpeed
-				pGet *= clamp(theirs/(theirs+mine+1e-9), 0.05, 1)
-			}
-		}
+		pGet *= raceChance(cfg, s, f.Dist, f.RivalDist)
 
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
@@ -679,13 +710,9 @@ func (c *AIController) addFood(p *Perception) {
 			// roughly how long it is until it eats. One trajectory, no
 			// branching - the same shape as every other estimate here.
 			if !f.Held && s.CarryRoom && cfg.CarryValue > 0 {
-				// How likely it is to be needed. A body in a patch with more
-				// food than neighbours has little use for a berry in its
-				// hand; one where the food is contested may well find nothing
-				// when it next looks. FoodScarcity is the only reading it has
-				// of that, and it is normalised the way the competition term
-				// already normalises it.
-				need := cfg.CarryValue * clamp(s.FoodScarcity, 0, 3) / 3
+				// How likely it is to be needed, which money is charged
+				// for in the same place and on the same figure (stage 51).
+				need := carryNeed(cfg, s)
 				keep := keepValue(cfg, s, incoming, f.Nutrition, f.Heal)
 				lug := (burdenWith(cfg, s, 1) - burdenOf(s)) *
 					moveCostAt(cfg, effort) * groundOf(s) * wait
@@ -1103,6 +1130,24 @@ func (c *AIController) addCook(p *Perception) {
 // on, and it is not guessed: it is CoinValue, and the measurement is what it
 // takes for a sale to be worth making to the other side.
 //
+// It is scored as exactly what it is: the same bet stage 40's pickup is, with
+// one more thing that has to go right. Two conditions have to hold before a
+// coin ever feeds anybody - this body has to run short, and somebody has to be
+// willing to sell when it does - so both discounts are charged, and it is
+// raced for like anything else lying on the ground.
+//
+// That is a correction, and what it corrects is what made money eat this
+// world's economy (found in stage 67, fixed here). The chance was written as
+// one and the race was left out, so a coin paid a single discount for two
+// conditions while a berry paid one for one, and it was charged no weight
+// because it has none: money was a meal with no race and no weight, and it
+// beat an identical meal 70% of the time a body could see both. Hands filled
+// with coins and stopped holding dinner - holders up, load down - and the
+// giving and the cooking went with it. Priced this way a coin can never be
+// worth more than the meal it claims, which is what coin.go has said in its
+// own header since the day it was written. CoinPricedCertain puts the old
+// world back.
+//
 // Nothing here is a second reason to want money. A coin is not saved, not
 // counted, and not worth anything to a body that will never need a meal.
 func (c *AIController) addCoins(p *Perception) {
@@ -1110,8 +1155,13 @@ func (c *AIController) addCoins(p *Perception) {
 	if len(p.Coins) == 0 || !s.CarryRoom {
 		return
 	}
-	want := coinWorth(cfg, s) * clamp(s.FoodScarcity, 0, 3) / 3
-	if want <= 0 {
+	want, need := coinWorth(cfg, s), carryNeed(cfg, s)
+	if cfg.CoinPricedCertain {
+		// The world stage 51 measured: one discount for both conditions, no
+		// race, and a sure thing.
+		want, need = want*clamp(s.FoodScarcity, 0, 3)/3, 1
+	}
+	if want <= 0 || need <= 0 {
 		return
 	}
 	for i := range p.Coins {
@@ -1119,11 +1169,15 @@ func (c *AIController) addCoins(p *Perception) {
 			break
 		}
 		f := &p.Coins[i]
+		chance := need
+		if !cfg.CoinPricedCertain {
+			chance *= raceChance(cfg, s, f.Dist, f.RivalDist)
+		}
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCost(cfg, s, effort) * ticks
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
-				Life:         Goal{Value: want, Chance: 1},
+				Life:         Goal{Value: want, Chance: chance},
 				Vitality:     cost,
 				Ticks:        ticks,
 				VitalityCost: cost * cfg.VitalityWeight,

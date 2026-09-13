@@ -721,6 +721,19 @@ func (w *World) perceive(a *Agent) *Perception {
 				f.RivalID = o.ID
 			}
 		}
+		// And for the money, which is raced for like anything else lying
+		// about (stage 51, put right here). A world with no coins in it walks
+		// an empty list and is the run it always was. What is not filled in
+		// is the other half of stage 40's race - a coin nobody else has got
+		// to is nothing this body would fight over, so it stays out of the
+		// figure that prices clearing a rival away from a meal.
+		for j := range p.Coins {
+			f := &p.Coins[j]
+			if d := dist2(o.X, o.Y, f.X, f.Y); d < f.RivalDist*f.RivalDist {
+				f.RivalDist = math.Sqrt(d)
+				f.RivalID = o.ID
+			}
+		}
 
 		// What this agent already knows about the other, if it has room to
 		// know anything. Seeing somebody is how an acquaintance starts, but a
