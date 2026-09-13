@@ -909,6 +909,9 @@ func TestAChildIsWorthTheOddsOfLivingToHaveIt(t *testing.T) {
 		cfg := testConfig()
 		cfg.LookaheadHorizons, cfg.LookaheadUpkeep = dose, 0.75
 		cfg.GoalsNeedSurvival = discount
+		// Stage 73's own world: the clearer of the two windows (stage 74) is
+		// what this scene is broken without, so it is off here.
+		cfg.LookaheadNeverBlinds = false
 		w := NewWorld(cfg)
 		id := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 95,
 			Hunger: cfg.MaxHunger * 0.9, Genome: genomeOf(50, 100, 100)})

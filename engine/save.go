@@ -161,11 +161,11 @@ type counterSnap struct {
 	MateGapSum    float64 `json:",omitempty"`
 	MateGaps      int     `json:",omitempty"`
 
-	EnemyArrivals   float64   `json:",omitempty"`
-	EnemyArrivalSum float64   `json:",omitempty"`
-	EnemyBorn       float64   `json:",omitempty"`
-	EnemyByKind     []float64 `json:",omitempty"`
-	Exchanges, HintsCopied                       int
+	EnemyArrivals          float64   `json:",omitempty"`
+	EnemyArrivalSum        float64   `json:",omitempty"`
+	EnemyBorn              float64   `json:",omitempty"`
+	EnemyByKind            []float64 `json:",omitempty"`
+	Exchanges, HintsCopied int
 }
 
 type seedSnap struct {
@@ -197,8 +197,15 @@ type agentSnap struct {
 	// How the body is feeling, and when that was last settled (stage 54).
 	// It fades on reading, but it is a figure the next tick depends on, so a
 	// world that came back without it would not be the world that was saved.
-	Dread, Cheer       float64
-	MoodAt             int
+	Dread, Cheer float64
+	MoodAt       int
+
+	// What it has been managing to eat, and when that was last brought up to
+	// date (stage 72). It is bookkeeping that fades, like the mood above, and
+	// like the mood it has to travel: a world that came back with it cleared
+	// would have every body believing it had never eaten.
+	FedSum             float64 `json:",omitempty"`
+	FedAt              int     `json:",omitempty"`
 	ReproReady         bool
 	LastDecisionTick   int
 	VitalityAtDecision float64
@@ -333,7 +340,7 @@ func (w *World) Save(out io.Writer) error {
 			Courtships: w.courtships, CourtshipsAccepted: w.courtshipsAccepted,
 			Flees: w.flees, Escapes: w.escapes,
 			Exchanges: w.exchanges, HintsCopied: w.hintsCopied,
-			Tolls: snapTolls(w.tolls),
+			Tolls:         snapTolls(w.tolls),
 			MateExchanges: w.mateExchanges, MateBirthLore: w.mateBirthLore,
 			MateGapSum: w.mateGapSum, MateGaps: w.mateGaps,
 			EnemyArrivals: w.enemyArrivals, EnemyArrivalSum: w.enemyArrivalSum,
@@ -385,6 +392,8 @@ func snapAgent(a *Agent) agentSnap {
 		Dread:              a.dread,
 		Cheer:              a.cheer,
 		MoodAt:             a.moodAt,
+		FedSum:             a.fedSum,
+		FedAt:              a.fedAt,
 		ReproReady:         a.reproReady,
 		LastDecisionTick:   a.lastDecisionTick,
 		VitalityAtDecision: a.vitalityAtDecision,
@@ -557,6 +566,7 @@ func loadAgent(s *agentSnap) Agent {
 	a.frailTicks = s.FrailTicks
 	a.courtStartTick = s.CourtStartTick
 	a.dread, a.cheer, a.moodAt = s.Dread, s.Cheer, s.MoodAt
+	a.fedSum, a.fedAt = s.FedSum, s.FedAt
 	a.dearID, a.lostDX, a.lostDY, a.lostAt = s.DearID, s.LostDX, s.LostDY, s.LostAt
 	a.reproReady = s.ReproReady
 	a.lastDecisionTick = s.LastDecisionTick

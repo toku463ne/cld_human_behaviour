@@ -6,6 +6,10 @@ import "testing"
 func dropConfig() Config {
 	cfg := coinConfig()
 	cfg.Dropping = true
+	// Stage 70's own world: a body that can see two windows ahead values
+	// anything in its hand, which is a question for stage 71 and not for the
+	// word this file is about.
+	cfg.LookaheadHorizons = 0
 	return cfg
 }
 

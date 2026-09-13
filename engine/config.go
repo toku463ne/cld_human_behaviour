@@ -1595,6 +1595,25 @@ type Config struct {
 	// from the other side).
 	LookaheadHorizons float64
 
+	// LookaheadNeverBlinds is whether looking further ahead is allowed to tell
+	// a body less than looking closer did (stage 74). False is stage 67 as it
+	// was built: the chained window is the only one the life term is read
+	// through, saturation and all.
+	//
+	// The life term asks whether this body will be dead by the end of the
+	// window. One meal moves a starving body's death from tick 594 to tick
+	// 1038: against a window of 700 that is inside to outside and the answer
+	// changes, against 1400 it is inside to inside and the answer does not.
+	// The meal did not change - the question did - and a meal worth nothing
+	// loses to anything with a constant price on it.
+	//
+	// With this on, a difference is read through whichever of the two windows
+	// separates the states further, and nothing is lost by it: the chain is
+	// monotone in the near window, so wherever the far one discriminates at
+	// all it ranks the same way. What it fixes is the exchange rate between
+	// the life goal and everything that is not priced in death.
+	LookaheadNeverBlinds bool
+
 	// GoalsNeedSurvival is whether a goal that happens later is discounted by
 	// the chance of this body being there for it (stage 73).
 	//
@@ -2525,8 +2544,9 @@ func DefaultConfig() Config {
 		PlanHorizon:    700,
 		ShockRisk:      0.55,
 
-		GoalsNeedSurvival:  false, // stage 73
-		LookaheadWornAgain: false, // stage 72
+		LookaheadNeverBlinds: false, // stage 74
+		GoalsNeedSurvival:    false, // stage 73
+		LookaheadWornAgain:   false, // stage 72
 
 		// Off: the second window assumes nothing is eaten in it (stage 72),
 		// which is stage 67 as it was built and measured.

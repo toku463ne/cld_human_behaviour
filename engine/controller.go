@@ -70,7 +70,7 @@ type AIController struct {
 
 	// riskNow is the chance of dying inside the planning window as things
 	// stand, which several options are read against (stage 73).
-	riskNow float64
+	riskNow riskPair
 
 	// roomWorth is what a free hand would have been worth to this body: the
 	// best pickup it scored and could not offer itself, because its hands
@@ -207,7 +207,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	// The chance of dying as things stand, worked out once: the food options,
 	// courting and wandering all ask for the same figure (stage 73, which is
 	// also where wandering started needing it).
-	c.riskNow = pressure(p.Cfg, &p.Self, p.Self.Vitality, p.Self.Hunger, c.incomingDmg)
+	c.riskNow = pressures(p.Cfg, &p.Self, p.Self.Vitality, p.Self.Hunger, c.incomingDmg)
 	c.addRest(p)
 	c.addExplore(p)
 	c.addFood(p)
@@ -239,10 +239,20 @@ func (c *AIController) Decide(p *Perception) Action {
 // cannot say. extra is everything that is taking vitality for reasons that are
 // not hunger: a blow coming in, the exposure of lying down among strangers.
 func pressure(cfg *Config, s *SelfView, vitality, hunger, extra float64) float64 {
+	return pressures(cfg, s, vitality, hunger, extra).far
+}
+
+// riskPair is the same body read both ways (stage 74): near is the single
+// window, far the chain of two. They are kept together because a difference
+// and a level want different ones - see gap.
+type riskPair struct{ near, far float64 }
+
+// pressures is pressure with both views kept.
+func pressures(cfg *Config, s *SelfView, vitality, hunger, extra float64) riskPair {
 	own := projectedDrain(cfg, s.HungerRate, hunger)
 	p := oneHorizon(cfg, s, vitality, own+extra, true)
 	if cfg.LookaheadHorizons <= 0 || p >= 1 {
-		return p
+		return riskPair{p, p}
 	}
 
 	// One step further out (stage 67). The body is carried forward by its own
@@ -281,7 +291,37 @@ func pressure(cfg *Config, s *SelfView, vitality, hunger, extra float64) float64
 	}
 	v := clamp(vitality-drain*h+mend, 0, s.MaxVitality)
 	next := oneHorizon(cfg, s, v, projectedDrain(cfg, s.HungerRate, hu), cfg.LookaheadWornAgain)
-	return clamp(p+(1-p)*next, 0, 1)
+	return riskPair{p, clamp(p+(1-p)*next, 0, 1)}
+}
+
+// gap is what a change in a body's standing is worth: the difference in the
+// chance of dying, read through whichever window can tell the two apart
+// (stage 74).
+//
+// The life term asks a question with a yes or no answer - will this body be
+// dead by the end of the window - and one meal moves the death of a starving
+// body from tick 594 to tick 1038. Against a window of 700 that moves it from
+// inside to outside and the answer changes (0.175 to 0.028); against 1400 both
+// are still inside, the answer does not change, and the meal is worth nothing.
+// The meal did not change. The question did.
+//
+// So the rule is: look further only when it tells you more. Where the second
+// window separates two states the first cannot - a satiated whole body, which
+// cannot die inside one window at all - it is the one that counts, and stage
+// 67 is intact. Where it saturates and says both states are death, the near
+// window is the one that counts, and the world is the one every scenario in
+// this project was written against. Nothing is lost by the swap: the chain is
+// monotone in the near window, so where the far one discriminates at all it
+// ranks the same way.
+func gap(cfg *Config, before, after riskPair) float64 {
+	far := before.far - after.far
+	if !cfg.LookaheadNeverBlinds || cfg.LookaheadHorizons <= 0 {
+		return far
+	}
+	if near := before.near - after.near; math.Abs(near) > math.Abs(far) {
+		return near
+	}
+	return far
 }
 
 // oneHorizon is the chance of dying inside a single planning horizon, which is
@@ -492,11 +532,11 @@ func (c *AIController) addRest(p *Perception) {
 
 	// Whatever is hitting the agent goes on hitting it while it sits there,
 	// and so does whatever starts while it is down.
-	after := pressure(cfg, s,
+	after := pressures(cfg, s,
 		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed, s.RestRate),
 		s.Hunger, incoming+exposed)
 	c.add(Action{Kind: ActRest}, Utility{
-		Life: Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
+		Life: Goal{Value: gap(cfg, now, after) * cfg.LifeValue, Chance: 1},
 	})
 }
 
@@ -557,6 +597,13 @@ func carryNeed(cfg *Config, s *SelfView) float64 {
 // survives is the share of a goal that is still worth having: what is left
 // after the chance of not being there for it (stage 73).
 //
+// It is for goals that happen after this body has gone on living, and there is
+// only one of those: a child. Wandering was discounted this way for a day and
+// it is wrong - looking for something to eat is not a reward for surviving,
+// it is how a body that is running out survives - and a test caught it at
+// once: a hungry body with nothing in sight lay down instead of going to
+// look.
+//
 // The goals of this formula are of two kinds, and until this was written only
 // one of them knew how far ahead it was looking. Staying alive is priced as a
 // difference of two chances of dying, so it shrinks as the window lengthens -
@@ -607,11 +654,11 @@ func mealValue(cfg *Config, s *SelfView, incoming, nutrition, heal float64) floa
 // carry options scored in one run, not one had a positive value, so nothing
 // was ever picked up on purpose. CarryPricedBackwards puts that world back.
 func mealValueAt(cfg *Config, s *SelfView, incoming, hunger, nutrition, heal float64) float64 {
-	before := pressure(cfg, s, s.Vitality, hunger, incoming)
+	before := pressures(cfg, s, s.Vitality, hunger, incoming)
 	fed := math.Max(0, hunger-cfg.FoodNutrition*nutrition)
 	mended := math.Min(s.Vitality+heal, s.MaxVitality)
-	after := pressure(cfg, s, mended, fed, incoming)
-	return (before - after) * cfg.LifeValue
+	after := pressures(cfg, s, mended, fed, incoming)
+	return gap(cfg, before, after) * cfg.LifeValue
 }
 
 // keepValue is what having this item when it is needed is worth. One place,
@@ -664,7 +711,7 @@ func (c *AIController) addExplore(p *Perception) {
 	effort := 0.4
 	cost := moveCost(cfg, s, effort)
 	c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, Utility{
-		Explore:      Goal{Value: cfg.ExploreValue, Chance: hungry * survives(cfg, c.riskNow, cfg.PlanHorizon)},
+		Explore:      Goal{Value: cfg.ExploreValue, Chance: hungry},
 		Vitality:     cost,
 		VitalityCost: cost * cfg.VitalityWeight,
 	})
@@ -737,7 +784,7 @@ func (c *AIController) addFood(p *Perception) {
 	cfg := p.Cfg
 	s := &p.Self
 	incoming := c.incomingDmg
-	now := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
+	now := pressures(cfg, s, s.Vitality, s.Hunger, incoming)
 
 	// When this body would run short, and how much worse off it would be
 	// then (stage 40). Carrying is not about being fed now - it is about
@@ -774,7 +821,7 @@ func (c *AIController) addFood(p *Perception) {
 			// got there.
 			vitAfter = math.Min(vitAfter+f.Heal, s.MaxVitality)
 			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
-			after := pressure(cfg, s, vitAfter, hungerAfter, incoming)
+			after := pressures(cfg, s, vitAfter, hungerAfter, incoming)
 
 			// What the warning on it says it will cost this body. The agent
 			// is reading a signal and believing it - nothing here can tell
@@ -782,7 +829,7 @@ func (c *AIController) addFood(p *Perception) {
 			// need - but what the warning is worth depends on the stomach
 			// hearing it (stage 38b).
 			poison := f.Danger * cfg.PoisonDamage * (1 - s.PoisonResist)
-			meal := (now - after) * cfg.LifeValue
+			meal := gap(cfg, now, after) * cfg.LifeValue
 			c.add(Action{Kind: ActEat, TargetID: f.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: meal, Chance: pGet},
 				Vitality:     cost + poison*pGet,
@@ -973,7 +1020,7 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 		return
 	}
 	incoming := c.incomingDmg
-	now := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
+	now := pressures(cfg, s, s.Vitality, s.Hunger, incoming)
 	dx, dy := (o.X-s.X)/o.Dist, (o.Y-s.Y)/o.Dist
 	for _, effort := range effortLevels {
 		// Whoever else heard the cry is walking for it too, and it goes into
@@ -994,14 +1041,14 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 		hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*o.OfferValue)
 		vitAfter := math.Min(s.Vitality-cost+o.OfferHeal, s.MaxVitality)
 		vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
-		after := pressure(cfg, s, vitAfter, hungerAfter, incoming)
+		after := pressures(cfg, s, vitAfter, hungerAfter, incoming)
 		c.offerOpts = append(c.offerOpts, len(c.opts))
 		chance := pGet * clamp(float64(o.OfferLeft)/ticks, 0, 1)
 		// What is being held up. A book is worth what it would say to this
 		// body (stage 69), and that is a different goal from a meal: it buys
 		// knowing, not another day.
 		u := Utility{
-			Life:         Goal{Value: (now - after) * cfg.LifeValue, Chance: chance},
+			Life:         Goal{Value: gap(cfg, now, after) * cfg.LifeValue, Chance: chance},
 			Vitality:     cost,
 			Ticks:        ticks,
 			VitalityCost: cost * cfg.VitalityWeight,
@@ -1523,7 +1570,7 @@ func (c *AIController) addThrow(p *Perception, o *AgentView) {
 	// What it eases. A stone in somebody who is hitting this body now takes
 	// part of what is coming: the same arithmetic the fight uses, over one
 	// throw instead of an exchange.
-	now := pressure(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
+	now := pressures(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
 	eased := c.incomingDmg
 	if o.AttackingMe {
 		eased = math.Max(0, c.incomingDmg*(1-share))
@@ -1531,8 +1578,8 @@ func (c *AIController) addThrow(p *Perception, o *AgentView) {
 	// A throw is a throw: the body is not guarding or dodging while it does
 	// it, so what it pays is the aggressive stance's cost and no more.
 	cost := stanceCost(cfg, StanceAggressive) * effort
-	after := pressure(cfg, s, s.Vitality-cost, s.Hunger, eased)
-	lifeTerm := (now - after) * cfg.LifeValue
+	after := pressures(cfg, s, s.Vitality-cost, s.Hunger, eased)
+	lifeTerm := gap(cfg, now, after) * cfg.LifeValue
 
 	// What it is worth if it finishes them: the same two reasons a fight has.
 	stake := Goal{}
@@ -1737,9 +1784,9 @@ func (c *AIController) scoreFight(p *Perception, o *AgentView, help allyForce, k
 
 	cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCost(cfg, s, effort)
 
-	now := pressure(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
-	after := pressure(cfg, s, s.Vitality-cost, s.Hunger+s.HungerRate*ticks, 0)
-	lifeTerm := (now - after) * cfg.LifeValue
+	now := pressures(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
+	after := pressures(cfg, s, s.Vitality-cost, s.Hunger+s.HungerRate*ticks, 0)
+	lifeTerm := gap(cfg, now, after) * cfg.LifeValue
 
 	// The meal in front of them. Driving this one off wins the race for
 	// the item they are contesting, so it is worth the part of that meal
@@ -1796,7 +1843,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	s := &p.Self
 
 	incoming := damagePerTick(cfg, o.EstStrength, 1)
-	staying := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
+	staying := pressures(cfg, s, s.Vitality, s.Hunger, incoming)
 
 	// Breaking away is not free: for a while the agent is still in reach and
 	// is the one not hitting back, which is the cheapest thing there is to
@@ -1805,10 +1852,10 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	// is about to kill the agent, and loses whenever it is not.
 	cost := moveCost(cfg, s, cfg.FleeEffort)*fleeExposureTicks + incoming*fleeExposureTicks*0.4
 	pEscape := clamp(s.Vitality/(s.Vitality+o.Vitality+1e-9), 0.15, 0.9)
-	fled := pressure(cfg, s, s.Vitality-cost, s.Hunger, 0)
+	fled := pressures(cfg, s, s.Vitality-cost, s.Hunger, 0)
 
 	c.add(Action{Kind: ActFlee, TargetID: o.ID, Effort: cfg.FleeEffort, Stance: StanceEvasive}, Utility{
-		Life:         Goal{Value: (staying - fled) * cfg.LifeValue, Chance: pEscape},
+		Life:         Goal{Value: gap(cfg, staying, fled) * cfg.LifeValue, Chance: pEscape},
 		Vitality:     cost,
 		Ticks:        fleeExposureTicks,
 		VitalityCost: cost * cfg.VitalityWeight,
@@ -1836,7 +1883,7 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	// afford a child turns one down on the numbers.
 	birth := cfg.BirthVitalityCost / 2 * s.AcceptChance
 	now := c.riskNow
-	after := pressure(cfg, s, s.Vitality-cost-birth, s.Hunger, c.incomingDmg)
+	after := pressures(cfg, s, s.Vitality-cost-birth, s.Hunger, c.incomingDmg)
 
 	// A child is worth something to a body that is there to have it (stage
 	// 73). The life term prices this body's own survival; this prices the
@@ -1844,8 +1891,8 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	// starving body court instead of eat - the life term shrinks as the
 	// window it is read over lengthens, and a constant does not.
 	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, Utility{
-		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance * survives(cfg, after, ticks+float64(cfg.PairBondDuration))},
-		Life:         Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
+		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance * survives(cfg, after.far, ticks+float64(cfg.PairBondDuration))},
+		Life:         Goal{Value: gap(cfg, now, after) * cfg.LifeValue, Chance: 1},
 		Vitality:     cost + birth,
 		Ticks:        ticks,
 		VitalityCost: (cost + birth) * cfg.VitalityWeight,

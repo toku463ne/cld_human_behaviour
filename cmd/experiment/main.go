@@ -2042,6 +2042,35 @@ var variants = []variant{
 			c.GoalsNeedSurvival = true
 		},
 	},
+	// Stage 74: the life term read through whichever window tells the two
+	// states apart.
+	{
+		name:  "clearwindow",
+		about: "74: two windows and its upkeep, with the life term read through the clearer one",
+		apply: func(c *engine.Config) {
+			c.LookaheadHorizons, c.LookaheadUpkeep = 1, 0.75
+			c.LookaheadNeverBlinds = true
+		},
+	},
+	{
+		name:  "clearall",
+		about: "74 with 73: the whole of what the second window would need to be the default",
+		apply: func(c *engine.Config) {
+			c.LookaheadHorizons, c.LookaheadUpkeep = 1, 0.75
+			c.LookaheadNeverBlinds, c.GoalsNeedSurvival = true, true
+		},
+	},
+	{
+		name:  "clearplayed",
+		about: "74 on the played map with money",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHorizons, c.LookaheadUpkeep = 1, 0.75
+			c.LookaheadNeverBlinds, c.GoalsNeedSurvival = true, true
+		},
+		stores: playedStores,
+	},
 	{
 		name:  "upkeep50",
 		about: "72: the second window lets the body keep half of its own upkeep going",

@@ -298,3 +298,85 @@ func TestUpkeepLeavesTheSatiatedBodyAReasonToKeepFood(t *testing.T) {
 		t.Fatalf("a body that assumes it keeps itself up entirely should see no shortfall, got %v", got)
 	}
 }
+
+// Stage 74: the life term is read through whichever of the two windows can
+// tell the two states apart.
+//
+// The term asks whether a body will be dead by the end of the window, and one
+// meal moves a starving body's death from tick 594 to tick 1038. Against a
+// window of 700 that is inside to outside and the answer changes; against
+// 1400 it is inside to inside and the answer does not, so the meal is worth
+// nothing and anything with a constant price on it wins. The meal did not
+// change - the question did.
+func TestTheClearerWindowKeepsAMealWorthSomething(t *testing.T) {
+	starving := func(clear bool) (ActionKind, float64) {
+		cfg := testConfig()
+		cfg.LookaheadHorizons, cfg.LookaheadUpkeep = 1, 0.75
+		cfg.LookaheadNeverBlinds = clear
+		w := NewWorld(cfg)
+		id := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 95,
+			Hunger: cfg.MaxHunger * 0.9, Genome: genomeOf(50, 100, 100)})
+		w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Sex: Female, Vitality: 100,
+			Hunger: 0, Genome: genomeOf(90, 90, 90)})
+		w.addFood(230, 200)
+		a := mustAgent(t, w, id)
+		a.reproReady = true
+		a.fedSum, a.fedAt = cfg.FoodNutrition*1.75, w.tick
+		s := w.selfView(a)
+		fed := math.Max(0, s.Hunger-cfg.FoodNutrition)
+		meal := gap(&cfg, pressures(&cfg, &s, s.Vitality, s.Hunger, 0),
+			pressures(&cfg, &s, s.Vitality, fed, 0)) * cfg.LifeValue
+		return aiChoice(w, id).Kind, meal
+	}
+	if got, meal := starving(false); meal != 0 || got == ActEat {
+		t.Fatalf("both windows say death: the meal was expected to be worth nothing, got %v and %v", meal, got)
+	}
+	if got, meal := starving(true); meal <= 0 || got != ActEat {
+		t.Fatalf("through the clearer window the meal is worth %v and the body chose %v", meal, got)
+	}
+}
+
+// And the far window is still the one that counts where it is the only one
+// that can see anything: a satiated whole body cannot die inside one window
+// at all, so the near view of a meal put by is flat and the far view is not.
+// That is stage 67, and the rule must not take it back.
+func TestTheClearerWindowKeepsTheTopEnd(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.LookaheadHorizons, cfg.LookaheadUpkeep = 1, 0.75
+	cfg.LookaheadNeverBlinds = true
+	s := aSatiatedWholeBody(&cfg)
+	s.FedRate, s.RestRate = cfg.HungerRate*3, cfg.RegenRate
+
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got <= 0 {
+		t.Fatalf("a satiated whole body sees no reason to keep a meal: %v", got)
+	}
+	// With one window it sees nothing, which is the thing stage 67 was for.
+	one := cfg
+	one.LookaheadHorizons = 0
+	if got := keepValue(&one, &s, 0, 1, 0, 0); got != 0 {
+		t.Fatalf("one window was expected to be flat here, got %v", got)
+	}
+}
+
+// The swap never costs the body anything it could tell apart before: the
+// chain is monotone in the near window, so the rule only ever takes the
+// larger of two differences that agree in sign.
+func TestTheClearerWindowNeverTellsABodyLess(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.LookaheadHorizons, cfg.LookaheadUpkeep = 1, 0.75
+	cfg.LookaheadNeverBlinds = true
+	s := aSatiatedWholeBody(&cfg)
+	s.RestRate = cfg.RegenRate
+	for _, v := range []float64{10, 30, 60, 100} {
+		for _, h := range []float64{0, 30, 60, 90} {
+			s.Vitality, s.Hunger, s.FedRate = v, h, cfg.HungerRate
+			before := pressures(&cfg, &s, v, h, 0)
+			after := pressures(&cfg, &s, v, math.Max(0, h-cfg.FoodNutrition), 0)
+			near, far := before.near-after.near, before.far-after.far
+			got := gap(&cfg, before, after)
+			if got < near-1e-12 || got < far-1e-12 {
+				t.Fatalf("v=%v h=%v: the rule took %v where the two views said %v and %v", v, h, got, near, far)
+			}
+		}
+	}
+}
