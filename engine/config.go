@@ -1033,6 +1033,38 @@ type Config struct {
 	// a gift with.
 	AffinityGift float64
 
+	// AffinitySale is what a sale earns, both ways (stage 68). Zero is the
+	// world stage 51 measured, where a sale deliberately earned nothing: a
+	// gift was held to be one-sided and a sale not a favour, and writing
+	// goodwill into both would have made the measurement unreadable.
+	//
+	// That measurement is in, and it says the market fails on the seller's
+	// side. willSell compares CoinValue x keep against max(meal, keep) less
+	// what carrying costs, and since max(meal, keep) is never below keep, the
+	// seller is short by (1 - CoinValue) x keep every time, with only the lug
+	// to make it up. Counted on the played map before this was written: 54.3%
+	// of the moments a body was holding something to sell, it would have
+	// refused, and the mean shortfall then was 15.78.
+	//
+	// So what this opens is the seller's side, in the only currency the world
+	// has. A sale is a hand-over too, and it earns what a hand-over earns.
+	// The ceiling is not a free choice: trust saturates at AffinityTrust, so
+	// the most this can ever be worth is LoreValue, whatever the figure here.
+	AffinitySale float64
+
+	// SaleGoodwillKept says whether the goodwill a sale earns is actually
+	// written into what the two of them think of each other, or only priced
+	// (stage 68). False is the control: the seller weighs the same figure and
+	// sells for the same reason, and nothing reaches anybody's memory.
+	//
+	// It exists because being on good terms does other work in this world -
+	// it is what makes lying down near somebody look cheap (stage 9) - and
+	// the record already says that is a bad bargain on balance. So when the
+	// population moves, this arm says whether it moved because trades happened
+	// or because goodwill was written, which are two different rules wearing
+	// one name. The same shape as ParentFeedWasted and DrownKnown.
+	SaleGoodwillKept bool
+
 
 	// Throwing is whether a body with a stone in its hand can throw it (stage
 	// 46). False, and deliberately so on the first pass.
@@ -2174,6 +2206,8 @@ func DefaultConfig() Config {
 		SpecialtyCatch:   0.25,
 		Stones:           0, // stage 45: the map author scatters them
 		AffinityGift:     6, // stage 48: the same as a shared kill
+		AffinitySale:     0, // stage 68: off, as stage 51 measured it
+		SaleGoodwillKept: true,
 		Throwing:            false, // stage 46: measured before it is given a default
 		ThrowRange:          70,    // longer than an arm (15), shorter than sight (130)
 		ThrowDamage:         6,

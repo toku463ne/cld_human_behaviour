@@ -241,3 +241,96 @@ func TestWhatCannotBeEatenIsNotAMealInTheHand(t *testing.T) {
 			a.CarriedCount(), before, a.Hunger)
 	}
 }
+
+// Stage 68: a sale is a hand-over too, and earns what one earns.
+
+func TestSaleGoodwillIsOffByDefault(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.AffinitySale != 0 {
+		t.Fatalf("AffinitySale should default to 0, got %v", cfg.AffinitySale)
+	}
+	if got := saleGoodwill(&cfg, 0); got != 0 {
+		t.Fatalf("with it off a sale should earn nothing, got %v", got)
+	}
+}
+
+// Trust saturates, so the goodwill is worth most between strangers and nothing
+// between two who are already close - and its ceiling is LoreValue however
+// large the figure is set. That ceiling is the falsifiable half of the stage.
+func TestSaleGoodwillSaturates(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AffinitySale = 6
+
+	stranger := saleGoodwill(&cfg, 0)
+	known := saleGoodwill(&cfg, cfg.AffinityTrust*0.9)
+	close := saleGoodwill(&cfg, cfg.AffinityTrust*2)
+	if !(stranger > known && known > close) {
+		t.Fatalf("goodwill should be worth most to a stranger: %v %v %v", stranger, known, close)
+	}
+	if close != 0 {
+		t.Fatalf("somebody already trusted has nothing left to buy, got %v", close)
+	}
+
+	// And no setting can get past LoreValue.
+	for _, amount := range []float64{20, 40, 400} {
+		cfg.AffinitySale = amount
+		if got := saleGoodwill(&cfg, 0); got > cfg.LoreValue+1e-9 {
+			t.Fatalf("AffinitySale %v bought %v, above the LoreValue ceiling %v", amount, got, cfg.LoreValue)
+		}
+	}
+	cfg.AffinitySale = 20
+	atCeiling := saleGoodwill(&cfg, 0)
+	cfg.AffinitySale = 40
+	if twice := saleGoodwill(&cfg, 0); twice != atCeiling {
+		t.Fatalf("twice the ceiling should buy the same: %v vs %v", twice, atCeiling)
+	}
+}
+
+// What the stage is for: the seller's side of the comparison is short by the
+// discount on the coin, and the goodwill is what makes it up. The pre-count
+// says the ceiling is narrower than the mean shortfall, so what must hold is
+// the direction - adding it can never make a seller keener to refuse.
+func TestSaleGoodwillNeverMakesASellerRefuse(t *testing.T) {
+	build := func(sale float64) (*World, *Agent, *Agent) {
+		cfg := coinConfig()
+		cfg.AffinitySale = sale
+		w := NewWorld(cfg)
+		seller := mustAgent(t, w, holding(t, w, 100, 100))
+		buyer := mustAgent(t, w, holdingCoin(t, w, 105, 100))
+		return w, seller, buyer
+	}
+	for _, hunger := range []float64{10, 30, 50, 70, 90} {
+		wOff, sOff, bOff := build(0)
+		sOff.Hunger = hunger
+		off := wOff.willSell(sOff, bOff, &sOff.carried[0])
+
+		wOn, sOn, bOn := build(20)
+		sOn.Hunger = hunger
+		on := wOn.willSell(sOn, bOn, &sOn.carried[0])
+
+		if off && !on {
+			t.Fatalf("at hunger %v the goodwill turned a sale into a refusal", hunger)
+		}
+	}
+}
+
+// And it is written both ways, through the same call a hand-over makes.
+func TestASaleLeavesBothOnBetterTerms(t *testing.T) {
+	cfg := coinConfig()
+	cfg.AffinitySale, cfg.CoinValue = 20, 0.5
+	w := NewWorld(cfg)
+	seller := mustAgent(t, w, holding(t, w, 100, 100))
+	buyer := mustAgent(t, w, holdingCoin(t, w, 105, 100))
+	seller.Hunger, seller.Vitality = 10, 90
+	buyer.Hunger, buyer.Vitality = 90, 30
+
+	if !w.sell(buyer, seller) {
+		t.Skip("this pair would not trade; how far the goodwill reaches is the stage's own finding")
+	}
+	for _, pair := range [][2]*Agent{{seller, buyer}, {buyer, seller}} {
+		op := w.opinionOf(pair[0], pair[1].ID)
+		if op == nil || w.decayedAffinity(pair[0], op) <= 0 {
+			t.Fatalf("agent %d should think better of %d after the trade", pair[0].ID, pair[1].ID)
+		}
+	}
+}

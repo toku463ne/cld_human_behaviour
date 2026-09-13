@@ -83,6 +83,24 @@ func coinWorth(cfg *Config, s *SelfView) float64 {
 	return cfg.CoinValue * keepValue(cfg, s, 0, 1, 0)
 }
 
+// saleGoodwill is what being on better terms with somebody is worth to this
+// body, priced the way stage 48 prices a gift: the trust the hand-over would
+// buy, times what standing with somebody you are fond of is worth. One place,
+// because the seller and the buyer are looking at the same thing from the two
+// ends (stage 68).
+//
+// Trust saturates, so this is worth most between strangers and nothing at all
+// between two who are already close - and its ceiling is LoreValue however
+// large AffinitySale is set. That ceiling is a fact about the mechanism and
+// was counted before it was written: a goodwill worth LoreValue closes about
+// a third of the refusals, and the mean refusal is wider than that.
+func saleGoodwill(cfg *Config, affinity float64) float64 {
+	if cfg.AffinitySale <= 0 || cfg.AffinityTrust <= 0 || cfg.LoreValue <= 0 {
+		return 0
+	}
+	return cfg.LoreValue * trustBought(cfg, affinity, cfg.AffinitySale)
+}
+
 // willSell is the seller's side of a sale, and it is a rule of the world
 // rather than a question put to a controller - the same shape as whether a
 // courtship is accepted (willCommit).
@@ -96,13 +114,25 @@ func coinWorth(cfg *Config, s *SelfView) float64 {
 // The weight is the whole of the margin. A coin is free to carry and a meal is
 // not, so a body that sells keeps the same expectation and walks lighter, and
 // that difference is what this returns true on.
-func (w *World) willSell(seller *Agent, item *Food) bool {
+func (w *World) willSell(seller *Agent, buyer *Agent, item *Food) bool {
 	cfg := &w.cfg
 	s := w.selfView(seller)
 	if cfg.CoinValue <= 0 {
 		return false // money nobody values buys nothing
 	}
 	coin := coinWorth(cfg, &s)
+	// And what selling to this one earns, if a sale earns anything (stage
+	// 68). It goes on the seller's side because that is the side that was
+	// short: the discount on the coin is a loss the seller takes every time,
+	// and being on better terms is the only thing this world has to make it
+	// up with.
+	if cfg.AffinitySale > 0 && buyer != nil {
+		affinity := 0.0
+		if op := w.opinionOf(seller, buyer.ID); op != nil {
+			affinity = w.decayedAffinity(seller, op)
+		}
+		coin += saleGoodwill(cfg, affinity)
+	}
 	// What the food in hand is worth to it: eaten now, or kept.
 	nutrition := w.mealValues(seller)[item.Kind]
 	heal := w.itemHealKnown(seller, item)
@@ -121,20 +151,24 @@ func (w *World) willSell(seller *Agent, item *Food) bool {
 	return coin > food-lug
 }
 
-// sell moves one item each way. Nothing else happens: no goodwill, no memory
-// of the trade, no price recorded anywhere.
+// sell moves one item each way. Nothing else is recorded: no price, no ledger,
+// no memory of the trade as a trade.
 //
-// Affinity is deliberately not written. A gift earns being on good terms
-// (stage 48) because it is one-sided; a sale is not a favour, and paying for
-// something that also bought goodwill would be two rules in one and would make
-// the measurement unreadable.
+// Affinity was deliberately not written here until stage 68. A gift earns
+// being on good terms (stage 48) because it is one-sided; a sale is not a
+// favour, and paying for something that also bought goodwill would have been
+// two rules in one and would have made stage 51's measurement unreadable. That
+// measurement is in now, and it is what opened this: the seller is short by
+// (1 - CoinValue) x keep on every trade, and being on good terms is the only
+// currency there is to make it up with. It is written both ways and through
+// the same call a hand-over makes, so nothing new prices it.
 func (w *World) sell(buyer, seller *Agent) bool {
 	coin := buyer.carriedIndex2(FoodCoin)
 	item := seller.firstEdible()
 	if coin < 0 || item < 0 || !w.canEat(buyer, &seller.carried[item]) {
 		return false // nobody buys what it could not eat
 	}
-	if !w.willSell(seller, &seller.carried[item]) {
+	if !w.willSell(seller, buyer, &seller.carried[item]) {
 		w.salesRefused++
 		return false
 	}
@@ -146,6 +180,14 @@ func (w *World) sell(buyer, seller *Agent) bool {
 	w.heldKind[f.Kind]++
 	w.heldKind[c.Kind]++
 	w.sales++
+	// What it earns, both ways, through the same call a hand-over makes
+	// (stage 68). Stage 51 left this out on purpose - a sale is not a favour
+	// - and what its measurement then showed is that without it the seller is
+	// short on every trade by construction. A sale is a hand-over too.
+	if w.cfg.AffinitySale > 0 && w.cfg.SaleGoodwillKept {
+		w.rememberAffinity(buyer, seller.ID, w.cfg.AffinitySale)
+		w.rememberAffinity(seller, buyer.ID, w.cfg.AffinitySale)
+	}
 	if f.Cooked > 0 {
 		w.cookedHanded++
 		if !w.cfg.CookSurvivesHands {

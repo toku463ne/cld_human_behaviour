@@ -1700,6 +1700,60 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	// Stage 68: a sale is a hand-over too, and earns what one earns. The knob
+	// is how much goodwill, and it has a ceiling that is not a free choice:
+	// trust saturates at AffinityTrust, so 20 already buys all of LoreValue
+	// and 40 must look the same. That is the falsifiable half of the stage.
+	{
+		name:  "sellgift",
+		about: "68: a sale earns what a gift earns (6)",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.AffinitySale = 6
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "sellfull",
+		about: "68: a sale earns enough to saturate trust in one go (20) - the ceiling",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.AffinitySale = 20
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "sellover",
+		about: "68: twice the ceiling (40), which must look the same as the ceiling",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.AffinitySale = 40
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "sellnowrite",
+		about: "68's control: the sale is priced as if it earns goodwill, and none is written",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.AffinitySale, c.SaleGoodwillKept = 20, false
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "sellfulllook",
+		about: "68 and 67 together: the ceiling of sale goodwill in the world that can see ahead",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.AffinitySale, c.LookaheadHorizons = 20, 1
+		},
+		stores: playedStores,
+	},
 	// Stage 67: one step of lookahead in the utility formula. The knob is how
 	// many more planning horizons a body looks past the first one, so zero is
 	// the world every figure before 2026-09-13 was measured in and the arms

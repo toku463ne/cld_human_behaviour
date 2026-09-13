@@ -735,6 +735,19 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 	}
 }
 
+// trustBought is how much of the way to being trusted a hand-over of this size
+// would carry somebody who is this far along already. Trust saturates, so it is
+// worth most between strangers and nothing at all between two who are already
+// close - which is the direction an economy needs, and it falls out of the
+// existing figure rather than being asked for.
+func trustBought(cfg *Config, affinity, amount float64) float64 {
+	if amount <= 0 || cfg.AffinityTrust <= 0 {
+		return 0
+	}
+	return clamp((affinity+amount)/cfg.AffinityTrust, 0, 1) -
+		clamp(affinity/cfg.AffinityTrust, 0, 1)
+}
+
 // addGive scores handing what is in this body's hand to somebody (stage 48).
 //
 // What it is worth is what being on better terms with them is worth, which is
@@ -753,8 +766,7 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 	if s.Carried == 0 || cfg.AffinityGift <= 0 || cfg.AffinityTrust <= 0 || !o.CarryRoom {
 		return
 	}
-	gained := clamp((o.Affinity+cfg.AffinityGift)/cfg.AffinityTrust, 0, 1) -
-		clamp(o.Affinity/cfg.AffinityTrust, 0, 1)
+	gained := trustBought(cfg, o.Affinity, cfg.AffinityGift)
 	if gained <= 0 {
 		return
 	}
@@ -1041,7 +1053,12 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal); kept > meal {
 		meal = kept
 	}
-	gain := meal - coinWorth(cfg, s)
+	// And what buying from this one earns, if a sale earns anything (stage
+	// 68). The goodwill is written both ways, so the buyer is told about the
+	// half that is its own: a body should not be made to pay for something it
+	// cannot see it is getting. It is the same figure the seller weighs, from
+	// the other end.
+	gain := meal + saleGoodwill(cfg, o.Affinity) - coinWorth(cfg, s)
 	if gain <= 0 {
 		return
 	}
