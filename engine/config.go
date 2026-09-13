@@ -1542,11 +1542,49 @@ type Config struct {
 	PlanHorizon    float64 // ticks an agent looks ahead when judging its odds
 
 	// LookaheadHorizons is how many more planning horizons a body looks past
-	// the first one, in multiples of PlanHorizon (stage 67). Zero is the world
-	// every measurement before 2026-09-13 was taken in: one window, and a body
-	// that cannot die inside it reads a flat gradient - which is why a satiated
-	// body put no value at all on keeping food for later, and why carrying
-	// (stage 40), caches (stage 50) and money (stage 51) all hit the same wall.
+	// the first one, in multiples of PlanHorizon (stage 67). Zero is the
+	// default and is the world every measurement so far was taken in: one
+	// window, and a body that cannot die inside it
+	// reads a flat gradient - which is why a satiated body put no value at all
+	// on keeping food for later, and why carrying (stage 40), caches (stage
+	// 50) and money (stage 51) all hit the same wall.
+	//
+	// Why it is not on, although it measures well. Over 96 seeds on the
+	// largest single rule this world has had, and it is monotone in the dose:
+	// a quarter of a window is worth 26 population, half is worth 39, a whole
+	// one 50.5 (95.97 -> 146.49). Nothing gets worse except starving
+	// (+0.38 ***) and the generation count (-0.38 **), and the death rate is
+	// down overall - so the starving is replacing being killed, not adding to
+	// it. Killing is down a fifth (killRate -0.55 ***), groups hold together
+	// half again as long (halfLife +25.32 ***), the rarer species' trough is
+	// better rather than worse (+0.03 *), and nothing goes extinct at any
+	// dose. On the played map it is worth 11.38 ** as long as there is no
+	// money on it.
+	//
+	// The one world where it costs is a world with coins in it (-6.18 *), and
+	// there it does not merely cost population: it stops the exchange economy
+	// (sales -4.28 ***, gifts -152.78 ***, cooking -66.68 ***) because a coin
+	// becomes worth holding and one hand is all there is. A map with money
+	// scattered on it should therefore also take the gate off the hand
+	// (CarrySlotted false, CarryDiminishes true, stage 71), which brings the
+	// market back - at a population cost of its own, and at a cost to how
+	// evenly the two species share the world (rareTrough -0.17 ***). Money,
+	// lookahead and a steady pair of species is a combination this world does
+	// not yet have.
+	//
+	// And the reason it is still off: with the second window a body that
+	// cannot live out two horizons unfed reads every option as equally
+	// hopeless, because the life term is a difference of two death
+	// probabilities and both saturate. A starving body then courts instead of
+	// eating and a cornered one lies down instead of running - two things the
+	// design says must never stop holding. The goals priced by a constant
+	// (offspring, exploring) do not shrink with the gradient, so they win.
+	//
+	// What it costs to run: 11% of a decision, measured on one settled world
+	// with nothing changed but this figure. Timing the benchmark the obvious
+	// way says the opposite, because the world with the second window has half
+	// again as many bodies in it and the benchmark is then timing a different
+	// body.
 	//
 	// The second window is the body's own metabolism and nothing else: hunger
 	// climbs at its own rate and vitality drains at what that hunger costs.
@@ -2446,6 +2484,28 @@ func DefaultConfig() Config {
 		ShockRisk:      0.55,
 
 		// Off: one window, exactly as every recorded figure was measured.
+		//
+		// It was made the default on 2026-09-13 and put back the same day.
+		// The population says it should be on - 96 seeds, +50.52 *** on this
+		// world, monotone in the dose, with killing and dying down and the
+		// groups holding together - but two scenarios the design turns on
+		// stop holding: a starving body courts instead of eating, and a
+		// nearly dead body under attack lies down instead of running.
+		//
+		// The reason is structural rather than a setting. The second window
+		// carries the body forward on its own metabolism with nothing to eat,
+		// so any body that cannot survive PlanHorizon x 2 ticks unfed reads
+		// every option as equally hopeless: the life term, which is a
+		// difference of two death probabilities, collapses to zero at the
+		// bottom end exactly as it was flat at the top end before stage 67.
+		// And the goals priced by a constant rather than by that gradient -
+		// offspring, exploring - keep their value while it collapses, so they
+		// win. Measured in the scene: courting costs -15.53 of life with one
+		// window and 0.000 with two, against an offspring goal worth 28.49
+		// either way.
+		//
+		// Stage 67 bought the top end by paying the bottom end, and the
+		// population measurement cannot see the bill. See TODO.
 		LookaheadHorizons: 0,
 
 		// Small on purpose. It only has to be enough to tell two places to lie

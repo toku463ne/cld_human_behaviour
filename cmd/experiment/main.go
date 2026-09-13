@@ -1769,6 +1769,27 @@ var variants = []variant{
 		apply: func(c *engine.Config) { c.CarrySlotted, c.CarryDiminishes = false, true },
 	},
 	{
+		name:  "playedlookhands",
+		about: "67 and 71 on the played map with no money: is it the coin that makes lookahead cost here, or the map?",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks = 30
+			c.LookaheadHorizons = 1
+			c.CarrySlotted, c.CarryDiminishes = false, true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "playedhands",
+		about: "71 alone on the played map with no money: the pair for playedlookhands",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks = 30
+			c.CarrySlotted, c.CarryDiminishes = false, true
+		},
+		stores: playedStores,
+	},
+	{
 		name:  "handsfreelight",
 		about: "71's control: no gate and no weight either - is the cost the lugging or the hoarding?",
 		apply: func(c *engine.Config) {

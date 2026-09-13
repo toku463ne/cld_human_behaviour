@@ -199,3 +199,41 @@ func TestLookaheadWorldStillRuns(t *testing.T) {
 		t.Fatal("the world emptied")
 	}
 }
+
+// The bill the second window pays at the other end, which is why it is still
+// off by default (measured 2026-09-13, when it was made the default and put
+// back the same day).
+//
+// The life term is a difference of two chances of dying. One window leaves it
+// flat at the top - a satiated whole body cannot die inside it, so nothing is
+// worth keeping - and that is what stage 67 fixed. Two windows leave it flat
+// at the bottom instead: a body that cannot live out two horizons unfed is
+// going to die in both branches, so the difference between them collapses and
+// every option looks alike. The goals priced by a constant rather than by that
+// gradient - offspring, exploring - do not collapse with it, which is how a
+// starving body comes to court instead of eat.
+func TestTheSecondWindowFlattensTheBottomEnd(t *testing.T) {
+	cfg := DefaultConfig()
+	s := aSatiatedWholeBody(&cfg)
+	s.Vitality, s.Hunger = 20, cfg.MaxHunger*0.9 // in real trouble
+
+	// What one meal is worth to it: the gap between where it stands and where
+	// eating would put it.
+	gap := func(dose float64) float64 {
+		cfg.LookaheadHorizons = dose
+		fed := math.Max(0, s.Hunger-cfg.FoodNutrition)
+		return pressure(&cfg, &s, s.Vitality, s.Hunger, 0) -
+			pressure(&cfg, &s, s.Vitality, fed, 0)
+	}
+	one, two := gap(0), gap(1)
+	if one <= 0 {
+		t.Fatalf("with one window a meal should be worth something to a starving body, got %v", one)
+	}
+	if two >= one {
+		t.Fatalf("the second window was expected to flatten this, got %v against %v", two, one)
+	}
+	// Not a rounding difference: it is most of the value of the meal.
+	if two > one/2 {
+		t.Fatalf("the flattening is smaller than it was measured to be: %v against %v", two, one)
+	}
+}
