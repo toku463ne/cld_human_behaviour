@@ -1595,6 +1595,19 @@ type Config struct {
 	// from the other side).
 	LookaheadHorizons float64
 
+	// GoalsNeedSurvival is whether a goal that happens later is discounted by
+	// the chance of this body being there for it (stage 73).
+	//
+	// False is every world measured before it, and in those worlds a child and
+	// a walk are worth the same to a body about to die as to a whole one.
+	// What that costs shows up as soon as the formula looks further ahead:
+	// staying alive is priced as a difference of two chances of dying and so
+	// shrinks as the window lengthens, while a constant does not, so the
+	// longer the window the more surely the constants win. It is why a
+	// starving body courted instead of eating with the second window on, and
+	// it is the last thing standing between that window and being the default.
+	GoalsNeedSurvival bool
+
 	// LookaheadUpkeep is how much of its own metabolism a body assumes it
 	// will go on covering inside the second window (stage 72). Zero is stage
 	// 67 as it was built: the body eats nothing out there, which is what
@@ -2512,6 +2525,7 @@ func DefaultConfig() Config {
 		PlanHorizon:    700,
 		ShockRisk:      0.55,
 
+		GoalsNeedSurvival:  false, // stage 73
 		LookaheadWornAgain: false, // stage 72
 
 		// Off: the second window assumes nothing is eaten in it (stage 72),

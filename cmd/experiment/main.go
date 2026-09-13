@@ -2028,6 +2028,20 @@ var variants = []variant{
 	// is a poorer map or because every hand filled up with money. Its pair is
 	// "coinsnone", which is the same world without the lookahead.
 	// Stage 72: what the second window assumes about the body out there.
+	// Stage 73: a goal that happens later, discounted by being there for it.
+	{
+		name:  "survivalgoals",
+		about: "73: a child and a walk are worth what the odds of living to have them say",
+		apply: func(c *engine.Config) { c.GoalsNeedSurvival = true },
+	},
+	{
+		name:  "survivallook",
+		about: "73 with the second window and its upkeep: the combination the default turns on",
+		apply: func(c *engine.Config) {
+			c.LookaheadHorizons, c.LookaheadUpkeep = 1, 0.75
+			c.GoalsNeedSurvival = true
+		},
+	},
 	{
 		name:  "upkeep50",
 		about: "72: the second window lets the body keep half of its own upkeep going",

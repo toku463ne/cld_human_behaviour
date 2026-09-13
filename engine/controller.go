@@ -68,6 +68,10 @@ type option struct {
 type AIController struct {
 	opts []option
 
+	// riskNow is the chance of dying inside the planning window as things
+	// stand, which several options are read against (stage 73).
+	riskNow float64
+
 	// roomWorth is what a free hand would have been worth to this body: the
 	// best pickup it scored and could not offer itself, because its hands
 	// were full (stage 70). Nothing reads it but the word for putting
@@ -200,6 +204,10 @@ func (c *AIController) Decide(p *Perception) Action {
 	maxDepth := strategyDepth(p.Cfg, p.Self.Intelligence)
 
 	c.survey(p)
+	// The chance of dying as things stand, worked out once: the food options,
+	// courting and wandering all ask for the same figure (stage 73, which is
+	// also where wandering started needing it).
+	c.riskNow = pressure(p.Cfg, &p.Self, p.Self.Vitality, p.Self.Hunger, c.incomingDmg)
 	c.addRest(p)
 	c.addExplore(p)
 	c.addFood(p)
@@ -469,7 +477,7 @@ func (c *AIController) addRest(p *Perception) {
 	cfg := p.Cfg
 	s := &p.Self
 	incoming := c.incomingDmg
-	now := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
+	now := c.riskNow
 
 	// Lying down among strangers is not the same as lying down among your
 	// own. What it costs is worked out the way every other few ticks ahead is
@@ -544,6 +552,34 @@ func raceChance(cfg *Config, s *SelfView, dist, rivalDist float64) float64 {
 // berry in the hand is.
 func carryNeed(cfg *Config, s *SelfView) float64 {
 	return cfg.CarryValue * clamp(s.FoodScarcity, 0, 3) / 3
+}
+
+// survives is the share of a goal that is still worth having: what is left
+// after the chance of not being there for it (stage 73).
+//
+// The goals of this formula are of two kinds, and until this was written only
+// one of them knew how far ahead it was looking. Staying alive is priced as a
+// difference of two chances of dying, so it shrinks as the window lengthens -
+// one meal is the whole of a seven hundred tick problem and half of a
+// fourteen hundred tick one. A child and a walk were priced as constants. Put
+// side by side, the constants win by simply not shrinking, which is how a
+// starving body came to court instead of eat and a cornered one to stroll
+// away. This is not a second charge for dying: the life term is what this
+// body's own survival is worth, and this is the condition on an event that
+// happens later.
+// ticks is how long this body has to last for the goal to arrive. A walk is
+// paid off inside the window the risk is read over, so it takes the whole of
+// it; a child is a hundred and fifty ticks of pairing away, and charging it a
+// whole window of dying would be charging it for time it does not need.
+func survives(cfg *Config, risk, ticks float64) float64 {
+	if !cfg.GoalsNeedSurvival {
+		return 1
+	}
+	left := clamp(1-risk, 0, 1)
+	if cfg.PlanHorizon <= 0 || ticks >= cfg.PlanHorizon {
+		return left
+	}
+	return math.Pow(left, ticks/cfg.PlanHorizon)
 }
 
 // mealValue is what one item of food is worth to this agent right now, in the
@@ -628,7 +664,7 @@ func (c *AIController) addExplore(p *Perception) {
 	effort := 0.4
 	cost := moveCost(cfg, s, effort)
 	c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, Utility{
-		Explore:      Goal{Value: cfg.ExploreValue, Chance: hungry},
+		Explore:      Goal{Value: cfg.ExploreValue, Chance: hungry * survives(cfg, c.riskNow, cfg.PlanHorizon)},
 		Vitality:     cost,
 		VitalityCost: cost * cfg.VitalityWeight,
 	})
@@ -1799,11 +1835,16 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	// the design says not to write. Priced properly, an agent that cannot
 	// afford a child turns one down on the numbers.
 	birth := cfg.BirthVitalityCost / 2 * s.AcceptChance
-	now := pressure(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
+	now := c.riskNow
 	after := pressure(cfg, s, s.Vitality-cost-birth, s.Hunger, c.incomingDmg)
 
+	// A child is worth something to a body that is there to have it (stage
+	// 73). The life term prices this body's own survival; this prices the
+	// event that survival is a condition of, and leaving it out is what let a
+	// starving body court instead of eat - the life term shrinks as the
+	// window it is read over lengthens, and a constant does not.
 	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, Utility{
-		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance},
+		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance * survives(cfg, after, ticks+float64(cfg.PairBondDuration))},
 		Life:         Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
 		Vitality:     cost + birth,
 		Ticks:        ticks,

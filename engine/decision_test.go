@@ -894,3 +894,88 @@ func TestApproachingWithIntentIsVisibleToWhoeverItIsAimedAt(t *testing.T) {
 		t.Fatalf("somebody who picked nobody out reads courting=%v attacking=%v", o.CourtingMe, o.AttackingMe)
 	}
 }
+
+// Stage 73: a goal that happens later is worth what the odds of being there
+// for it say.
+//
+// The formula prices staying alive as a difference of two chances of dying,
+// so it shrinks as the window it is read over lengthens - one meal is the
+// whole of a seven hundred tick problem and half of a fourteen hundred tick
+// one. A child and a walk were priced as constants, which do not shrink, so
+// the further ahead the formula looked the more surely they won: with the
+// second window on, a starving body courted instead of eating.
+func TestAChildIsWorthTheOddsOfLivingToHaveIt(t *testing.T) {
+	starving := func(dose float64, discount bool) ActionKind {
+		cfg := testConfig()
+		cfg.LookaheadHorizons, cfg.LookaheadUpkeep = dose, 0.75
+		cfg.GoalsNeedSurvival = discount
+		w := NewWorld(cfg)
+		id := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 95,
+			Hunger: cfg.MaxHunger * 0.9, Genome: genomeOf(50, 100, 100)})
+		w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Sex: Female, Vitality: 100,
+			Hunger: 0, Genome: genomeOf(90, 90, 90)})
+		w.addFood(230, 200)
+		a := mustAgent(t, w, id)
+		a.reproReady = true
+		a.fedSum, a.fedAt = cfg.FoodNutrition*1.75, w.tick
+		return aiChoice(w, id).Kind
+	}
+	if got := starving(1, false); got != ActCourt {
+		t.Fatalf("two windows and no discount: expected the starving body to court, got %v", got)
+	}
+	if got := starving(1, true); got == ActCourt {
+		t.Fatal("a starving body still courts with the discount on")
+	}
+
+	// And it has to leave a whole body alone, which is what makes the time to
+	// the child part of it: charging a courtship a whole window of dying
+	// charges it for time it does not need, and a fed body then lies down
+	// instead of courting.
+	fed := func(discount bool) ActionKind {
+		cfg := testConfig()
+		cfg.GoalsNeedSurvival = discount
+		w := NewWorld(cfg)
+		id := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 95,
+			Hunger: 0, Genome: genomeOf(50, 100, 100)})
+		w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Sex: Female, Vitality: 100,
+			Hunger: 0, Genome: genomeOf(90, 90, 90)})
+		w.addFood(230, 200)
+		mustAgent(t, w, id).reproReady = true
+		return aiChoice(w, id).Kind
+	}
+	if got := fed(true); got != ActCourt {
+		t.Fatalf("a whole, fed body chose %v with the discount on, want it to court", got)
+	}
+}
+
+// And the world it is off in is not the world it changes: with one window,
+// which is every figure this project has recorded, the discount leaves all
+// four of the scenes the design turns on where they were.
+func TestTheSurvivalDiscountLeavesTheOneWindowWorldAlone(t *testing.T) {
+	cfg := testConfig()
+	cfg.GoalsNeedSurvival = true
+
+	// Starving, with food and a candidate both in reach: it eats.
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 95,
+		Hunger: cfg.MaxHunger * 0.9, Genome: genomeOf(50, 100, 100)})
+	w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Sex: Female, Vitality: 100, Hunger: 0,
+		Genome: genomeOf(90, 90, 90)})
+	w.addFood(230, 200)
+	mustAgent(t, w, id).reproReady = true
+	if got := aiChoice(w, id).Kind; got != ActEat {
+		t.Fatalf("a starving body chose %v, want it to eat", got)
+	}
+
+	// Cornered: it runs.
+	w2 := NewWorld(cfg)
+	victim := w2.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 14,
+		Hunger: 20, Genome: genomeOf(15, 100, 100)})
+	bully := w2.addAgent(Agent{Maturity: 1, X: 208, Y: 200, Sex: Male, Vitality: 100,
+		Hunger: 0, Genome: genomeOf(95, 100, 100)})
+	convinceOf(t, w2, victim, bully)
+	attackedBy(t, w2, victim, bully)
+	if got := aiChoice(w2, victim).Kind; got != ActFlee {
+		t.Fatalf("a cornered body chose %v, want it to run", got)
+	}
+}
