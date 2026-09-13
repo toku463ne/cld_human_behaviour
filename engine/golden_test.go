@@ -97,6 +97,14 @@ import (
 // 32, 40 and 46 - held at its old width, the world with the rule off is
 // bit-identical, which is how that was checked.
 //
+// And again when there was a word for putting something down (stage 70,
+// 2026-09-13). An eighteenth word, and the rule itself is off by default - no
+// agent in these runs is ever offered it, and the arithmetic behind it is not
+// run. What moves the numbers is once more the width of the vocabulary a rule
+// of thumb can be about, and that this is the whole of it was checked the way
+// stage 69 checked it: with HintSlots set to zero the new code gives the old
+// numbers to the bit on all three seeds.
+//
 // And again when the mother became the one a child keeps close to (stage 53a,
 // 2026-09-11). It was whichever parent came first, with a comment saying it
 // mattered to no rule, and measured that made a father the guardian 50.5% of
@@ -156,9 +164,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 61, births: 43, deaths: 63, kills: 47, aging: 0, fights: 4549, gen: 2, power: 37.620737, vitality: 99.687497, hunger: 23.635022},
-	{seed: 2, pop: 57, births: 47, deaths: 69, kills: 58, aging: 0, fights: 5015, gen: 3, power: 44.590749, vitality: 122.316577, hunger: 22.697354},
-	{seed: 3, pop: 48, births: 45, deaths: 76, kills: 54, aging: 0, fights: 5396, gen: 3, power: 41.780351, vitality: 96.899796, hunger: 23.629089},
+	{seed: 1, pop: 76, births: 55, deaths: 60, kills: 44, aging: 0, fights: 5941, gen: 3, power: 36.348949, vitality: 93.743433, hunger: 23.609858},
+	{seed: 2, pop: 67, births: 47, deaths: 62, kills: 45, aging: 0, fights: 6214, gen: 2, power: 40.551065, vitality: 99.648183, hunger: 26.436176},
+	{seed: 3, pop: 63, births: 48, deaths: 67, kills: 44, aging: 0, fights: 4609, gen: 3, power: 35.338791, vitality: 98.899514, hunger: 25.444137},
 }
 
 const goldenTicks = 5000

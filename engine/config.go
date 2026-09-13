@@ -770,6 +770,69 @@ type Config struct {
 	// and 68 was measured in it.
 	CoinPricedCertain bool
 
+	// Dropping is whether there is a word for putting something down (stage
+	// 70). False is every world measured before it, and in those worlds the
+	// word is never offered and the arithmetic behind it is never run.
+	//
+	// Stage 40 left it out on purpose and was right to: a body can eat what
+	// it is holding, so a hand full of food is not a hand that is stuck. What
+	// changed is that three things which cannot be eaten have gone into hands
+	// since - a stone, a coin, a book - and a hand holding one of those stays
+	// full until the thing is sold or its owner dies. Stage 51a measured the
+	// consequence: money in two thirds of the hands in the world, and the
+	// giving, the cooking and the caching down with it.
+	Dropping bool
+
+	// CarrySlotted is whether a hand is a slot as well as a weight (stage 71).
+	//
+	// True is every world measured before it: a body may hold carrySlots
+	// things and no more, whatever they weigh. False leaves only the price
+	// #66 argued for - weight, continuous, out of the vitality gene - and
+	// lets a body hold what it is willing to carry.
+	//
+	// The gate was never argued for anywhere. canCarryMore defends the floor
+	// (anything with hands can hold one thing, so that a gene is not a
+	// discrete gate) and says nothing about the ceiling, and the one sweep
+	// that supports it - capacity 2 costing 5.73 population - was measured on
+	// 2026-09-09, in the world where what a held thing is worth came out with
+	// the wrong sign. Not one of 138,310 carry options scored in that world
+	// had a positive value, so picking things up happened only by
+	// misjudgement, and more room to misjudge in is naturally worse.
+	//
+	// Against it there are three stages: money filling two thirds of the
+	// hands in the world and stopping the giving and the cooking (67), books
+	// doing the same (69), and a word for putting things down that costs the
+	// economy and never touches the money anyway (70).
+	//
+	// Counted before it was changed: the mean number of slots in this world
+	// is exactly 1.00 and no body has ever held two - CarryCapacity = 1 needs
+	// a vitality gene of 101 for a second slot. The sentence "the gene buys
+	// the second slot" has never once been true.
+	CarrySlotted bool
+
+	// CarryDiminishes is whether the second thing in a hand is worth less
+	// than the first (stage 71).
+	//
+	// What a thing kept for later is worth is the meal it would be at the
+	// moment this body runs short - and a body only runs short once inside a
+	// horizon. With this on, what is already in hand is taken off the hunger
+	// that moment is reckoned at, so the second meal is worth less than the
+	// first and a body holding its dinner puts almost nothing on a coin. That
+	// is the same crowding stage 70 tried to buy with a word and could not.
+	//
+	// What counts as already in hand includes money, at CoinValue a coin,
+	// because that is exactly what a coin is priced as: a claim on a meal.
+	CarryDiminishes bool
+
+	// BurdenIgnoresWeightless is whether reckoning what one more item would
+	// cost to carry leaves out the things that weigh nothing (stage 71).
+	//
+	// True is right and is the default. burdenWith counted everything in the
+	// hand while the weight actually charged leaves out coins and books, so a
+	// body holding a coin was over-charged for picking up a berry. False puts
+	// the old arithmetic back.
+	BurdenIgnoresWeightless bool
+
 	// CarryPricedBackwards puts back the world in which what a held item was
 	// worth came out the wrong way round (stage 40, found in stage 50).
 	//
@@ -2337,6 +2400,13 @@ func DefaultConfig() Config {
 		Coins:               0, // stage 51: the map author scatters them
 		CoinValue:           0.5,
 		CoinPricedCertain:   false, // stage 51's pricing, put right
+		Dropping:            false, // stage 70: the map author turns it on
+
+		// Stage 71: the hand as a slot, and what a second thing in it is
+		// worth. The first two are the world as it was; the third is a fix.
+		CarrySlotted:            true,
+		CarryDiminishes:         false,
+		BurdenIgnoresWeightless: true,
 		// Stage 52. The word costs the vocabulary whether or not anybody uses
 		// it, so a world without cooking is CookVitality at zero rather than
 		// a world with a shorter list.

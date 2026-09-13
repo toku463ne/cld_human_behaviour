@@ -145,8 +145,16 @@ type Stats struct {
 	// sight within a planning horizon of dying (stage 40). SightTicks and
 	// SpareTicks are ticks with food in sight, and those of them where the
 	// body was not hungry - the room there is to pick something up for later.
-	// Taken is how many times something has been picked up (stage 40).
-	Taken int
+	// Taken is how many times something has been picked up (stage 40), and
+	// Dropped how many times one was deliberately put down again (stage 70).
+	// What falls out of a hand at death is not counted: this is the word
+	// being chosen.
+	Taken   int
+	Dropped int
+
+	// DroppedCoins is how many of those were money, which is the question
+	// stage 70 was added to answer.
+	DroppedCoins int
 
 	StarvedDeaths   int
 	StarvedFoodSeen int
@@ -409,6 +417,13 @@ type World struct {
 	// it does not make room for more of it.
 	heldKind [NumFoodKinds]int
 	taken    int
+
+	// dropped is how many times something was deliberately put down (stage
+	// 70), and droppedCoins how many of those were money. Death drops hands
+	// too, and that is not counted here: this is the word being chosen, not a
+	// body letting go.
+	dropped      int
+	droppedCoins int
 
 	// Counting the target before building carrying (stage 40, #67). A body
 	// that starves with food it had seen a moment ago is a death an item in
@@ -727,6 +742,8 @@ func (w *World) Stats() Stats {
 		SkillsLeapt:            w.skillsLeapt,
 		MeatHealing:            w.meatHealing,
 		Taken:                  w.taken,
+		Dropped:                w.dropped,
+		DroppedCoins:           w.droppedCoins,
 		StarvedDeaths:          w.starvedDeaths,
 		StarvedFoodSeen:        w.starvedFoodSeen,
 		StarvedFoodNear:        w.starvedFoodNear,
@@ -1128,6 +1145,12 @@ func (w *World) perform(a *Agent) {
 
 	case ActOffer:
 		w.cry(a)
+
+	case ActDrop:
+		// Putting something down (stage 70). Nothing to walk to and nobody to
+		// agree with: it is already in the hand, and the ground has no
+		// opinion about what lands on it.
+		w.dropItem(a, a.Action.TargetID)
 
 	case ActCook:
 		// Making something of what is in the hand (stage 52). Nothing to walk

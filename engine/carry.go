@@ -73,7 +73,59 @@ func (a *Agent) carryLoad(cfg *Config) float64 {
 			n++
 		}
 	}
+	if !cfg.CarrySlotted {
+		// With no gate, the weight is the whole of the price, so it cannot
+		// stop climbing (stage 71): a fifth item has to cost more than a
+		// second one or there is nothing to stop a body taking everything.
+		return float64(n) / cap
+	}
 	return clamp(float64(n)/cap, 0, 1)
+}
+
+// heldMeals is what is in a body's hands counted in meals (stage 71): what it
+// could eat, plus what it could buy. It is the figure that makes a second
+// thing in a hand worth less than the first, and it is worked out the same way
+// everything else about a hand is - by what the body itself could do with it.
+func (w *World) heldMeals(a *Agent) float64 {
+	if !w.cfg.CarryDiminishes {
+		return 0 // nothing reads it in a world where the first and the tenth are alike
+	}
+	meals := 0.0
+	for i := range a.carried {
+		f := &a.carried[i]
+		switch {
+		case f.Kind == FoodCoin:
+			meals += w.cfg.CoinValue
+		case w.canEat(a, f):
+			meals += w.mealValues(a)[f.Kind]
+		}
+	}
+	return meals
+}
+
+// mealsOf is what one item counts for in that figure.
+func (w *World) mealsOf(a *Agent, f *Food) float64 {
+	if !w.cfg.CarryDiminishes {
+		return 0
+	}
+	if f.Kind == FoodCoin {
+		return w.cfg.CoinValue
+	}
+	if !w.canEat(a, f) {
+		return 0
+	}
+	return w.mealValues(a)[f.Kind]
+}
+
+// heavyCarried is how many of the things in hand weigh anything (stage 71).
+func (a *Agent) heavyCarried() int {
+	n := 0
+	for i := range a.carried {
+		if k := a.carried[i].Kind; k != FoodCoin && k != FoodBook {
+			n++
+		}
+	}
+	return n
 }
 
 // burden is the multiplier a load puts on the cost of moving. One for a body
@@ -96,13 +148,30 @@ func (a *Agent) burden(cfg *Config) float64 {
 // discrete-and-nonlinear trap this project has already walked into twice (the
 // strategy depth gate, and the proposal to make sight a discrete gene).
 func (a *Agent) canCarryMore(cfg *Config) bool {
+	if cfg.CarryCapacity <= 0 {
+		return false
+	}
+	if !cfg.CarrySlotted {
+		// No gate: what a body may hold is what it is willing to carry, and
+		// the weight is what says so (stage 71).
+		return true
+	}
 	return len(a.carried) < a.carrySlots(cfg)
 }
 
-// carrySlots is how many items this body may actually hold: at least one for
-// anything with hands at all, and more as the gene allows. It is the whole of
-// what "how much can it carry" means, and the surplus rule of stage 41 asks
-// the same question of a hunting party, so both go through here.
+// carrySlots is how many items this body could reasonably hold.
+//
+// With the gate on it is what a body may hold; with it off (stage 71) nothing
+// stops a body at this number any more, and the figure stays because the
+// surplus rule of stage 41 asks a different question through it - how much of
+// a carcass a hunting party claims - and that rule is about what a party could
+// carry away rather than about what a hand will take. Leaving it hanging on
+// the gate would have moved stage 41's figures for a reason that has nothing
+// to do with stage 41.
+//
+// Counted before the gate came off: the mean here is exactly 1.00 and no body
+// in this world has ever held two things. A second slot needs a vitality gene
+// of 101, and none is ever drawn.
 func (a *Agent) carrySlots(cfg *Config) int {
 	if cfg.CarryCapacity <= 0 {
 		return 0
@@ -170,6 +239,77 @@ func (w *World) dropCarried(a *Agent) {
 		w.putFood(f)
 	}
 	a.carried = a.carried[:0]
+}
+
+// dropItem puts one held thing back on the ground where the body is standing
+// (stage 70).
+//
+// Nothing is created or destroyed. What is in a hand is food the world still
+// has - it was counted in the allowance the moment it was picked up (#65) -
+// so putting it down moves it from one list to the other and the total is what
+// it was. That is why this does not go through the check dropCarried makes on
+// death: there is no room to find, because the room was never given up.
+//
+// The item lands beside the body rather than under it, for the same reason a
+// carcass is scattered: an item at exactly the same spot as the body that put
+// it there is one the body is standing on, and every rule that asks how far
+// away something is would be dividing by nothing.
+func (w *World) dropItem(a *Agent, foodID int) bool {
+	i := a.carriedIndex(foodID)
+	if i < 0 {
+		a.requestDecision(TriggerTargetLost)
+		return false
+	}
+	f := a.carried[i]
+	f.ID = 0
+	f.X, f.Y = a.X+w.randRange(-4, 4), a.Y+w.randRange(-4, 4)
+	w.removeCarried(a, i)
+	w.putFood(f)
+	w.dropped++
+	if f.Kind == FoodCoin {
+		// Which of them were money, because that is the question this word
+		// was added to answer (stage 51a, stage 70).
+		w.droppedCoins++
+	}
+	a.requestDecision(TriggerGoalReached)
+	return true
+}
+
+// handViews is what this body is holding, in the shape everything else in
+// sight is described in.
+//
+// It is not carriedViews: that one is the meals in a hand, and it leaves out
+// what cannot be eaten, because a coin is not food and a stone is not a
+// mouthful (stage 45). This one is the hand itself, all of it, which is what
+// the word for putting something down has to choose between.
+func (w *World) handViews(a *Agent, out []FoodView) []FoodView {
+	for i := range a.carried {
+		f := &a.carried[i]
+		v := FoodView{
+			ID:        f.ID,
+			X:         a.X,
+			Y:         a.Y,
+			Kind:      f.Kind,
+			Held:      true,
+			Catch:     1,
+			Cooked:    f.Cooked,
+			RivalDist: math.Inf(1),
+		}
+		switch f.Kind {
+		case FoodBook:
+			v.Worth = w.bookValue(a, f)
+		case FoodCoin, FoodStone:
+			// Neither is worth anything as a meal, and what each is worth
+			// instead the controller works out for itself: a coin from what
+			// it will buy, a stone from what throwing it would do.
+		default:
+			v.Nutrition = w.mealValues(a)[f.Kind]
+			v.Heal = w.itemHealKnown(a, f)
+			v.Danger = w.dangerOf(a, f)
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 // eatCarried is eating something out of one's own hands. It is the same meal

@@ -76,11 +76,15 @@ func (w *World) scatterCoins() {
 // different again: what is in a hand cannot be taken, what is in a cache can
 // be taken by whoever knows the place, and a coin has to find somebody willing
 // to sell.
-func coinWorth(cfg *Config, s *SelfView) float64 {
+// held is what else this body is already holding, in meals (stage 71): a coin
+// is a claim on a meal at the moment of running short, so a body that is
+// already holding that meal has little use for the claim - and that is what
+// keeps money from pushing dinner out of a hand.
+func coinWorth(cfg *Config, s *SelfView, held float64) float64 {
 	if cfg.CoinValue <= 0 {
 		return 0
 	}
-	return cfg.CoinValue * keepValue(cfg, s, 0, 1, 0)
+	return cfg.CoinValue * keepValue(cfg, s, 0, 1, 0, held)
 }
 
 // saleGoodwill is what being on better terms with somebody is worth to this
@@ -120,7 +124,9 @@ func (w *World) willSell(seller *Agent, buyer *Agent, item *Food) bool {
 	if cfg.CoinValue <= 0 {
 		return false // money nobody values buys nothing
 	}
-	coin := coinWorth(cfg, &s)
+	// What the coin would be worth to the seller, once this item has left its
+	// hand: the thing being sold is not in the way of its own price.
+	coin := coinWorth(cfg, &s, otherMeals(&s, w.mealsOf(seller, item)))
 	// And what selling to this one earns, if a sale earns anything (stage
 	// 68). It goes on the seller's side because that is the side that was
 	// short: the discount on the coin is a loss the seller takes every time,
@@ -144,7 +150,8 @@ func (w *World) willSell(seller *Agent, buyer *Agent, item *Food) bool {
 	nutrition := w.mealValues(seller)[item.Kind]
 	heal := w.itemHealKnown(seller, item)
 	food := mealValue(cfg, &s, 0, nutrition, heal)
-	if kept := keepValue(cfg, &s, 0, nutrition, heal); kept > food {
+	if kept := keepValue(cfg, &s, 0, nutrition, heal,
+		otherMeals(&s, nutrition)); kept > food {
 		food = kept
 	}
 	// ... less what carrying it costs between now and then, which is what a

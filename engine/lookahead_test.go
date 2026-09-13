@@ -45,11 +45,11 @@ func TestLookaheadGivesASatiatedBodyAReasonToKeepFood(t *testing.T) {
 	cfg := DefaultConfig()
 	s := aSatiatedWholeBody(&cfg)
 
-	if got := keepValue(&cfg, &s, 0, 1, 0); got != 0 {
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got != 0 {
 		t.Fatalf("without lookahead a whole, fed body should read a flat gradient, got %v", got)
 	}
 	cfg.LookaheadHorizons = 1
-	if got := keepValue(&cfg, &s, 0, 1, 0); got <= 0 {
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got <= 0 {
 		t.Fatalf("with lookahead it should be worth something, got %v", got)
 	}
 }
@@ -62,7 +62,7 @@ func TestLookaheadRisesWithTheDose(t *testing.T) {
 	last := -1.0
 	for _, dose := range []float64{0, 0.25, 0.5, 1, 2} {
 		cfg.LookaheadHorizons = dose
-		got := keepValue(&cfg, &s, 0, 1, 0)
+		got := keepValue(&cfg, &s, 0, 1, 0, 0)
 		if got < last {
 			t.Fatalf("looking further ahead should not be worth less: dose %v gave %v after %v", dose, got, last)
 		}

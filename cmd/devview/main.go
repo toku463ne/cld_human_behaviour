@@ -4077,6 +4077,8 @@ func main() {
 	kinds := flag.Bool("kinds", false, "two sorts of enemy: light ones anywhere, heavy ones in the bad country (stage 59)")
 	prowl := flag.Float64("prowl", 0, "how unevenly the world's enemies arrive across the regions (stage 58; 0 = everywhere alike, which is the default world)")
 	favour := flag.Float64("favour", 0, "how far apart the regions are in which genes they favour, averaging to one (stage 57c; 0 = no region has a taste in builds)")
+	drop := flag.Bool("drop", false, "bodies can put down what they are holding (stage 70; off is every world before it)")
+	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
 	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
 	flag.Parse()
@@ -4092,6 +4094,18 @@ func main() {
 	// per gene: no region is better than another, but a region suits some
 	// bodies and not others.
 	cfg.RegionFavourSpread = *favour
+	// A word for putting something down (stage 70). Off by default because it
+	// measured as worth a little on the flat world and a good deal less than
+	// that on a map with an economy on it - everything that changes hands here
+	// goes through a hand, and this empties them.
+	cfg.Dropping = *drop
+	// The hand as a weight rather than a slot (stage 71). The two halves go
+	// together: with the gate on, nothing in this world ever holds a second
+	// thing, so the rule that makes a second thing worth less has nothing to
+	// price.
+	if *hands {
+		cfg.CarrySlotted, cfg.CarryDiminishes = false, true
+	}
 	// And where the enemies come from (stage 58), which is the map's own
 	// dangerous country rather than a harder world: the same number of them
 	// arrive either way.

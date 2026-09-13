@@ -1689,6 +1689,106 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	// Stage 70: a word for putting something down. The arms it is read
+	// against are "coins" and "coinslook100" above - the same worlds with no
+	// such word - because what it was built for is the hand full of money
+	// stage 51a could not empty with a price.
+	{
+		name:  "drops",
+		about: "70: money world, and a body can put down what it is holding",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.Dropping = true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "dropslook",
+		about: "70 in the world that can see ahead (67), where the hands are fullest",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHorizons = 1
+			c.Dropping = true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "dropflat",
+		about: "70 on the flat world, where the only thing in a hand is a meal",
+		apply: func(c *engine.Config) { c.Dropping = true },
+	},
+	// Stage 71: the hand as a slot, and what a second thing in it is worth.
+	// Read against "coins" and "coinslook100" - the same worlds with one hand
+	// and a flat price for everything in it.
+	{
+		name:  "unslotted",
+		about: "71: no gate on the hand, only the weight (the half that should hoard)",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotted = false
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "diminish",
+		about: "71: one hand still, but the second thing in it is worth less",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarryDiminishes = true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "handsfree",
+		about: "71: both halves - no gate, and the second thing worth less",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotted, c.CarryDiminishes = false, true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "handsfreelook",
+		about: "71 in the world that can see ahead (67), where the hands are fullest",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHorizons = 1
+			c.CarrySlotted, c.CarryDiminishes = false, true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "handsflat",
+		about: "71 on the flat world, where nothing in a hand is weightless",
+		apply: func(c *engine.Config) { c.CarrySlotted, c.CarryDiminishes = false, true },
+	},
+	{
+		name:  "handsfreelight",
+		about: "71's control: no gate and no weight either - is the cost the lugging or the hoarding?",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotted, c.CarryDiminishes = false, true
+			c.CarryCost = 0
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "weighsall",
+		about: "71's control: the old over-charge, where a coin in hand weighs like a meal",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.BurdenIgnoresWeightless = false
+		},
+		stores: playedStores,
+	},
 	{
 		name:  "coinsidle",
 		about: "the placebo: the coins are lying there and nobody values one",
@@ -3454,7 +3554,7 @@ var metricNames = []string{
 	"cooked", "cookRate", "cookedMeat", "cookedEaten", "cookedHanded",
 	"cookStanding", "cookSplit", "cookHeld", "cookReal",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
-	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate",
+	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate", "drops", "dropCoins",
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
@@ -4381,10 +4481,15 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// And what carrying itself does: how much is in hand, how many hands
 		// have anything in them, how full they are, and how often something
 		// was picked up.
-		"held":        tail.held,
-		"holders":     tail.holders,
-		"load":        tail.load,
-		"takeRate":    perAgentLifetime(end.Taken-tailStart.Taken, personTicks),
+		"held":     tail.held,
+		"holders":  tail.holders,
+		"load":     tail.load,
+		"takeRate": perAgentLifetime(end.Taken-tailStart.Taken, personTicks),
+		// And how often one was put down again (stage 70). A total rather
+		// than a rate, like gifts and sales: what the question is about is
+		// whether the word is ever used at all.
+		"drops":       float64(end.Dropped),
+		"dropCoins":   float64(end.DroppedCoins),
 		"spareShare":  share(end.SpareTicks, end.SightTicks),
 		"evadedShare": share(end.Evaded, end.Fights),
 		// Whether running away works: attempts to flee over the tail window,

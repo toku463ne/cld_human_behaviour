@@ -117,6 +117,17 @@ type SelfView struct {
 	// HasCoin says this body has money on it (stage 51).
 	HasCoin bool
 
+	// HeldMeals is what is in this body's hands counted in meals (stage 71):
+	// the nutrition of what it could eat, plus CoinValue for each coin,
+	// because a coin is priced as a claim on a meal. It is what makes the
+	// second thing in a hand worth less than the first.
+	HeldMeals float64
+
+	// CarriedHeavy is how many of the things in hand actually weigh anything
+	// (stage 71). Carried is all of them; this is the one that says what one
+	// more would cost to lug.
+	CarriedHeavy int
+
 	// carrying off. Carried is how many items it is holding and CarryRoom
 	// whether there is space for one more: what a body knows about its own
 	// hands, and nothing about anybody else's.
@@ -505,6 +516,16 @@ type Perception struct {
 	// store is exactly the one worth walking to with something in your hand.
 	Stores []StoreSight
 
+	// Held is what this body has in its own hands, all of it (stage 70), and
+	// empty in a world with no word for putting anything down.
+	//
+	// The meals among them are in Foods as well, with nothing between the
+	// body and them (stage 40), and that is what every rule about eating
+	// reads. This list is the hand rather than the larder: it has the coin,
+	// the stone and the book in it too, because the word for putting
+	// something down has to be able to name any of them.
+	Held []FoodView
+
 	// Coins is the money in sight (stage 51). Kept apart from Foods for the
 	// reason the stones are: none of the figures that count what is edible
 	// should count one, and money is the least edible thing in the world.
@@ -597,6 +618,8 @@ func (w *World) selfView(a *Agent) SelfView {
 		BookInHand:        w.heldBookValue(a),
 		CookQuality:       w.cookQuality(a),
 		HasCoin:           a.carriedIndex2(FoodCoin) >= 0,
+		HeldMeals:         w.heldMeals(a),
+		CarriedHeavy:      a.heavyCarried(),
 	}
 }
 
@@ -612,6 +635,7 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Stores = p.Stores[:0]
 	p.Coins = p.Coins[:0]
 	p.Books = p.Books[:0]
+	p.Held = p.Held[:0]
 	p.Others = p.Others[:0]
 
 	p.Self = w.selfView(a)
@@ -912,6 +936,13 @@ func (w *World) perceive(a *Agent) *Perception {
 	}
 
 	p.Foods = w.carriedViews(a, p.Foods)
+	// And the hand itself, which is not the same list (stage 70): what cannot
+	// be eaten is not a meal, but it is still something a body can put down.
+	// Only where there is a word for putting things down, because nothing
+	// else reads it and working out what a held thing is worth is not free.
+	if w.cfg.Dropping {
+		p.Held = w.handViews(a, p.Held)
+	}
 	if i, gain, ok := w.bestKnownRegion(a); ok {
 		minX, minY, maxX, maxY := w.regionBounds(i)
 		p.Self.BetterGroundX = (minX + maxX) / 2

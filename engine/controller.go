@@ -68,6 +68,12 @@ type option struct {
 type AIController struct {
 	opts []option
 
+	// roomWorth is what a free hand would have been worth to this body: the
+	// best pickup it scored and could not offer itself, because its hands
+	// were full (stage 70). Nothing reads it but the word for putting
+	// something down, and nothing fills it in a world without that word.
+	roomWorth float64
+
 	// terms holds the breakdown of each option in opts, and is only filled in
 	// while tracing: an agent nobody is watching pays for the arithmetic but
 	// not for carrying the result around, which keeps the common case as cheap
@@ -164,6 +170,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.terms = c.terms[:0]
 	c.tracing = p.Trace != nil
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
+	c.roomWorth = 0
 	c.betterGroundOpt, c.ChoseBetterGround = -1, false
 	c.lonelyOpt, c.ChoseMissing = -1, false
 	c.homeOpt, c.ChoseHome = -1, false
@@ -203,6 +210,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addAgents(p, maxDepth)
 	c.addOffer(p)
 	c.addBooks(p)
+	c.addDrop(p) // last: what a hand is worth depends on what was scored for it
 
 	return c.pick(p)
 }
@@ -334,7 +342,20 @@ func burdenWith(cfg *Config, s *SelfView, more int) float64 {
 	if s.CarryCapacity <= 0 || cfg.CarryCost <= 0 {
 		return burdenOf(s)
 	}
-	load := clamp(float64(s.Carried+more)/s.CarryCapacity, 0, 1)
+	// What is in the hand that the legs are actually charged for (stage 71).
+	// It used to count everything, while the weight charged leaves out coins
+	// and books - so a body holding a coin was told that picking up a berry
+	// would cost it twice what it does.
+	n := s.Carried
+	if cfg.BurdenIgnoresWeightless {
+		n = s.CarriedHeavy
+	}
+	load := float64(n+more) / s.CarryCapacity
+	if cfg.CarrySlotted {
+		load = clamp(load, 0, 1)
+	} else {
+		load = math.Max(0, load)
+	}
 	return 1 + cfg.CarryCost*load
 }
 
@@ -536,7 +557,7 @@ func mealValueAt(cfg *Config, s *SelfView, incoming, hunger, nutrition, heal flo
 // keepValue is what having this item when it is needed is worth. One place,
 // because two options are the same bet: carrying it (stage 40) and putting it
 // in a cache (stage 50).
-func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal float64) float64 {
+func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal, held float64) float64 {
 	if cfg.CarryPricedBackwards {
 		// The world as stages 40 to 49 measured it, kept so that those
 		// figures can be reproduced: the loss from getting hungrier, with the
@@ -546,7 +567,24 @@ func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal float64) floa
 			math.Max(s.Hunger, cfg.StarveHunger), incoming)
 		return (now - later) * cfg.LifeValue
 	}
-	return mealValueAt(cfg, s, incoming, math.Max(s.Hunger, cfg.StarveHunger), nutrition, heal)
+	// The moment this body runs short - and what it will already have eaten
+	// by then (stage 71). A body runs short once inside a horizon, so the
+	// second thing in a hand is worth what is left of that shortfall after
+	// the first one has filled it, and the tenth is worth nothing at all.
+	// held is what else is in the hand, in meals, and never the thing being
+	// valued: an item cannot discount itself.
+	hunger := math.Max(s.Hunger, cfg.StarveHunger)
+	if cfg.CarryDiminishes && held > 0 {
+		hunger = math.Max(0, hunger-cfg.FoodNutrition*held)
+	}
+	return mealValueAt(cfg, s, incoming, hunger, nutrition, heal)
+}
+
+// otherMeals is what is in this body's hand besides the thing being valued,
+// counted in meals (stage 71). Money counts at CoinValue apiece, because that
+// is exactly what a coin is priced as: a claim on a meal.
+func otherMeals(s *SelfView, own float64) float64 {
+	return math.Max(0, s.HeldMeals-own)
 }
 
 // addExplore scores wandering off to look for something to eat. It is worth
@@ -709,20 +747,32 @@ func (c *AIController) addFood(p *Perception) {
 			// felt afterwards: a body knows its own hands, and it knows
 			// roughly how long it is until it eats. One trajectory, no
 			// branching - the same shape as every other estimate here.
-			if !f.Held && s.CarryRoom && cfg.CarryValue > 0 {
+			if !f.Held && cfg.CarryValue > 0 && (s.CarryRoom || cfg.Dropping) {
 				// How likely it is to be needed, which money is charged
 				// for in the same place and on the same figure (stage 51).
 				need := carryNeed(cfg, s)
-				keep := keepValue(cfg, s, incoming, f.Nutrition, f.Heal)
+				keep := keepValue(cfg, s, incoming, f.Nutrition, f.Heal,
+					otherMeals(s, 0)) // on the ground: nothing of it is in hand yet
 				lug := (burdenWith(cfg, s, 1) - burdenOf(s)) *
 					moveCostAt(cfg, effort) * groundOf(s) * wait
-				c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
+				u := Utility{
 					Life:         Goal{Value: keep, Chance: pGet * need},
 					Vitality:     cost + lug + poison*pGet,
 					Ticks:        ticks,
 					VitalityCost: (cost + lug + poison*pGet) * cfg.VitalityWeight,
 					TimeCost:     ticks * cfg.TimeCost,
-				})
+				}
+				if s.CarryRoom {
+					c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, u)
+				} else if t := u.Total(); t > c.roomWorth {
+					// No room for it - so this is not an option, it is what
+					// room would be worth (stage 70). A hand is worth what
+					// would go in it, and a meal is the only thing this world
+					// has ever shown a hand is for. It is only worked out
+					// where there is a word for emptying one, so a world
+					// without that word pays nothing for the arithmetic.
+					c.roomWorth = t
+				}
 			}
 		}
 	}
@@ -945,7 +995,8 @@ func (c *AIController) addPutInStore(p *Perception) {
 	// neighbours has little use for a cache, and one where every plant is
 	// contested may well find nothing when it next looks.
 	need := cfg.StoreValue * clamp(s.FoodScarcity, 0, 3) / 3
-	keep := keepValue(cfg, s, incoming, p.Foods[held].Nutrition, p.Foods[held].Heal)
+	keep := keepValue(cfg, s, incoming, p.Foods[held].Nutrition, p.Foods[held].Heal,
+		otherMeals(s, p.Foods[held].Nutrition)) // it is in hand, so not against itself
 	if keep <= 0 || need <= 0 {
 		return
 	}
@@ -1155,7 +1206,7 @@ func (c *AIController) addCoins(p *Perception) {
 	if len(p.Coins) == 0 || !s.CarryRoom {
 		return
 	}
-	want, need := coinWorth(cfg, s), carryNeed(cfg, s)
+	want, need := coinWorth(cfg, s, otherMeals(s, 0)), carryNeed(cfg, s)
 	if cfg.CoinPricedCertain {
 		// The world stage 51 measured: one discount for both conditions, no
 		// race, and a sure thing.
@@ -1209,7 +1260,8 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	meal := o.OfferWorth * cfg.BookValue
 	if o.OfferValue > 0 || o.OfferHeal > 0 {
 		meal = mealValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal)
-		if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal); kept > meal {
+		if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal,
+			otherMeals(s, cfg.CoinValue)); kept > meal { // the coin leaves the hand
 			meal = kept
 		}
 	}
@@ -1218,7 +1270,7 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	// half that is its own: a body should not be made to pay for something it
 	// cannot see it is getting. It is the same figure the seller weighs, from
 	// the other end.
-	gain := meal + saleGoodwill(cfg, o.Affinity) - coinWorth(cfg, s)
+	gain := meal + saleGoodwill(cfg, o.Affinity) - coinWorth(cfg, s, otherMeals(s, cfg.CoinValue))
 	if gain <= 0 {
 		return
 	}
@@ -1235,6 +1287,100 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	}
 }
 
+// addDrop scores putting something down (stage 70).
+//
+// Stage 40 decided there should be no such word, and gave a reason that was
+// true at the time: a body can eat what it is holding, so no hand is ever
+// stuck. Three things that cannot be eaten have gone into hands since, and a
+// hand holding one of them is stuck until the thing is sold or its owner dies
+// - which stage 51a measured, and which is why money filled two thirds of the
+// hands in this world and the giving and the cooking stopped.
+//
+// What putting something down is worth is three figures, none of them new:
+//
+//   - what it stops paying to carry between now and the moment it would be
+//     eaten, which is the same lug picking it up was charged;
+//   - what a free hand is worth, which is the best pickup this body scored
+//     and could not offer itself (roomWorth), and nothing at all when it has
+//     a hand free already;
+//   - less what is given up, which is the seller's side of a sale - because
+//     putting something down is selling it to nobody.
+//
+// No threshold anywhere: a body with a hand free is offered this too, and the
+// comparison is what says no.
+//
+// Counted before it was written (played map, 25-tick samples): a hand is full
+// in 44.5% of moments in the money world and 74.2% once the world can see
+// ahead; room is worth 0.00 in both, because nothing on the ground is worth
+// carrying at the moment a hand is full; and the lug is worth 2.33 and 0.82.
+// So the arithmetic says what this word will do before it does it: it will
+// put down food a fed body is paying to carry, and it will never put down a
+// coin - a coin weighs nothing, so dropping one saves nothing, and it is
+// worth CoinValue of a meal against a hand worth need x race of one.
+func (c *AIController) addDrop(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if !cfg.Dropping || len(p.Held) == 0 {
+		return
+	}
+	// A hand that is already free is not something this can buy.
+	room := c.roomWorth
+	if s.CarryRoom {
+		room = 0
+	}
+	// When it would be eaten, which is how long it would be carried for.
+	wait := 0.0
+	if s.HungerRate > 0 {
+		wait = clamp((cfg.StarveHunger-s.Hunger)/s.HungerRate, 0, cfg.PlanHorizon)
+	}
+	for i := range p.Held {
+		h := &p.Held[i]
+		lug := 0.0
+		if h.Kind != FoodCoin && h.Kind != FoodBook {
+			// What the legs are charged for it. Money and books weigh
+			// nothing (#66, stage 69), so putting one down saves nothing -
+			// which is most of why this word will not empty a hand of money.
+			lug = (burdenOf(s) - burdenWith(cfg, s, -1)) *
+				moveCostAt(cfg, 0.4) * groundOf(s) * wait
+		}
+		gain := lug + room - handWorth(cfg, s, h)
+		if gain <= 0 {
+			// Nothing to be had by it, so it is not an option - the same
+			// guard picking a coin up, a stone or a cache already has.
+			// Leaving it in was measured and it is not free: an option worth
+			// nothing or less is still an option the misjudgement can pick,
+			// and with this one left open a fifth of the drops in the money
+			// world and four fifths of them in the world that can see ahead
+			// were bodies throwing away what they had just valued above
+			// everything in sight.
+			continue
+		}
+		c.add(Action{Kind: ActDrop, TargetID: h.ID}, Utility{
+			Life:     Goal{Value: gain, Chance: 1},
+			Ticks:    1,
+			TimeCost: cfg.TimeCost,
+		})
+	}
+}
+
+// handWorth is what this body would be giving up by parting with something it
+// is holding: the same figure the seller of it weighs (willSell), because a
+// sale and a gift and putting something down all give up the same thing.
+func handWorth(cfg *Config, s *SelfView, h *FoodView) float64 {
+	switch h.Kind {
+	case FoodCoin:
+		return coinWorth(cfg, s, otherMeals(s, cfg.CoinValue))
+	case FoodBook:
+		return h.Worth // what it would still tell its owner, which once read is nothing
+	case FoodStone:
+		return stoneWorth(cfg, s)
+	}
+	v := mealValue(cfg, s, 0, h.Nutrition, h.Heal)
+	if kept := keepValue(cfg, s, 0, h.Nutrition, h.Heal, otherMeals(s, h.Nutrition)); kept > v {
+		v = kept
+	}
+	return v
+}
+
 // addStones scores picking one up (stage 46).
 //
 // A stone is worth what it lets a body do, which is throw it - so what is
@@ -1247,16 +1393,25 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 // Before there was anything to throw, nothing valued a stone and nobody picked
 // one up - which is what stage 45 measured, and why the supply was counted
 // there rather than assumed here.
+// stoneWorth is what having a stone is worth to this body: a throw that has
+// not happened yet, at a rival that may not be there yet, discounted the way a
+// meal carried for later is and scaled by how contested this patch feels. One
+// place, because picking one up (stage 46) and deciding not to put it down
+// again (stage 70) are the same figure.
+func stoneWorth(cfg *Config, s *SelfView) float64 {
+	// What one stone would do to an ordinary body, as a share of finishing it.
+	damage := damagePerTick(cfg, s.Attack, 1) * cfg.ThrowDamage * cfg.ThrowHit
+	share := clamp(damage/math.Max(cfg.MaxVitality, 1e-9), 0, 1)
+	return cfg.CarryValue * s.CompetitionWeight * cfg.LifeValue *
+		clamp(s.FoodScarcity, 0, 3) / 3 * share
+}
+
 func (c *AIController) addStones(p *Perception) {
 	cfg, s := p.Cfg, &p.Self
 	if !cfg.Throwing || !s.CarryRoom || cfg.CarryValue <= 0 || len(p.Stones) == 0 {
 		return
 	}
-	// What one stone would do to an ordinary body, as a share of finishing it.
-	damage := damagePerTick(cfg, s.Attack, 1) * cfg.ThrowDamage * cfg.ThrowHit
-	share := clamp(damage/math.Max(cfg.MaxVitality, 1e-9), 0, 1)
-	want := cfg.CarryValue * s.CompetitionWeight * cfg.LifeValue *
-		clamp(s.FoodScarcity, 0, 3) / 3 * share
+	want := stoneWorth(cfg, s)
 	if want <= 0 {
 		return
 	}

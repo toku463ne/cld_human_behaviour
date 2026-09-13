@@ -24,10 +24,12 @@ const (
 	// end for the same reason ActInvite was: the numbers are what a saved
 	// world holds.
 	//
-	// There is no word for putting something down. A body can always eat what
-	// it is holding - held food is a meal at no distance - so nothing is ever
-	// stuck, and a verb per held item would cost every decision in the world
-	// something to buy the ability to swap one plant for another.
+	// There was no word for putting something down for a long while, and the
+	// reason was sound while it lasted: a body can always eat what it is
+	// holding - held food is a meal at no distance - so nothing was ever
+	// stuck. Three things that cannot be eaten have been put in hands since
+	// (a stone, a coin, a book), and a hand holding one of those is stuck
+	// until its owner sells it or dies. See ActDrop.
 	ActTake
 
 	// ActThrow is a stone from out of reach (stage 46). Added at the end like
@@ -84,6 +86,18 @@ const (
 	ActWrite
 	ActRead
 
+	// ActDrop is putting down what is in a hand (stage 70): the eighteenth
+	// word, added at the end like the ten before it. TargetID names the item,
+	// which no other word about the hand does - giving, storing and cooking
+	// all take whatever is first - because which one goes is the whole of
+	// this choice and none of theirs.
+	//
+	// What it is worth is what it stops paying to carry, plus what having a
+	// hand free is worth, less what is given up - and that last figure is the
+	// seller's side of a sale, because putting something down is selling it
+	// to nobody.
+	ActDrop
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -123,6 +137,8 @@ func (k ActionKind) String() string {
 		return "write"
 	case ActRead:
 		return "read"
+	case ActDrop:
+		return "drop"
 	default:
 		return "rest"
 	}
