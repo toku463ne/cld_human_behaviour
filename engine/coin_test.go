@@ -14,6 +14,12 @@ func coinConfig() Config {
 	def := DefaultConfig()
 	cfg.HungerRate, cfg.StarveRate, cfg.RegenRate = def.HungerRate, def.StarveRate, def.RegenRate
 	cfg.OfferTicks = 30
+	// Stage 51's own world, which is the one its arithmetic was worked out in:
+	// one planning window. A seller that can see two of them values the dinner
+	// in its hand and will not part with it - which is not a broken rule but
+	// the market stage 67 measured thinning, and stage 71 is what gives it
+	// back. Turning it off here keeps these tests about money.
+	cfg.LookaheadHorizons = 0
 	return cfg
 }
 

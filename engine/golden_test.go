@@ -97,6 +97,22 @@ import (
 // 32, 40 and 46 - held at its old width, the world with the rule off is
 // bit-identical, which is how that was checked.
 //
+// And again when a body started looking one planning window further ahead
+// than the one it is standing in (stages 67, 72, 73 and 74, made the default
+// on 2026-09-13). This is the largest deliberate move these numbers have made
+// since inheritance changed, and unlike most of the rewrites above it is not
+// the width of the vocabulary: it is the world.
+//
+// Everything recorded in HISTORY.md before that date was measured with
+// LookaheadHorizons at zero, and setting it back to zero reproduces that world
+// exactly. Read old figures against old figures.
+//
+// Measured over 96 seeds rather than these three, the world it makes is worth
+// 46.39 *** population, with killing down 0.43 ***, groups holding together
+// half again as long, intelligence bought much harder, and the rarer species'
+// trough untouched. Three seeds of five thousand ticks is a fingerprint and
+// not a measurement: seed 2 is down here and the population is up there.
+//
 // And again when there was a word for putting something down (stage 70,
 // 2026-09-13). An eighteenth word, and the rule itself is off by default - no
 // agent in these runs is ever offered it, and the arithmetic behind it is not
@@ -164,9 +180,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 76, births: 55, deaths: 60, kills: 44, aging: 0, fights: 5941, gen: 3, power: 36.348949, vitality: 93.743433, hunger: 23.609858},
-	{seed: 2, pop: 67, births: 47, deaths: 62, kills: 45, aging: 0, fights: 6214, gen: 2, power: 40.551065, vitality: 99.648183, hunger: 26.436176},
-	{seed: 3, pop: 63, births: 48, deaths: 67, kills: 44, aging: 0, fights: 4609, gen: 3, power: 35.338791, vitality: 98.899514, hunger: 25.444137},
+	{seed: 1, pop: 64, births: 47, deaths: 61, kills: 48, aging: 0, fights: 6652, gen: 3, power: 37.244283, vitality: 107.120944, hunger: 23.345418},
+	{seed: 2, pop: 45, births: 41, deaths: 76, kills: 67, aging: 0, fights: 6184, gen: 2, power: 38.824476, vitality: 132.247324, hunger: 25.455757},
+	{seed: 3, pop: 75, births: 56, deaths: 62, kills: 53, aging: 0, fights: 6296, gen: 3, power: 34.158327, vitality: 108.940814, hunger: 19.492594},
 }
 
 const goldenTicks = 5000

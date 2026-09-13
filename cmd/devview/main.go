@@ -4078,6 +4078,7 @@ func main() {
 	prowl := flag.Float64("prowl", 0, "how unevenly the world's enemies arrive across the regions (stage 58; 0 = everywhere alike, which is the default world)")
 	favour := flag.Float64("favour", 0, "how far apart the regions are in which genes they favour, averaging to one (stage 57c; 0 = no region has a taste in builds)")
 	drop := flag.Bool("drop", false, "bodies can put down what they are holding (stage 70; off is every world before it)")
+	noahead := flag.Bool("noahead", false, "put back the world before 2026-09-13: one planning window rather than two (stages 67, 72, 73, 74)")
 	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
 	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
@@ -4099,6 +4100,12 @@ func main() {
 	// that on a map with an economy on it - everything that changes hands here
 	// goes through a hand, and this empties them.
 	cfg.Dropping = *drop
+	// The world as it was before the second window became the default. Every
+	// figure in HISTORY.md older than 2026-09-13 was measured here.
+	if *noahead {
+		cfg.LookaheadHorizons, cfg.LookaheadUpkeep = 0, 0
+		cfg.LookaheadNeverBlinds, cfg.GoalsNeedSurvival = false, false
+	}
 	// The hand as a weight rather than a slot (stage 71). The two halves go
 	// together: with the gate on, nothing in this world ever holds a second
 	// thing, so the rule that makes a second thing worth less has nothing to

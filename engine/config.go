@@ -2544,38 +2544,45 @@ func DefaultConfig() Config {
 		PlanHorizon:    700,
 		ShockRisk:      0.55,
 
-		LookaheadNeverBlinds: false, // stage 74
-		GoalsNeedSurvival:    false, // stage 73
+		LookaheadNeverBlinds: true,  // stage 74: on with the window
+		GoalsNeedSurvival:    true,  // stage 73: on with the window
 		LookaheadWornAgain:   false, // stage 72
 
-		// Off: the second window assumes nothing is eaten in it (stage 72),
-		// which is stage 67 as it was built and measured.
-		LookaheadUpkeep: 0,
+		// Three quarters of its own upkeep assumed in the second window
+		// (stage 72). At zero it eats and mends nothing out there, which is
+		// stage 67 as it was built; at one it sees no shortfall coming at all
+		// and stage 67's whole effect goes with it.
+		LookaheadUpkeep: 0.75,
 
-		// Off: one window, exactly as every recorded figure was measured.
+		// One window further out (stage 67), which has been the default since
+		// 2026-09-13. Zero is the world every figure recorded before that was
+		// measured in, and every arm of cmd/experiment that does not say
+		// otherwise now runs with it on.
 		//
-		// It was made the default on 2026-09-13 and put back the same day.
-		// The population says it should be on - 96 seeds, +50.52 *** on this
-		// world, monotone in the dose, with killing and dying down and the
-		// groups holding together - but two scenarios the design turns on
-		// stop holding: a starving body courts instead of eating, and a
-		// nearly dead body under attack lies down instead of running.
+		// It took three attempts. The population always said yes - over 96
+		// seeds it is the largest single rule this world has had - and twice
+		// it had to be put back the same day, because
+		// scenarios the design turns on stopped holding - a starving body
+		// courting instead of eating, a cornered one lying down instead of
+		// running. Three things were wrong, and all three are fixed here
+		// rather than settled for:
 		//
-		// The reason is structural rather than a setting. The second window
-		// carries the body forward on its own metabolism with nothing to eat,
-		// so any body that cannot survive PlanHorizon x 2 ticks unfed reads
-		// every option as equally hopeless: the life term, which is a
-		// difference of two death probabilities, collapses to zero at the
-		// bottom end exactly as it was flat at the top end before stage 67.
-		// And the goals priced by a constant rather than by that gradient -
-		// offspring, exploring - keep their value while it collapses, so they
-		// win. Measured in the scene: courting costs -15.53 of life with one
-		// window and 0.000 with two, against an offspring goal worth 28.49
-		// either way.
+		//   - the second window carried the body forward eating and mending
+		//     nothing, so anything worn or hungry read every option as
+		//     equally hopeless (LookaheadUpkeep, stage 72);
+		//   - it charged ShockRisk in both windows, though that figure is
+		//     calibrated against one (LookaheadWornAgain, stage 72);
+		//   - and the life term asks whether a body will be dead by the end
+		//     of the window, so a meal that moves death from tick 594 to tick
+		//     1038 registers as nothing at all once the window is 1400 - the
+		//     meal did not change, the question did (LookaheadNeverBlinds,
+		//     stage 74).
 		//
-		// Stage 67 bought the top end by paying the bottom end, and the
-		// population measurement cannot see the bill. See TODO.
-		LookaheadHorizons: 0,
+		// With those in, the scenes come back and the world is worth 46.39 ***
+		// population over 96 seeds, with killing down 0.43 ***, groups holding
+		// together half again as long, intelligence bought much harder and the
+		// rarer species' trough untouched. It costs 11% of a decision.
+		LookaheadHorizons: 1,
 
 		// Small on purpose. It only has to be enough to tell two places to lie
 		// down apart, and the price of more than that is the population: at

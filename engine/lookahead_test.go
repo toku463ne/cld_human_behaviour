@@ -21,11 +21,15 @@ func aSatiatedWholeBody(cfg *Config) SelfView {
 	}
 }
 
-func TestLookaheadIsOffByDefault(t *testing.T) {
+// It is the default since 2026-09-13, and turning it off has to put the
+// single window back exactly: that is the world every figure recorded before
+// then was measured in.
+func TestLookaheadOffIsExactlyOneWindow(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.LookaheadHorizons != 0 {
-		t.Fatalf("LookaheadHorizons should default to 0, got %v", cfg.LookaheadHorizons)
+	if cfg.LookaheadHorizons != 1 {
+		t.Fatalf("LookaheadHorizons should default to 1, got %v", cfg.LookaheadHorizons)
 	}
+	cfg.LookaheadHorizons = 0
 	s := aSatiatedWholeBody(&cfg)
 	for _, v := range []float64{5, 20, 50, 100} {
 		for _, h := range []float64{0, 40, 60, 90} {
@@ -45,6 +49,7 @@ func TestLookaheadGivesASatiatedBodyAReasonToKeepFood(t *testing.T) {
 	cfg := DefaultConfig()
 	s := aSatiatedWholeBody(&cfg)
 
+	cfg.LookaheadHorizons = 0
 	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got != 0 {
 		t.Fatalf("without lookahead a whole, fed body should read a flat gradient, got %v", got)
 	}
@@ -58,6 +63,9 @@ func TestLookaheadGivesASatiatedBodyAReasonToKeepFood(t *testing.T) {
 // design draws against behavioural thresholds.
 func TestLookaheadRisesWithTheDose(t *testing.T) {
 	cfg := DefaultConfig()
+	// The dial on its own: what the second window assumes about the body is
+	// stage 72's question and would flatten this one out.
+	cfg.LookaheadUpkeep, cfg.LookaheadNeverBlinds = 0, false
 	s := aSatiatedWholeBody(&cfg)
 	last := -1.0
 	for _, dose := range []float64{0, 0.25, 0.5, 1, 2} {
@@ -251,6 +259,9 @@ func TestUpkeepPutsFleeingBackInAWornBodysReach(t *testing.T) {
 		cfg := testConfig()
 		cfg.LookaheadHorizons, cfg.LookaheadUpkeep = dose, upkeep
 		cfg.LookaheadWornAgain = wornAgain
+		// Stage 72's own world: reading the life term through the clearer of
+		// the two windows (stage 74) is what this scene is broken without.
+		cfg.LookaheadNeverBlinds = false
 		w := NewWorld(cfg)
 		victim := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 14,
 			Hunger: 20, Genome: genomeOf(15, 100, 100)})

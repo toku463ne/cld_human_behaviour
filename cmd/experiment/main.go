@@ -2045,6 +2045,14 @@ var variants = []variant{
 	// Stage 74: the life term read through whichever window tells the two
 	// states apart.
 	{
+		name:  "noahead",
+		about: "the world before 2026-09-13: one planning window, where every earlier figure was measured",
+		apply: func(c *engine.Config) {
+			c.LookaheadHorizons, c.LookaheadUpkeep = 0, 0
+			c.LookaheadNeverBlinds, c.GoalsNeedSurvival = false, false
+		},
+	},
+	{
 		name:  "clearwindow",
 		about: "74: two windows and its upkeep, with the life term read through the clearer one",
 		apply: func(c *engine.Config) {
