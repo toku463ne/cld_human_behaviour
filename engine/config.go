@@ -1033,6 +1033,7 @@ type Config struct {
 	// a gift with.
 	AffinityGift float64
 
+
 	// Throwing is whether a body with a stone in its hand can throw it (stage
 	// 46). False, and deliberately so on the first pass.
 	//
@@ -1393,6 +1394,22 @@ type Config struct {
 	TimeCost       float64
 	VitalityWeight float64
 	PlanHorizon    float64 // ticks an agent looks ahead when judging its odds
+
+	// LookaheadHorizons is how many more planning horizons a body looks past
+	// the first one, in multiples of PlanHorizon (stage 67). Zero is the world
+	// every measurement before 2026-09-13 was taken in: one window, and a body
+	// that cannot die inside it reads a flat gradient - which is why a satiated
+	// body put no value at all on keeping food for later, and why carrying
+	// (stage 40), caches (stage 50) and money (stage 51) all hit the same wall.
+	//
+	// The second window is the body's own metabolism and nothing else: hunger
+	// climbs at its own rate and vitality drains at what that hunger costs.
+	// Whatever is hitting it now stays in the first window, where it was
+	// measured - being hit today is not a fact about seven hundred ticks from
+	// now, and carrying it forward would empty the tank in every candidate
+	// alike and leave nothing to choose between (the flattening stage 55a found
+	// from the other side).
+	LookaheadHorizons float64
 
 	// ShockRisk is how dangerous being low on vitality is in itself, on top of
 	// starving: a depleted agent has nothing left to absorb the next fight.
@@ -2146,30 +2163,30 @@ func DefaultConfig() Config {
 		CombatRadius:   15,
 		BoundaryMargin: 8,
 
-		PreyValue:       1,
-		MeatPerBudget:   120, // an ordinary agent leaves 4 items, a large enemy many more
-		CarryCapacity:   1,
-		CarryCost:       0.5,
-		CarryValue:      0.5,
-		FishShare:       0, // stage 42: what a map holds is the map author's to say
-		SpecialtyShare:  0, // stage 44: the same
-		SpecialtySpread: 0.6,
-		SpecialtyCatch:  0.25,
-		Stones:          0,     // stage 45: the map author scatters them
-		AffinityGift:    6,     // stage 48: the same as a shared kill
-		Throwing:        false, // stage 46: measured before it is given a default
-		ThrowRange:      70,    // longer than an arm (15), shorter than sight (130)
-		ThrowDamage:     6,
-		ThrowHit:        0.9,
-		ThrowFalloff:    0.6,
-		MeatSurplusFree: true,
-		MeatVitality:    0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
-		MeatHealKnown:   true,
-		MeatNutrition:   1,
-		MeatClaimTicks:  400,
-		MeatSpoilTicks:  900,
-		LandedFishKeeps: false, // a fish out of the water is dead flesh
-		HuntCreditTicks: 200,
+		PreyValue:        1,
+		MeatPerBudget:    120, // an ordinary agent leaves 4 items, a large enemy many more
+		CarryCapacity:    1,
+		CarryCost:        0.5,
+		CarryValue:       0.5,
+		FishShare:        0, // stage 42: what a map holds is the map author's to say
+		SpecialtyShare:   0, // stage 44: the same
+		SpecialtySpread:  0.6,
+		SpecialtyCatch:   0.25,
+		Stones:           0, // stage 45: the map author scatters them
+		AffinityGift:     6, // stage 48: the same as a shared kill
+		Throwing:            false, // stage 46: measured before it is given a default
+		ThrowRange:          70,    // longer than an arm (15), shorter than sight (130)
+		ThrowDamage:         6,
+		ThrowHit:            0.9,
+		ThrowFalloff:        0.6,
+		MeatSurplusFree:     true,
+		MeatVitality:        0.5, // stage 39: half of the eater's own ceiling. 0 is the world before it
+		MeatHealKnown:       true,
+		MeatNutrition:       1,
+		MeatClaimTicks:      400,
+		MeatSpoilTicks:      900,
+		LandedFishKeeps:     false, // a fish out of the water is dead flesh
+		HuntCreditTicks:     200,
 
 		AttackDamage: 1.15,
 		AttackCost:   0.30,
@@ -2264,6 +2281,9 @@ func DefaultConfig() Config {
 		VitalityWeight: 0.55,
 		PlanHorizon:    700,
 		ShockRisk:      0.55,
+
+		// Off: one window, exactly as every recorded figure was measured.
+		LookaheadHorizons: 0,
 
 		// Small on purpose. It only has to be enough to tell two places to lie
 		// down apart, and the price of more than that is the population: at
@@ -2372,9 +2392,9 @@ func DefaultConfig() Config {
 		GeneBudgetStd:       30,
 		GeneInitAlpha:       0.8,
 		InitialEnemies:      10,
-		NursingSpeedShare:   1, // a mother is as quick as anybody (stage 66)
+		NursingSpeedShare:   1,    // a mother is as quick as anybody (stage 66)
 		FoodRenormalize:     true, // the world grows as much as it did (stage 15a)
-		EnemyBudgetMean:     520, // over the human 360, so a carcass feeds several
+		EnemyBudgetMean:     520,  // over the human 360, so a carcass feeds several
 		EnemyBudgetStd:      90,
 		EnemySpawnTicks:     400,
 		MaxEnemies:          12,

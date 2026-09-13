@@ -216,7 +216,39 @@ func (c *AIController) Decide(p *Perception) Action {
 // whatever the drain, an agent with nothing left in the tank does not survive
 // the next thing that happens to it. Leaving the second one out would make
 // spending vitality look free to anybody who is not currently hungry.
-func pressure(cfg *Config, s *SelfView, vitality, drain float64) float64 {
+// It is worked out from the hunger the option would leave the body at rather
+// than from a drain handed in ready made, because the second step below has to
+// know what the body's own metabolism will be doing next - and the drain alone
+// cannot say. extra is everything that is taking vitality for reasons that are
+// not hunger: a blow coming in, the exposure of lying down among strangers.
+func pressure(cfg *Config, s *SelfView, vitality, hunger, extra float64) float64 {
+	own := projectedDrain(cfg, s.HungerRate, hunger)
+	p := oneHorizon(cfg, s, vitality, own+extra)
+	if cfg.LookaheadHorizons <= 0 || p >= 1 {
+		return p
+	}
+
+	// One step further out (stage 67). The body is carried forward by its own
+	// metabolism - hunger climbs at its own rate, vitality goes down by what
+	// that hunger costs - and then asked the same question again. Chaining the
+	// two is the chance of dying in the first window, or surviving it and
+	// dying in the second.
+	//
+	// extra is deliberately not carried across. What is hitting this body now
+	// is a fact about now, and stretching it over a second horizon would drain
+	// the tank to nothing in every candidate alike, leaving a fight with
+	// nothing to choose between. Everything about other agents stays in the
+	// window it was measured in.
+	h := cfg.PlanHorizon * cfg.LookaheadHorizons
+	v := clamp(vitality-own*h, 0, s.MaxVitality)
+	hu := math.Min(cfg.MaxHunger, hunger+s.HungerRate*h)
+	next := oneHorizon(cfg, s, v, projectedDrain(cfg, s.HungerRate, hu))
+	return clamp(p+(1-p)*next, 0, 1)
+}
+
+// oneHorizon is the chance of dying inside a single planning horizon, which is
+// the whole of what pressure was before stage 67.
+func oneHorizon(cfg *Config, s *SelfView, vitality, drain float64) float64 {
 	if vitality <= 0 {
 		return 1
 	}
@@ -390,9 +422,8 @@ func (c *AIController) add(a Action, u Utility) {
 func (c *AIController) addRest(p *Perception) {
 	cfg := p.Cfg
 	s := &p.Self
-	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := c.incomingDmg
-	now := pressure(cfg, s, s.Vitality, drain+incoming)
+	now := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
 
 	// Lying down among strangers is not the same as lying down among your
 	// own. What it costs is worked out the way every other few ticks ahead is
@@ -409,7 +440,7 @@ func (c *AIController) addRest(p *Perception) {
 	// and so does whatever starts while it is down.
 	after := pressure(cfg, s,
 		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed, s.RestRate),
-		drain+incoming+exposed)
+		s.Hunger, incoming+exposed)
 	c.add(Action{Kind: ActRest}, Utility{
 		Life: Goal{Value: (now - after) * cfg.LifeValue, Chance: 1},
 	})
@@ -440,10 +471,10 @@ func mealValue(cfg *Config, s *SelfView, incoming, nutrition, heal float64) floa
 // carry options scored in one run, not one had a positive value, so nothing
 // was ever picked up on purpose. CarryPricedBackwards puts that world back.
 func mealValueAt(cfg *Config, s *SelfView, incoming, hunger, nutrition, heal float64) float64 {
-	before := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, hunger)+incoming)
+	before := pressure(cfg, s, s.Vitality, hunger, incoming)
 	fed := math.Max(0, hunger-cfg.FoodNutrition*nutrition)
 	mended := math.Min(s.Vitality+heal, s.MaxVitality)
-	after := pressure(cfg, s, mended, projectedDrain(cfg, s.HungerRate, fed)+incoming)
+	after := pressure(cfg, s, mended, fed, incoming)
 	return (before - after) * cfg.LifeValue
 }
 
@@ -455,9 +486,9 @@ func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal float64) floa
 		// The world as stages 40 to 49 measured it, kept so that those
 		// figures can be reproduced: the loss from getting hungrier, with the
 		// sign that made every such option a penalty.
-		now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
+		now := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
 		later := pressure(cfg, s, s.Vitality,
-			projectedDrain(cfg, s.HungerRate, math.Max(s.Hunger, cfg.StarveHunger))+incoming)
+			math.Max(s.Hunger, cfg.StarveHunger), incoming)
 		return (now - later) * cfg.LifeValue
 	}
 	return mealValueAt(cfg, s, incoming, math.Max(s.Hunger, cfg.StarveHunger), nutrition, heal)
@@ -552,9 +583,8 @@ func (c *AIController) addExplore(p *Perception) {
 func (c *AIController) addFood(p *Perception) {
 	cfg := p.Cfg
 	s := &p.Self
-	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := c.incomingDmg
-	now := pressure(cfg, s, s.Vitality, drain+incoming)
+	now := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
 
 	// When this body would run short, and how much worse off it would be
 	// then (stage 40). Carrying is not about being fed now - it is about
@@ -614,7 +644,7 @@ func (c *AIController) addFood(p *Perception) {
 			// got there.
 			vitAfter = math.Min(vitAfter+f.Heal, s.MaxVitality)
 			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
-			after := pressure(cfg, s, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
+			after := pressure(cfg, s, vitAfter, hungerAfter, incoming)
 
 			// What the warning on it says it will cost this body. The agent
 			// is reading a signal and believing it - nothing here can tell
@@ -793,7 +823,7 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 		return
 	}
 	incoming := c.incomingDmg
-	now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+incoming)
+	now := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
 	dx, dy := (o.X-s.X)/o.Dist, (o.Y-s.Y)/o.Dist
 	for _, effort := range effortLevels {
 		// Whoever else heard the cry is walking for it too, and it goes into
@@ -814,7 +844,7 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 		hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*o.OfferValue)
 		vitAfter := math.Min(s.Vitality-cost+o.OfferHeal, s.MaxVitality)
 		vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
-		after := pressure(cfg, s, vitAfter, projectedDrain(cfg, s.HungerRate, hungerAfter)+incoming)
+		after := pressure(cfg, s, vitAfter, hungerAfter, incoming)
 		c.offerOpts = append(c.offerOpts, len(c.opts))
 		c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, Utility{
 			Life:         Goal{Value: (now - after) * cfg.LifeValue, Chance: pGet * clamp(float64(o.OfferLeft)/ticks, 0, 1)},
@@ -1101,8 +1131,7 @@ func (c *AIController) addThrow(p *Perception, o *AgentView) {
 	// What it eases. A stone in somebody who is hitting this body now takes
 	// part of what is coming: the same arithmetic the fight uses, over one
 	// throw instead of an exchange.
-	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
-	now := pressure(cfg, s, s.Vitality, drain+c.incomingDmg)
+	now := pressure(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
 	eased := c.incomingDmg
 	if o.AttackingMe {
 		eased = math.Max(0, c.incomingDmg*(1-share))
@@ -1110,7 +1139,7 @@ func (c *AIController) addThrow(p *Perception, o *AgentView) {
 	// A throw is a throw: the body is not guarding or dodging while it does
 	// it, so what it pays is the aggressive stance's cost and no more.
 	cost := stanceCost(cfg, StanceAggressive) * effort
-	after := pressure(cfg, s, s.Vitality-cost, drain+eased)
+	after := pressure(cfg, s, s.Vitality-cost, s.Hunger, eased)
 	lifeTerm := (now - after) * cfg.LifeValue
 
 	// What it is worth if it finishes them: the same two reasons a fight has.
@@ -1316,9 +1345,8 @@ func (c *AIController) scoreFight(p *Perception, o *AgentView, help allyForce, k
 
 	cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCost(cfg, s, effort)
 
-	drain := projectedDrain(cfg, s.HungerRate, s.Hunger+s.HungerRate*ticks)
-	now := pressure(cfg, s, s.Vitality, projectedDrain(cfg, s.HungerRate, s.Hunger)+c.incomingDmg)
-	after := pressure(cfg, s, s.Vitality-cost, drain)
+	now := pressure(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
+	after := pressure(cfg, s, s.Vitality-cost, s.Hunger+s.HungerRate*ticks, 0)
 	lifeTerm := (now - after) * cfg.LifeValue
 
 	// The meal in front of them. Driving this one off wins the race for
@@ -1375,9 +1403,8 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	cfg := p.Cfg
 	s := &p.Self
 
-	drain := projectedDrain(cfg, s.HungerRate, s.Hunger)
 	incoming := damagePerTick(cfg, o.EstStrength, 1)
-	staying := pressure(cfg, s, s.Vitality, drain+incoming)
+	staying := pressure(cfg, s, s.Vitality, s.Hunger, incoming)
 
 	// Breaking away is not free: for a while the agent is still in reach and
 	// is the one not hitting back, which is the cheapest thing there is to
@@ -1386,7 +1413,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	// is about to kill the agent, and loses whenever it is not.
 	cost := moveCost(cfg, s, cfg.FleeEffort)*fleeExposureTicks + incoming*fleeExposureTicks*0.4
 	pEscape := clamp(s.Vitality/(s.Vitality+o.Vitality+1e-9), 0.15, 0.9)
-	fled := pressure(cfg, s, s.Vitality-cost, drain)
+	fled := pressure(cfg, s, s.Vitality-cost, s.Hunger, 0)
 
 	c.add(Action{Kind: ActFlee, TargetID: o.ID, Effort: cfg.FleeEffort, Stance: StanceEvasive}, Utility{
 		Life:         Goal{Value: (staying - fled) * cfg.LifeValue, Chance: pEscape},
@@ -1416,9 +1443,8 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	// the design says not to write. Priced properly, an agent that cannot
 	// afford a child turns one down on the numbers.
 	birth := cfg.BirthVitalityCost / 2 * s.AcceptChance
-	drain := projectedDrain(cfg, s.HungerRate, s.Hunger) + c.incomingDmg
-	now := pressure(cfg, s, s.Vitality, drain)
-	after := pressure(cfg, s, s.Vitality-cost-birth, drain)
+	now := pressure(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
+	after := pressure(cfg, s, s.Vitality-cost-birth, s.Hunger, c.incomingDmg)
 
 	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, Utility{
 		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance},

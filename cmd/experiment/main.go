@@ -1700,6 +1700,93 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	// Stage 67: one step of lookahead in the utility formula. The knob is how
+	// many more planning horizons a body looks past the first one, so zero is
+	// the world every figure before 2026-09-13 was measured in and the arms
+	// are a dose sweep. Three doses because the arithmetic says the two halves
+	// of the change pull opposite ways: keeping food gets a price for the
+	// first time, and so does the vitality a courtship spends.
+	{
+		name:  "look25",
+		about: "67: a quarter of a horizon of lookahead on the flat world",
+		apply: func(c *engine.Config) { c.LookaheadHorizons = 0.25 },
+	},
+	{
+		name:  "look50",
+		about: "67: half a horizon",
+		apply: func(c *engine.Config) { c.LookaheadHorizons = 0.5 },
+	},
+	{
+		name:  "look100",
+		about: "67: one whole horizon further out",
+		apply: func(c *engine.Config) { c.LookaheadHorizons = 1 },
+	},
+	// The played map with the lookahead but no money in it. On the money world
+	// the lookahead made a coin worth having, and a coin takes a hand - so the
+	// question this arm settles is whether that world stayed flat because it
+	// is a poorer map or because every hand filled up with money. Its pair is
+	// "coinsnone", which is the same world without the lookahead.
+	{
+		name:  "playedlook100",
+		about: "67 on the played map with the cry and the caches but no money at all",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks = 30
+			c.LookaheadHorizons = 1
+		},
+		stores: playedStores,
+	},
+	// The control the whole stage turns on. One step of lookahead raises the
+	// mean pressure by about half again (0.195 to 0.298, counted before the
+	// rule was written), and every life term is a difference of pressures -
+	// so a flat rise of the same size is exactly LifeValue turned up. If that
+	// arm does as well, what the stage bought is "living is worth more" and
+	// not "the body can see what is coming", which is the same shape of
+	// question stage 54's flat mood and stage 66's flat mother asked.
+	{
+		name:  "lifeup53",
+		about: "the dose-matched flat control: no lookahead, life worth 1.53x instead",
+		apply: func(c *engine.Config) { c.LifeValue = 153 },
+	},
+	{
+		name:  "lifeup100",
+		about: "sweep on the same control: life worth twice as much, still no lookahead",
+		apply: func(c *engine.Config) { c.LifeValue = 200 },
+	},
+	// And the same sweep where the main question lives: money needs the played
+	// map, the cry and the caches, so these are the "coins" arm with the knob
+	// turned. Whether a coin ever buys anything is what decides whether stage
+	// 68 is needed at all.
+	{
+		name:  "coinslook25",
+		about: "67 on the money world: a quarter of a horizon",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHorizons = 0.25
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinslook50",
+		about: "67 on the money world: half a horizon",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHorizons = 0.5
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinslook100",
+		about: "67 on the money world: one whole horizon",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHorizons = 1
+		},
+		stores: playedStores,
+	},
 	// Stage 52: cooking. The default world has it, so the arms turn it off
 	// rather than on - and the one that turns it off is a placebo rather than
 	// a shorter vocabulary, because the word costs the same whether or not
