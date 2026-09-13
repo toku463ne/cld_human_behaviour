@@ -343,6 +343,7 @@ func (w *World) eatCarried(a *Agent, foodID int) {
 		}
 	}
 	w.please(a, hungerBefore-a.Hunger, 0) // stage 54
+	w.noteFed(a, hungerBefore-a.Hunger)   // stage 72
 	w.mend(a, &f, kept)
 	if f.Cooked > 0 {
 		w.cookedEaten++

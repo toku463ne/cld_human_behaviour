@@ -242,6 +242,15 @@ type Agent struct {
 	dread, cheer float64
 	moodAt       int
 
+	// And how well it has been feeding itself, on the same footing (stage
+	// 72): a decaying sum of what its mouthfuls have taken off its hunger,
+	// and when that was last brought up to date. It is what the second
+	// window of the utility formula assumes about the future - that this
+	// body goes on eating the way it has been - and it fades on reading like
+	// everything else of this kind.
+	fedSum float64
+	fedAt  int
+
 	// carried is what this body is holding (stage 40): the fifth state axis,
 	// and the only one whose contents are the world's own items rather than a
 	// number. It is not exported - the viewer asks through Perception like

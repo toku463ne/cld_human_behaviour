@@ -558,8 +558,8 @@ type World struct {
 	// regionDraws how many of those answers were "go to better country". The
 	// share of the two is the ceiling on what any belief about a place can do
 	// to where a body stands (stage 35).
-	decisions     int
-	regionDraws   int
+	decisions   int
+	regionDraws int
 
 	// How each kind of body dies (stage 60): deaths, of which violent, and of
 	// which at the hands of the other species. World-wide killShare says
@@ -574,7 +574,7 @@ type World struct {
 	// homeDraws is the same count for "head back to the country I came into
 	// the world in" (stage 64): the one option that rule can reach a body
 	// through, so its share is the ceiling on what the rule can do.
-	homeDraws int
+	homeDraws     int
 	matured       int
 	childDeaths   int
 	fights        int
@@ -597,7 +597,7 @@ type World struct {
 
 	// How many trades of what agents assume have taken place (stage 12b), and
 	// how many ideas were copied in the course of them (stage 12c).
-	exchanges   int
+	exchanges int
 
 	// mateExchanges is how many of those were between two who were bonded at
 	// the time (stage 65), and mateBirthLore how many trades the birth itself
@@ -620,7 +620,7 @@ type World struct {
 	// there (stage 65), so that it is not also counted as a trade the pair
 	// made on its own.
 	inBirthTrade bool
-	hintsCopied int
+	hintsCopied  int
 }
 
 // NewWorld creates a world populated according to cfg. The same cfg (same seed
@@ -2039,6 +2039,7 @@ func (w *World) eat(a *Agent, foodID int) {
 	// going (stage 54). After the bite that fails, for the same reason the
 	// mending is: a plant that was spat out fed nobody.
 	w.please(a, hungerBefore-a.Hunger, 0)
+	w.noteFed(a, hungerBefore-a.Hunger)
 	w.mend(a, f, kept)
 	if f.Cooked > 0 {
 		w.cookedEaten++

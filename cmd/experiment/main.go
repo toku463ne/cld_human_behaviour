@@ -2027,6 +2027,40 @@ var variants = []variant{
 	// question this arm settles is whether that world stayed flat because it
 	// is a poorer map or because every hand filled up with money. Its pair is
 	// "coinsnone", which is the same world without the lookahead.
+	// Stage 72: what the second window assumes about the body out there.
+	{
+		name:  "upkeep50",
+		about: "72: the second window lets the body keep half of its own upkeep going",
+		apply: func(c *engine.Config) { c.LookaheadHorizons, c.LookaheadUpkeep = 1, 0.5 },
+	},
+	{
+		name:  "upkeep75",
+		about: "72: three quarters of it, which is where a cornered body runs again",
+		apply: func(c *engine.Config) { c.LookaheadHorizons, c.LookaheadUpkeep = 1, 0.75 },
+	},
+	{
+		name:  "upkeep100",
+		about: "72: all of it, where the satiated body stops seeing any shortfall",
+		apply: func(c *engine.Config) { c.LookaheadHorizons, c.LookaheadUpkeep = 1, 1 },
+	},
+	{
+		name:  "upkeepworn",
+		about: "72's control: the same upkeep, with the standing hazard charged in both windows",
+		apply: func(c *engine.Config) {
+			c.LookaheadHorizons, c.LookaheadUpkeep = 1, 0.75
+			c.LookaheadWornAgain = true
+		},
+	},
+	{
+		name:  "upkeepplayed",
+		about: "72 on the played map with money, where lookahead alone costs",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHorizons, c.LookaheadUpkeep = 1, 0.75
+		},
+		stores: playedStores,
+	},
 	{
 		name:  "playedlook100",
 		about: "67 on the played map with the cry and the caches but no money at all",

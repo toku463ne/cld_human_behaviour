@@ -31,7 +31,7 @@ func TestLookaheadIsOffByDefault(t *testing.T) {
 		for _, h := range []float64{0, 40, 60, 90} {
 			s.Vitality, s.Hunger = v, h
 			got := pressure(&cfg, &s, v, h, 0)
-			want := oneHorizon(&cfg, &s, v, projectedDrain(&cfg, s.HungerRate, h))
+			want := oneHorizon(&cfg, &s, v, projectedDrain(&cfg, s.HungerRate, h), true)
 			if got != want {
 				t.Fatalf("with the lookahead off, pressure must be the one window exactly: v=%v h=%v got %v want %v", v, h, got, want)
 			}
@@ -235,5 +235,66 @@ func TestTheSecondWindowFlattensTheBottomEnd(t *testing.T) {
 	// Not a rounding difference: it is most of the value of the meal.
 	if two > one/2 {
 		t.Fatalf("the flattening is smaller than it was measured to be: %v against %v", two, one)
+	}
+}
+
+// Stage 72: what the second window is allowed to assume about the body it is
+// carrying forward.
+//
+// Two things were wrong with carrying it forward on nothing. It ate nothing
+// out there, and it mended nothing; and on top of that the standing hazard of
+// being worn down was charged in both windows, though ShockRisk is calibrated
+// against one. Together those made a body at a seventh of its vitality read
+// its own death as settled whatever it did.
+func TestUpkeepPutsFleeingBackInAWornBodysReach(t *testing.T) {
+	cornered := func(dose, upkeep float64, wornAgain bool) ActionKind {
+		cfg := testConfig()
+		cfg.LookaheadHorizons, cfg.LookaheadUpkeep = dose, upkeep
+		cfg.LookaheadWornAgain = wornAgain
+		w := NewWorld(cfg)
+		victim := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Sex: Male, Vitality: 14,
+			Hunger: 20, Genome: genomeOf(15, 100, 100)})
+		bully := w.addAgent(Agent{Maturity: 1, X: 208, Y: 200, Sex: Male, Vitality: 100,
+			Hunger: 0, Genome: genomeOf(95, 100, 100)})
+		// It has been feeding itself: a meal every four hundred ticks or so.
+		v := mustAgent(t, w, victim)
+		v.fedSum, v.fedAt = cfg.FoodNutrition*1.75, w.tick
+		convinceOf(t, w, victim, bully)
+		attackedBy(t, w, victim, bully)
+		return aiChoice(w, victim).Kind
+	}
+
+	if got := cornered(0, 0, false); got != ActFlee {
+		t.Fatalf("one window: a cornered body chose %v, want it to run", got)
+	}
+	if got := cornered(1, 0, false); got == ActFlee {
+		t.Fatal("two windows with nothing assumed: it was expected to give up, and did not")
+	}
+	if got := cornered(1, 0.75, false); got != ActFlee {
+		t.Fatalf("two windows with upkeep: a cornered body chose %v, want it to run", got)
+	}
+	// And both halves are needed: charging the standing hazard twice puts it
+	// back where it was, however well the body has been keeping itself up.
+	if got := cornered(1, 0.75, true); got == ActFlee {
+		t.Fatal("charging ShockRisk in both windows was expected to cost the escape, and did not")
+	}
+}
+
+// The top end has to survive it. What stage 67 bought is a satiated whole body
+// that can see itself running short; assuming it keeps itself up entirely
+// takes that back, so the dial has to leave some of the shortfall in.
+func TestUpkeepLeavesTheSatiatedBodyAReasonToKeepFood(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.LookaheadHorizons = 1
+	s := aSatiatedWholeBody(&cfg)
+	s.FedRate, s.RestRate = cfg.HungerRate*3, cfg.RegenRate
+
+	cfg.LookaheadUpkeep = 0.75
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got <= 0 {
+		t.Fatalf("with three quarters of its upkeep assumed it is worth %v to keep a meal", got)
+	}
+	cfg.LookaheadUpkeep = 1
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got != 0 {
+		t.Fatalf("a body that assumes it keeps itself up entirely should see no shortfall, got %v", got)
 	}
 }

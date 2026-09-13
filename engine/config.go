@@ -1595,6 +1595,35 @@ type Config struct {
 	// from the other side).
 	LookaheadHorizons float64
 
+	// LookaheadUpkeep is how much of its own metabolism a body assumes it
+	// will go on covering inside the second window (stage 72). Zero is stage
+	// 67 as it was built: the body eats nothing out there, which is what
+	// makes a satiated one value a meal kept for later and what makes a body
+	// in trouble read every option as equally hopeless.
+	//
+	// What it multiplies is what this body has actually been getting, capped
+	// at its own metabolism - looking ahead is what happens if things go on
+	// as they are, not what happens if they go well - so a body that has been
+	// feeding itself sees hunger climb at (1 - this) of its usual rate, and
+	// one that has been going hungry sees no relief at all. It is the same
+	// shape of discount as CarryValue, StoreValue and CoinValue: what you
+	// will get, less than in full.
+	LookaheadUpkeep float64
+
+	// LookaheadWornAgain is whether the second window charges the standing
+	// hazard of being worn down a second time (stage 72). False is right and
+	// is the default where the lookahead is used at all.
+	//
+	// ShockRisk is the chance a body with nothing left in the tank does not
+	// survive the next thing that happens to it, and it is calibrated against
+	// one planning horizon. Chaining two windows charged it twice, so a
+	// wounded body was told it was half again as doomed as the rule says -
+	// and since the life term is a difference of two chances of dying, that
+	// is what made escaping worth 0.63 where one window made it worth 46.23.
+	// Starving is a countdown and does belong in both windows; being worn is
+	// a standing hazard and belongs in the window it was measured for.
+	LookaheadWornAgain bool
+
 	// ShockRisk is how dangerous being low on vitality is in itself, on top of
 	// starving: a depleted agent has nothing left to absorb the next fight.
 	// Without it, spending vitality would look free to anybody who is not
@@ -2482,6 +2511,12 @@ func DefaultConfig() Config {
 		VitalityWeight: 0.55,
 		PlanHorizon:    700,
 		ShockRisk:      0.55,
+
+		LookaheadWornAgain: false, // stage 72
+
+		// Off: the second window assumes nothing is eaten in it (stage 72),
+		// which is stage 67 as it was built and measured.
+		LookaheadUpkeep: 0,
 
 		// Off: one window, exactly as every recorded figure was measured.
 		//

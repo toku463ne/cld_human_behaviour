@@ -117,6 +117,12 @@ type SelfView struct {
 	// HasCoin says this body has money on it (stage 51).
 	HasCoin bool
 
+	// FedRate is how much hunger this body has been taking off itself per
+	// tick lately (stage 72), and it is the only thing the second window of
+	// the utility formula is told about the future. Zero in a world that
+	// does not look that far, and zero for a body that has not been eating.
+	FedRate float64
+
 	// HeldMeals is what is in this body's hands counted in meals (stage 71):
 	// the nutrition of what it could eat, plus CoinValue for each coin,
 	// because a coin is priced as a claim on a meal. It is what makes the
@@ -618,6 +624,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		BookInHand:        w.heldBookValue(a),
 		CookQuality:       w.cookQuality(a),
 		HasCoin:           a.carriedIndex2(FoodCoin) >= 0,
+		FedRate:           a.fedRate(&w.cfg, w.tick),
 		HeldMeals:         w.heldMeals(a),
 		CarriedHeavy:      a.heavyCarried(),
 	}

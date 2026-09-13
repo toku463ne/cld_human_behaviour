@@ -110,7 +110,7 @@ type AIController struct {
 	homeUY    float64
 	homeSpan  float64
 	homeSpeed float64
-	lifeValue   float64
+	lifeValue float64
 
 	// Which option, if any, was the one that goes to better country (stage
 	// 15b), and whether it won. Measurement only: no rule reads it, and it
@@ -232,7 +232,7 @@ func (c *AIController) Decide(p *Perception) Action {
 // not hunger: a blow coming in, the exposure of lying down among strangers.
 func pressure(cfg *Config, s *SelfView, vitality, hunger, extra float64) float64 {
 	own := projectedDrain(cfg, s.HungerRate, hunger)
-	p := oneHorizon(cfg, s, vitality, own+extra)
+	p := oneHorizon(cfg, s, vitality, own+extra, true)
 	if cfg.LookaheadHorizons <= 0 || p >= 1 {
 		return p
 	}
@@ -248,16 +248,37 @@ func pressure(cfg *Config, s *SelfView, vitality, hunger, extra float64) float64
 	// the tank to nothing in every candidate alike, leaving a fight with
 	// nothing to choose between. Everything about other agents stays in the
 	// window it was measured in.
+	//
+	// How fast hunger climbs out there is the one thing the body is allowed
+	// to know about itself besides its metabolism (stage 72): what it has
+	// been managing to eat, discounted, and never better than breaking even.
+	// With that off this is the metabolism alone, which is stage 67 exactly.
 	h := cfg.PlanHorizon * cfg.LookaheadHorizons
-	v := clamp(vitality-own*h, 0, s.MaxVitality)
-	hu := math.Min(cfg.MaxHunger, hunger+s.HungerRate*h)
-	next := oneHorizon(cfg, s, v, projectedDrain(cfg, s.HungerRate, hu))
+	climb := hungerClimb(cfg, s)
+	hu := clamp(hunger+climb*h, 0, cfg.MaxHunger)
+	drain := own
+	mend := 0.0
+	if cfg.LookaheadUpkeep > 0 {
+		// What it would be draining on the way, rather than what it is
+		// draining now: a body that keeps its hunger down stops paying for it.
+		drain = projectedDrain(cfg, s.HungerRate, (hunger+hu)/2)
+		// And what it would win back out there. Upkeep is both halves: a body
+		// that has been feeding itself has also been mending, and leaving the
+		// mending out is what made a worn body read its own death as settled
+		// whatever it did - the chance of dying of being worn down compounds
+		// over a second window and nothing in it ever got better. What is
+		// hitting it now stays in the first window, here as everywhere else.
+		mend = cfg.LookaheadUpkeep * recoverable(cfg, s.MaxVitality, s.HungerRate,
+			vitality, (hunger+hu)/2, 0, s.RestRate)
+	}
+	v := clamp(vitality-drain*h+mend, 0, s.MaxVitality)
+	next := oneHorizon(cfg, s, v, projectedDrain(cfg, s.HungerRate, hu), cfg.LookaheadWornAgain)
 	return clamp(p+(1-p)*next, 0, 1)
 }
 
 // oneHorizon is the chance of dying inside a single planning horizon, which is
 // the whole of what pressure was before stage 67.
-func oneHorizon(cfg *Config, s *SelfView, vitality, drain float64) float64 {
+func oneHorizon(cfg *Config, s *SelfView, vitality, drain float64, worn bool) float64 {
 	if vitality <= 0 {
 		return 1
 	}
@@ -267,7 +288,10 @@ func oneHorizon(cfg *Config, s *SelfView, vitality, drain float64) float64 {
 			pDrain = 1 - ticksLeft/cfg.PlanHorizon
 		}
 	}
-	pWorn := s.ShockRisk * (1 - clamp(vitality/s.MaxVitality, 0, 1))
+	pWorn := 0.0
+	if worn {
+		pWorn = s.ShockRisk * (1 - clamp(vitality/s.MaxVitality, 0, 1))
+	}
 	return clamp(1-(1-pDrain)*(1-pWorn), 0, 1)
 }
 
