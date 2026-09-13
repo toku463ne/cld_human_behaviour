@@ -1700,6 +1700,107 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	// Stage 69: books. The target was counted before any of this was written
+	// and it came out split by subject, which is why there are two: a body
+	// has a free hint slot 0.000 of the time, so a book about a skill has
+	// almost nowhere to land (a perfect world library would help 3.2% of
+	// bodies by 0.0054 of one skill), while what a body knows about the
+	// caches is deliberately kept out of that room and stage 50 has already
+	// measured what filling it is worth.
+	{
+		name:  "bookskills",
+		about: "69: books about how to do something - the subject with nowhere to land",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+			c.Books, c.BookSubject = true, engine.BookSkills
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "bookplaces",
+		about: "69: books about where the caches are - the subject with room",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+			c.Books, c.BookSubject = true, engine.BookPlaces
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "booksnone",
+		about: "the pair for both: the same world with nothing written down",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "bookplacesroom",
+		about: "69: books about places, with room in the head for the skill of writing",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+			c.Books, c.BookSubject = true, engine.BookPlaces
+			c.HintSlots = 6
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "booksroomnone",
+		about: "the pair for that one: the same room and nothing written down",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+			c.HintSlots = 6
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "bookplacesdear",
+		about: "69: a book priced far past what the discount means - is the price what binds?",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+			c.Books, c.BookSubject, c.BookValue = true, engine.BookPlaces, 8
+			c.HintSlots = 6
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "bookplacesused",
+		about: "69's control: a book about places that is used up by reading - a rival good",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+			c.Books, c.BookSubject = true, engine.BookPlaces
+			c.BookSurvivesReading = false
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "bookplacesmind",
+		about: "69: books about places, with writing capped by intelligence rather than memory",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+			c.Books, c.BookSubject = true, engine.BookPlaces
+			c.SkillAptitude[engine.SkillScribe] = engine.GeneIntelligence
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "bookplacesall",
+		about: "69 with 67 and 68: books about places in a world that can see ahead and pays its sellers",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins, c.SkillBirthplace = 30, 60, 0.5
+			c.Books, c.BookSubject = true, engine.BookPlaces
+			c.AffinitySale, c.LookaheadHorizons = 20, 1
+		},
+		stores: playedStores,
+	},
 	// Stage 68: a sale is a hand-over too, and earns what one earns. The knob
 	// is how much goodwill, and it has a ceiling that is not a free choice:
 	// trust saturates at AffinityTrust, so 20 already buys all of LoreValue
@@ -3321,6 +3422,7 @@ var metricNames = []string{
 	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
 	"coinsLying", "coinsHeld", "coinHolders", "sales", "salesRefused", "saleRate",
+	"booksWritten", "booksRead", "booksLying", "booksHeld", "bookHolders", "bookFidelity",
 	"lostSight", "missingDir", "lonelyDraw",
 	"motherRears", "mumNear", "dadNear", "ageFemale", "ageMale",
 	"dread", "cheer", "afraid",
@@ -3873,6 +3975,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	roaming := visits.Result(w)
 	stored := w.Stored()
 	money := w.Coins()
+	library := w.Books()
 	kitchen := w.Cooking()
 	feeling := w.Mood()
 	rearing := w.Rearing()
@@ -3971,6 +4074,16 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// anything; salesRefused says whether the market failed for want of
 		// buyers or for want of sellers, which is the question the whole
 		// stage turns on.
+		// The books (stage 69). booksRead is the one that says whether
+		// anything was ever passed on; bookHolders is the hand that is not
+		// holding dinner, which is the figure stage 67 says to watch
+		// whenever something weightless can be picked up.
+		"booksWritten": float64(library.Written),
+		"booksRead":    float64(library.Read),
+		"booksLying":   float64(library.Lying),
+		"booksHeld":    float64(library.Held),
+		"bookHolders":  library.Holders,
+		"bookFidelity": library.Fidelity,
 		"coinsLying":   float64(money.Lying),
 		"coinsHeld":    float64(money.Held),
 		"coinHolders":  money.Holders,

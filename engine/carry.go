@@ -63,14 +63,13 @@ func (a *Agent) carryLoad(cfg *Config) float64 {
 	if cap <= 0 {
 		return 0
 	}
-	// Money weighs nothing (#66, stage 51). It still takes a hand - a body
-	// holding a coin is a body not holding its dinner - but it is not part of
-	// what the legs are charged for, and in a world where the only cost of
-	// holding something is its weight, that is the whole of what makes money
-	// worth taking at all.
+	// Money weighs nothing (#66, stage 51), and neither does a book (stage
+	// 69). Both still take a hand - a body holding one is a body not holding
+	// its dinner, which is what stage 67 found was enough to stop an economy
+	// on its own - but neither is part of what the legs are charged for.
 	n := 0
 	for i := range a.carried {
-		if a.carried[i].Kind != FoodCoin {
+		if k := a.carried[i].Kind; k != FoodCoin && k != FoodBook {
 			n++
 		}
 	}
@@ -119,7 +118,7 @@ func (a *Agent) carrySlots(cfg *Config) int {
 // 45) there is no such question - it is not food, nobody's kill and nobody's
 // kind - so anything may pick one up.
 func (w *World) canCarry(a *Agent, f *Food) bool {
-	if f.Kind == FoodStone || f.Kind == FoodCoin {
+	if f.Kind == FoodStone || f.Kind == FoodCoin || f.Kind == FoodBook {
 		return true
 	}
 	return w.canEat(a, f)

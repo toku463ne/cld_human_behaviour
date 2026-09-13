@@ -1065,6 +1065,41 @@ type Config struct {
 	// one name. The same shape as ParentFeedWasted and DrownKnown.
 	SaleGoodwillKept bool
 
+	// --- books (stage 69) ---
+
+	// Books is whether anything in this world can be written down. Off is
+	// every world before 2026-09-13, and it draws no random numbers, so a
+	// world with it off is bit for bit the world that was measured.
+	Books bool
+
+	// BookSubject is what books are about: a skill, or where the caches are.
+	// Two, because the target was counted first and the obvious one has
+	// nowhere to land - a body has a free hint slot 0.000 of the time.
+	BookSubject BookSubject
+
+	// WriteTicks is what setting something down costs, in time and nothing
+	// else - the same shape as crying one's wares and cooking. Zero takes
+	// writing out of the world while leaving the word in it.
+	WriteTicks int
+
+	// BookFidelity is how much of what its writer knows a book carries.
+	// Below one because being told at second hand is weaker than seeing for
+	// yourself everywhere else here, and writing is the second hand at its
+	// longest.
+	BookFidelity float64
+
+	// BookValue is the discount on what reading one is worth, the same kind
+	// of figure as CarryValue, StoreValue and CoinValue: what is being bought
+	// is knowing, and what it is priced in is LoreValue.
+	BookValue float64
+
+	// BookSurvivesReading is the whole asymmetry. True and a read book still
+	// says what it says, so it is worth nothing to the one who has read it
+	// and something to everybody else - which is the first thing in this
+	// world of which that is true, and the thing stage 68 found a market
+	// needs. False is the control: a book that is used up is a rival good and
+	// behaves like a meal.
+	BookSurvivesReading bool
 
 	// Throwing is whether a body with a stone in its hand can throw it (stage
 	// 46). False, and deliberately so on the first pass.
@@ -2208,6 +2243,13 @@ func DefaultConfig() Config {
 		AffinityGift:     6, // stage 48: the same as a shared kill
 		AffinitySale:     0, // stage 68: off, as stage 51 measured it
 		SaleGoodwillKept: true,
+		// Stage 69: off, and the map author or the experiment turns it on.
+		Books:               false,
+		BookSubject:         BookSkills,
+		WriteTicks:          40,
+		BookFidelity:        0.7,
+		BookValue:           0.5,
+		BookSurvivesReading: true,
 		Throwing:            false, // stage 46: measured before it is given a default
 		ThrowRange:          70,    // longer than an arm (15), shorter than sight (130)
 		ThrowDamage:         6,
@@ -2548,6 +2590,10 @@ func DefaultConfig() Config {
 			// body judges the doing, which is the same reading that put the
 			// awkward crop on this gene.
 			SkillCook: GeneIntelligence,
+			// Setting down what is held is the memory gene by meaning.
+			// Which gene the world will actually pay for is stage 69's
+			// own question, and both are run as arms.
+			SkillScribe: GeneMemory,
 		},
 		SkillForageRelief:  1,
 		SkillSwimRelief:    1,

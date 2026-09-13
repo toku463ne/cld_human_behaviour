@@ -565,6 +565,19 @@ type Food struct {
 	// body - what differs is how often the attempt comes off.
 	Special bool
 
+	// Says, Written and Places are what a book has in it (stage 69), and are
+	// zero for everything else. Says is the skill it is about (SkillNone for
+	// a book about places), Written how good the record is, and Places the
+	// caches it names.
+	//
+	// They are fields on the item rather than a type of their own for the
+	// reason Special and Cooked are: what a book is is a thing lying about
+	// that can be picked up, and everything that already works on that list
+	// goes on working.
+	Says    SkillKind
+	Written float64
+	Places  []int
+
 	// Cooked is how well this item was prepared (stage 52), zero for
 	// everything the world grew and everything nobody has done anything to.
 	// It is a property of the item for the same reason Special is, and it

@@ -54,11 +54,25 @@ const (
 	// turned out, the only reason anybody would ever take one.
 	FoodCoin = NumEdibleKinds + 1
 
+	// FoodBook is something somebody wrote down (stage 69), and it is on this
+	// list for the third time for the same reason: it is a thing lying about
+	// that can be picked up, and the index, the carrying, the giving, the
+	// selling, the caches and the viewer all already work on that list.
+	//
+	// Like the coin it is not food in any other sense - nothing eats it, it
+	// takes no room in the world's allowance for plants, and it weighs
+	// nothing. Unlike the coin, what it is worth does not depend on anybody
+	// agreeing to anything: it says what it says, and a body that has read it
+	// has had it. That is the asymmetry the whole stage exists for, and why a
+	// read book is the first thing in this world that is genuinely worth
+	// nothing to its owner and something to everybody else.
+	FoodBook = NumEdibleKinds + 2
+
 	// NumFoodKinds is how many there are, for the code that keeps one figure
 	// per kind (the diet rule of stage 16). It is not a kind, and it is
 	// spelled out rather than left to iota: the line above ends the run, and
 	// a bare name here would repeat it rather than carry on.
-	NumFoodKinds = FoodCoin + 1
+	NumFoodKinds = FoodBook + 1
 )
 
 func (k FoodKind) String() string {
@@ -71,6 +85,8 @@ func (k FoodKind) String() string {
 		return "stone"
 	case FoodCoin:
 		return "coin"
+	case FoodBook:
+		return "book"
 	}
 	return "plant"
 }
@@ -90,8 +106,8 @@ func eatsMeat(s Species) bool   { return true }
 // canEat says whether this agent may take this item, at this moment.
 func (w *World) canEat(a *Agent, f *Food) bool {
 	switch f.Kind {
-	case FoodStone, FoodCoin:
-		return false // nothing eats a stone, and nobody eats money
+	case FoodStone, FoodCoin, FoodBook:
+		return false // nothing eats a stone, money or a book
 	case FoodFish:
 		return w.eatsFish(a.Species)
 	case FoodMeat:

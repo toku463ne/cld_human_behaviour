@@ -104,6 +104,15 @@ import (
 // from and buys a tenth of a point of clumping - and it is in because the rest
 // of stage 53 is derived from the role rather than from an idea about sexes.
 //
+// And again when there was such a thing as a book (stage 69, 2026-09-13). Two
+// more words, the sixteenth and seventeenth, and the rule itself is off by
+// default - no book is ever written in these runs. What moves the numbers is
+// once more that a rule of thumb can be about two more kinds of action, so the
+// hints drawn at every birth differ from the first tick. That this is the whole
+// of it was checked rather than assumed: with HintSlots set to zero, where
+// nothing ever draws an action kind, the new code gives the old numbers to the
+// bit on all three seeds.
+//
 // And again when a body could make what it was holding into something that
 // mends (stage 52, 2026-09-11). A fifteenth word, and this one is used in
 // these very runs: average vitality is up and average hunger is down in all
@@ -147,9 +156,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 63, births: 49, deaths: 63, kills: 45, aging: 0, fights: 4347, gen: 2, power: 41.297747, vitality: 96.706904, hunger: 27.380615},
-	{seed: 2, pop: 50, births: 41, deaths: 71, kills: 54, aging: 0, fights: 6384, gen: 3, power: 41.110861, vitality: 112.904396, hunger: 27.240167},
-	{seed: 3, pop: 40, births: 32, deaths: 73, kills: 57, aging: 0, fights: 3591, gen: 2, power: 34.000702, vitality: 116.091563, hunger: 26.487398},
+	{seed: 1, pop: 61, births: 43, deaths: 63, kills: 47, aging: 0, fights: 4549, gen: 2, power: 37.620737, vitality: 99.687497, hunger: 23.635022},
+	{seed: 2, pop: 57, births: 47, deaths: 69, kills: 58, aging: 0, fights: 5015, gen: 3, power: 44.590749, vitality: 122.316577, hunger: 22.697354},
+	{seed: 3, pop: 48, births: 45, deaths: 76, kills: 54, aging: 0, fights: 5396, gen: 3, power: 41.780351, vitality: 96.899796, hunger: 23.629089},
 }
 
 const goldenTicks = 5000

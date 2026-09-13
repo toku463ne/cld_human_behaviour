@@ -481,6 +481,10 @@ type World struct {
 	sales        int
 	salesRefused int
 
+	// What was written down and what was read (stage 69).
+	booksWritten int
+	booksRead    int
+
 	// Losing sight of the one a body thinks best of (stage 55a), and how
 	// often a decision was a walk along the direction that left.
 	lostSight   int
@@ -1130,6 +1134,17 @@ func (w *World) perform(a *Agent) {
 		// to and nobody to agree with: the whole of the price is standing
 		// there, the same shape the cry uses.
 		w.cook(a)
+
+	case ActWrite:
+		// Setting down what this body knows (stage 69). Nothing to walk to
+		// and nobody to agree with, the same as cooking.
+		w.runWrite(a)
+
+	case ActRead:
+		// And picking up what somebody else set down. The book is in this
+		// body's hands already - getting hold of one is the ordinary business
+		// of taking, being given or buying - so this too is standing still.
+		w.runRead(a)
 
 	case ActBuy:
 		// Buying (stage 51). Close enough to put one thing in each other's
@@ -2435,7 +2450,7 @@ func (w *World) spawnFood() {
 	// are meant to be separate (see MaxMeatItems) - but it is the world every
 	// figure in HISTORY.md was measured in, so it stays until it is changed
 	// on purpose and measured.
-	if len(w.foods)-w.countKind(FoodStone)-w.countKind(FoodCoin) >= w.cfg.MaxFoodItems {
+	if len(w.foods)-w.countKind(FoodStone)-w.countKind(FoodCoin)-w.countKind(FoodBook) >= w.cfg.MaxFoodItems {
 		return
 	}
 	// One of them comes up in the water instead (stage 42). It is asked first

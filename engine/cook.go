@@ -78,8 +78,8 @@ func (w *World) canCook(a *Agent) bool {
 		return false
 	}
 	f := &a.carried[0]
-	if f.Kind == FoodStone || f.Kind == FoodCoin {
-		return false // nothing to be done with either over a fire
+	if f.Kind == FoodStone || f.Kind == FoodCoin || f.Kind == FoodBook {
+		return false // nothing to be done with any of them over a fire
 	}
 	// Already done, or done better than this body could manage: there is
 	// nothing to be had from starting again. This is the same comparison

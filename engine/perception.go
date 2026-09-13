@@ -99,6 +99,14 @@ type SelfView struct {
 	// judgement.
 	CanCook bool
 
+	// CanWrite says this body has something to set down and a hand free to
+	// set it down in (stage 69), and BookInHand is what reading what it is
+	// already carrying would be worth. Both are facts about this body and
+	// what it is holding, which is why they are worked out here rather than
+	// in the controller.
+	CanWrite   bool
+	BookInHand float64
+
 	// HasStone says there is something to throw in this body's hand (stage
 	// 46). What it would be worth throwing at is on the other side, in
 	// AgentView.
@@ -295,6 +303,15 @@ type FoodView struct {
 	// a human player can see the same.
 	Cooked float64
 
+	// Worth is what reading this one would be worth to this agent (stage 69),
+	// and zero for everything that is not a book and for a book that would
+	// tell it nothing it does not know.
+	//
+	// Not hidden, and it is not meant to be: a book in front of you can be
+	// leafed through. What is hidden is nothing - the whole of what a book
+	// does is say what it says.
+	Worth float64
+
 	// Held says this one is already in the agent's own hands (stage 40).
 	// Nothing about how it is scored changes - it is a meal at no distance
 	// with nobody racing for it - but the option to pick something up is
@@ -421,11 +438,17 @@ type AgentView struct {
 	// wares: an advertised item goes into one pair of hands, and everybody who
 	// heard the cry is walking for it. Infinite when nobody else is in sight,
 	// and meaningless unless Offering is set.
-	Offering       bool
-	OfferKind      FoodKind
-	OfferLeft      int
-	OfferValue     float64
-	OfferHeal      float64
+	Offering   bool
+	OfferKind  FoodKind
+	OfferLeft  int
+	OfferValue float64
+	OfferHeal  float64
+
+	// OfferWorth is what a book held up would be worth to the one looking
+	// (stage 69), and zero for everything else. It is in the looker's terms
+	// like the two above, and unlike them it can be zero for a perfectly good
+	// item: a book says nothing to somebody who knows it already.
+	OfferWorth     float64
 	OfferRivalDist float64
 
 	// Uphill is set when this agent is standing a level or more above the one
@@ -486,6 +509,12 @@ type Perception struct {
 	// reason the stones are: none of the figures that count what is edible
 	// should count one, and money is the least edible thing in the world.
 	Coins []FoodView
+
+	// Books are what is lying about with something written in it (stage 69),
+	// kept apart for the same reason. What it says is not here: a book has to
+	// be picked up and read, and until then all that is visible is that it is
+	// one.
+	Books []FoodView
 
 	// Trigger is why the engine is asking. It is not a instruction - what to
 	// do about being hit is still for the controller to work out - but it is
@@ -564,6 +593,8 @@ func (w *World) selfView(a *Agent) SelfView {
 		CarryRoom:         a.canCarryMore(&w.cfg),
 		HasStone:          a.canThrow(&w.cfg),
 		CanCook:           w.canCook(a),
+		CanWrite:          w.canWrite(a),
+		BookInHand:        w.heldBookValue(a),
 		CookQuality:       w.cookQuality(a),
 		HasCoin:           a.carriedIndex2(FoodCoin) >= 0,
 	}
@@ -580,6 +611,7 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Stones = p.Stones[:0]
 	p.Stores = p.Stores[:0]
 	p.Coins = p.Coins[:0]
+	p.Books = p.Books[:0]
 	p.Others = p.Others[:0]
 
 	p.Self = w.selfView(a)
@@ -619,6 +651,14 @@ func (w *World) perceive(a *Agent) *Perception {
 			p.Coins = append(p.Coins, FoodView{
 				ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
 				RivalDist: math.Inf(1),
+			})
+			continue
+		}
+		// And what somebody wrote down, in its own list again (stage 69).
+		if f.Kind == FoodBook {
+			p.Books = append(p.Books, FoodView{
+				ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
+				RivalDist: math.Inf(1), Worth: w.bookValue(a, f),
 			})
 			continue
 		}
@@ -712,10 +752,20 @@ func (w *World) perceive(a *Agent) *Perception {
 		// view is: the same figures that price a meal on the ground.
 		offering, offerLeft := false, 0
 		offerKind, offerValue, offerHeal := FoodKind(0), 0.0, 0.0
+		offerWorth := 0.0
 		if item := w.offering(o); item != nil && w.canEat(a, item) {
 			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
 			offerValue = p.Self.Nutrition[item.Kind]
 			offerHeal = w.itemHealKnown(a, item)
+			w.sawOffer = true
+		} else if item != nil && item.Kind == FoodBook && w.cfg.Books {
+			// A book held up is worth what it would tell this looker, which
+			// is nothing at all to somebody who has read one like it - so
+			// the same cry is an offer to one body and noise to another
+			// (stage 69). Nothing else in this world advertises something
+			// whose worth depends on who is looking.
+			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
+			offerWorth = w.bookValue(a, item)
 			w.sawOffer = true
 		}
 
@@ -746,7 +796,8 @@ func (w *World) perceive(a *Agent) *Perception {
 			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
 			DeclaredFor: o.declaredFor(),
 			Offering:    offering,
-			Selling:     offering && offerKind < NumEdibleKinds,
+			Selling:     offering && (offerKind < NumEdibleKinds || offerWorth > 0),
+			OfferWorth:  offerWorth,
 			OfferKind:   offerKind,
 			OfferLeft:   offerLeft,
 			OfferValue:  offerValue,

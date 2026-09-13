@@ -120,6 +120,23 @@ const (
 	// whether it lands.
 	SkillWard
 
+	// SkillScribe is knowing how to set down what you know so that somebody
+	// else can pick it up (stage 69). It is the only skill whose subject is
+	// another skill - or a place - rather than something in the world, and
+	// what it caps is how good a record this body can make.
+	//
+	// Which gene should cap it was left to the measurement rather than
+	// argued: setting down what is held is the memory gene's business by
+	// meaning, and working out how to convey it is intelligence's, and stage
+	// 62 says the one that matters is which of them the world actually buys.
+	// Counted before it was written, the effective ceiling is 0.248 under
+	// memory and 0.310 under intelligence.
+	//
+	// It reads nothing off the ground, like cooking: what a body is born
+	// knowing about writing is the same everywhere, so all the spread in it
+	// is the leaps and the copying.
+	SkillScribe
+
 	NumSkillKinds
 )
 
@@ -145,6 +162,8 @@ func (s SkillKind) String() string {
 		return "cooking"
 	case SkillWard:
 		return "handling beasts"
+	case SkillScribe:
+		return "writing things down"
 	}
 	return "none"
 }
@@ -364,6 +383,9 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 		// other seven, and the reason is that seeding this one off the ground
 		// would be a sixth go at a question five measurements have already
 		// answered (see SkillCookRelief).
+		share = 1
+	case SkillScribe:
+		// The same: nothing to read off the ground, for the same reason.
 		share = 1
 	}
 	return clamp(share*w.cfg.SkillBirthplace, 0, 1)

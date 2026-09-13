@@ -202,6 +202,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addCook(p)
 	c.addAgents(p, maxDepth)
 	c.addOffer(p)
+	c.addBooks(p)
 
 	return c.pick(p)
 }
@@ -858,13 +859,22 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 		vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
 		after := pressure(cfg, s, vitAfter, hungerAfter, incoming)
 		c.offerOpts = append(c.offerOpts, len(c.opts))
-		c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, Utility{
-			Life:         Goal{Value: (now - after) * cfg.LifeValue, Chance: pGet * clamp(float64(o.OfferLeft)/ticks, 0, 1)},
+		chance := pGet * clamp(float64(o.OfferLeft)/ticks, 0, 1)
+		// What is being held up. A book is worth what it would say to this
+		// body (stage 69), and that is a different goal from a meal: it buys
+		// knowing, not another day.
+		u := Utility{
+			Life:         Goal{Value: (now - after) * cfg.LifeValue, Chance: chance},
 			Vitality:     cost,
 			Ticks:        ticks,
 			VitalityCost: cost * cfg.VitalityWeight,
 			TimeCost:     ticks * cfg.TimeCost,
-		})
+		}
+		if o.OfferWorth > 0 {
+			u.Life = Goal{}
+			u.Lore = Goal{Value: cfg.BookValue * o.OfferWorth, Chance: chance}
+		}
+		c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, u)
 	}
 }
 
@@ -926,6 +936,97 @@ func (c *AIController) addPutInStore(p *Perception) {
 				Ticks:        ticks,
 				VitalityCost: cost * cfg.VitalityWeight,
 				TimeCost:     ticks * cfg.TimeCost,
+			})
+		}
+	}
+}
+
+// addBooks scores everything to do with the written word (stage 69): picking
+// one up, reading it, and writing one.
+//
+// Nothing new prices any of it. Reading is worth what being taught is worth,
+// which is the Lore goal every exchange of what a body assumes already goes
+// through. Writing is worth what the hand-over it makes possible is worth,
+// which is the figure stage 48 puts on a gift and stage 49 on a cry - because
+// handing it on is the only use a finished book has to whoever wrote it.
+//
+// That last line is the whole of the stage in one sentence. A book that has
+// been read is worth nothing to its reader and something to everybody else,
+// which is the first time that has been true of anything here, and it is
+// exactly what stage 68 found a seller needs and never has.
+func (c *AIController) addBooks(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if !cfg.Books || cfg.WriteTicks <= 0 {
+		return
+	}
+	ticks := float64(cfg.WriteTicks)
+
+	// Reading what is already in hand. No distance, no race: the only price
+	// is standing there long enough.
+	if s.BookInHand > 0 {
+		c.add(Action{Kind: ActRead}, Utility{
+			Lore:     Goal{Value: s.BookInHand, Chance: 1},
+			Ticks:    ticks,
+			TimeCost: ticks * cfg.TimeCost,
+		})
+	}
+
+	// Writing one. What it will be worth is what handing it over buys, which
+	// is the best such hand-over in sight - the same figure stage 48 puts on
+	// a gift and stage 49 on a cry.
+	//
+	// It is worked out here rather than taken from addGive's bestGiftGain,
+	// and that is not tidiness. A body has one hand: addGive only runs for a
+	// body that is holding something, and writing only runs for a body with a
+	// hand free, so the two are mutually exclusive and the borrowed figure was
+	// always zero. Measured before it was noticed: seven bodies in a run could
+	// write and not one ever did.
+	if s.CanWrite {
+		best := 0.0
+		for i := range p.Others {
+			o := &p.Others[i]
+			if !o.CarryRoom || o.Species != s.Species {
+				continue
+			}
+			if g := trustBought(cfg, o.Affinity, cfg.AffinityGift); g > best {
+				best = g
+			}
+		}
+		if best > 0 {
+			gain := cfg.BookValue * cfg.LoreValue * best
+			c.add(Action{Kind: ActWrite}, Utility{
+				Lore:     Goal{Value: gain, Chance: 1},
+				Ticks:    ticks,
+				TimeCost: ticks * cfg.TimeCost,
+			})
+		}
+	}
+
+	// And walking over to one lying about. It is scored the way anything
+	// lying about is scored - what it is worth, less the walk - except that
+	// nobody is racing for it: a book is worth something only to whoever
+	// does not already know what it says, so two bodies wanting the same one
+	// is not the usual case and is not assumed.
+	if !s.CarryRoom {
+		return
+	}
+	for i := range p.Books {
+		if i >= maxFoodOptions {
+			break
+		}
+		f := &p.Books[i]
+		if f.Worth <= 0 {
+			continue
+		}
+		for _, effort := range effortLevels {
+			walk := f.Dist/speedAt(s.MaxSpeed, effort) + 1
+			cost := moveCost(cfg, s, effort) * walk
+			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
+				Lore:         Goal{Value: f.Worth, Chance: 1},
+				Vitality:     cost,
+				Ticks:        walk,
+				VitalityCost: cost * cfg.VitalityWeight,
+				TimeCost:     walk * cfg.TimeCost,
 			})
 		}
 	}
@@ -1049,9 +1150,14 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	if !s.HasCoin || !o.Selling || o.OfferValue <= 0 {
 		return
 	}
-	meal := mealValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal)
-	if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal); kept > meal {
-		meal = kept
+	// What is on the counter. A book is worth what it would say to this body
+	// and nothing else (stage 69); everything else is worth the meal it is.
+	meal := o.OfferWorth * cfg.BookValue
+	if o.OfferValue > 0 || o.OfferHeal > 0 {
+		meal = mealValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal)
+		if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal); kept > meal {
+			meal = kept
+		}
 	}
 	// And what buying from this one earns, if a sale earns anything (stage
 	// 68). The goodwill is written both ways, so the buyer is told about the

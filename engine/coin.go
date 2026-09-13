@@ -133,6 +133,13 @@ func (w *World) willSell(seller *Agent, buyer *Agent, item *Food) bool {
 		}
 		coin += saleGoodwill(cfg, affinity)
 	}
+	// A book is not a meal, and what parting with one costs is what it would
+	// still tell its owner - which, once read, is nothing (stage 69). That is
+	// the asymmetry this world has never had, and it is why this branch is
+	// three lines rather than a second valuation.
+	if item.Kind == FoodBook {
+		return coin > w.bookValue(seller, item)
+	}
 	// What the food in hand is worth to it: eaten now, or kept.
 	nutrition := w.mealValues(seller)[item.Kind]
 	heal := w.itemHealKnown(seller, item)
@@ -164,9 +171,9 @@ func (w *World) willSell(seller *Agent, buyer *Agent, item *Food) bool {
 // the same call a hand-over makes, so nothing new prices it.
 func (w *World) sell(buyer, seller *Agent) bool {
 	coin := buyer.carriedIndex2(FoodCoin)
-	item := seller.firstEdible()
-	if coin < 0 || item < 0 || !w.canEat(buyer, &seller.carried[item]) {
-		return false // nobody buys what it could not eat
+	item := seller.firstForSale(&w.cfg)
+	if coin < 0 || item < 0 || !w.canCarry(buyer, &seller.carried[item]) {
+		return false // nobody buys what it could do nothing with
 	}
 	if !w.willSell(seller, buyer, &seller.carried[item]) {
 		w.salesRefused++
@@ -216,6 +223,24 @@ func (a *Agent) firstEdible() int {
 		}
 	}
 	return -1
+}
+
+// firstForSale is what this body would put on the counter: a meal, or a book
+// (stage 69). A stone is not for sale and neither is a coin.
+//
+// The book comes second on purpose. A body that is holding both should sell
+// the meal first, because the whole of stage 69's claim is that a read book is
+// the thing it can most afford to part with - and a rule that sold the book
+// while the dinner sat in the other hand would be making that claim true by
+// construction rather than letting the comparison find it.
+func (a *Agent) firstForSale(cfg *Config) int {
+	if i := a.firstEdible(); i >= 0 {
+		return i
+	}
+	if !cfg.Books {
+		return -1
+	}
+	return a.heldBook()
 }
 
 // CoinUse is what the money came to. Read only.

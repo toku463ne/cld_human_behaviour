@@ -73,6 +73,17 @@ const (
 	// time, in the shape stage 32 and stage 49 already use.
 	ActCook
 
+	// ActWrite and ActRead are setting something down and picking it up
+	// again (stage 69): the sixteenth and seventeenth words.
+	//
+	// They are two rather than one because they happen to different bodies at
+	// different times, which is the whole of what a book is for - the writer
+	// and the reader never have to meet. Writing costs time, like crying and
+	// cooking; reading costs time too, and is the only word whose product is
+	// something that was already in somebody else's head.
+	ActWrite
+	ActRead
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -108,6 +119,10 @@ func (k ActionKind) String() string {
 		return "buy"
 	case ActCook:
 		return "cook"
+	case ActWrite:
+		return "write"
+	case ActRead:
+		return "read"
 	default:
 		return "rest"
 	}
