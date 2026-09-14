@@ -810,6 +810,34 @@ type Config struct {
 	// the second slot" has never once been true.
 	CarrySlotted bool
 
+	// CarrySlotsWeigh is whether a hand is taken up only by what weighs
+	// something (stage 80a).
+	//
+	// Holding something is charged twice here: by its weight, which is what
+	// #66 argued for and which comes continuously out of the vitality gene,
+	// and by the slot, which is discrete and which stage 71 could find no
+	// argument for anywhere. A coin weighs nothing (#66) and a book weighs
+	// nothing, so the slot is the only thing charging them - and what it
+	// charges them is the scarcest thing in this world, the hand that would
+	// otherwise hold dinner.
+	//
+	// With this on, a thing with no weight takes no hand. It is not a rule
+	// about money: what counts as weightless is exactly the set the weight
+	// itself leaves out, so a coin and a book go the same way because they
+	// weigh the same nothing. A meal still takes a hand and still costs what
+	// it weighs, so nothing here lets a body carry more food.
+	//
+	// It is not CarrySlotted = false, which lets a body hold any number of
+	// meals: that was measured in stage 76 at rareTrough -0.16 *** in a map
+	// with no money in it at all, which is to say the price of it was the
+	// carrying of food. This leaves that price where it was.
+	//
+	// Counted before it was written (played map, six runs): a buyer holds
+	// 1.000 coins and never two, while the world has 2.36 coins per human
+	// and 38 of its 60 lying on the ground - so what stops a second coin is
+	// the hand and not the supply.
+	CarrySlotsWeigh bool
+
 	// CarryDiminishes is whether the second thing in a hand is worth less
 	// than the first (stage 71).
 	//
@@ -2578,6 +2606,7 @@ func DefaultConfig() Config {
 		// Stage 71: the hand as a slot, and what a second thing in it is
 		// worth. The first two are the world as it was; the third is a fix.
 		CarrySlotted:            true,
+		CarrySlotsWeigh:         false,
 		CarryDiminishes:         false,
 		BurdenIgnoresWeightless: true,
 		// Stage 52. The word costs the vocabulary whether or not anybody uses

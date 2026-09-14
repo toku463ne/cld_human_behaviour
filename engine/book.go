@@ -126,7 +126,7 @@ func (w *World) worthWriting(a *Agent) (SkillKind, float64) {
 // write puts a book in this body's hands. It reports whether anything was
 // written: an empty hand is needed, and something to say.
 func (w *World) write(a *Agent) bool {
-	if !a.canCarryMore(&w.cfg) {
+	if !a.canCarryKind(&w.cfg, FoodBook) {
 		return false
 	}
 	kind, strength := w.worthWriting(a)
@@ -239,7 +239,7 @@ func (w *World) read(a *Agent, idx int) bool {
 // their ticks and then do the thing, in the shape the cry and the cooking
 // already use: no new parallel machinery for a multi-tick action (#76).
 func (w *World) runWrite(a *Agent) {
-	if _, strength := w.worthWriting(a); strength <= 0 || !a.canCarryMore(&w.cfg) {
+	if _, strength := w.worthWriting(a); strength <= 0 || !a.canCarryKind(&w.cfg, FoodBook) {
 		a.requestDecision(TriggerTargetLost) // hands filled, or nothing left to say
 		return
 	}
@@ -266,7 +266,7 @@ func (w *World) runRead(a *Agent) {
 // canWrite says whether this body has something to set down and a hand free to
 // set it down in.
 func (w *World) canWrite(a *Agent) bool {
-	if !a.canCarryMore(&w.cfg) {
+	if !a.canCarryKind(&w.cfg, FoodBook) {
 		return false
 	}
 	_, strength := w.worthWriting(a)

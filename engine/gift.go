@@ -32,10 +32,16 @@ package engine
 // whether anything moved: an empty hand, or a receiver with nothing free, is
 // simply nothing happening.
 func (w *World) giveItem(from, to *Agent) bool {
-	if len(from.carried) == 0 || !to.canCarryMore(&w.cfg) {
+	if len(from.carried) == 0 {
 		return false
 	}
 	item := from.carried[0]
+	// Room for this thing in particular: with the hand priced by weight alone
+	// (stage 80a) a coin needs no hand, so what is being handed over has to be
+	// known before the question can be asked.
+	if !to.canCarryKind(&w.cfg, item.Kind) {
+		return false
+	}
 	// And it has to be something they can do anything with (found in stage
 	// 51). Receiving costs nothing was the rule here, and it was wrong for
 	// the one case nobody had thought of: a hand is the world's scarcest

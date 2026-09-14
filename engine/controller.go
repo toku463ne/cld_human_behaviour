@@ -978,7 +978,20 @@ func trustBought(cfg *Config, affinity, amount float64) float64 {
 // between them the way it decides everything else.
 func (c *AIController) addGive(p *Perception, o *AgentView) {
 	cfg, s := p.Cfg, &p.Self
-	if s.Carried == 0 || cfg.AffinityGift <= 0 || cfg.AffinityTrust <= 0 || !o.CarryRoom {
+	if s.Carried == 0 || cfg.AffinityGift <= 0 || cfg.AffinityTrust <= 0 {
+		return
+	}
+	// Room for the thing that would actually change hands (stage 80a): where
+	// the hand is priced by weight alone, something that weighs nothing needs
+	// no hand. A body holding nothing heavy is holding nothing but weightless
+	// things, so what it would hand over is one of those; anything else is
+	// asked the old question, which is the same bool in every world before
+	// this rule.
+	room := o.CarryRoom
+	if s.CarriedHeavy == 0 {
+		room = o.LightRoom
+	}
+	if !room {
 		return
 	}
 	gained := trustBought(cfg, o.Affinity, cfg.AffinityGift)
@@ -1046,7 +1059,11 @@ func (c *AIController) addOffer(p *Perception) {
 // still be running when it gets there.
 func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 	cfg, s := p.Cfg, &p.Self
-	if !o.Offering || o.OfferLeft <= 0 || !s.CarryRoom || o.Dist <= 1e-9 {
+	room := s.CarryRoom
+	if weightless(o.OfferKind) {
+		room = s.LightRoom
+	}
+	if !o.Offering || o.OfferLeft <= 0 || !room || o.Dist <= 1e-9 {
 		return
 	}
 	incoming := c.incomingDmg
@@ -1200,7 +1217,7 @@ func (c *AIController) addBooks(p *Perception) {
 		best := 0.0
 		for i := range p.Others {
 			o := &p.Others[i]
-			if !o.CarryRoom || o.Species != s.Species {
+			if !o.LightRoom || o.Species != s.Species {
 				continue
 			}
 			if g := trustBought(cfg, o.Affinity, cfg.AffinityGift); g > best {
@@ -1222,7 +1239,7 @@ func (c *AIController) addBooks(p *Perception) {
 	// nobody is racing for it: a book is worth something only to whoever
 	// does not already know what it says, so two bodies wanting the same one
 	// is not the usual case and is not assumed.
-	if !s.CarryRoom {
+	if !s.LightRoom {
 		return
 	}
 	for i := range p.Books {
@@ -1340,7 +1357,7 @@ func (c *AIController) addCook(p *Perception) {
 // counted, and not worth anything to a body that will never need a meal.
 func (c *AIController) addCoins(p *Perception) {
 	cfg, s := p.Cfg, &p.Self
-	if len(p.Coins) == 0 || !s.CarryRoom {
+	if len(p.Coins) == 0 || !s.LightRoom {
 		return
 	}
 	want, need := coinWorth(cfg, s, otherMeals(s, 0)), carryNeed(cfg, s)

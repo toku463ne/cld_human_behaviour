@@ -128,15 +128,31 @@ func (w *World) mealsOf(a *Agent, f *Food) float64 {
 	return w.mealValues(a)[f.Kind]
 }
 
+// weightless says whether a thing of this kind costs nothing to carry (#66).
+// A coin and a book are the two: what they cost a body is the hand, and
+// whether the hand is a cost at all is what CarrySlotsWeigh decides.
+func weightless(kind FoodKind) bool {
+	return kind == FoodCoin || kind == FoodBook
+}
+
 // heavyCarried is how many of the things in hand weigh anything (stage 71).
 func (a *Agent) heavyCarried() int {
 	n := 0
 	for i := range a.carried {
-		if k := a.carried[i].Kind; k != FoodCoin && k != FoodBook {
+		if !weightless(a.carried[i].Kind) {
 			n++
 		}
 	}
 	return n
+}
+
+// slotsTaken is how much of this body's hands its load takes up: everything
+// it holds, or only what weighs something (stage 80a).
+func (a *Agent) slotsTaken(cfg *Config) int {
+	if cfg.CarrySlotsWeigh {
+		return a.heavyCarried()
+	}
+	return len(a.carried)
 }
 
 // burden is the multiplier a load puts on the cost of moving. One for a body
@@ -167,7 +183,30 @@ func (a *Agent) canCarryMore(cfg *Config) bool {
 		// the weight is what says so (stage 71).
 		return true
 	}
-	return len(a.carried) < a.carrySlots(cfg)
+	return a.slotsTaken(cfg) < a.carrySlots(cfg)
+}
+
+// canCarryKind is the same question asked about one kind of thing (stage 80a).
+//
+// With CarrySlotsWeigh on, the only price of holding something is the one #66
+// argued for - its weight - so a thing with no weight takes no hand and there
+// is always room for one. A meal still needs a hand, and a hand full of money
+// is still a hand free for dinner, which is the whole of the rule: it was the
+// slot rather than the weight that was charging a coin, and the slot was never
+// argued for anywhere (stage 71's own note on CarrySlotted).
+//
+// It is not a new kind of ownership and not a second rule about money: what
+// counts as weightless here is the same set the weight itself leaves out
+// (heavyCarried, stage 71), so a coin and a book are treated alike because
+// they weigh alike.
+func (a *Agent) canCarryKind(cfg *Config, kind FoodKind) bool {
+	if cfg.CarryCapacity <= 0 {
+		return false
+	}
+	if cfg.CarrySlotted && cfg.CarrySlotsWeigh && weightless(kind) {
+		return true
+	}
+	return a.canCarryMore(cfg)
 }
 
 // carrySlots is how many items this body could reasonably hold.
@@ -207,7 +246,7 @@ func (w *World) canCarry(a *Agent, f *Food) bool {
 // take moves an item out of the world and into a pair of hands.
 func (w *World) take(a *Agent, foodID int) {
 	f := w.foodByID(foodID)
-	if f == nil || !w.canCarry(a, f) || !a.canCarryMore(&w.cfg) {
+	if f == nil || !w.canCarry(a, f) || !a.canCarryKind(&w.cfg, f.Kind) {
 		a.requestDecision(TriggerTargetLost)
 		return
 	}

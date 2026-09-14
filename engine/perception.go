@@ -142,6 +142,12 @@ type SelfView struct {
 	CarryRoom     bool
 	CarryCapacity float64
 
+	// LightRoom is the same question asked about something that weighs
+	// nothing (stage 80a): a coin, or a book. With the hand priced by weight
+	// alone there is always room for one of those, and in every world before
+	// it this is the same bool as CarryRoom.
+	LightRoom bool
+
 	// Heal is what one of each kind would put back into this body's vitality
 	// (stage 39). Zero for everything a world's carcasses do not mend, which
 	// is every kind in a world with the rule off. Not hidden, for the same
@@ -431,7 +437,9 @@ type AgentView struct {
 
 	// CarryRoom says this one has a hand free (stage 48). Whether somebody
 	// can be handed a thing is as visible as whether they are carrying one.
+	// LightRoom is the same about something that weighs nothing (stage 80a).
 	CarryRoom bool
+	LightRoom bool
 
 	AttackingMe bool
 	CourtingMe  bool
@@ -633,6 +641,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		Carried:           len(a.carried),
 		CarryCapacity:     a.carryCapacity(&w.cfg),
 		CarryRoom:         a.canCarryMore(&w.cfg),
+		LightRoom:         a.canCarryKind(&w.cfg, FoodCoin),
 		HasStone:          a.canThrow(&w.cfg),
 		CanCook:           w.canCook(a),
 		CanWrite:          w.canWrite(a),
@@ -853,6 +862,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Rejected:    a.isRejected(o.ID),
 			ThrowHit:    w.throwHitFor(a, o, math.Sqrt(d2)),
 			CarryRoom:   o.canCarryMore(&w.cfg),
+			LightRoom:   o.canCarryKind(&w.cfg, FoodCoin),
 			AttackingMe: o.Action.Kind == ActAttack && o.Action.TargetID == a.ID,
 			CourtingMe:  o.Action.Kind == ActCourt && o.Action.TargetID == a.ID,
 			DeclaredFor: o.declaredFor(),

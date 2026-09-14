@@ -283,11 +283,18 @@ func (a *Agent) firstForSale(cfg *Config) int {
 // CoinUse is what the money came to. Read only.
 type CoinUse struct {
 	// Lying is how many are on the ground and Held how many are in hands.
+	// The two add up to the world's money, which is a check worth having:
+	// no rule makes a coin or destroys one.
 	Lying int
 	Held  int
 
-	// Holders is the share of living bodies holding one.
-	Holders float64
+	// Holders is the share of living bodies holding one, and PerHolder how
+	// many each of those has. PerHolder was one to the digit in every world
+	// before stage 80a, because a hand is one hand - which is why counting
+	// hands and counting coins gave the same figure and why they are now
+	// counted apart.
+	Holders   float64
+	PerHolder float64
 
 	// Sales is how many times a coin bought a meal, and Refused how many
 	// times a buyer walked up to somebody who would not sell. The second is
@@ -312,10 +319,20 @@ func (w *World) Coins() CoinUse {
 			continue
 		}
 		n++
-		if a.carriedIndex2(FoodCoin) >= 0 {
-			out.Held++
-			out.Holders++
+		held := 0
+		for k := range a.carried {
+			if a.carried[k].Kind == FoodCoin {
+				held++
+			}
 		}
+		out.Held += held
+		if held > 0 {
+			out.Holders++
+			out.PerHolder += float64(held)
+		}
+	}
+	if out.Holders > 0 {
+		out.PerHolder /= out.Holders
 	}
 	if n > 0 {
 		out.Holders /= n

@@ -4080,6 +4080,7 @@ func main() {
 	drop := flag.Bool("drop", false, "bodies can put down what they are holding (stage 70; off is every world before it)")
 	noahead := flag.Bool("noahead", false, "put back the world before 2026-09-13: one planning window rather than two (stages 67, 72, 73, 74)")
 	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
+	lighthands := flag.Bool("lighthands", false, "a hand is taken up only by what weighs something, so a coin takes none (stage 80a; needs -terrain for the money)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
 	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
 	flag.Parse()
@@ -4112,6 +4113,12 @@ func main() {
 	// price.
 	if *hands {
 		cfg.CarrySlotted, cfg.CarryDiminishes = false, true
+	}
+	// Or only the half of it that money is charged by (stage 80a): a hand is
+	// taken up by what weighs something, so a coin takes none and a body can
+	// hold its dinner and its money at once.
+	if *lighthands {
+		cfg.CarrySlotsWeigh = true
 	}
 	// And where the enemies come from (stage 58), which is the map's own
 	// dangerous country rather than a harder world: the same number of them

@@ -1764,6 +1764,64 @@ var variants = []variant{
 	// what the correction did can be read off a pair rather than against a
 	// record taken in a different world.
 	{
+		// Stage 80a: the hand is taken up only by what weighs something, so a
+		// coin needs no hand. Counted before it was built: a buyer holds
+		// 1.000 coins and never two, while this map has 2.36 coins per human
+		// and 38 of its 60 lying on the ground - the hand is what stops the
+		// second coin, not the supply. And a price of more than one coin,
+		// which is what stage 80 is, has nothing to move until there is one.
+		name:  "coinslight",
+		about: "80a: money world, and a hand is taken up only by what weighs something",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh = true
+		},
+		stores: playedStores,
+	},
+	{
+		// The same with the brake on. With nothing to stop it a body can hold
+		// every coin in the world for nothing, because what is already in
+		// hand is taken off what one more is worth only when CarryDiminishes
+		// is on - and stage 71 measured that rule as dead code in a world
+		// where no hand ever held two things. This is where it stops being
+		// dead code.
+		name:  "coinslightdim",
+		about: "80a with the nth coin worth less than the first (71's diminish, live at last)",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CarryDiminishes = true, true
+		},
+		stores: playedStores,
+	},
+	// And the pair that says where the cost of it goes. Freeing the hand of
+	// money is not only money going in: it is dinner going in, because half
+	// the bodies in this world were holding a coin instead. Carrying food is
+	// what stage 40 measured at -8.90 * with nearest +22.25 ** on this very
+	// map, and that is the fingerprint the stage came back with - so these
+	// two take the food out of the hand on both sides and leave the money.
+	{
+		name:  "coinsnofoodcarry",
+		about: "money world, nobody carries food (the control for 80a's cost)",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarryValue = 0
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinslightnofoodcarry",
+		about: "80a, nobody carries food: is what it costs the money or the dinner?",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarryValue, c.CarrySlotsWeigh = 0, true
+		},
+		stores: playedStores,
+	},
+	{
 		name:  "coinscertain",
 		about: "the world 51 was measured in: a coin scored as a sure thing, unraced",
 		apply: func(c *engine.Config) {
@@ -2863,6 +2921,20 @@ var variants = []variant{
 		apply: func(c *engine.Config) { c.OfferTicks, c.Coins = 30, 60 },
 	},
 	{
+		// And 80a there. The played map is the poor one, and what stage 40
+		// measured about carrying food (-8.90 * with nearest +22.25 ** on
+		// that map) and stage 48 about giving it away (-11.27 **) both say
+		// the same thing: a rule that puts food in hands is good where there
+		// is food to spare and dear where there is not. Freeing the hand of
+		// money is such a rule, because the hand it frees fills with dinner.
+		name:  "coinsflatlight",
+		about: "80a on the flat world: is the cost the rule or the poor map?",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh = true
+		},
+	},
+	{
 		name:  "coinsflatnone",
 		about: "the pair for it: the flat world with no money",
 		apply: func(c *engine.Config) { c.OfferTicks = 30 },
@@ -3747,7 +3819,7 @@ var metricNames = []string{
 	"cryShare", "offerHeard", "offerDraw", "giftsCried",
 	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
-	"coinsLying", "coinsHeld", "coinHolders", "sales", "salesRefused", "saleRate",
+	"coinsLying", "coinsHeld", "coinHolders", "coinsPer", "sales", "salesRefused", "saleRate",
 	"booksWritten", "booksRead", "booksLying", "booksHeld", "bookHolders", "bookFidelity",
 	"lostSight", "missingDir", "lonelyDraw",
 	"motherRears", "mumNear", "dadNear", "ageFemale", "ageMale",
@@ -4416,6 +4488,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"coinsLying":   float64(money.Lying),
 		"coinsHeld":    float64(money.Held),
 		"coinHolders":  money.Holders,
+		// How many each holder has (stage 80a). One to the digit in every
+		// world before the hand stopped being what a coin costs, so this is
+		// the column that says whether a second coin ever happens - which is
+		// what a price of more than one needs (stage 79).
+		"coinsPer": money.PerHolder,
 		"sales":        float64(money.Sales),
 		"salesRefused": float64(money.Refused),
 		"saleRate":     perAgentLifetime(money.Sales, personTicks),
