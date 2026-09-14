@@ -142,6 +142,11 @@ type SelfView struct {
 	CarryRoom     bool
 	CarryCapacity float64
 
+	// Coins is how much money is in this body's own hands (stage 80). One or
+	// none in every world before a coin stopped taking a hand, and what a
+	// price of more than one has to be met out of.
+	Coins int
+
 	// LightRoom is the same question asked about something that weighs
 	// nothing (stage 80a): a coin, or a book. With the hand priced by weight
 	// alone there is always room for one of those, and in every world before
@@ -648,6 +653,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		BookInHand:        w.heldBookValue(a),
 		CookQuality:       w.cookQuality(a),
 		HasCoin:           a.carriedIndex2(FoodCoin) >= 0,
+		Coins:             a.coinsHeld(),
 		FedRate:           a.fedRate(&w.cfg, w.tick),
 		HeldMeals:         w.heldMeals(a),
 		CarriedHeavy:      a.heavyCarried(),

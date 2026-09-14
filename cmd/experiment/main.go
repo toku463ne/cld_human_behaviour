@@ -1801,6 +1801,45 @@ var variants = []variant{
 	// what stage 40 measured at -8.90 * with nearest +22.25 ** on this very
 	// map, and that is the fingerprint the stage came back with - so these
 	// two take the food out of the hand on both sides and leave the money.
+	// Stage 80: a sale has a price in coins. It reads against coinslight
+	// rather than coins, because a price of more than one needs a buyer that
+	// can hold a second coin - which is 80a and nothing else.
+	{
+		name:  "coinsprice",
+		about: "80: the price is the fewest coins that leave the seller better off (needs 80a)",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+		},
+		stores: playedStores,
+	},
+	{
+		// The rounding is the sharing: the middle of the range rather than the
+		// bottom of it, so the surplus goes the other way.
+		name:  "coinspricesplit",
+		about: "80 with the price in the middle of the range rather than at the seller's floor",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices, c.SalePriceSplit = true, true, true
+		},
+		stores: playedStores,
+	},
+	{
+		// The control for the half of stage 80 that is not the price: a buyer
+		// that sets out as though a thing cost one coin, in a world where it
+		// does not. If what the stage buys is bodies not walking to sellers
+		// they cannot pay, this is where it goes away.
+		name:  "coinspriceblind",
+		about: "80's control: sales are priced, but a buyer reckons on one coin and walks anyway",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices, c.CoinPriceBlind = true, true, true
+		},
+		stores: playedStores,
+	},
 	{
 		name:  "coinsnofoodcarry",
 		about: "money world, nobody carries food (the control for 80a's cost)",
@@ -2935,6 +2974,14 @@ var variants = []variant{
 		},
 	},
 	{
+		name:  "coinsflatprice",
+		about: "80 on the flat world, where 80a pays rather than costs",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+		},
+	},
+	{
 		name:  "coinsflatnone",
 		about: "the pair for it: the flat world with no money",
 		apply: func(c *engine.Config) { c.OfferTicks = 30 },
@@ -3820,6 +3867,7 @@ var metricNames = []string{
 	"storeHeld", "storeKnown", "storeKnowers", "storeIn", "storeOut",
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
 	"coinsLying", "coinsHeld", "coinHolders", "coinsPer", "sales", "salesRefused", "saleRate",
+	"salePrice", "priceOver1", "coinsPaid",
 	"booksWritten", "booksRead", "booksLying", "booksHeld", "bookHolders", "bookFidelity",
 	"lostSight", "missingDir", "lonelyDraw",
 	"motherRears", "mumNear", "dadNear", "ageFemale", "ageMale",
@@ -4493,6 +4541,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// the column that says whether a second coin ever happens - which is
 		// what a price of more than one needs (stage 79).
 		"coinsPer": money.PerHolder,
+		// What was paid (stage 80). salePrice is the mean number of coins a
+		// sale went for and priceOver1 the share that went for more than one:
+		// if the second is near zero, the price is a variable with one value.
+		"salePrice":    ratio(money.Paid, money.Sales),
+		"priceOver1":   ratio(money.OverOne, money.Sales),
+		"coinsPaid":    float64(money.Paid),
 		"sales":        float64(money.Sales),
 		"salesRefused": float64(money.Refused),
 		"saleRate":     perAgentLifetime(money.Sales, personTicks),

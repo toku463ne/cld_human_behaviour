@@ -1,5 +1,7 @@
 package engine
 
+import "math"
+
 // Money (stage 51).
 //
 // The last piece of the plumbing, and the one the two before it were laid for:
@@ -191,6 +193,116 @@ func (w *World) saleTerms(seller *Agent, buyer *Agent, item *Food) (float64, flo
 	return coin, food - lug
 }
 
+// saleRange is the two limits a price has to sit between (stage 80): the
+// fewest coins that would make the seller better off, and the most the buyer
+// would be better off paying.
+//
+// Both come out of figures that already exist. The seller's side is willSell
+// itself, rearranged: it says yes when coin x price + goodwill beats what it
+// is giving up, so the floor is that comparison divided by what one coin is
+// worth to it. The buyer's side is addBuy, rearranged the same way: it is
+// better off while what it gets beats what the coins would have bought.
+//
+// Neither is a new estimate and neither side learns anything about the other.
+// The world works both out at the counter, which is where willSell has always
+// been asked - a price is settled when the buyer arrives, not advertised.
+func (w *World) saleRange(seller, buyer *Agent, item *Food) (float64, float64, bool) {
+	cfg := &w.cfg
+	ss := w.selfView(seller)
+	coinS := coinWorth(cfg, &ss, otherMeals(&ss, w.mealsOf(seller, item)))
+	coinTotal, foodNet := w.saleTerms(seller, buyer, item)
+	net := foodNet - (coinTotal - coinS) // the goodwill is not per coin
+	floor := 0.0
+	switch {
+	case coinS > 0:
+		floor = net / coinS
+	case net < 0:
+		// A seller that puts nothing on money at all, which is most of them:
+		// what it gets out of the sale is the weight it stops carrying, and
+		// that is the same whether it is handed one coin or five. These are
+		// the sales this world has always had (stage 76), so the price has to
+		// leave them alone: anything clears.
+		floor = 0
+	default:
+		return 0, 0, false
+	}
+
+	// And the buyer's, priced exactly as addBuy prices it - what is on the
+	// counter is worth what it is to whoever is looking (stage 49), and what
+	// it gives up is what the coins would have bought.
+	sb := w.selfView(buyer)
+	coinB := coinWorth(cfg, &sb, otherMeals(&sb, cfg.CoinValue))
+	meal := w.wareValue(buyer, &sb, item)
+	goodwillB := 0.0
+	if op := w.opinionOf(buyer, seller.ID); op != nil {
+		goodwillB = saleGoodwill(cfg, w.decayedAffinity(buyer, op))
+	}
+	if coinB <= 0 {
+		// And a buyer that puts nothing on money is not made worse off by any
+		// price. What caps it then is the purse, not the reckoning.
+		if meal+goodwillB <= 0 {
+			return 0, 0, false
+		}
+		return floor, math.Inf(1), true
+	}
+	return floor, (meal + goodwillB) / coinB, true
+}
+
+// wareValue is what something held out is worth to the one looking at it: the
+// same two figures the buyer's own option is scored with, in one place so that
+// the price and the decision to walk over cannot drift apart.
+func (w *World) wareValue(a *Agent, s *SelfView, item *Food) float64 {
+	cfg := &w.cfg
+	if item.Kind == FoodBook {
+		return cfg.BookValue * w.bookValue(a, item)
+	}
+	nutrition, heal := s.Nutrition[item.Kind], w.itemHealKnown(a, item)
+	meal := mealValue(cfg, s, 0, nutrition, heal)
+	if kept := keepValue(cfg, s, 0, nutrition, heal,
+		otherMeals(s, cfg.CoinValue), w.spoilsIn(item)); kept > meal {
+		meal = kept
+	}
+	return meal
+}
+
+// salePrice is what a sale costs, in coins (stage 80).
+//
+// With prices off it is the world every figure before this was measured in:
+// one coin, and willSell's yes or no. With them on it is the cheapest number
+// of coins that clears the seller's floor - or the middle of the range, which
+// is the same rule with the surplus shared the other way (SalePriceSplit).
+//
+// The rounding is the sharing: coins do not divide, so whichever end the price
+// is taken from is the end that keeps what is left over. Counted before this
+// was written, it is a choice about very little - the median number of whole
+// prices that fit between the two limits is one.
+func (w *World) salePrice(seller, buyer *Agent, item *Food) (int, bool) {
+	cfg := &w.cfg
+	if !cfg.CoinPrices {
+		return 1, w.willSell(seller, buyer, item)
+	}
+	floor, ceiling, ok := w.saleRange(seller, buyer, item)
+	if !ok {
+		return 0, false
+	}
+	price := math.Floor(floor) + 1 // strictly above: the seller has to gain
+	if price < 1 {
+		price = 1
+	}
+	if cfg.SalePriceSplit {
+		// The middle of what is actually payable: a purse is a limit on the
+		// range as real as the buyer's own reckoning.
+		top := math.Min(ceiling, float64(buyer.coinsHeld()))
+		if mid := math.Round((math.Max(floor, price-1) + top) / 2); mid > price {
+			price = mid
+		}
+	}
+	if price >= ceiling {
+		return 0, false // nothing a buyer would pay leaves the seller better off
+	}
+	return int(price), true
+}
+
 // sell moves one item each way. Nothing else is recorded: no price, no ledger,
 // no memory of the trade as a trade.
 //
@@ -208,21 +320,38 @@ func (w *World) sell(buyer, seller *Agent) bool {
 	if coin < 0 || item < 0 || !w.canCarry(buyer, &seller.carried[item]) {
 		return false // nobody buys what it could do nothing with
 	}
+	price, agreed := w.salePrice(seller, buyer, &seller.carried[item])
+	if agreed && !buyer.canReceiveFor(&w.cfg, seller.carried[item].Kind, price) {
+		agreed = false // nowhere to put it once the money has gone
+	}
+	// And what neither side's arithmetic can conjure: the coins to pay with,
+	// and somewhere to put them. A price is only a price a body can meet
+	// (stage 80) - which is why this stage waited for a hand that a coin does
+	// not fill (stage 80a).
+	if agreed && (buyer.coinsHeld() < price || !seller.canTakeCoins(&w.cfg, price)) {
+		agreed = false
+	}
 	coinWorth, itemWorth := w.saleTerms(seller, buyer, &seller.carried[item])
-	agreed := coinWorth > itemWorth
 	w.noteSale(buyer, seller, coinWorth, itemWorth, agreed)
 	if !agreed {
 		w.salesRefused++
 		return false
 	}
-	c, f := buyer.carried[coin], seller.carried[item]
-	w.removeCarried(buyer, coin)
+	f := seller.carried[item]
 	w.removeCarried(seller, item)
+	for i := 0; i < price; i++ {
+		c := buyer.carried[buyer.carriedIndex2(FoodCoin)]
+		w.removeCarried(buyer, buyer.carriedIndex2(FoodCoin))
+		seller.carried = append(seller.carried, c)
+		w.heldKind[c.Kind]++
+	}
 	buyer.carried = append(buyer.carried, f)
-	seller.carried = append(seller.carried, c)
 	w.heldKind[f.Kind]++
-	w.heldKind[c.Kind]++
 	w.sales++
+	w.salePaid += price
+	if price > 1 {
+		w.salesOverOne++
+	}
 	// What it earns, both ways, through the same call a hand-over makes
 	// (stage 68). Stage 51 left this out on purpose - a sale is not a favour
 	// - and what its measurement then showed is that without it the seller is
@@ -236,6 +365,65 @@ func (w *World) sell(buyer, seller *Agent) bool {
 		w.noteCookedHandOver(buyer, &f, true)
 		if !w.cfg.CookSurvivesHands {
 			buyer.carried[len(buyer.carried)-1].Cooked = 0
+		}
+	}
+	return true
+}
+
+// standardPrice is what a meal goes for, in coins: the price both sides'
+// arithmetic points at, because a coin is a claim on CoinValue of a meal and
+// nothing else (#73). A buyer has no way of knowing what a particular seller
+// would take - that is the seller's own state, which is hidden - so it reckons
+// on the standard, exactly as a body reckons a rival's speed at the world's
+// standard speed (stage 49).
+func standardPrice(cfg *Config) int {
+	if !cfg.CoinPrices || cfg.CoinPriceBlind || cfg.CoinValue <= 0 {
+		return 1
+	}
+	return max(1, int(math.Ceil(1/cfg.CoinValue)))
+}
+
+// canReceiveFor says whether a buyer will have a hand for what it is buying
+// once the coins have left.
+//
+// Written for stage 80 and true of one coin as well: where a coin takes no
+// hand (stage 80a), paying frees nothing, so a body holding its dinner and a
+// coin has nowhere to put a second dinner. Before 80a this could not arise -
+// the coin was in the only hand there was - which is why nothing asked.
+func (a *Agent) canReceiveFor(cfg *Config, kind FoodKind, coins int) bool {
+	if cfg.CarryCapacity <= 0 {
+		return false
+	}
+	if !cfg.CarrySlotted || (cfg.CarrySlotsWeigh && weightless(kind)) {
+		return true
+	}
+	taken := a.slotsTaken(cfg)
+	if !cfg.CarrySlotsWeigh {
+		taken -= coins // where a coin takes a hand, paying frees one
+	}
+	return taken < a.carrySlots(cfg)
+}
+
+// coinsHeld is how much money is in these hands (stage 80).
+func (a *Agent) coinsHeld() int {
+	n := 0
+	for i := range a.carried {
+		if a.carried[i].Kind == FoodCoin {
+			n++
+		}
+	}
+	return n
+}
+
+// canTakeCoins says whether a seller could accept that many coins. One goes
+// into the hand the item just left; the rest need room of their own, which
+// where a coin takes no hand (stage 80a) they always have - and where it does,
+// never. That is what makes a price of more than one inert in every world
+// before 80a, without a rule saying so.
+func (a *Agent) canTakeCoins(cfg *Config, n int) bool {
+	for i := 1; i < n; i++ {
+		if !a.canCarryKind(cfg, FoodCoin) {
+			return false
 		}
 	}
 	return true
@@ -296,6 +484,11 @@ type CoinUse struct {
 	Holders   float64
 	PerHolder float64
 
+	// Paid is how many coins changed hands over those sales and OverOne how
+	// many of them went for more than one coin (stage 80): together they say
+	// whether the price is a variable at all or only a name for one.
+	Paid, OverOne int
+
 	// Sales is how many times a coin bought a meal, and Refused how many
 	// times a buyer walked up to somebody who would not sell. The second is
 	// the one this stage turns on: it says whether the market failed for want
@@ -306,7 +499,8 @@ type CoinUse struct {
 
 // Coins reports what the money came to.
 func (w *World) Coins() CoinUse {
-	out := CoinUse{Sales: w.sales, Refused: w.salesRefused}
+	out := CoinUse{Sales: w.sales, Refused: w.salesRefused,
+		Paid: w.salePaid, OverOne: w.salesOverOne}
 	for i := range w.foods {
 		if w.foods[i].Kind == FoodCoin {
 			out.Lying++

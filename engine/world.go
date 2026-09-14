@@ -495,6 +495,11 @@ type World struct {
 	// of buyers or for want of sellers.
 	sales        int
 	salesRefused int
+	// What was paid, in coins, and how many sales went for more than one
+	// (stage 80): the two figures that say whether the price is a variable at
+	// all or only a name for one.
+	salePaid     int
+	salesOverOne int
 
 	// What was written down and what was read (stage 69).
 	booksWritten int

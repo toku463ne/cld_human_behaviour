@@ -1424,7 +1424,29 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	// half that is its own: a body should not be made to pay for something it
 	// cannot see it is getting. It is the same figure the seller weighs, from
 	// the other end.
-	gain := meal + saleGoodwill(cfg, o.Affinity) - coinWorth(cfg, s, otherMeals(s, cfg.CoinValue))
+	// What it would cost, in coins (stage 80). What a particular seller would
+	// take is that seller's own state and hidden, so a buyer reckons on the
+	// standard - and a body that cannot raise it does not set out, which is
+	// the same answer it would get at the counter.
+	price := float64(standardPrice(cfg))
+	if s.Coins < int(price) {
+		return
+	}
+	// And whether there will be a hand for it once the money has gone. Before
+	// stage 80a the coin was in the only hand there was, so paying always
+	// freed one and nothing had to ask; where a coin takes no hand, paying
+	// frees nothing.
+	if cfg.CarrySlotsWeigh && cfg.CarrySlotted {
+		room := s.CarryRoom
+		if weightless(o.OfferKind) {
+			room = s.LightRoom
+		}
+		if !room {
+			return
+		}
+	}
+	gain := meal + saleGoodwill(cfg, o.Affinity) -
+		price*coinWorth(cfg, s, otherMeals(s, cfg.CoinValue*price))
 	if gain <= 0 {
 		return
 	}

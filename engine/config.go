@@ -810,6 +810,43 @@ type Config struct {
 	// the second slot" has never once been true.
 	CarrySlotted bool
 
+	// CoinPrices is whether a sale has a price in coins rather than being one
+	// coin for one thing (stage 80).
+	//
+	// Until stage 80a there was nothing for a price to be: the seller wants
+	// 1/CoinValue coins for an ordinary meal - two, at the default - and a
+	// buyer could hold one. Counted over 691 opportunities, the share where a
+	// whole price fits between the two sides' limits AND the buyer holds that
+	// many was 0.0159, which is exactly the set that trades at a fixed price
+	// of one. With 80a on it is 0.1571.
+	//
+	// The price is settled at the counter, where willSell has always been
+	// asked, and out of figures that already exist: the seller's floor is
+	// willSell rearranged, the buyer's ceiling is addBuy rearranged. Nothing
+	// is advertised and neither side learns anything about the other - a
+	// buyer walking over reckons on the standard price (standardPrice), the
+	// same way it reckons a rival's speed at the world's standard speed.
+	CoinPrices bool
+
+	// CoinPriceBlind is the control for the reckoning half of stage 80: the
+	// sale is priced, but a buyer sets out as though it would pay one coin.
+	//
+	// The stage does two things at once - sellers can be paid more, and
+	// buyers stop walking to sellers they cannot pay - and this takes the
+	// second away while leaving the first. It is the shape stage 49's deaf
+	// control had: the same time spent, the information gone.
+	CoinPriceBlind bool
+
+	// SalePriceSplit is whether the price is the middle of the range rather
+	// than the least the seller would take (stage 80).
+	//
+	// Coins do not divide, so the rounding is the sharing: the cheapest whole
+	// price that clears the seller's floor leaves the rest of the surplus
+	// with the buyer, and the middle splits it. Counted before it was
+	// written, this decides very little - the median number of whole prices
+	// that fit between the two limits is one.
+	SalePriceSplit bool
+
 	// CarrySlotsWeigh is whether a hand is taken up only by what weighs
 	// something (stage 80a).
 	//
@@ -2605,6 +2642,9 @@ func DefaultConfig() Config {
 
 		// Stage 71: the hand as a slot, and what a second thing in it is
 		// worth. The first two are the world as it was; the third is a fix.
+		CoinPrices:              false,
+		CoinPriceBlind:          false,
+		SalePriceSplit:          false,
 		CarrySlotted:            true,
 		CarrySlotsWeigh:         false,
 		CarryDiminishes:         false,
