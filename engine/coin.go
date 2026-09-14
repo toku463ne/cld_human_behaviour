@@ -119,10 +119,22 @@ func saleGoodwill(cfg *Config, affinity float64) float64 {
 // not, so a body that sells keeps the same expectation and walks lighter, and
 // that difference is what this returns true on.
 func (w *World) willSell(seller *Agent, buyer *Agent, item *Food) bool {
+	coin, food := w.saleTerms(seller, buyer, item)
+	return coin > food
+}
+
+// saleTerms is the two sides of that comparison kept apart: what the seller
+// would be getting and what it would be giving up.
+//
+// They are returned rather than compared on the spot so that stage 75 can say
+// which of the two had moved when a refusal later turned into a sale. Both are
+// the seller's - the buyer has no threshold of its own - so that is the whole
+// of what changing its mind can mean.
+func (w *World) saleTerms(seller *Agent, buyer *Agent, item *Food) (float64, float64) {
 	cfg := &w.cfg
 	s := w.selfView(seller)
 	if cfg.CoinValue <= 0 {
-		return false // money nobody values buys nothing
+		return 0, 1 // money nobody values buys nothing
 	}
 	// What the coin would be worth to the seller, once this item has left its
 	// hand: the thing being sold is not in the way of its own price.
@@ -144,7 +156,7 @@ func (w *World) willSell(seller *Agent, buyer *Agent, item *Food) bool {
 	// the asymmetry this world has never had, and it is why this branch is
 	// three lines rather than a second valuation.
 	if item.Kind == FoodBook {
-		return coin > w.bookValue(seller, item)
+		return coin, w.bookValue(seller, item)
 	}
 	// What the food in hand is worth to it: eaten now, or kept.
 	nutrition := w.mealValues(seller)[item.Kind]
@@ -162,7 +174,7 @@ func (w *World) willSell(seller *Agent, buyer *Agent, item *Food) bool {
 		wait = clamp((cfg.StarveHunger-s.Hunger)/s.HungerRate, 0, cfg.PlanHorizon)
 	}
 	lug := (burdenWith(cfg, &s, 0) - burdenWith(cfg, &s, -1)) * moveCostAt(cfg, 0.4) * groundOf(&s) * wait
-	return coin > food-lug
+	return coin, food - lug
 }
 
 // sell moves one item each way. Nothing else is recorded: no price, no ledger,
@@ -182,7 +194,10 @@ func (w *World) sell(buyer, seller *Agent) bool {
 	if coin < 0 || item < 0 || !w.canCarry(buyer, &seller.carried[item]) {
 		return false // nobody buys what it could do nothing with
 	}
-	if !w.willSell(seller, buyer, &seller.carried[item]) {
+	coinWorth, itemWorth := w.saleTerms(seller, buyer, &seller.carried[item])
+	agreed := coinWorth > itemWorth
+	w.noteSale(buyer, seller, coinWorth, itemWorth, agreed)
+	if !agreed {
 		w.salesRefused++
 		return false
 	}
@@ -204,6 +219,7 @@ func (w *World) sell(buyer, seller *Agent) bool {
 	}
 	if f.Cooked > 0 {
 		w.cookedHanded++
+		w.noteCookedHandOver(buyer, &f, true)
 		if !w.cfg.CookSurvivesHands {
 			buyer.carried[len(buyer.carried)-1].Cooked = 0
 		}

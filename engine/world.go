@@ -514,6 +514,10 @@ type World struct {
 	cookedEaten  int
 	cookedHanded int
 
+	// What the trading came to, in more detail than the two counters above
+	// (stage 75). It is measurement and no rule reads it: see trade.go.
+	trade tradeWatch
+
 	storeLearned int
 	storeFound   int
 	storeSeen    int

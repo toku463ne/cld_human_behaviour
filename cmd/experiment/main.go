@@ -1656,6 +1656,23 @@ var variants = []variant{
 		stores: playedStores,
 	},
 	{
+		// Stage 75: the same money world with cooking made into something
+		// worth knowing. Everywhere else CookQuality is one, so every body
+		// cooks as well as every other and a cooked thing handed over is
+		// never something the receiver could not have made - which is what
+		// the measurement found, and which is a fact about the maps rather
+		// than about cooking. This is the arm that asks whether a shortage
+		// walking cannot fix appears when the map's author puts one there.
+		name:  "cookservice",
+		about: "75: money on the played map, and cooking worth knowing (CookQuality 0.3)",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CookQuality, c.SkillBirthplace = 0.3, 0.5
+		},
+		stores: playedStores,
+	},
+	{
 		name:  "coinsnone",
 		about: "the pair for it: the same world with no money in it",
 		apply: func(c *engine.Config) {
@@ -2529,7 +2546,7 @@ var variants = []variant{
 		},
 	},
 	{
-		name: "kindsheavy",
+		name:  "kindsheavy",
 		about: "the same two sorts with the heavy one half of the arrivals rather than a quarter",
 		apply: func(c *engine.Config) {
 			c.EnemySpread = 0.6
@@ -3658,6 +3675,8 @@ var metricNames = []string{
 	"motherRears", "mumNear", "dadNear", "ageFemale", "ageMale",
 	"dread", "cheer", "afraid",
 	"cooked", "cookRate", "cookedMeat", "cookedEaten", "cookedHanded",
+	"cookedGiven", "cookedSold", "cookBetter", "cookGap",
+	"saleMet", "saleWon", "saleGap", "saleCoinRose", "saleFoodFell",
 	"cookStanding", "cookSplit", "cookHeld", "cookReal",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate", "drops", "dropCoins",
@@ -3827,7 +3846,7 @@ type sample struct {
 	// humans ended up anywhere else, enemyCrowd how piled up they are, and
 	// prowlBite whether the dying is more violent where they arrive.
 	prowlGain, humanProwl, enemyCrowd, prowlBite float64
-	prowlArrive, enemyBorn float64
+	prowlArrive, enemyBorn                       float64
 
 	// What the bond hands on (stage 65): how far apart two making a child
 	// are, and how many trades the birth itself and the bond put there.
@@ -3851,7 +3870,7 @@ type sample struct {
 	// 60). The world-wide killShare mixes the two and so cannot answer a
 	// question about one pair.
 	humanKillShare, enemyKillShare, humansByEnemy float64
-	plantsToEnemy, plantSeenByEnemy float64
+	plantsToEnemy, plantSeenByEnemy               float64
 
 	// What the lore about the beasts is doing (stage 62).
 	wardHeld, wardReal, wardGap float64
@@ -4091,9 +4110,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			mateTrades: bond.Trades, mateWatch: bond.Mates,
 			humanKillShare: fed.HumanKillShare, enemyKillShare: fed.EnemyKillShare,
 			humansByEnemy: fed.HumansByEnemy,
-			enemiesWet: fed.EnemiesOnWater, humansWet: fed.HumansOnWater,
+			enemiesWet:    fed.EnemiesOnWater, humansWet: fed.HumansOnWater,
 			wardHeld: ward.Held, wardReal: ward.Realised,
-			wardGap: ward.Dear - ward.Open,
+			wardGap:       ward.Dear - ward.Open,
 			plantsToEnemy: fed.PlantsToEnemy, plantSeenByEnemy: fed.SeenByEnemy,
 			kinds: float64(sorts.Kinds), kindMix: sorts.MixError,
 			kindGap: sorts.BudgetGap, kindHomed: sorts.Homed,
@@ -4208,6 +4227,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	money := w.Coins()
 	library := w.Books()
 	kitchen := w.Cooking()
+	trade := w.Trade()
 	feeling := w.Mood()
 	rearing := w.Rearing()
 	apart := w.Loneliness()
@@ -4332,6 +4352,21 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"cookedMeat":   kitchen.Meat,
 		"cookedEaten":  kitchen.Eaten,
 		"cookedHanded": kitchen.Handed,
+		// Where the cooking actually goes, and whether a refusal is final
+		// (stage 75). cookBetter is the one that says whether cooking is a
+		// service: the share of cooked hand-overs where the receiver got
+		// something better than it could have made itself. saleWon over
+		// saleMet says whether a refusal is final - if it is not, a
+		// bargaining mechanism would be a concept this world need not carry.
+		"cookedGiven":  float64(trade.CookedGiven),
+		"cookedSold":   float64(trade.CookedSold),
+		"cookBetter":   trade.Better,
+		"cookGap":      trade.Gap,
+		"saleMet":      float64(trade.Met),
+		"saleWon":      float64(trade.Won),
+		"saleGap":      trade.Gap2,
+		"saleCoinRose": trade.CoinRose,
+		"saleFoodFell": trade.FoodFell,
 		"cookStanding": tail.cookStanding,
 		"cookSplit":    tail.cookSplit,
 		// How the population is feeling (stage 54). afraid is the one that
@@ -4383,15 +4418,15 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"species":        float64(cen.Living()),
 		// The two species apart (stage 60). pop is both together, so a rule
 		// that feeds one of them can raise it without a single extra human.
-		"humans":  speciesMean(cen, engine.SpeciesHuman),
-		"enemies": speciesMean(cen, engine.SpeciesEnemy),
-		"rareShare":      rare.Share,
-		"rareTrough":     rare.Trough,
-		"rareSwing":      rare.Swing,
-		"remembered":     tail.remembered,
-		"friends":        tail.friends,
-		"memFull":        tail.memFull,
-		"restNear":       tail.restNear,
+		"humans":     speciesMean(cen, engine.SpeciesHuman),
+		"enemies":    speciesMean(cen, engine.SpeciesEnemy),
+		"rareShare":  rare.Share,
+		"rareTrough": rare.Trough,
+		"rareSwing":  rare.Swing,
+		"remembered": tail.remembered,
+		"friends":    tail.friends,
+		"memFull":    tail.memFull,
+		"restNear":   tail.restNear,
 		// What the population assumes, and what the world actually did. The
 		// two "Err" figures are the ones to read: a belief is only worth
 		// anything if it is closer to the truth than the constant it replaced,
@@ -4612,9 +4647,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"shelterGain": tail.shelterAll - tail.restShelter,
 		// Where each kind stands, by how well the ground grows plants. A
 		// positive gain is a kind that has ended up on the good ground.
-		"humanRich":     tail.humanRich,
-		"enemyRich":     tail.enemyRich,
-		"richGain":      tail.humanRich - tail.allRich,
+		"humanRich": tail.humanRich,
+		"enemyRich": tail.enemyRich,
+		"richGain":  tail.humanRich - tail.allRich,
 		// Where the population stands, by what the ground does to what a body
 		// can do (stage 57), and how much of the world one body covers in a
 		// lifetime. oneRegion is the share of bodies that never left the block
@@ -4660,12 +4695,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"rearTrades":  tail.rearTrades,
 		"rearMoved":   tail.rearMoved,
 		"nursedTicks": tail.nursedTicks,
-		"mateGap":    tail.mateGap,
-		"loreSpread": tail.loreSpread,
-		"mateTrades": tail.mateTrades,
-		"mateWatch":  tail.mateWatch,
-		"plantRate": tail.plantRate,
-		"foodMean":  tail.foodMean,
+		"mateGap":     tail.mateGap,
+		"loreSpread":  tail.loreSpread,
+		"mateTrades":  tail.mateTrades,
+		"mateWatch":   tail.mateWatch,
+		"plantRate":   tail.plantRate,
+		"foodMean":    tail.foodMean,
 		// Who dies of what, by species (stage 60), and the rule's own firing
 		// rate: how many of the enemies can even see a plant.
 		"humanKillShare":   tail.humanKillShare,
@@ -4678,14 +4713,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// who hold it are standing where the beasts are.
 		// Who stands in the water (stage 63). humansWet is the figure stages
 		// 34, 35 and 36 between them could only move with food.
-		"enemiesWet": tail.enemiesWet,
-		"humansWet":  tail.humansWet,
-		"wardHeld": tail.wardHeld,
-		"wardReal": tail.wardReal,
-		"wardGap":  tail.wardGap,
-		"regionsSeen": roaming.Mean,
-		"oneRegion":   roaming.Alone,
-		"regionShare": roaming.Share,
+		"enemiesWet":    tail.enemiesWet,
+		"humansWet":     tail.humansWet,
+		"wardHeld":      tail.wardHeld,
+		"wardReal":      tail.wardReal,
+		"wardGap":       tail.wardGap,
+		"regionsSeen":   roaming.Mean,
+		"oneRegion":     roaming.Alone,
+		"regionShare":   roaming.Share,
 		"enemyRichGain": tail.enemyRich - tail.allRich,
 		// What the population has made of the ground. regionRank is the one
 		// that says whether any of it is true: the correlation between what

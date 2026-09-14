@@ -62,6 +62,7 @@ func (w *World) giveItem(from, to *Agent) bool {
 	}
 	if item.Cooked > 0 {
 		w.cookedHanded++
+		w.noteCookedHandOver(to, &item, false)
 		if !w.cfg.CookSurvivesHands {
 			to.carried[len(to.carried)-1].Cooked = 0
 		}
