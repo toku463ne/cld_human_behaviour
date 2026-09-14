@@ -71,7 +71,8 @@ func (w *World) scatterCoins() {
 // moment there is nothing about, discounted for the chance of finding anybody
 // to buy it from.
 //
-// It is keepValue and nothing else, which is the point (#73). The discount is
+// It is keepValue and nothing else, which is the point (#73) - of the better
+// of the two meals money buys, once stage 81 is on. The discount is
 // its own figure rather than CarryValue's or StoreValue's because the bet is
 // different again: what is in a hand cannot be taken, what is in a cache can
 // be taken by whoever knows the place, and a coin has to find somebody willing
@@ -84,7 +85,25 @@ func coinWorth(cfg *Config, s *SelfView, held float64) float64 {
 	if cfg.CoinValue <= 0 {
 		return 0
 	}
-	return cfg.CoinValue * keepValue(cfg, s, 0, 1, 0, held, 0) // money does not go off
+	claim := keepValue(cfg, s, 0, 1, 0, held, 0) // money does not go off
+	if cfg.CoinBuysMending && cfg.MeatVitality > 0 {
+		// And the other thing money buys here (stage 81). A coin is a claim on
+		// a meal, and not every meal is the same meal: a carcass mends as well
+		// as feeds, and carcasses are sold - of the wares anybody could
+		// actually be seen offering, counted over six runs, 72% were something
+		// that mends.
+		//
+		// No weights are needed, which is the surprise of the stage. The plan
+		// asked for the claim to be shared out by what the body needs now, and
+		// mealValueAt already caps mending at what the body is actually
+		// missing - so a whole body gets nothing from this branch and a
+		// half-dead one gets all of it. The ceiling is the weight.
+		if mends := keepValue(cfg, s, 0, 1, cfg.MeatVitality*s.MaxVitality,
+			held, 0); mends > claim {
+			claim = mends
+		}
+	}
+	return cfg.CoinValue * claim
 }
 
 // saleGoodwill is what being on better terms with somebody is worth to this

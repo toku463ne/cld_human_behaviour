@@ -1638,6 +1638,34 @@ type Config struct {
 	// it is the last thing standing between that window and being the default.
 	GoalsNeedSurvival bool
 
+	// CoinBuysMending is whether a coin is a claim on the better of the two
+	// meals this world sells rather than on a plain one (stage 81).
+	//
+	// Why it is not a third thing money is good for, and so does not fall foul
+	// of #73: a carcass is food. What changes is which food the claim is on.
+	//
+	// It exists because of what stage 79 measured. The seller compares
+	// CoinValue x keepValue(a meal) against at least keepValue(what it holds),
+	// so for an ordinary meal the ratio is exactly CoinValue whatever the
+	// body's state - the same figure on both sides of the comparison, cancelling
+	// - and the seller is short by half, every time. A claim that can be spent
+	// on mending is the one thing that breaks that, because what a body is
+	// holding is usually a plant and a plant does not mend.
+	//
+	// The plan asked for the claim to be shared out over what the body needs
+	// now, with weights taken from its hunger and from what is hitting it. No
+	// weights are needed: mealValueAt caps mending at what the body is actually
+	// missing, so a whole body gets nothing from the second branch and a
+	// half-dead one gets all of it. Measured across states, the coin is worth
+	// the same to a whole body, 1.20x to one at seven tenths, 1.96x at four
+	// tenths and 2.52x at two.
+	//
+	// What the plan asked for and did not get is a stone. A coin cannot buy
+	// one: nobody offers a stone for sale (stage 77) and nobody would walk up
+	// for one, and a stone in hand is worth 0.106 against a coin's 18.506 -
+	// 175 times too small to win a comparison the moment it entered one.
+	CoinBuysMending bool
+
 	// LookaheadHolds is whether the second window knows about the food in this
 	// body's hands (stage 78). False is stages 67 to 74 as they were built:
 	// out there a body is carried forward on its own metabolism and on what it
@@ -2590,6 +2618,7 @@ func DefaultConfig() Config {
 		PlanHorizon:    700,
 		ShockRisk:      0.55,
 
+		CoinBuysMending:      false, // stage 81: measured on its own
 		LookaheadHolds:       false, // stage 78: measured, and not the default
 		LookaheadSpoils:      false, // stage 78
 		LookaheadNeverBlinds: true,  // stage 74: on with the window

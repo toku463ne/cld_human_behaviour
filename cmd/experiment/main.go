@@ -1656,6 +1656,34 @@ var variants = []variant{
 		stores: playedStores,
 	},
 	{
+		// Stage 81: a coin claims the better of the two meals this world
+		// sells. Stage 79 measured the seller's coin/food ratio as exactly
+		// CoinValue whatever its state, because both sides are the same
+		// keepValue; this is the one thing that moves it, because what a body
+		// is holding is usually a plant and a plant does not mend.
+		name:  "mending",
+		about: "81: a coin is a claim on the meal this body needs, mending included",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CoinBuysMending = true
+		},
+		stores: playedStores,
+	},
+	{
+		// The control: the same rise in what a coin is worth, given to
+		// everybody whatever they need. If the market moves here too, what
+		// bought it was the level and not the fit.
+		name:  "richcoin",
+		about: "81's control: coins simply worth more, to everybody alike",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CoinValue = 0.75
+		},
+		stores: playedStores,
+	},
+	{
 		// Stage 78: what the second window knows about food. holds tells it
 		// what is in the hands (the one thing out there a body is sure of),
 		// spoils stops a thing that will be rotten by then counting as kept.

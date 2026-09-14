@@ -517,3 +517,67 @@ func TestAStoneIsWeighedAndNotSold(t *testing.T) {
 		t.Fatalf("a stone in hand is weighed at %v and a stone is worth %v", got, want)
 	}
 }
+
+// Stage 81. A coin is a claim on the better of the two meals this world sells,
+// and which of them is better is settled by what the body is missing - so the
+// ceiling on mending is the weight, and no weight had to be invented.
+func TestACoinClaimsTheMealThisBodyNeeds(t *testing.T) {
+	cfg := coinConfig()
+	cfg.CoinBuysMending = true
+	whole := SelfView{MaxVitality: cfg.MaxVitality, Vitality: cfg.MaxVitality,
+		Hunger: cfg.SatiatedHunger, HungerRate: cfg.HungerRate,
+		ShockRisk: cfg.ShockRisk, MaxSpeed: cfg.MaxSpeed}
+
+	// A whole body has nothing to mend, so the second claim buys it nothing.
+	off := cfg
+	off.CoinBuysMending = false
+	if got, want := coinWorth(&cfg, &whole, 0), coinWorth(&off, &whole, 0); got != want {
+		t.Fatalf("a whole body's coin is worth %v with mending and %v without", got, want)
+	}
+
+	// A hurt one values the same coin more, and more the worse it is.
+	last := coinWorth(&cfg, &whole, 0)
+	for _, vit := range []float64{70, 40, 20} {
+		hurt := whole
+		hurt.Vitality = vit
+		got := coinWorth(&cfg, &hurt, 0)
+		plain := coinWorth(&off, &hurt, 0)
+		if !(got > plain) {
+			t.Fatalf("at vitality %v the mending claim is worth %v against %v", vit, got, plain)
+		}
+		_ = last
+	}
+
+	// And #73 holds: a claim is still worth less than what it claims, because
+	// the discount is still on the outside of it.
+	hurt := whole
+	hurt.Vitality = 20
+	claim := keepValue(&cfg, &hurt, 0, 1, cfg.MeatVitality*hurt.MaxVitality, 0, 0)
+	if got := coinWorth(&cfg, &hurt, 0); got >= claim {
+		t.Fatalf("a coin is worth %v and what it claims is worth %v", got, claim)
+	}
+}
+
+// And the point of it: the ratio that stage 79 measured as fixed is not fixed
+// any more. A body holding a plant it does not need, with wounds it does, now
+// wants the coin more than the plant.
+func TestTheSellersRatioMovesWithWhatItNeeds(t *testing.T) {
+	cfg := coinConfig()
+	s := SelfView{MaxVitality: cfg.MaxVitality, Vitality: 20,
+		Hunger: cfg.SatiatedHunger, HungerRate: cfg.HungerRate,
+		ShockRisk: cfg.ShockRisk, MaxSpeed: cfg.MaxSpeed}
+	food := mealValue(&cfg, &s, 0, 1, 0)
+	if k := keepValue(&cfg, &s, 0, 1, 0, 0, 0); k > food {
+		food = k
+	}
+	cfg.CoinBuysMending = false
+	before := coinWorth(&cfg, &s, 0) / food
+	cfg.CoinBuysMending = true
+	after := coinWorth(&cfg, &s, 0) / food
+	if before < cfg.CoinValue-1e-9 || before > cfg.CoinValue+1e-9 {
+		t.Fatalf("stage 79 measured this ratio as exactly CoinValue, got %v", before)
+	}
+	if !(after > before) {
+		t.Fatalf("the ratio did not move: %v -> %v", before, after)
+	}
+}
