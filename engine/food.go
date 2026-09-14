@@ -68,11 +68,33 @@ const (
 	// nothing to its owner and something to everybody else.
 	FoodBook = NumEdibleKinds + 2
 
+	// FoodTrinket is something somebody made to be looked at (stage 82), and
+	// it is the fourth thing on this list that nobody eats.
+	//
+	// It is the one thing in this world that is wanted for itself. Every
+	// other want here is instrumental - a meal is survival, a stone is a
+	// throw, a coin is a claim on a meal (#73), a book is what it says - and
+	// this one is not: what it is worth is a figure the world is given rather
+	// than one it works out. That is a deliberate exception and the whole
+	// point of the stage (#109, #110): the machinery of prices and haggling
+	// is tried here, out of the food economy's headwind, and a want with no
+	// reason behind it is the cheapest possible thing to try it on. Nobody
+	// needs one, which is why the default world has none.
+	//
+	// Three things follow from that and are built rather than assumed: it
+	// comes out of a body's own hands rather than out of the ground (so that
+	// walking somewhere cannot solve the shortage - six measurements say food
+	// is the only thing that moves anybody), what any one of them is worth
+	// varies from piece to piece (so that two bodies can disagree about the
+	// same object, which nothing else in this world does), and it goes off
+	// like meat (so that holding one for ever is not free).
+	FoodTrinket = NumEdibleKinds + 3
+
 	// NumFoodKinds is how many there are, for the code that keeps one figure
 	// per kind (the diet rule of stage 16). It is not a kind, and it is
 	// spelled out rather than left to iota: the line above ends the run, and
 	// a bare name here would repeat it rather than carry on.
-	NumFoodKinds = FoodBook + 1
+	NumFoodKinds = FoodTrinket + 1
 )
 
 func (k FoodKind) String() string {
@@ -83,6 +105,8 @@ func (k FoodKind) String() string {
 		return "fish"
 	case FoodStone:
 		return "stone"
+	case FoodTrinket:
+		return "trinket"
 	case FoodCoin:
 		return "coin"
 	case FoodBook:
@@ -105,9 +129,19 @@ func eatsMeat(s Species) bool   { return true }
 
 // canEat says whether this agent may take this item, at this moment.
 func (w *World) canEat(a *Agent, f *Food) bool {
+	switch {
+	case f.Kind >= NumEdibleKinds:
+		// Nothing eats a stone, money, a book or an ornament - and this is
+		// asked of the line rather than of a list of exceptions on purpose
+		// (found in stage 82). The list was enumerated here and in three
+		// other places, and a fourth inedible kind fell straight through it
+		// into the default and was eaten: a body would make an ornament and
+		// have it for dinner, which is the same bug 59 coins out of 60 were
+		// eaten by in stage 51. NumEdibleKinds is where the line is drawn,
+		// so it is the line that is asked.
+		return false
+	}
 	switch f.Kind {
-	case FoodStone, FoodCoin, FoodBook:
-		return false // nothing eats a stone, money or a book
 	case FoodFish:
 		return w.eatsFish(a.Species)
 	case FoodMeat:

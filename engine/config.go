@@ -810,6 +810,62 @@ type Config struct {
 	// the second slot" has never once been true.
 	CarrySlotted bool
 
+	// Trinkets is whether this world has anything in it that is wanted for
+	// itself (stage 82). Off by default: the map's author puts them in, the
+	// same standing stones, fish, caches and money are on.
+	//
+	// It is the one deliberate exception to the rule that every want here is
+	// instrumental (#73, #110), and it is made rather than scattered, priced
+	// per piece rather than per kind, and it goes off. See trinket.go.
+	Trinkets bool
+
+	// TrinketValue is what a perfect, fresh one is worth, as a share of a
+	// life. It is the whole of the want: there is nothing behind it to work
+	// out.
+	//
+	// The scale to set it against is what a coin is worth (about a fifth of a
+	// life at the default) and what a stone is worth (a thousandth). Too low
+	// and nobody ever chooses to make one, so there is no supply to trade;
+	// too high and a body spends its life making ornaments, which is the
+	// shape of a third goal that outranks eating.
+	TrinketValue float64
+
+	// CraftTicks is how long making one takes and CraftVitality what it
+	// costs, charged once when the thing appears. Both are the price stage
+	// 17b's lesson asks for: a benefit with no price runs to the ceiling.
+	CraftTicks    int
+	CraftVitality float64
+
+	// TrinketSpoilTicks is how long one lasts, on the clock meat already uses
+	// (#77 - a hand does not stop it). Zero for one that never goes off.
+	//
+	// What it buys is a ceiling on holding: a body that keeps one for ever
+	// has to be wrong about something, and this is what makes it wrong. It
+	// also means what it is worth falls continuously rather than at a
+	// deadline, so passing one on while it is still worth something is an
+	// ordinary comparison.
+	TrinketSpoilTicks int
+
+	// TrinketSpread is how much one piece differs from the next, either way,
+	// as a share of what its maker would average. Zero makes every piece by
+	// the same hand identical, which is the arm that says whether a scattered
+	// price came from the pieces or from the bodies.
+	TrinketSpread float64
+
+	// TrinketsVanish is the control for what the making actually buys: the
+	// body spends the time and the vitality and ends up with nothing.
+	//
+	// It is the shape stage 49's deaf cry has - the same time spent, the
+	// thing itself gone - and it is here because a want that is satisfied by
+	// standing still is a reason not to wander, and not wandering is worth
+	// something in this world quite apart from what is being made.
+	TrinketsVanish bool
+
+	// SkillTrinketRelief is how much of what a piece could be worth is the
+	// maker's skill rather than anybody's hands. At zero anybody makes a
+	// perfect one; at one a body with no skill makes nothing worth having.
+	SkillTrinketRelief float64
+
 	// CoinPrices is whether a sale has a price in coins rather than being one
 	// coin for one thing (stage 80).
 	//
@@ -2642,6 +2698,14 @@ func DefaultConfig() Config {
 
 		// Stage 71: the hand as a slot, and what a second thing in it is
 		// worth. The first two are the world as it was; the third is a fix.
+		Trinkets:                false,
+		TrinketValue:            0.1,
+		CraftTicks:              30,
+		CraftVitality:           2,
+		TrinketSpoilTicks:       2000,
+		TrinketSpread:           0.5,
+		TrinketsVanish:          false,
+		SkillTrinketRelief:      0.5,
 		CoinPrices:              false,
 		CoinPriceBlind:          false,
 		SalePriceSplit:          false,
@@ -2963,6 +3027,13 @@ func DefaultConfig() Config {
 			// Which gene the world will actually pay for is stage 69's
 			// own question, and both are run as arms.
 			SkillScribe: GeneMemory,
+			// Making something to be looked at is capped by attractiveness: the only
+			// gene in this world about how a body is seen, and the only one
+			// no skill has ever asked anything of. What it can support has
+			// never been measured, and stage 26 put it among the least bought
+			// things the world pays for at all - which makes it the honest
+			// gene to hang a want with no survival value on.
+			SkillTrinket: GeneAttractiveness,
 		},
 		SkillForageRelief:  1,
 		SkillSwimRelief:    1,

@@ -587,6 +587,14 @@ type Food struct {
 	Written float64
 	Places  []int
 
+	// Made is what this trinket came out like (stage 82), and zero for
+	// everything nobody made. It is on the item for the reason Cooked and
+	// Written are, and it is the first figure in this world that varies from
+	// one instance of a kind to the next: everything else is worth what its
+	// kind is worth, so two bodies have never been able to disagree about a
+	// particular object.
+	Made float64
+
 	// Cooked is how well this item was prepared (stage 52), zero for
 	// everything the world grew and everything nobody has done anything to.
 	// It is a property of the item for the same reason Special is, and it

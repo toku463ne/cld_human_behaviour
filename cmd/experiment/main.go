@@ -1826,6 +1826,124 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	// Stage 82: something wanted for itself. It is read against the priced
+	// money world rather than the bare one, because what it is for is trying
+	// the price machinery out of the food economy's headwind (#110) - and a
+	// rise in sales here is not a food economy solved.
+	{
+		name:  "trinkets",
+		about: "82: things made to be looked at, in the priced money world",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+		},
+		stores: playedStores,
+	},
+	{
+		// A third of the want, and three times it. What one is worth is the
+		// whole of the rule, so the dose is the rule: too little and nobody
+		// makes one, too much and a body spends its life making ornaments.
+		name:  "trinketscheap",
+		about: "82 at a third of the want",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketValue = true, 0.03
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "trinketsdear",
+		about: "82 at three times the want",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketValue = true, 0.3
+		},
+		stores: playedStores,
+	},
+	{
+		// And the 2x2 that says whether what a trinket is for is being given
+		// away: the same worlds with no reason to hand anything to anybody
+		// (the shape stage 52's cookmean uses).
+		name:  "pricemean",
+		about: "the priced money world where a hand-over buys nothing",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.AffinityGift = 0
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "trinketsmean",
+		about: "82 where a hand-over buys nothing: is the ornament a gift or a thing?",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.AffinityGift = true, 0
+		},
+		stores: playedStores,
+	},
+	{
+		// The control that says what the making buys: the same time, the same
+		// vitality, and nothing in the hand at the end of it.
+		name:  "trinketsvanish",
+		about: "82's control: the making is done and there is nothing to show for it",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketsVanish = true, true
+		},
+		stores: playedStores,
+	},
+	{
+		// The control for what makes a price scatter: every piece by the same
+		// hand comes out the same. If the prices still spread, it was not the
+		// pieces.
+		name:  "trinketssame",
+		about: "82's control: trinkets, but every piece is like every other",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketSpread = true, 0
+		},
+		stores: playedStores,
+	},
+	{
+		// And the pair that has the making skill in play at all. With no
+		// birthplace there is no skill anywhere, so every body makes the same
+		// middling thing and there is no maker to be short of.
+		name:  "skillsprice",
+		about: "the priced money world with skills in it: the pair for trinketsskill",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.SkillBirthplace = 0.5
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "trinketsskill",
+		about: "82 where some hands are better than others",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.SkillBirthplace = 0.5
+			c.Trinkets = true
+		},
+		stores: playedStores,
+	},
 	{
 		// The control for the half of stage 80 that is not the price: a buyer
 		// that sets out as though a thing cost one coin, in a world where it
@@ -3868,6 +3986,8 @@ var metricNames = []string{
 	"storeFound", "storeSeen", "storeTold", "storeBorn",
 	"coinsLying", "coinsHeld", "coinHolders", "coinsPer", "sales", "salesRefused", "saleRate",
 	"salePrice", "priceOver1", "coinsPaid",
+	"trinketsMade", "trinketQuality", "trinketHeld", "trinketHolders", "trinketKept", "craftShare",
+	"makerHeld", "makerReal",
 	"booksWritten", "booksRead", "booksLying", "booksHeld", "bookHolders", "bookFidelity",
 	"lostSight", "missingDir", "lonelyDraw",
 	"motherRears", "mumNear", "dadNear", "ageFemale", "ageMale",
@@ -4087,6 +4207,7 @@ type sample struct {
 	// far apart cooking and foraging are across the population (the division
 	// of labour), and how much cooked food is standing about in hands.
 	cookHeld, cookReal, cookSplit, cookStanding float64
+	makerHeld, makerReal                        float64
 
 	// The supply of stones (stage 45): how many lie about, how often a body
 	// has one in sight, how far the nearest is, and how many are in hands.
@@ -4269,6 +4390,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		rocks := w.Stones()
 		aim := w.Skills(engine.SkillThrow)
 		chef := w.Skills(engine.SkillCook)
+		maker := w.Skills(engine.SkillTrinket)
 		kitchen := w.Cooking()
 		given := w.Gifts()
 		tol := w.Skills(engine.SkillPoison)
@@ -4348,6 +4470,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			giftsToStrangers: given.ToStrange, giftStones: given.Stones,
 			aimHeld: aim.Held, aimReal: aim.Realised,
 			cookHeld: chef.Held, cookReal: chef.Realised,
+			makerHeld: maker.Held, makerReal: maker.Realised,
 			cookSplit: kitchen.Split, cookStanding: kitchen.Standing,
 			stonesLying: float64(rocks.Lying), stoneSeen: rocks.InSight,
 			stoneNear: rocks.Nearest, stoneHeld: rocks.Carrying,
@@ -4424,6 +4547,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	stored := w.Stored()
 	money := w.Coins()
 	library := w.Books()
+	trinkets := w.Trinkets()
 	kitchen := w.Cooking()
 	trade := w.Trade()
 	feeling := w.Mood()
@@ -4488,6 +4612,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"killLearned": share(end.KillLessons, end.KillWitnesses),
 		"avengeSeen":  ratio(end.AvengeWitnesses, end.Kills),
 		"watchShare":  ratio(end.Observes, end.Decisions),
+		"craftShare":  ratio(end.Crafts, end.Decisions),
 		// Calling others in, and going in on something somebody else has
 		// taken on (stage 32). The second is the one that says whether a call
 		// is answered: a word nobody acts on is not a hunt.
@@ -4544,12 +4669,21 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// What was paid (stage 80). salePrice is the mean number of coins a
 		// sale went for and priceOver1 the share that went for more than one:
 		// if the second is near zero, the price is a variable with one value.
-		"salePrice":    ratio(money.Paid, money.Sales),
-		"priceOver1":   ratio(money.OverOne, money.Sales),
-		"coinsPaid":    float64(money.Paid),
-		"sales":        float64(money.Sales),
-		"salesRefused": float64(money.Refused),
-		"saleRate":     perAgentLifetime(money.Sales, personTicks),
+		"salePrice":  ratio(money.Paid, money.Sales),
+		"priceOver1": ratio(money.OverOne, money.Sales),
+		// The ornaments (stage 82). trinketsMade is the supply, which a want
+		// cannot conjure; trinketKept against trinketQuality is whether the
+		// good ones stay and the poor ones move on, which is the sorting
+		// nobody wrote a rule for.
+		"trinketsMade":   float64(trinkets.Made),
+		"trinketQuality": trinkets.Quality,
+		"trinketHeld":    float64(trinkets.Held),
+		"trinketHolders": trinkets.Holders,
+		"trinketKept":    trinkets.Best,
+		"coinsPaid":      float64(money.Paid),
+		"sales":          float64(money.Sales),
+		"salesRefused":   float64(money.Refused),
+		"saleRate":       perAgentLifetime(money.Sales, personTicks),
 		// The cooking (stage 52). cooked says whether the word is ever used;
 		// cookedHanded is the monopoly question, as hand-overs of cooked food
 		// per cooking - cooking that never leaves the cook is cooking no
@@ -4598,6 +4732,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"dread":       feeling.Dread,
 		"cheer":       feeling.Cheer,
 		"afraid":      feeling.Afraid,
+		"makerHeld":   tail.makerHeld,
+		"makerReal":   tail.makerReal,
 		"cookHeld":    tail.cookHeld,
 		"cookReal":    tail.cookReal,
 		"joinShare":   ratio(end.Joins, end.Decisions),
@@ -5118,6 +5254,8 @@ func tailAverage(series []sample) sample {
 		out.giftStones += s.giftStones
 		out.aimHeld += s.aimHeld
 		out.aimReal += s.aimReal
+		out.makerHeld += s.makerHeld
+		out.makerReal += s.makerReal
 		out.cookHeld += s.cookHeld
 		out.cookReal += s.cookReal
 		out.cookSplit += s.cookSplit
@@ -5291,6 +5429,8 @@ func tailAverage(series []sample) sample {
 	out.giftsToStrangers /= d
 	out.giftStones /= d
 	out.aimHeld /= d
+	out.makerHeld /= d
+	out.makerReal /= d
 	out.cookHeld /= d
 	out.cookReal /= d
 	out.cookSplit /= d

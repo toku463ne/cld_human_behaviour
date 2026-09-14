@@ -256,6 +256,9 @@ func (w *World) wareValue(a *Agent, s *SelfView, item *Food) float64 {
 	if item.Kind == FoodBook {
 		return cfg.BookValue * w.bookValue(a, item)
 	}
+	if item.Kind == FoodTrinket {
+		return w.trinketWorth(item) // already what it is worth, to anybody
+	}
 	nutrition, heal := s.Nutrition[item.Kind], w.itemHealKnown(a, item)
 	meal := mealValue(cfg, s, 0, nutrition, heal)
 	if kept := keepValue(cfg, s, 0, nutrition, heal,
@@ -462,10 +465,19 @@ func (a *Agent) firstForSale(cfg *Config) int {
 	if i := a.firstEdible(); i >= 0 {
 		return i
 	}
-	if !cfg.Books {
+	if cfg.Books {
+		if i := a.heldBook(); i >= 0 {
+			return i
+		}
+	}
+	if !cfg.Trinkets {
 		return -1
 	}
-	return a.heldBook()
+	// And last of all the ornament (stage 82), for the same reason the book
+	// comes after the dinner: a body should offer what it can most afford to
+	// lose, and a read book is worth nothing to its owner while a trinket is
+	// worth what it is worth to anybody.
+	return a.carriedIndex2(FoodTrinket)
 }
 
 // CoinUse is what the money came to. Read only.

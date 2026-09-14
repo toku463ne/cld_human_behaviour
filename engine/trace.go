@@ -95,6 +95,13 @@ type Utility struct {
 	Explore   Goal // finding something to eat that is not in sight yet
 	Lore      Goal // what somebody you trust would tell you about the world
 
+	// Adorn is having something made to be looked at (stage 82), and it is
+	// the one term here that stands for nothing else. Every other goal is
+	// instrumental; this one is the want itself, given to the world rather
+	// than worked out by it. It is a deliberate exception (#110) and it is
+	// zero in every world that has not asked for trinkets.
+	Adorn Goal
+
 	// Risk is the penalty for what this particular agent has already cost the
 	// deciding one, which is what keeps it away from somebody it lost to.
 	Risk float64
@@ -138,6 +145,7 @@ type Utility struct {
 func (u Utility) Total() float64 {
 	return u.Life.Score() + u.Stake.Score() + u.Rival.Score() +
 		u.Offspring.Score() + u.Info.Score() + u.Explore.Score() + u.Lore.Score() +
+		u.Adorn.Score() +
 		u.Hint - u.Risk - u.Hazard - u.Roam - u.VitalityCost - u.TimeCost
 }
 
@@ -156,6 +164,7 @@ func (u Utility) Goals() []NamedGoal {
 		{"stake", u.Stake},
 		{"rival", u.Rival},
 		{"offspring", u.Offspring},
+		{"adorn", u.Adorn},
 		{"info", u.Info},
 		{"explore", u.Explore},
 		{"lore", u.Lore},

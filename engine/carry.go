@@ -69,7 +69,7 @@ func (a *Agent) carryLoad(cfg *Config) float64 {
 	// on its own - but neither is part of what the legs are charged for.
 	n := 0
 	for i := range a.carried {
-		if k := a.carried[i].Kind; k != FoodCoin && k != FoodBook {
+		if k := a.carried[i].Kind; !weightless(k) {
 			n++
 		}
 	}
@@ -132,7 +132,7 @@ func (w *World) mealsOf(a *Agent, f *Food) float64 {
 // A coin and a book are the two: what they cost a body is the hand, and
 // whether the hand is a cost at all is what CarrySlotsWeigh decides.
 func weightless(kind FoodKind) bool {
-	return kind == FoodCoin || kind == FoodBook
+	return kind == FoodCoin || kind == FoodBook || kind == FoodTrinket
 }
 
 // heavyCarried is how many of the things in hand weigh anything (stage 71).
@@ -237,7 +237,7 @@ func (a *Agent) carrySlots(cfg *Config) int {
 // 45) there is no such question - it is not food, nobody's kill and nobody's
 // kind - so anything may pick one up.
 func (w *World) canCarry(a *Agent, f *Food) bool {
-	if f.Kind == FoodStone || f.Kind == FoodCoin || f.Kind == FoodBook {
+	if f.Kind == FoodStone || weightless(f.Kind) {
 		return true
 	}
 	return w.canEat(a, f)
@@ -360,6 +360,8 @@ func (w *World) handView(a *Agent, f *Food) FoodView {
 	switch f.Kind {
 	case FoodBook:
 		v.Worth = w.bookValue(a, f)
+	case FoodTrinket:
+		v.Worth = w.trinketWorth(f)
 	case FoodCoin, FoodStone:
 		// Neither is worth anything as a meal, and what each is worth
 		// instead the controller works out for itself: a coin from what

@@ -137,6 +137,15 @@ const (
 	// is the leaps and the copying.
 	SkillScribe
 
+	// SkillTrinket is knowing how to make something worth looking at (stage
+	// 82). What it decides is how good the thing comes out, and nothing else
+	// - anybody may try, and a body with none of it makes something worth
+	// about half what a master's is (SkillTrinketRelief). No gate: a discrete
+	// threshold on a gene is the trap this project has walked into twice, and
+	// this is the third rule that steps round it (stage 44's awkward crop was
+	// the second).
+	SkillTrinket
+
 	NumSkillKinds
 )
 
@@ -164,6 +173,8 @@ func (s SkillKind) String() string {
 		return "handling beasts"
 	case SkillScribe:
 		return "writing things down"
+	case SkillTrinket:
+		return "making things worth looking at"
 	}
 	return "none"
 }
@@ -386,6 +397,12 @@ func (w *World) skillFromBirthplace(kind SkillKind, x, y float64) float64 {
 		share = 1
 	case SkillScribe:
 		// The same: nothing to read off the ground, for the same reason.
+		share = 1
+	case SkillTrinket:
+		// And the same again (stage 82): what a body can make is not a
+		// property of the country it was born in, and seeding it off the
+		// ground would be a seventh go at a question six measurements have
+		// already answered.
 		share = 1
 	}
 	return clamp(share*w.cfg.SkillBirthplace, 0, 1)

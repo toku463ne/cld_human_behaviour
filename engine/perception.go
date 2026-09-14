@@ -142,6 +142,12 @@ type SelfView struct {
 	CarryRoom     bool
 	CarryCapacity float64
 
+	// CraftQuality is what a thing this body made would be worth, before the
+	// luck of the piece (stage 82), and CanCraft whether it could make one at
+	// all. Both are what a body knows about its own hands.
+	CraftQuality float64
+	CanCraft     bool
+
 	// Coins is how much money is in this body's own hands (stage 80). One or
 	// none in every world before a coin stopped taking a hand, and what a
 	// price of more than one has to be met out of.
@@ -560,6 +566,11 @@ type Perception struct {
 	// something down has to be able to name any of them.
 	Held []FoodView
 
+	// Trinkets is what is lying about that somebody made to be looked at
+	// (stage 82), in its own list for the reason the stones and the money
+	// are: none of the figures that count what is edible should count one.
+	Trinkets []FoodView
+
 	// Coins is the money in sight (stage 51). Kept apart from Foods for the
 	// reason the stones are: none of the figures that count what is edible
 	// should count one, and money is the least edible thing in the world.
@@ -654,6 +665,8 @@ func (w *World) selfView(a *Agent) SelfView {
 		CookQuality:       w.cookQuality(a),
 		HasCoin:           a.carriedIndex2(FoodCoin) >= 0,
 		Coins:             a.coinsHeld(),
+		CraftQuality:      w.trinketQuality(a),
+		CanCraft:          w.canCraft(a),
 		FedRate:           a.fedRate(&w.cfg, w.tick),
 		HeldMeals:         w.heldMeals(a),
 		CarriedHeavy:      a.heavyCarried(),
@@ -672,6 +685,7 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Stores = p.Stores[:0]
 	p.Coins = p.Coins[:0]
 	p.Books = p.Books[:0]
+	p.Trinkets = p.Trinkets[:0]
 	p.Held = p.Held[:0]
 	p.Others = p.Others[:0]
 
@@ -721,6 +735,18 @@ func (w *World) perceive(a *Agent) *Perception {
 				ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
 				RivalDist: math.Inf(1), Worth: w.bookValue(a, f),
 			})
+			continue
+		}
+		// And something made to be looked at, in its own list again (stage
+		// 82). What it is worth is the piece rather than the kind, so it is
+		// carried here the way a book's is.
+		if f.Kind == FoodTrinket {
+			if w.cfg.Trinkets {
+				p.Trinkets = append(p.Trinkets, FoodView{
+					ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
+					RivalDist: math.Inf(1), Worth: w.trinketWorth(f),
+				})
+			}
 			continue
 		}
 		// And what is in a cache is nothing to a body that does not know the
@@ -833,6 +859,14 @@ func (w *World) perceive(a *Agent) *Perception {
 			offerValue = p.Self.Nutrition[item.Kind]
 			offerHeal = w.itemHealKnown(a, item)
 			offerSpoils = w.spoilsIn(item)
+			w.sawOffer = true
+		} else if item != nil && item.Kind == FoodTrinket && w.cfg.Trinkets {
+			// Something held up that nobody needs (stage 82). What it is
+			// worth is the same to everybody who can see it - the piece
+			// varies, the eye does not - so unlike a book this is not a
+			// different offer to different lookers.
+			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
+			offerWorth = w.trinketWorth(item)
 			w.sawOffer = true
 		} else if item != nil && item.Kind == FoodBook && w.cfg.Books {
 			// A book held up is worth what it would tell this looker, which

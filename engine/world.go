@@ -77,6 +77,10 @@ type Stats struct {
 	// KillWitnesses is how many readings onlookers have taken of somebody
 	// they watched kill, and AvengeWitnesses how many times one of them
 	// thought better of its own kind for killing something else (stage 31).
+	// Crafts is how many decisions were "make an ornament" (stage 82),
+	// against Decisions.
+	Crafts int
+
 	// Observes is how many decisions were "watch somebody", against Decisions.
 	KillWitnesses   int
 	AvengeWitnesses int
@@ -501,6 +505,11 @@ type World struct {
 	salePaid     int
 	salesOverOne int
 
+	// And what was made to be looked at (stage 82).
+	crafts           int
+	trinketsMade     int
+	trinketWorthMade float64
+
 	// What was written down and what was read (stage 69).
 	booksWritten int
 	booksRead    int
@@ -745,6 +754,7 @@ func (w *World) Stats() Stats {
 		KillLessons:            w.killLessons,
 		AvengeWitnesses:        w.avengeWitnesses,
 		Observes:               w.observes,
+		Crafts:                 w.crafts,
 		SkillsLearned:          w.skillsLearned,
 		SkillsCopied:           w.skillsCopied,
 		SkillsBorn:             w.skillsBorn,
@@ -979,6 +989,12 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	if a.Action.Kind == ActObserve {
 		w.observes++
 	}
+	// And how often it is "make something worth looking at" (stage 82), which
+	// is the only way to tell how much of a life goes on the one want in this
+	// world that is not about staying alive. Measurement only.
+	if a.Action.Kind == ActCraft {
+		w.crafts++
+	}
 	if ai, ok := c.(*AIController); ok {
 		if ai.ChoseBetterGround {
 			w.regionDraws++
@@ -1166,6 +1182,11 @@ func (w *World) perform(a *Agent) {
 		// to and nobody to agree with: the whole of the price is standing
 		// there, the same shape the cry uses.
 		w.cook(a)
+
+	case ActCraft:
+		// Making something worth looking at (stage 82). Nothing to walk to
+		// and nobody to agree with, the same as cooking and writing.
+		w.craft(a)
 
 	case ActWrite:
 		// Setting down what this body knows (stage 69). Nothing to walk to
@@ -2473,7 +2494,11 @@ func (w *World) spawnFood() {
 	// randomness and shift the rest of the run.
 	//
 	// Stones do not count against it (stage 45), and neither does money
-	// (stage 51). They are in the same list because that list is "things
+	// (stage 51), a book (stage 69) or an ornament (stage 82) - a fourth
+	// name on the same line, added rather than replaced by a question about
+	// NumEdibleKinds, because rewriting it would change the allowance in
+	// every world that has stones or money in it and those are the worlds
+	// every figure since stage 45 was measured in. They are in the same list because that list is "things
 	// lying about", and a world given a lot of them grew nothing at all the
 	// first time the stones went in - which is the bug this line is here to
 	// have already fixed by the time the coins arrived.
@@ -2483,7 +2508,8 @@ func (w *World) spawnFood() {
 	// are meant to be separate (see MaxMeatItems) - but it is the world every
 	// figure in HISTORY.md was measured in, so it stays until it is changed
 	// on purpose and measured.
-	if len(w.foods)-w.countKind(FoodStone)-w.countKind(FoodCoin)-w.countKind(FoodBook) >= w.cfg.MaxFoodItems {
+	if len(w.foods)-w.countKind(FoodStone)-w.countKind(FoodCoin)-
+		w.countKind(FoodBook)-w.countKind(FoodTrinket) >= w.cfg.MaxFoodItems {
 		return
 	}
 	// One of them comes up in the water instead (stage 42). It is asked first

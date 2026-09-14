@@ -218,6 +218,8 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addAgents(p, maxDepth)
 	c.addOffer(p)
 	c.addBooks(p)
+	c.addCraft(p)
+	c.addTrinkets(p)
 	c.addDrop(p) // last: what a hand is worth depends on what was scored for it
 
 	return c.pick(p)
@@ -1103,7 +1105,13 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 		}
 		if o.OfferWorth > 0 {
 			u.Life = Goal{}
-			u.Lore = Goal{Value: cfg.BookValue * o.OfferWorth, Chance: chance}
+			if o.OfferKind == FoodTrinket {
+				// An ornament is worth what it is worth, and it is its own
+				// goal (stage 82): not another day and not knowing anything.
+				u.Adorn = Goal{Value: o.OfferWorth, Chance: chance}
+			} else {
+				u.Lore = Goal{Value: cfg.BookValue * o.OfferWorth, Chance: chance}
+			}
 		}
 		c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, u)
 	}
@@ -1412,6 +1420,9 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	// What is on the counter. A book is worth what it would say to this body
 	// and nothing else (stage 69); everything else is worth the meal it is.
 	meal := o.OfferWorth * cfg.BookValue
+	if o.OfferKind == FoodTrinket {
+		meal = o.OfferWorth // already what it is worth, to anybody (stage 82)
+	}
 	if o.OfferValue > 0 || o.OfferHeal > 0 {
 		meal = mealValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal)
 		if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal,
@@ -1463,6 +1474,71 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	}
 }
 
+// addCraft scores making something worth looking at (stage 82).
+//
+// What it is worth is the want itself, which is the one figure in this world
+// that stands for nothing else: there is no chance attached because there is
+// nothing to go wrong - a body that spends the time gets the thing - and the
+// luck of the piece is not reckoned with, because a body cannot know how this
+// one will come out until it has made it.
+//
+// What it costs is vitality and time, in the shape picking a stone up already
+// uses. That price is the point rather than an inconvenience: a want that
+// arrives free runs to the ceiling (stage 17b), and a maker that can make them
+// freely is a supply with no shortage in it.
+func (c *AIController) addCraft(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if !s.CanCraft {
+		return
+	}
+	want := cfg.TrinketValue * cfg.LifeValue * s.CraftQuality
+	if want <= 0 {
+		return
+	}
+	ticks := float64(cfg.CraftTicks)
+	c.add(Action{Kind: ActCraft}, Utility{
+		Adorn:        Goal{Value: want, Chance: 1},
+		Vitality:     cfg.CraftVitality,
+		Ticks:        ticks,
+		VitalityCost: cfg.CraftVitality * cfg.VitalityWeight,
+		TimeCost:     ticks * cfg.TimeCost,
+	})
+}
+
+// addTrinkets scores walking over to one lying about (stage 82).
+//
+// They get there by being dropped or by their owner dying, so this is the
+// same option picking up money is, with the want in place of the claim - and
+// it is raced for the way anything lying about is, because two bodies that
+// both want the same piece is exactly the situation this stage is about.
+func (c *AIController) addTrinkets(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if len(p.Trinkets) == 0 || !s.LightRoom || !cfg.Trinkets {
+		return
+	}
+	for i := range p.Trinkets {
+		if i >= maxFoodOptions {
+			break
+		}
+		f := &p.Trinkets[i]
+		if f.Worth <= 0 {
+			continue
+		}
+		chance := raceChance(cfg, s, f.Dist, f.RivalDist)
+		for _, effort := range effortLevels {
+			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
+			cost := moveCost(cfg, s, effort) * ticks
+			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
+				Adorn:        Goal{Value: f.Worth, Chance: chance},
+				Vitality:     cost,
+				Ticks:        ticks,
+				VitalityCost: cost * cfg.VitalityWeight,
+				TimeCost:     ticks * cfg.TimeCost,
+			})
+		}
+	}
+}
+
 // addDrop scores putting something down (stage 70).
 //
 // Stage 40 decided there should be no such word, and gave a reason that was
@@ -1511,7 +1587,7 @@ func (c *AIController) addDrop(p *Perception) {
 	for i := range p.Held {
 		h := &p.Held[i]
 		lug := 0.0
-		if h.Kind != FoodCoin && h.Kind != FoodBook {
+		if !weightless(h.Kind) {
 			// What the legs are charged for it. Money and books weigh
 			// nothing (#66, stage 69), so putting one down saves nothing -
 			// which is most of why this word will not empty a hand of money.
@@ -1547,6 +1623,8 @@ func handWorth(cfg *Config, s *SelfView, h *FoodView) float64 {
 		return coinWorth(cfg, s, otherMeals(s, cfg.CoinValue))
 	case FoodBook:
 		return h.Worth // what it would still tell its owner, which once read is nothing
+	case FoodTrinket:
+		return h.Worth // what this particular piece is worth, less what is left of it
 	case FoodStone:
 		return stoneWorth(cfg, s)
 	}

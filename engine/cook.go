@@ -78,7 +78,7 @@ func (w *World) canCook(a *Agent) bool {
 		return false
 	}
 	f := &a.carried[0]
-	if f.Kind == FoodStone || f.Kind == FoodCoin || f.Kind == FoodBook {
+	if f.Kind >= NumEdibleKinds {
 		return false // nothing to be done with any of them over a fire
 	}
 	// Already done, or done better than this body could manage: there is

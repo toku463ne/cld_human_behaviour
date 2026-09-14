@@ -98,6 +98,16 @@ const (
 	// to nobody.
 	ActDrop
 
+	// ActCraft is standing still and making something worth looking at
+	// (stage 82): the nineteenth word, added at the end like the eleven
+	// before it.
+	//
+	// It is the only word whose product nobody needs. What it costs is
+	// vitality and time, because a want that arrives for nothing runs to the
+	// ceiling (stage 17b) - and because a maker that cannot make them freely
+	// is a supply side as well as a demand side.
+	ActCraft
+
 	// numActionKinds is how many there are, for the code that has to range
 	// over them (the rules of thumb of stage 12c). It is not an action.
 	numActionKinds
@@ -131,6 +141,8 @@ func (k ActionKind) String() string {
 		return "store"
 	case ActBuy:
 		return "buy"
+	case ActCraft:
+		return "craft"
 	case ActCook:
 		return "cook"
 	case ActWrite:

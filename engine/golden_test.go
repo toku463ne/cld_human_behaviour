@@ -156,6 +156,12 @@ import (
 // can now be about one more kind of action, so the hints drawn at every birth
 // differ from the first tick, exactly as they did at stages 32 and 40.
 //
+// And again when a nineteenth word was added - making something worth looking
+// at (stage 82, 2026-09-15). No trinket is ever made in these runs and the
+// rule is off, and the numbers still move, for the same reason they moved at
+// stages 32, 40 and 46: a rule of thumb can be about one more kind of action,
+// so the hints drawn at every birth differ from the first tick.
+//
 // And again when what a kill leaves beyond what its party can carry away
 // stopped being theirs to wait for (stage 41, 2026-09-09).
 //
@@ -180,9 +186,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 64, births: 47, deaths: 61, kills: 48, aging: 0, fights: 6652, gen: 3, power: 37.244283, vitality: 107.120944, hunger: 23.345418},
-	{seed: 2, pop: 45, births: 41, deaths: 76, kills: 67, aging: 0, fights: 6184, gen: 2, power: 38.824476, vitality: 132.247324, hunger: 25.455757},
-	{seed: 3, pop: 75, births: 56, deaths: 62, kills: 53, aging: 0, fights: 6296, gen: 3, power: 34.158327, vitality: 108.940814, hunger: 19.492594},
+	{seed: 1, pop: 86, births: 60, deaths: 56, kills: 35, aging: 0, fights: 6505, gen: 3, power: 35.291305, vitality: 98.018461, hunger: 25.330426},
+	{seed: 2, pop: 61, births: 56, deaths: 77, kills: 64, aging: 0, fights: 10898, gen: 3, power: 35.932735, vitality: 118.819970, hunger: 23.350755},
+	{seed: 3, pop: 52, births: 41, deaths: 70, kills: 56, aging: 0, fights: 8503, gen: 2, power: 32.036601, vitality: 92.126455, hunger: 20.342416},
 }
 
 const goldenTicks = 5000
