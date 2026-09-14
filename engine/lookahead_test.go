@@ -50,11 +50,11 @@ func TestLookaheadGivesASatiatedBodyAReasonToKeepFood(t *testing.T) {
 	s := aSatiatedWholeBody(&cfg)
 
 	cfg.LookaheadHorizons = 0
-	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got != 0 {
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0, 0); got != 0 {
 		t.Fatalf("without lookahead a whole, fed body should read a flat gradient, got %v", got)
 	}
 	cfg.LookaheadHorizons = 1
-	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got <= 0 {
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0, 0); got <= 0 {
 		t.Fatalf("with lookahead it should be worth something, got %v", got)
 	}
 }
@@ -70,7 +70,7 @@ func TestLookaheadRisesWithTheDose(t *testing.T) {
 	last := -1.0
 	for _, dose := range []float64{0, 0.25, 0.5, 1, 2} {
 		cfg.LookaheadHorizons = dose
-		got := keepValue(&cfg, &s, 0, 1, 0, 0)
+		got := keepValue(&cfg, &s, 0, 1, 0, 0, 0)
 		if got < last {
 			t.Fatalf("looking further ahead should not be worth less: dose %v gave %v after %v", dose, got, last)
 		}
@@ -301,11 +301,11 @@ func TestUpkeepLeavesTheSatiatedBodyAReasonToKeepFood(t *testing.T) {
 	s.FedRate, s.RestRate = cfg.HungerRate*3, cfg.RegenRate
 
 	cfg.LookaheadUpkeep = 0.75
-	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got <= 0 {
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0, 0); got <= 0 {
 		t.Fatalf("with three quarters of its upkeep assumed it is worth %v to keep a meal", got)
 	}
 	cfg.LookaheadUpkeep = 1
-	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got != 0 {
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0, 0); got != 0 {
 		t.Fatalf("a body that assumes it keeps itself up entirely should see no shortfall, got %v", got)
 	}
 }
@@ -358,13 +358,13 @@ func TestTheClearerWindowKeepsTheTopEnd(t *testing.T) {
 	s := aSatiatedWholeBody(&cfg)
 	s.FedRate, s.RestRate = cfg.HungerRate*3, cfg.RegenRate
 
-	if got := keepValue(&cfg, &s, 0, 1, 0, 0); got <= 0 {
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0, 0); got <= 0 {
 		t.Fatalf("a satiated whole body sees no reason to keep a meal: %v", got)
 	}
 	// With one window it sees nothing, which is the thing stage 67 was for.
 	one := cfg
 	one.LookaheadHorizons = 0
-	if got := keepValue(&one, &s, 0, 1, 0, 0); got != 0 {
+	if got := keepValue(&one, &s, 0, 1, 0, 0, 0); got != 0 {
 		t.Fatalf("one window was expected to be flat here, got %v", got)
 	}
 }
@@ -389,5 +389,79 @@ func TestTheClearerWindowNeverTellsABodyLess(t *testing.T) {
 				t.Fatalf("v=%v h=%v: the rule took %v where the two views said %v and %v", v, h, got, near, far)
 			}
 		}
+	}
+}
+
+// Stage 78a. What is in a hand is the one thing about the future a body is
+// certain of, and the second window can be told about it.
+func TestTheSecondWindowCanBeToldWhatIsInTheHand(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.LookaheadHolds = true
+	s := aSatiatedWholeBody(&cfg)
+	s.Hunger = cfg.SatiatedHunger + 20 // on its way to being hungry
+
+	empty := pressures(&cfg, &s, s.Vitality, s.Hunger, 0)
+	s.HeldMeals = 1
+	full := pressures(&cfg, &s, s.Vitality, s.Hunger, 0)
+
+	// The near window cannot move: a body that has not eaten is exactly as
+	// hungry as it was, and that is the whole of this rule's safety.
+	if empty.near != full.near {
+		t.Fatalf("holding a meal changed the near window: %v -> %v", empty.near, full.near)
+	}
+	if !(full.far <= empty.far) {
+		t.Fatalf("holding a meal made the far window worse: %v -> %v", empty.far, full.far)
+	}
+	// And with the rule off it changes nothing at all.
+	cfg.LookaheadHolds = false
+	if got := pressures(&cfg, &s, s.Vitality, s.Hunger, 0); got != empty {
+		t.Fatalf("with the rule off, a full hand still moved the reading: %v vs %v", got, empty)
+	}
+}
+
+// The safety, said as the scene it protects: a starving body with a meal in
+// its hand still reads itself as starving.
+func TestAStarvingBodyHoldingAMealStillReadsAsStarving(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.LookaheadHolds = true
+	s := aSatiatedWholeBody(&cfg)
+	s.Hunger, s.Vitality = cfg.StarveHunger+10, cfg.MaxVitality/8
+	s.HeldMeals = 3
+
+	got := pressures(&cfg, &s, s.Vitality, s.Hunger, 0)
+	s.HeldMeals = 0
+	want := pressures(&cfg, &s, s.Vitality, s.Hunger, 0)
+	if got.near != want.near {
+		t.Fatalf("a full hand changed how near death is: %v vs %v", got.near, want.near)
+	}
+	if got.near < 0.5 {
+		t.Fatalf("a body at an eighth of its vitality and past starving reads its danger as %v", got.near)
+	}
+}
+
+// Stage 78b. A thing that will be rotten by the time it is wanted is worth
+// nothing to keep - and the same thing with a longer clock is worth what it
+// was.
+func TestWhatWillHaveSpoiledIsNotWorthKeeping(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.LookaheadSpoils = true
+	s := aSatiatedWholeBody(&cfg)
+	s.Hunger = cfg.SatiatedHunger + 10
+
+	keeps := keepValue(&cfg, &s, 0, 1, 0, 0, 0)
+	if keeps <= 0 {
+		t.Fatalf("a satiated body should still value a meal put by, got %v", keeps)
+	}
+	wait := shortfallIn(&cfg, &s)
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0, wait*2); got != keeps {
+		t.Fatalf("something that outlasts the wait should be worth the same: %v vs %v", got, keeps)
+	}
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0, wait/2); got != 0 {
+		t.Fatalf("something that will be rotten by then is worth %v", got)
+	}
+	// And with the rule off, a clock changes nothing.
+	cfg.LookaheadSpoils = false
+	if got := keepValue(&cfg, &s, 0, 1, 0, 0, wait/2); got != keeps {
+		t.Fatalf("with the rule off a clock still counted: %v vs %v", got, keeps)
 	}
 }

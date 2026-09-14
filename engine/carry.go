@@ -87,8 +87,13 @@ func (a *Agent) carryLoad(cfg *Config) float64 {
 // thing in a hand worth less than the first, and it is worked out the same way
 // everything else about a hand is - by what the body itself could do with it.
 func (w *World) heldMeals(a *Agent) float64 {
-	if !w.cfg.CarryDiminishes {
-		return 0 // nothing reads it in a world where the first and the tenth are alike
+	if !w.cfg.CarryDiminishes && !w.cfg.LookaheadHolds {
+		// Nothing reads it in a world where the first and the tenth are alike
+		// and the second window does not know about hands either. Stage 78
+		// found this gate the hard way: the field was on the perception
+		// already and was zero for everybody, because the rule that filled it
+		// in is off by default.
+		return 0
 	}
 	meals := 0.0
 	for i := range a.carried {
@@ -97,6 +102,12 @@ func (w *World) heldMeals(a *Agent) float64 {
 		case f.Kind == FoodCoin:
 			meals += w.cfg.CoinValue
 		case w.canEat(a, f):
+			// And what will still be there to eat (stage 78): a body that is
+			// counting on what it holds is counting on what keeps.
+			if w.cfg.LookaheadSpoils && f.SpoilAt > 0 &&
+				float64(f.SpoilAt-w.tick) < w.cfg.PlanHorizon {
+				continue
+			}
 			meals += w.mealValues(a)[f.Kind]
 		}
 	}
@@ -304,6 +315,7 @@ func (w *World) handView(a *Agent, f *Food) FoodView {
 		Held:      true,
 		Catch:     1,
 		Cooked:    f.Cooked,
+		Spoils:    w.spoilsIn(f),
 		RivalDist: math.Inf(1),
 	}
 	switch f.Kind {
@@ -445,6 +457,7 @@ func (w *World) carriedViews(a *Agent, out []FoodView) []FoodView {
 			Catch:     1, // in the hand already: there is nothing left to land
 			Heal:      w.itemHealKnown(a, f),
 			Cooked:    f.Cooked,
+			Spoils:    w.spoilsIn(f),
 			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),
 		})

@@ -74,8 +74,8 @@ func TestTheSecondThingInAHandIsWorthLess(t *testing.T) {
 		Hunger: 85, Genome: genomeOf(50, 50, 50)})
 	s := w.selfView(mustAgent(t, w, id))
 
-	first := keepValue(&cfg, &s, 0, 1, 0, 0)
-	second := keepValue(&cfg, &s, 0, 1, 0, 1)
+	first := keepValue(&cfg, &s, 0, 1, 0, 0, 0)
+	second := keepValue(&cfg, &s, 0, 1, 0, 1, 0)
 	if first <= 0 {
 		t.Fatalf("the first meal is worth %v to a hungry body", first)
 	}
@@ -88,7 +88,7 @@ func TestTheSecondThingInAHandIsWorthLess(t *testing.T) {
 
 	// And with the rule off, the tenth is worth exactly what the first is.
 	cfg.CarryDiminishes = false
-	if got := keepValue(&cfg, &s, 0, 1, 0, 10); got != first {
+	if got := keepValue(&cfg, &s, 0, 1, 0, 10, 0); got != first {
 		t.Fatalf("with the rule off the tenth is worth %v and the first %v", got, first)
 	}
 }

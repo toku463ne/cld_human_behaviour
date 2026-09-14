@@ -84,7 +84,7 @@ func coinWorth(cfg *Config, s *SelfView, held float64) float64 {
 	if cfg.CoinValue <= 0 {
 		return 0
 	}
-	return cfg.CoinValue * keepValue(cfg, s, 0, 1, 0, held)
+	return cfg.CoinValue * keepValue(cfg, s, 0, 1, 0, held, 0) // money does not go off
 }
 
 // saleGoodwill is what being on better terms with somebody is worth to this

@@ -274,6 +274,15 @@ func pressures(cfg *Config, s *SelfView, vitality, hunger, extra float64) riskPa
 	h := cfg.PlanHorizon * cfg.LookaheadHorizons
 	climb := hungerClimb(cfg, s)
 	hu := clamp(hunger+climb*h, 0, cfg.MaxHunger)
+	if cfg.LookaheadHolds && s.HeldMeals > 0 {
+		// And what is in its hands, which is the one thing out there it is
+		// sure of (stage 78). A level and not a rate: a meal is a drop in
+		// hunger, not a slower climb. Discounted like everything else this
+		// formula assumes about the future, and by the same figure, because
+		// eating what you are holding is part of keeping yourself up.
+		hu = clamp(hu-cfg.FoodNutrition*s.HeldMeals*cfg.LookaheadUpkeep,
+			0, cfg.MaxHunger)
+	}
 	drain := own
 	mend := 0.0
 	if cfg.LookaheadUpkeep > 0 {
@@ -664,7 +673,11 @@ func mealValueAt(cfg *Config, s *SelfView, incoming, hunger, nutrition, heal flo
 // keepValue is what having this item when it is needed is worth. One place,
 // because two options are the same bet: carrying it (stage 40) and putting it
 // in a cache (stage 50).
-func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal, held float64) float64 {
+// keeps is how long the thing has before it goes off, and zero for anything
+// with no clock on it (stage 78). A thing that will be rotten by the moment it
+// is wanted is worth nothing to keep: what is being valued is not the item but
+// eating it then.
+func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal, held, keeps float64) float64 {
 	if cfg.CarryPricedBackwards {
 		// The world as stages 40 to 49 measured it, kept so that those
 		// figures can be reproduced: the loss from getting hungrier, with the
@@ -673,6 +686,12 @@ func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal, held float64
 		later := pressure(cfg, s, s.Vitality,
 			math.Max(s.Hunger, cfg.StarveHunger), incoming)
 		return (now - later) * cfg.LifeValue
+	}
+	// And whether it will still be there then (stage 78). The wait is the
+	// same one the lug is charged over and the same one a sale reckons with,
+	// so nothing new is worked out here.
+	if cfg.LookaheadSpoils && keeps > 0 && keeps < shortfallIn(cfg, s) {
+		return 0
 	}
 	// The moment this body runs short - and what it will already have eaten
 	// by then (stage 71). A body runs short once inside a horizon, so the
@@ -685,6 +704,17 @@ func keepValue(cfg *Config, s *SelfView, incoming, nutrition, heal, held float64
 		hunger = math.Max(0, hunger-cfg.FoodNutrition*held)
 	}
 	return mealValueAt(cfg, s, incoming, hunger, nutrition, heal)
+}
+
+// shortfallIn is how long this body has before it runs short: the moment
+// keepValue values a thing at. One place, because three rules ask for it - what
+// a seller would be giving up, what putting something down saves, and now
+// whether what is being kept will still be there (stage 78).
+func shortfallIn(cfg *Config, s *SelfView) float64 {
+	if s.HungerRate <= 0 {
+		return cfg.PlanHorizon
+	}
+	return clamp((cfg.StarveHunger-s.Hunger)/s.HungerRate, 0, cfg.PlanHorizon)
 }
 
 // otherMeals is what is in this body's hand besides the thing being valued,
@@ -859,7 +889,7 @@ func (c *AIController) addFood(p *Perception) {
 				// for in the same place and on the same figure (stage 51).
 				need := carryNeed(cfg, s)
 				keep := keepValue(cfg, s, incoming, f.Nutrition, f.Heal,
-					otherMeals(s, 0)) // on the ground: nothing of it is in hand yet
+					otherMeals(s, 0), f.Spoils) // on the ground: nothing of it is in hand yet
 				lug := (burdenWith(cfg, s, 1) - burdenOf(s)) *
 					moveCostAt(cfg, effort) * groundOf(s) * wait
 				u := Utility{
@@ -1103,7 +1133,7 @@ func (c *AIController) addPutInStore(p *Perception) {
 	// contested may well find nothing when it next looks.
 	need := cfg.StoreValue * clamp(s.FoodScarcity, 0, 3) / 3
 	keep := keepValue(cfg, s, incoming, p.Foods[held].Nutrition, p.Foods[held].Heal,
-		otherMeals(s, p.Foods[held].Nutrition)) // it is in hand, so not against itself
+		otherMeals(s, p.Foods[held].Nutrition), p.Foods[held].Spoils) // it is in hand, so not against itself
 	if keep <= 0 || need <= 0 {
 		return
 	}
@@ -1368,7 +1398,7 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	if o.OfferValue > 0 || o.OfferHeal > 0 {
 		meal = mealValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal)
 		if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal,
-			otherMeals(s, cfg.CoinValue)); kept > meal { // the coin leaves the hand
+			otherMeals(s, cfg.CoinValue), o.OfferSpoils); kept > meal { // the coin leaves the hand
 			meal = kept
 		}
 	}
@@ -1482,7 +1512,8 @@ func handWorth(cfg *Config, s *SelfView, h *FoodView) float64 {
 		return stoneWorth(cfg, s)
 	}
 	v := mealValue(cfg, s, 0, h.Nutrition, h.Heal)
-	if kept := keepValue(cfg, s, 0, h.Nutrition, h.Heal, otherMeals(s, h.Nutrition)); kept > v {
+	if kept := keepValue(cfg, s, 0, h.Nutrition, h.Heal, otherMeals(s, h.Nutrition),
+		h.Spoils); kept > v {
 		v = kept
 	}
 	return v

@@ -1638,6 +1638,41 @@ type Config struct {
 	// it is the last thing standing between that window and being the default.
 	GoalsNeedSurvival bool
 
+	// LookaheadHolds is whether the second window knows about the food in this
+	// body's hands (stage 78). False is stages 67 to 74 as they were built:
+	// out there a body is carried forward on its own metabolism and on what it
+	// has been managing to find (LookaheadUpkeep), and what it is holding at
+	// this moment - the one thing it is certain of - counts for nothing.
+	//
+	// It is a level and not a rate, because a meal is one drop in hunger and
+	// not a slower climb, and it is discounted by LookaheadUpkeep rather than
+	// by a figure of its own: eating what is in your hand is part of keeping
+	// yourself up, and this world does not need a second number for it.
+	//
+	// The safety is structural rather than argued. The chain is p + (1-p) x
+	// next, so where the first window dominates the second contributes almost
+	// nothing - and holding something changes the first window not at all,
+	// because a body that has not eaten is exactly as hungry as it was. A
+	// starving body with a meal in its hand still reads itself as starving.
+	//
+	// And it is off by default for a reason worth stating plainly: it is the
+	// same knob as LookaheadUpkeep pointed at food in hand, and at one that
+	// knob takes stage 67 with it. The shortfall the second window sees is
+	// exactly what makes a satiated body value keeping anything; a body that
+	// assumes the thing in its hand fills that shortfall has that much less
+	// reason to be holding it.
+	LookaheadHolds bool
+
+	// LookaheadSpoils is whether keeping something is worth nothing when the
+	// thing will have gone off by the time it is wanted (stage 78). What it
+	// reads is the item's own clock, which is not hidden - how near a thing is
+	// to turning is a fact about the thing, like what it is and what has been
+	// done to it - against the wait keepValue already values the thing at.
+	//
+	// It is not a taper. Spoiled food leaves this world entirely, so at the
+	// moment of need the thing is either there or it is not.
+	LookaheadSpoils bool
+
 	// LookaheadUpkeep is how much of its own metabolism a body assumes it
 	// will go on covering inside the second window (stage 72). Zero is stage
 	// 67 as it was built: the body eats nothing out there, which is what
@@ -2555,6 +2590,8 @@ func DefaultConfig() Config {
 		PlanHorizon:    700,
 		ShockRisk:      0.55,
 
+		LookaheadHolds:       false, // stage 78: measured, and not the default
+		LookaheadSpoils:      false, // stage 78
 		LookaheadNeverBlinds: true,  // stage 74: on with the window
 		GoalsNeedSurvival:    true,  // stage 73: on with the window
 		LookaheadWornAgain:   false, // stage 72

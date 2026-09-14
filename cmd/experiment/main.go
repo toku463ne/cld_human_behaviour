@@ -1656,6 +1656,56 @@ var variants = []variant{
 		stores: playedStores,
 	},
 	{
+		// Stage 78: what the second window knows about food. holds tells it
+		// what is in the hands (the one thing out there a body is sure of),
+		// spoils stops a thing that will be rotten by then counting as kept.
+		// They are measured as a pair because they are one question asked
+		// twice, and on the two maps because anything about food is.
+		name:  "holds",
+		about: "78a: the second window knows what is in the hand",
+		apply: func(c *engine.Config) { c.LookaheadHolds = true },
+	},
+	{
+		name:  "spoils",
+		about: "78b: what will be rotten by the time it is wanted is not worth keeping",
+		apply: func(c *engine.Config) { c.LookaheadSpoils = true },
+	},
+	{
+		name:  "holdspoils",
+		about: "78a and 78b together",
+		apply: func(c *engine.Config) { c.LookaheadHolds, c.LookaheadSpoils = true, true },
+	},
+	{
+		name:  "coinsholds",
+		about: "78a on the played map with money, where hands are fullest",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHolds = true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinsspoils",
+		about: "78b on the played map with money",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadSpoils = true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "coinsholdspoils",
+		about: "78a and 78b on the played map with money",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.LookaheadHolds, c.LookaheadSpoils = true, true
+		},
+		stores: playedStores,
+	},
+	{
 		// Stage 75: the same money world with cooking made into something
 		// worth knowing. Everywhere else CookQuality is one, so every body
 		// cooks as well as every other and a cooked thing handed over is

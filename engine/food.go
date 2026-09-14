@@ -316,3 +316,21 @@ func (w *World) meatFrom(a *Agent) float64 {
 	}
 	return a.Bulk(&w.cfg) / w.cfg.MeatPerBudget
 }
+
+// spoilsIn is how long this item has before it goes off, in ticks, and zero
+// for anything with no clock on it (stage 78).
+//
+// The convention is the world's own: a Food with SpoilAt zero has no clock, so
+// a zero here means "keeps" rather than "gone". Anything already past its hour
+// is on its way out this tick and is reported as having no time left, which is
+// the one case a caller has to tell apart from "keeps" - hence the smallest
+// positive figure rather than zero.
+func (w *World) spoilsIn(f *Food) float64 {
+	if f.SpoilAt <= 0 {
+		return 0
+	}
+	if left := float64(f.SpoilAt - w.tick); left > 0 {
+		return left
+	}
+	return 1e-9
+}

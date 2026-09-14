@@ -329,6 +329,16 @@ type FoodView struct {
 	// does is say what it says.
 	Worth float64
 
+	// Spoils is how many ticks this one has left before it goes off, and zero
+	// for anything with no clock on it at all (stage 78). The convention is
+	// the world's own: a Food with SpoilAt zero has no clock, so a zero here
+	// is "keeps", not "gone".
+	//
+	// Not hidden. What something is and what has been done to it are written
+	// on the outside of it (Kind, Cooked), and how near it is to turning is
+	// the same sort of fact - it is about the thing, not about anybody else.
+	Spoils float64
+
 	// Held says this one is already in the agent's own hands (stage 40).
 	// Nothing about how it is scored changes - it is a meal at no distance
 	// with nobody racing for it - but the option to pick something up is
@@ -460,6 +470,11 @@ type AgentView struct {
 	OfferLeft  int
 	OfferValue float64
 	OfferHeal  float64
+
+	// OfferSpoils is how long what is being held up has left (stage 78), and
+	// zero for anything with no clock. A buyer can see how near a thing is to
+	// turning, the same way it can see what the thing is.
+	OfferSpoils float64
 
 	// OfferWorth is what a book held up would be worth to the one looking
 	// (stage 69), and zero for everything else. It is in the looker's terms
@@ -716,6 +731,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Nutrition: p.Self.Nutrition[f.Kind],
 			Heal:      w.itemHealKnown(a, f),
 			Cooked:    f.Cooked,
+			Spoils:    w.spoilsIn(f),
 			Catch:     w.catchExpected(a, f),
 			Danger:    w.dangerOf(a, f),
 			RivalDist: math.Inf(1),
@@ -796,11 +812,12 @@ func (w *World) perceive(a *Agent) *Perception {
 		// view is: the same figures that price a meal on the ground.
 		offering, offerLeft := false, 0
 		offerKind, offerValue, offerHeal := FoodKind(0), 0.0, 0.0
-		offerWorth := 0.0
+		offerWorth, offerSpoils := 0.0, 0.0
 		if item := w.offering(o); item != nil && w.canEat(a, item) {
 			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
 			offerValue = p.Self.Nutrition[item.Kind]
 			offerHeal = w.itemHealKnown(a, item)
+			offerSpoils = w.spoilsIn(item)
 			w.sawOffer = true
 		} else if item != nil && item.Kind == FoodBook && w.cfg.Books {
 			// A book held up is worth what it would tell this looker, which
@@ -846,6 +863,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			OfferLeft:   offerLeft,
 			OfferValue:  offerValue,
 			OfferHeal:   offerHeal,
+			OfferSpoils: offerSpoils,
 			Uphill:      w.terrainAt(o.X, o.Y).Height > w.terrainAt(a.X, a.Y).Height,
 			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
 			Uncertainty: variance,
