@@ -148,6 +148,16 @@ type SelfView struct {
 	CraftQuality float64
 	CanCraft     bool
 
+	// AdornWant is how much of an ornament's worth is left to this body once
+	// the chance of not being there for it is taken off, and CraftDelight how
+	// much it expects to want a piece it has not made yet (stage 84).
+	//
+	// Both are about the body rather than about any object, which is why they
+	// are here: everything already in a hand or in sight carries the same two
+	// figures inside its own Worth.
+	AdornWant    float64
+	CraftDelight float64
+
 	// Coins is how much money is in this body's own hands (stage 80). One or
 	// none in every world before a coin stopped taking a hand, and what a
 	// price of more than one has to be met out of.
@@ -666,6 +676,8 @@ func (w *World) selfView(a *Agent) SelfView {
 		HasCoin:           a.carriedIndex2(FoodCoin) >= 0,
 		Coins:             a.coinsHeld(),
 		CraftQuality:      w.trinketQuality(a),
+		AdornWant:         w.adornWantOf(a),
+		CraftDelight:      w.craftDelight(a),
 		CanCraft:          w.canCraft(a),
 		FedRate:           a.fedRate(&w.cfg, w.tick),
 		HeldMeals:         w.heldMeals(a),
@@ -744,7 +756,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			if w.cfg.Trinkets {
 				p.Trinkets = append(p.Trinkets, FoodView{
 					ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
-					RivalDist: math.Inf(1), Worth: w.trinketWorth(f),
+					RivalDist: math.Inf(1), Worth: w.trinketWorth(a, f),
 				})
 			}
 			continue
@@ -861,12 +873,12 @@ func (w *World) perceive(a *Agent) *Perception {
 			offerSpoils = w.spoilsIn(item)
 			w.sawOffer = true
 		} else if item != nil && item.Kind == FoodTrinket && w.cfg.Trinkets {
-			// Something held up that nobody needs (stage 82). What it is
-			// worth is the same to everybody who can see it - the piece
-			// varies, the eye does not - so unlike a book this is not a
-			// different offer to different lookers.
+			// Something held up that nobody needs (stage 82). Since stage 84
+			// it is worth what it is worth to whoever is looking, like a
+			// book: the piece varies and so does the eye, and that is the
+			// whole reason there is anything to trade.
 			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
-			offerWorth = w.trinketWorth(item)
+			offerWorth = w.trinketWorth(a, item)
 			w.sawOffer = true
 		} else if item != nil && item.Kind == FoodBook && w.cfg.Books {
 			// A book held up is worth what it would tell this looker, which
@@ -1013,9 +1025,10 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Foods = w.carriedViews(a, p.Foods)
 	// And the hand itself, which is not the same list (stage 70): what cannot
 	// be eaten is not a meal, but it is still something a body can put down.
-	// Only where there is a word for putting things down, because nothing
-	// else reads it and working out what a held thing is worth is not free.
-	if w.cfg.Dropping {
+	// Only where something reads it, because working out what a held thing is
+	// worth is not free: the word for putting things down (stage 70), and the
+	// price of a gift (stage 84).
+	if w.cfg.Dropping || w.cfg.GiftPriced {
 		p.Held = w.handViews(a, p.Held)
 	}
 	if i, gain, ok := w.bestKnownRegion(a); ok {

@@ -1000,6 +1000,19 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 	if gained <= 0 {
 		return
 	}
+	// And what it would be giving up, where a gift costs what it was worth
+	// (stage 84). Selling has always priced this (willSell) and so has
+	// putting something down, and leaving it out here is why a body with
+	// something to spare hands it over rather than holding out for a coin.
+	// It is the same figure both of those weigh: the cheapest thing in the
+	// hand, because that is the one that would go.
+	gift := cfg.LoreValue * gained
+	if cfg.GiftPriced {
+		gift -= c.spareWorth(p)
+		if gift <= 0 {
+			return
+		}
+	}
 	// The best hand-over in sight, kept for the cry that would arrange one
 	// instead of walking to it (stage 49). It is worked out here rather than
 	// again because it is the same question.
@@ -1010,13 +1023,30 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
 		cost := moveCost(cfg, s, effort) * ticks
 		c.add(Action{Kind: ActGive, TargetID: o.ID, Effort: effort}, Utility{
-			Lore:         Goal{Value: cfg.LoreValue * gained, Chance: 1},
+			Lore:         Goal{Value: gift, Chance: 1},
 			Vitality:     cost,
 			Ticks:        ticks,
 			VitalityCost: cost * cfg.VitalityWeight,
 			TimeCost:     ticks * cfg.TimeCost,
 		})
 	}
+}
+
+// spareWorth is what this body would be giving up by handing something over:
+// the least it minds losing, which is the thing that would actually go
+// (stage 84). Nothing in hand is nothing to give.
+func (c *AIController) spareWorth(p *Perception) float64 {
+	cfg, s := p.Cfg, &p.Self
+	least := math.Inf(1)
+	for i := range p.Held {
+		if worth := handWorth(cfg, s, &p.Held[i]); worth < least {
+			least = worth
+		}
+	}
+	if math.IsInf(least, 1) {
+		return 0
+	}
+	return least
 }
 
 // addOffer scores standing there and crying what is in the hand (stage 49).
@@ -1414,7 +1444,17 @@ func (c *AIController) addCoins(p *Perception) {
 // crier there is no shop window.
 func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	cfg, s := p.Cfg, &p.Self
-	if !s.HasCoin || !o.Selling || o.OfferValue <= 0 {
+	// Anything held out that this body would have. Until stage 84 this asked
+	// for nutrition, which is a question only a meal can answer: a book and
+	// an ornament have none, so neither could be bought at any price, in any
+	// world, by anybody. Nothing said so - the rest of this function has
+	// priced both of them since the stages that added them - and it is the
+	// same mistake as the canEat list stage 82 found, a guard written for the
+	// kinds that existed when it was written.
+	if !s.HasCoin || !o.Selling {
+		return
+	}
+	if o.OfferValue <= 0 && (cfg.CoinBuysOnlyMeals || o.OfferWorth <= 0) {
 		return
 	}
 	// What is on the counter. A book is worth what it would say to this body
@@ -1491,7 +1531,12 @@ func (c *AIController) addCraft(p *Perception) {
 	if !s.CanCraft {
 		return
 	}
-	want := cfg.TrinketValue * cfg.LifeValue * s.CraftQuality
+	// What it expects to end up with: its own hands, the luck of the piece it
+	// cannot know in advance (CraftDelight), and whether it will be there to
+	// enjoy the thing at all (stage 84). The last is the whole difference
+	// between this and going to eat: a meal is worth more to a body that is
+	// running out, and an ornament is worth less.
+	want := cfg.TrinketValue * cfg.LifeValue * s.CraftQuality * s.CraftDelight * s.AdornWant
 	if want <= 0 {
 		return
 	}

@@ -1,5 +1,7 @@
 package engine
 
+import "math"
+
 // Trinkets (stage 82).
 //
 // Everything this world wants, it wants for a reason. A meal is survival, a
@@ -41,6 +43,16 @@ package engine
 //   - It goes off, on the same clock meat does (#77 - a hand does not stop
 //     it). Nothing new times it, and it means holding one for ever is not
 //     free: there is always a reason to use it or pass it on.
+//
+// Stage 84 opened the one of those four this stage had deliberately shut. The
+// third says what a piece is worth varies, and it went on to say that what it
+// is worth does not depend on who is holding it - so that a scattered price
+// could only have come from the pieces. That measurement is done (it does not
+// scatter either way), and the taste is the thing this world has never had:
+// two bodies that price the same object differently, which is the only way
+// past the arithmetic stage 79 wrote down. The second thing 84 added is the
+// difference between this and a meal, which is that you have to be there for
+// it (adornWant). Both live in trinketWorth, below.
 
 // trinketQuality is how good a thing this body would make, from 0 to 1.
 //
@@ -93,7 +105,10 @@ func (w *World) craft(a *Agent) {
 	}
 	item := Food{
 		X: a.X, Y: a.Y, Kind: FoodTrinket, Made: clamp(made, 0, 2),
+		Style: w.drawStyle(a),
 	}
+	w.trinketFitMade += w.trinketDelight(a, &item)
+	w.trinketFitN++
 	if w.cfg.TrinketSpoilTicks > 0 {
 		item.SpoilAt = w.tick + w.cfg.TrinketSpoilTicks
 	}
@@ -102,17 +117,27 @@ func (w *World) craft(a *Agent) {
 	a.requestDecision(TriggerGoalReached)
 }
 
-// trinketWorth is what having this particular one is worth.
+// trinketWorth is what having this particular one is worth to this body.
 //
 // It is the given figure times what this piece came out like, less what is
 // left of it: a thing an hour from being gone is worth an hour of it. The
 // discount is continuous rather than a cliff so that letting one go while it
 // is still worth something is an ordinary comparison and not a deadline.
 //
-// It does not depend on who is holding it. What varies is the object, not the
-// taste - a taste would be a second kind of variation and would make it
-// impossible to say which of the two a scattered price came from.
-func (w *World) trinketWorth(f *Food) float64 {
+// Two things were added in stage 84, and both of them take the same place
+// here rather than at any of the half dozen sites that ask what an ornament
+// is worth - buying one, picking one up, selling one, giving one away,
+// putting one down. Stage 77 is why: when the same question is answered in
+// two places, the two answers drift.
+//
+//   - Who is looking (trinketDelight). Until this, no value in this world
+//     depended on that.
+//   - Whether this body expects to be there for it (adornWant), which is the
+//     whole difference between an ornament and a meal.
+//
+// A nil body is one nobody is holding: a piece lying on the ground is worth
+// what it is worth before anybody in particular has looked at it.
+func (w *World) trinketWorth(a *Agent, f *Food) float64 {
 	if !w.cfg.Trinkets || f.Kind != FoodTrinket {
 		return 0
 	}
@@ -121,7 +146,133 @@ func (w *World) trinketWorth(f *Food) float64 {
 		left := float64(f.SpoilAt-w.tick) / float64(w.cfg.TrinketSpoilTicks)
 		worth *= clamp(left, 0, 1)
 	}
-	return worth
+	if a == nil {
+		return worth
+	}
+	return worth * w.trinketDelight(a, f) * w.adornWantOf(a)
+}
+
+// trinketDelight is how much this body wants this particular piece rather
+// than some other one (stage 84).
+//
+// Circular, because a style is a point on a circle and not a rank: the
+// distance from 0.95 to 0.05 is a tenth and not nine tenths. That is the
+// chronotype's shape (clock.go) and it is here for the chronotype's reason -
+// a taste is a direction, so nothing about it can be bought.
+//
+// It averages one over a piece drawn at random, so turning the taste up moves
+// want about between bodies without putting any more of it into the world.
+func (w *World) trinketDelight(a *Agent, f *Food) float64 {
+	t := clamp(w.cfg.TrinketTaste, 0, 1)
+	if t <= 0 {
+		return 1
+	}
+	d := math.Abs(f.Style - a.taste)
+	if d > 0.5 {
+		d = 1 - d
+	}
+	return 1 + t*(1-4*d)
+}
+
+// craftDelight is how much a body expects to want the piece it is about to
+// make. It cannot know how this one will come out - which is why a maker
+// cannot simply make itself what it wants - so it reckons on the average,
+// which is one. Where a maker does turn out its own style, it knows that too.
+func (w *World) craftDelight(a *Agent) float64 {
+	t := clamp(w.cfg.TrinketTaste, 0, 1)
+	if t <= 0 || !w.cfg.TrinketStyleAimed {
+		return 1
+	}
+	return 1 + t
+}
+
+// drawStyle is which ornament this one turned out to be. It draws nothing
+// where no body has a taste, so a world without one is the world stage 82
+// measured, to the bit.
+func (w *World) drawStyle(a *Agent) float64 {
+	if w.cfg.TrinketTaste <= 0 {
+		return 0
+	}
+	if w.cfg.TrinketStyleAimed {
+		return a.taste
+	}
+	return w.rng.Float64()
+}
+
+// drawTaste is the ornament a founder likes, and inheritTaste the one a child
+// does: one parent's, whole, with a drift, wrapped round the circle. Both are
+// the chronotype's, for the chronotype's reasons.
+func (w *World) drawTaste() float64 {
+	if !w.cfg.Trinkets || w.cfg.TrinketTaste <= 0 {
+		return 0
+	}
+	return w.rng.Float64()
+}
+
+func (w *World) inheritTaste(pa, pb *Agent) float64 {
+	if !w.cfg.Trinkets || w.cfg.TrinketTaste <= 0 {
+		return 0
+	}
+	t := pa.taste
+	if w.rng.Float64() < 0.5 {
+		t = pb.taste
+	}
+	if w.cfg.TrinketTasteMutation > 0 {
+		t += w.rng.NormFloat64() * w.cfg.TrinketTasteMutation
+	}
+	return t - math.Floor(t)
+}
+
+// wantAdornment writes, once a tick and before anybody decides anything with
+// it, how much of an ornament's worth is left to each body (stage 84).
+//
+// This is the one thing that tells a meal and an ornament apart in a decision.
+// Staying alive is priced as a difference between two chances of dying, so it
+// grows as a body runs out; a want with nothing behind it was priced as a
+// constant, and a constant beats a shrinking figure exactly when it should
+// lose. Stage 73 found the same fault in the price of a child and fixed it
+// with survives(), and this is that function, on the goal that needs it most:
+// an ornament is the purest case of something you have to be alive to enjoy.
+//
+// It is worked out here rather than where it is used because the body's own
+// view of itself is expensive to build and the answer is the same all tick,
+// and it is kept on the agent for the reason Nursing is: three sites read it
+// and they must read the same number.
+// It shares its pass with the other thing a body has to work out about its
+// own hands before it can decide anything (stage 84's spare item): both want
+// the body's own view of itself, which is the expensive part.
+func (w *World) priceHands() {
+	adorn := w.cfg.Trinkets && w.cfg.AdornNeedsSurvival
+	spare := w.cfg.HandOverCheapest
+	if !adorn && !spare {
+		return // never written, never read
+	}
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		s := w.selfView(a)
+		if adorn {
+			// Before the spare item is worked out: what an ornament is worth
+			// to this body is part of what it would be giving up.
+			risk := pressures(&w.cfg, &s, a.Vitality, a.Hunger, 0).far
+			a.adornWant = survives(&w.cfg, risk, w.cfg.PlanHorizon)
+			s.AdornWant = a.adornWant
+		}
+		if spare {
+			a.spare = w.spareIndex(a, &s, false)
+			a.spareSale = w.spareIndex(a, &s, true)
+		}
+	}
+}
+
+// adornWantOf is that figure, and one where the rule is off.
+func (w *World) adornWantOf(a *Agent) float64 {
+	if !w.cfg.AdornNeedsSurvival {
+		return 1
+	}
+	return a.adornWant
 }
 
 // TrinketUse is what the trinkets came to. Read only.
@@ -139,26 +290,87 @@ type TrinketUse struct {
 	Held    int
 	Holders float64
 	Best    float64
+
+	// Fit is how well the pieces in hands suit the bodies holding them, and
+	// FitMade how well the ones coming off the bench suited the hand that
+	// made it (stage 84). Both average one where nobody has a taste.
+	//
+	// The two together are the whole of the stage's claim, and neither can be
+	// read without the other: a maker cannot aim, so what comes out fits
+	// nobody in particular, and anything above that in the hands is a piece
+	// that reached somebody who wanted it. How it got there - bought, given,
+	// picked up off the ground, or simply kept when the poor ones were let go
+	// - the figures below say.
+	Fit     float64
+	FitMade float64
+
+	// Sold and Given are how many changed hands each way, and Want the mean
+	// share of an ornament's worth the living still expect to be there for.
+	Sold  int
+	Given int
+	Want  float64
+
+	// Gained is what a hand-over did to how well the piece suited whoever was
+	// holding it: the new holder's liking for it less the old one's, over
+	// every ornament that changed hands (stage 84).
+	//
+	// It is the stage's claim in one figure, and it is counted as it happens
+	// rather than read off the hands at the end: a hand holds what the last
+	// twenty thousand ticks left in it, and there are a few dozen hands.
+	// Above nought says pieces are moving towards the bodies that want them,
+	// which is what a market is for and what no rule anywhere asks for.
+	// Gained is over every hand-over, and GainedSold over the sales alone.
+	// The two apart are what tells a rule from a market: where a body hands
+	// over the piece it minds least, the giving side is bound to come out
+	// above nought because the giver was chosen for disliking it, and only
+	// the receiving end can say whether anybody wanted it. Nothing chooses
+	// the receiver of a gift; a buyer chooses itself.
+	Gained     float64
+	GainedSold float64
+}
+
+// noteTrinketMove records one ornament changing hands (stage 84). It rides on
+// the two lines that already count a hand-over, so nothing is detected anew.
+func (w *World) noteTrinketMove(from, to *Agent, f *Food, sold bool) {
+	if !w.cfg.Trinkets || f.Kind != FoodTrinket {
+		return
+	}
+	gain := w.trinketDelight(to, f) - w.trinketDelight(from, f)
+	w.trinketMoves++
+	w.trinketMoveGain += gain
+	if sold {
+		w.trinketSales++
+		w.trinketSaleGain += gain
+	}
 }
 
 // Trinkets reports what they came to.
 func (w *World) Trinkets() TrinketUse {
-	out := TrinketUse{Made: w.trinketsMade}
+	out := TrinketUse{
+		Made:  w.trinketsMade,
+		Sold:  w.trinketsSold,
+		Given: w.trinketsGiven,
+	}
 	if w.trinketsMade > 0 {
 		out.Quality = w.trinketWorthMade / float64(w.trinketsMade)
 	}
-	n, worth := 0.0, 0.0
+	if w.trinketFitN > 0 {
+		out.FitMade = w.trinketFitMade / float64(w.trinketFitN)
+	}
+	n, worth, fit := 0.0, 0.0, 0.0
 	for i := range w.agents {
 		a := &w.agents[i]
 		if !a.Alive {
 			continue
 		}
 		n++
+		out.Want += w.adornWantOf(a)
 		held := 0
 		for k := range a.carried {
 			if a.carried[k].Kind == FoodTrinket {
 				held++
 				worth += a.carried[k].Made
+				fit += w.trinketDelight(a, &a.carried[k])
 			}
 		}
 		out.Held += held
@@ -168,9 +380,17 @@ func (w *World) Trinkets() TrinketUse {
 	}
 	if out.Held > 0 {
 		out.Best = worth / float64(out.Held)
+		out.Fit = fit / float64(out.Held)
 	}
 	if n > 0 {
 		out.Holders /= n
+		out.Want /= n
+	}
+	if w.trinketMoves > 0 {
+		out.Gained = w.trinketMoveGain / float64(w.trinketMoves)
+	}
+	if w.trinketSales > 0 {
+		out.GainedSold = w.trinketSaleGain / float64(w.trinketSales)
 	}
 	return out
 }

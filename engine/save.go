@@ -220,6 +220,7 @@ type agentSnap struct {
 
 	SawFood, SawMate bool
 	Chronotype       float64
+	Taste            float64
 	// Footing is only real state in the arm where it is carried (stage 57):
 	// everywhere else the world works it out from where the body is standing
 	// and this is left out. An old world without it reads as ordinary ground,
@@ -414,6 +415,7 @@ func snapAgent(a *Agent) agentSnap {
 		SawFood:     a.sawFood,
 		SawMate:     a.sawMate,
 		Chronotype:  a.chronotype,
+		Taste:       a.taste,
 		Seed:        a.seed,
 		SeedDueAt:   a.seedDueAt,
 		RecentFood:  a.recentFood,
@@ -586,6 +588,7 @@ func loadAgent(s *agentSnap) Agent {
 	a.hintSlots = s.HintSlots
 	a.sawFood, a.sawMate = s.SawFood, s.SawMate
 	a.chronotype = s.Chronotype
+	a.taste = s.Taste
 	for g := range s.Footing {
 		if g < len(a.footing) {
 			a.footing[g] = s.Footing[g]
@@ -654,6 +657,11 @@ type Node struct {
 	Hints      []Hint    `json:"hints,omitempty"`
 	HintSlots  int       `json:"hintSlots"`
 	Chronotype float64   `json:"chronotype"`
+
+	// Taste is which ornament this body likes (stage 84). It travels with a
+	// population for the reason the chronotype does: it is what this body is,
+	// and it names nobody else.
+	Taste float64 `json:"taste"`
 }
 
 type nodeFile struct {
@@ -683,6 +691,7 @@ func (w *World) Nodes() []Node {
 			Hints:      append([]Hint(nil), a.hints...),
 			HintSlots:  a.hintSlots,
 			Chronotype: a.chronotype,
+			Taste:      a.taste,
 		})
 	}
 	return out
@@ -745,6 +754,7 @@ func (w *World) Repopulate(nodes []Node) int {
 		a.hints = append([]Hint(nil), n.Hints...)
 		a.hintSlots = n.HintSlots
 		a.chronotype = n.Chronotype
+		a.taste = n.Taste
 		a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))
 		a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
 		a.Lifespan = w.randRange(w.cfg.MaxLifespan*0.5, w.cfg.MaxLifespan)

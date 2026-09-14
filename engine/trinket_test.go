@@ -82,21 +82,21 @@ func TestAnOrnamentIsWorthLessAsItGoes(t *testing.T) {
 	cfg := trinketConfig()
 	w := NewWorld(cfg)
 	f := Food{Kind: FoodTrinket, Made: 1, SpoilAt: w.tick + cfg.TrinketSpoilTicks}
-	fresh := w.trinketWorth(&f)
+	fresh := w.trinketWorth(nil, &f)
 	if fresh <= 0 {
 		t.Fatalf("a new one is worth %v", fresh)
 	}
 	for i := 0; i < cfg.TrinketSpoilTicks/2; i++ {
 		w.tick++
 	}
-	half := w.trinketWorth(&f)
+	half := w.trinketWorth(nil, &f)
 	if half >= fresh || half <= 0 {
 		t.Fatalf("half way through its life one is worth %v against %v new", half, fresh)
 	}
 	for i := 0; i < cfg.TrinketSpoilTicks; i++ {
 		w.tick++
 	}
-	if gone := w.trinketWorth(&f); gone != 0 {
+	if gone := w.trinketWorth(nil, &f); gone != 0 {
 		t.Fatalf("one that is gone is worth %v", gone)
 	}
 }

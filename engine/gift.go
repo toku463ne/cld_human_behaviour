@@ -35,7 +35,10 @@ func (w *World) giveItem(from, to *Agent) bool {
 	if len(from.carried) == 0 {
 		return false
 	}
-	item := from.carried[0]
+	// Which thing changes hands: whatever is first, or the one its owner
+	// minds least among the things this receiver could use (stage 84).
+	at := w.spareFor(from, to)
+	item := from.carried[at]
 	// Room for this thing in particular: with the hand priced by weight alone
 	// (stage 80a) a coin needs no hand, so what is being handed over has to be
 	// known before the question can be asked.
@@ -51,10 +54,14 @@ func (w *World) giveItem(from, to *Agent) bool {
 	if !w.canCarry(to, &item) {
 		return false
 	}
-	w.removeCarried(from, 0)
+	w.removeCarried(from, at)
 	to.carried = append(to.carried, item)
 	w.heldKind[item.Kind]++
 	w.gifts++
+	if item.Kind == FoodTrinket {
+		w.trinketsGiven++
+		w.noteTrinketMove(from, to, &item, false)
+	}
 	// And whether it followed a cry (stage 49), which is as close as this
 	// world gets to asking whether the advertisement is what brought them
 	// together. Two cries' worth of ticks is the window: long enough for

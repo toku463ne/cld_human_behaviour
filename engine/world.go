@@ -509,6 +509,14 @@ type World struct {
 	crafts           int
 	trinketsMade     int
 	trinketWorthMade float64
+	trinketFitMade   float64
+	trinketFitN      int
+	trinketsSold     int
+	trinketsGiven    int
+	trinketMoves     int
+	trinketMoveGain  float64
+	trinketSales     int
+	trinketSaleGain  float64
 
 	// What was written down and what was read (stage 69).
 	booksWritten int
@@ -855,6 +863,11 @@ func (w *World) Step() {
 	// And which mothers have a child at their heel (stage 66), read before
 	// anybody moves so that the slowing applies to the tick it is about.
 	w.nurse()
+
+	// And how much of an ornament's worth is left to each body (stage 84),
+	// on the same footing: a fact about this tick, written before anything
+	// prices one.
+	w.priceHands()
 
 	for i := range w.agents {
 		a := &w.agents[i]
@@ -1884,6 +1897,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
 	child.lore = w.inheritLore(pa, pb)
 	child.chronotype = w.inheritChronotype(pa, pb)
+	child.taste = w.inheritTaste(pa, pb)
 	child.hintSlots, child.hints = slots, hints
 	// What it knows for having been born where it was, merged with what it
 	// inherited by the one comparison there is (skill.go). A genius child
@@ -2330,6 +2344,7 @@ func (w *World) randomAgent(species Species) Agent {
 	a.Kind = uint8(kind)
 	a.lore = w.newLore()
 	a.chronotype = w.drawChronotype()
+	a.taste = w.drawTaste()
 	a.hintSlots = w.drawHintSlots()
 	a.hints = w.drawHints(a.hintSlots)
 	// And whatever the country it arrived in has to teach (stage 38a). The

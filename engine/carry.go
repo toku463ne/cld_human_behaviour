@@ -339,6 +339,91 @@ func (w *World) handViews(a *Agent, out []FoodView) []FoodView {
 	return out
 }
 
+// spareIndex is which of the things in this hand its owner can most afford to
+// lose: the one worth least to it (stage 84). Ties go to the first, so that
+// the answer does not depend on the order things were picked up in.
+//
+// sellable narrows it to what a body would put on a counter, which is what a
+// meal, a book and an ornament are and what a stone and a coin are not: money
+// is what buys, and nobody has ever come to buy a stone (stage 77).
+func (w *World) spareIndex(a *Agent, s *SelfView, sellable bool) int {
+	best, least := -1, 0.0
+	for i := range a.carried {
+		f := &a.carried[i]
+		if sellable && !forSale(&w.cfg, f.Kind) {
+			continue
+		}
+		v := w.handView(a, f)
+		if worth := handWorth(&w.cfg, s, &v); best < 0 || worth < least {
+			best, least = i, worth
+		}
+	}
+	return best
+}
+
+// spareFor is the same question with somebody in mind: the thing this body
+// minds least among the things that one could actually take. The receiver's
+// side is asked here rather than after the choice because a hand-over that
+// falls through is not a cheaper hand-over, it is no hand-over.
+func (w *World) spareFor(from, to *Agent) int {
+	if !w.cfg.HandOverCheapest {
+		return 0
+	}
+	s := w.selfView(from)
+	best, least := -1, 0.0
+	for i := range from.carried {
+		f := &from.carried[i]
+		if !to.canCarryKind(&w.cfg, f.Kind) || !w.canCarry(to, f) {
+			continue
+		}
+		v := w.handView(from, f)
+		if worth := handWorth(&w.cfg, &s, &v); best < 0 || worth < least {
+			best, least = i, worth
+		}
+	}
+	if best < 0 {
+		return 0 // nothing it could use: the old question answers itself below
+	}
+	return best
+}
+
+// forSale says whether a kind is something a body would sell.
+func forSale(cfg *Config, kind FoodKind) bool {
+	switch {
+	case kind < NumEdibleKinds:
+		return true
+	case kind == FoodBook:
+		return cfg.Books
+	case kind == FoodTrinket:
+		return cfg.Trinkets
+	}
+	return false
+}
+
+// spareHeld is the thing this body would part with: the one it minds least
+// where that rule is in force, and whatever is first in the hand otherwise.
+// The bounds are checked because a hand empties inside a tick - eaten, sold,
+// gone off - after the pass that wrote this.
+func (a *Agent) spareHeld(cfg *Config) int {
+	if !cfg.HandOverCheapest || len(a.carried) == 0 {
+		return 0
+	}
+	if a.spare >= 0 && a.spare < len(a.carried) {
+		return a.spare
+	}
+	return 0
+}
+
+// forSaleIndex is the same for what goes on the counter.
+func (w *World) forSaleIndex(a *Agent) int {
+	if w.cfg.HandOverCheapest {
+		if i := a.spareSale; i >= 0 && i < len(a.carried) && forSale(&w.cfg, a.carried[i].Kind) {
+			return i
+		}
+	}
+	return a.firstForSale(&w.cfg)
+}
+
 // handView is one held thing as its holder sees it.
 //
 // It is its own function because the seller of something looks at it through
@@ -361,7 +446,7 @@ func (w *World) handView(a *Agent, f *Food) FoodView {
 	case FoodBook:
 		v.Worth = w.bookValue(a, f)
 	case FoodTrinket:
-		v.Worth = w.trinketWorth(f)
+		v.Worth = w.trinketWorth(a, f)
 	case FoodCoin, FoodStone:
 		// Neither is worth anything as a meal, and what each is worth
 		// instead the controller works out for itself: a coin from what

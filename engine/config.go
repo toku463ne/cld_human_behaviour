@@ -861,6 +861,99 @@ type Config struct {
 	// something in this world quite apart from what is being made.
 	TrinketsVanish bool
 
+	// TrinketTaste is how differently two bodies want the same piece (stage
+	// 84). Zero is the world stage 82 measured, where a trinket is worth what
+	// it is worth to anybody; at one, a piece on the far side of the circle
+	// from a body's own taste is worth nothing to it and one on its own is
+	// worth twice.
+	//
+	// It moves want about rather than adding any: the multiplier averages one
+	// over a piece drawn at random, so the world holds the same amount of
+	// wanting however far this is turned up. That is stage 15a's rule for
+	// food applied to a want - change the distribution, not the total - and
+	// it is what makes the dose readable.
+	//
+	// It is the first figure in this world that depends on who is holding the
+	// object rather than on what the object is. That is the whole of what it
+	// is for: two bodies that cannot disagree about a thing have no reason to
+	// trade it, which is the wall stage 79 wrote down in arithmetic (a seller
+	// is short by (1 - CoinValue) on every sale, because both sides price the
+	// same thing the same way).
+	TrinketTaste float64
+
+	// TrinketTasteMutation is how far a child's taste drifts from the parent
+	// it took it from, on that circle. The same standing ChronotypeMutation
+	// is on, and wrapped rather than clamped for the same reason.
+	TrinketTasteMutation float64
+
+	// TrinketStyleAimed is the control that says whether a market is possible
+	// at all: with it on, a maker turns out the very thing it likes, so
+	// nobody needs anybody.
+	//
+	// It is the self-sufficiency of the food economy (#100) in miniature and
+	// under a switch. Off, a piece comes out how it comes out, which is the
+	// one shortage in this world that neither walking nor working can fix:
+	// you cannot go anywhere for the style you want and you cannot aim at it
+	// when you make one.
+	TrinketStyleAimed bool
+
+	// AdornNeedsSurvival is whether an ornament is only wanted by a body that
+	// expects to be there for it (stage 84).
+	//
+	// It is the distinction between a meal and an ornament, and it is not a
+	// new one: staying alive is priced as a change in the chance of dying, so
+	// it grows as a body runs out, while a want with nothing behind it was
+	// priced as a constant and therefore won exactly when it should lose.
+	// That is what stage 82 measured at three times the dose - a world where
+	// a quarter of all decisions were making ornaments - and it is the same
+	// mistake stage 73 found in the price of a child.
+	//
+	// So an ornament goes through survives(), like a child: what is left of
+	// it after the chance of not being there. It is on the worth rather than
+	// on the goal's chance because parting with one has to read the same
+	// figure (stage 77).
+	AdornNeedsSurvival bool
+
+	// CoinBuysOnlyMeals puts back the world in which the only thing money
+	// could buy was food (found in stage 84).
+	//
+	// It was never a rule: addBuy asked what was on the counter for its
+	// nutrition, and a book and an ornament have none, so the option was
+	// never scored for either - while the price, the seller's side and the
+	// hand-over all worked. Every figure recorded for stages 51, 68, 69, 80
+	// and 82 came from that world, which is why it is still reachable.
+	CoinBuysOnlyMeals bool
+
+	// HandOverCheapest is whether what a body holds out, hands over and sells
+	// is the thing it can most afford to lose, rather than whatever is first
+	// in its hands (stage 84).
+	//
+	// The principle is not new - it is written in firstForSale's own comment,
+	// where it is served by a fixed order of kinds (a meal, then a book, then
+	// an ornament). A fixed order was the whole of it while every value in
+	// this world was per kind: two pieces of the same kind were the same
+	// thing, so there was nothing to choose between them. With a taste there
+	// is, and the order now says the wrong thing - a body would hand over the
+	// very piece it likes because that is the one it made first.
+	//
+	// It also settles a disagreement that was already there: what a crier
+	// holds out is carried[0] and what it sells is the first sellable thing,
+	// which are not always the same item.
+	HandOverCheapest bool
+
+	// GiftPriced is whether giving something away costs what it was worth
+	// (stage 84).
+	//
+	// It is off by default because every measurement of the giving since
+	// stage 48 was taken without it, and it is here because of what those
+	// measurements keep saying: the ornaments went out as gifts (+269) and
+	// not as sales (-0.55), and the same is true of the food. A sale prices
+	// what the seller gives up (willSell) and so does putting something down
+	// (stage 70), but the gift option prices only the walk - so handing a
+	// thing to somebody is free and selling it is not, and a body with
+	// something to spare has no reason to hold out for a coin.
+	GiftPriced bool
+
 	// SkillTrinketRelief is how much of what a piece could be worth is the
 	// maker's skill rather than anybody's hands. At zero anybody makes a
 	// perfect one; at one a body with no skill makes nothing worth having.
@@ -2706,6 +2799,13 @@ func DefaultConfig() Config {
 		TrinketSpread:           0.5,
 		TrinketsVanish:          false,
 		SkillTrinketRelief:      0.5,
+		TrinketTaste:            0,
+		TrinketTasteMutation:    0.08,
+		TrinketStyleAimed:       false,
+		AdornNeedsSurvival:      false,
+		CoinBuysOnlyMeals:       false,
+		HandOverCheapest:        false,
+		GiftPriced:              false,
 		CoinPrices:              false,
 		CoinPriceBlind:          false,
 		SalePriceSplit:          false,

@@ -1945,6 +1945,213 @@ var variants = []variant{
 		stores: playedStores,
 	},
 	{
+		// The world every sale figure in this project was measured in, found
+		// in stage 84: money bought food and nothing else, because the option
+		// to buy asked what was on the counter for its nutrition.
+		name:  "trinketsmeals",
+		about: "82 as it was measured: money can buy a meal and nothing else",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.CoinBuysOnlyMeals = true, true
+		},
+		stores: playedStores,
+	},
+	// Stage 84: two bodies that want different things. The ornament of stage
+	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
+	// arithmetic - two bodies that cannot disagree about a thing have no
+	// reason to trade it - and it was wanted by the starving as much as by
+	// the fed, which is why three times the dose turned a quarter of all
+	// decisions into making ornaments.
+	{
+		name:  "taste",
+		about: "84: the same piece is wanted differently by different bodies",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste = true, 1
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "tastehalf",
+		about: "84 at half the taste: the dose",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste = true, 0.5
+		},
+		stores: playedStores,
+	},
+	{
+		// The control that decides whether any of this can work: a maker that
+		// turns out exactly what it likes. It is the food economy's
+		// self-sufficiency (#100) in miniature and on a switch - if the
+		// trading goes away here, what opened it was the shortage and not the
+		// wanting.
+		name:  "tasteaimed",
+		about: "84's control: a maker turns out the very thing it likes, so nobody needs anybody",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste, c.TrinketStyleAimed = true, 1, true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "adorn",
+		about: "84: an ornament is only wanted by a body that expects to be there for it",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.AdornNeedsSurvival = true, true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "tasteadorn",
+		about: "84 whole: a taste of its own, and only while there is a life to enjoy it in",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste, c.AdornNeedsSurvival = true, 1, true
+		},
+		stores: playedStores,
+	},
+	{
+		// Three times the want, which is the dose that broke the world in
+		// stage 82. The question is whether the survival gate makes a dear
+		// ornament affordable: what broke was the starving making them.
+		name:  "tastedear",
+		about: "84 at three times the want, which stage 82 could not afford",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste, c.AdornNeedsSurvival = true, 1, true
+			c.TrinketValue = 0.3
+		},
+		stores: playedStores,
+	},
+	{
+		// And the same world with the surplus shared rather than handed to
+		// the seller. Counted before any of this was built: with the price at
+		// the seller's floor, nine tenths of sellers put nothing on money at
+		// all, so the floor is zero and the price is one coin whatever the
+		// buyer would have paid. If a price is ever to scatter, it has to be
+		// able to hear the buyer.
+		name:  "tastesplit",
+		about: "84 with the price in the middle of the range, so the buyer's want is in it",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices, c.SalePriceSplit = true, true, true
+			c.Trinkets, c.TrinketTaste, c.AdornNeedsSurvival = true, 1, true
+		},
+		stores: playedStores,
+	},
+	{
+		// The pair for it: the same sharing rule with nobody's taste in play.
+		name:  "trinketsplit",
+		about: "82 with the price in the middle of the range: the pair for tastesplit",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices, c.SalePriceSplit = true, true, true
+			c.Trinkets = true
+		},
+		stores: playedStores,
+	},
+	{
+		// And what a body actually parts with. Until stage 84 it was whatever
+		// was first in the hand, which was the whole of "what it can most
+		// afford to lose" while every value was per kind.
+		name:  "tastespare",
+		about: "84 where a body hands over the piece it minds least",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste, c.AdornNeedsSurvival = true, 1, true
+			c.HandOverCheapest = true
+		},
+		stores: playedStores,
+	},
+	{
+		// The whole of stage 84: a taste, a life to enjoy it in, the piece it
+		// minds least, and a gift that costs what it gives up.
+		name:  "tastepaid",
+		about: "84 whole, with giving priced the way selling is",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste, c.AdornNeedsSurvival = true, 1, true
+			c.HandOverCheapest, c.GiftPriced = true, true
+		},
+		stores: playedStores,
+	},
+	{
+		// And the two halves of that on their own, with no ornament in the
+		// world: whatever they do here is not about ornaments.
+		name:  "spare",
+		about: "84c alone: a body hands over what it minds least, in the priced money world",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.HandOverCheapest = true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "giftpaid",
+		about: "84d alone: giving costs what it gives up, in the priced money world",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.HandOverCheapest, c.GiftPriced = true, true
+		},
+		stores: playedStores,
+	},
+	{
+		// And the 2x2 that says whether the taste is paying its way through
+		// the handing over: the same world with nothing to be gained by
+		// handing anybody anything (the shape stage 52 and stage 82 use).
+		name:  "tastemean",
+		about: "84 where a hand-over buys nothing: is the taste worth anything on its own?",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste, c.AffinityGift = true, 1, 0
+		},
+		stores: playedStores,
+	},
+	{
+		// The placebo for the taste: every body gets one and every piece gets
+		// one - the same draws off the same generator, so the two arms do not
+		// walk different random walks - and the difference between two bodies
+		// is a thousandth of what it is worth. Stage 50 is why this is here:
+		// an arm that draws numbers another arm does not is not a control.
+		name:  "tasteblind",
+		about: "84's placebo: the draws are made and the difference they make is nothing",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketTaste = true, 0.001
+		},
+		stores: playedStores,
+	},
+	{
 		// The control for the half of stage 80 that is not the price: a buyer
 		// that sets out as though a thing cost one coin, in a world where it
 		// does not. If what the stage buys is bodies not walking to sellers
@@ -3987,6 +4194,7 @@ var metricNames = []string{
 	"coinsLying", "coinsHeld", "coinHolders", "coinsPer", "sales", "salesRefused", "saleRate",
 	"salePrice", "priceOver1", "coinsPaid",
 	"trinketsMade", "trinketQuality", "trinketHeld", "trinketHolders", "trinketKept", "craftShare",
+	"trinketFit", "trinketFitMade", "trinketSold", "trinketGiven", "adornWant", "trinketGain", "trinketGainSold",
 	"makerHeld", "makerReal",
 	"booksWritten", "booksRead", "booksLying", "booksHeld", "bookHolders", "bookFidelity",
 	"lostSight", "missingDir", "lonelyDraw",
@@ -4680,10 +4888,23 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"trinketHeld":    float64(trinkets.Held),
 		"trinketHolders": trinkets.Holders,
 		"trinketKept":    trinkets.Best,
-		"coinsPaid":      float64(money.Paid),
-		"sales":          float64(money.Sales),
-		"salesRefused":   float64(money.Refused),
-		"saleRate":       perAgentLifetime(money.Sales, personTicks),
+		// And who ends up with which piece (stage 84). trinketFitMade is what
+		// comes off the bench - one, because a maker cannot aim - and
+		// trinketFit is what is in hands: anything above the first is a piece
+		// that found somebody who wanted it. trinketSold and trinketGiven are
+		// the two roads it could have taken, and adornWant is how much of an
+		// ornament's worth the living still expect to be there for.
+		"trinketFit":      trinkets.Fit,
+		"trinketFitMade":  trinkets.FitMade,
+		"trinketSold":     float64(trinkets.Sold),
+		"trinketGiven":    float64(trinkets.Given),
+		"adornWant":       trinkets.Want,
+		"trinketGain":     trinkets.Gained,
+		"trinketGainSold": trinkets.GainedSold,
+		"coinsPaid":       float64(money.Paid),
+		"sales":           float64(money.Sales),
+		"salesRefused":    float64(money.Refused),
+		"saleRate":        perAgentLifetime(money.Sales, personTicks),
 		// The cooking (stage 52). cooked says whether the word is ever used;
 		// cookedHanded is the monopoly question, as hand-overs of cooked food
 		// per cooking - cooking that never leaves the cook is cooking no

@@ -257,7 +257,7 @@ func (w *World) wareValue(a *Agent, s *SelfView, item *Food) float64 {
 		return cfg.BookValue * w.bookValue(a, item)
 	}
 	if item.Kind == FoodTrinket {
-		return w.trinketWorth(item) // already what it is worth, to anybody
+		return w.trinketWorth(a, item) // what it is worth to this one (stage 84)
 	}
 	nutrition, heal := s.Nutrition[item.Kind], w.itemHealKnown(a, item)
 	meal := mealValue(cfg, s, 0, nutrition, heal)
@@ -319,7 +319,7 @@ func (w *World) salePrice(seller, buyer *Agent, item *Food) (int, bool) {
 // the same call a hand-over makes, so nothing new prices it.
 func (w *World) sell(buyer, seller *Agent) bool {
 	coin := buyer.carriedIndex2(FoodCoin)
-	item := seller.firstForSale(&w.cfg)
+	item := w.forSaleIndex(seller)
 	if coin < 0 || item < 0 || !w.canCarry(buyer, &seller.carried[item]) {
 		return false // nobody buys what it could do nothing with
 	}
@@ -352,6 +352,10 @@ func (w *World) sell(buyer, seller *Agent) bool {
 	w.heldKind[f.Kind]++
 	w.sales++
 	w.salePaid += price
+	if f.Kind == FoodTrinket {
+		w.trinketsSold++
+		w.noteTrinketMove(seller, buyer, &f, true)
+	}
 	if price > 1 {
 		w.salesOverOne++
 	}

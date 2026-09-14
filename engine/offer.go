@@ -49,7 +49,7 @@ func (w *World) offering(a *Agent) *Food {
 	if !w.cfg.WaresSeen || w.cfg.OfferTicks <= 0 || a.Action.Kind != ActOffer || len(a.carried) == 0 {
 		return nil
 	}
-	return &a.carried[0]
+	return &a.carried[a.spareHeld(&w.cfg)]
 }
 
 // offerLeft is how much longer the cry has to run. A body that can hear a cry

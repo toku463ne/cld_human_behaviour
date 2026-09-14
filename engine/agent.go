@@ -302,6 +302,32 @@ type Agent struct {
 	// direction rather than an amount.
 	chronotype float64
 
+	// taste is which ornament this agent likes, on the same kind of circle a
+	// chronotype is (stage 84, trinket.go). It is a direction and not an
+	// amount - 0.9 is not more taste than 0.1, it is next to it - so it is
+	// inherited whole from one parent with a drift and costs no budget, which
+	// is the standing the chronotype and the preferences are on.
+	taste float64
+
+	// adornWant is how much of an ornament's worth is left to this body: what
+	// it would enjoy, less the chance of not being there for it (stage 84).
+	// Written once a tick by World.wantAdornment and read by trinketWorth,
+	// which is the one place an ornament is priced - so the wanting of one
+	// and the giving up of one cannot drift apart (stage 77's lesson).
+	//
+	// It is a copy of a fact rewritten every tick, in the standing Nursing
+	// and footing are on, and a zero says nobody has written it: with the
+	// rule off it is never written and never read.
+	adornWant float64
+
+	// spare is which of the things in this hand it can most afford to lose,
+	// and spareSale the same among the things it could sell (stage 84).
+	// Written once a tick by World.priceHands, like adornWant and for the
+	// same reason: what a body holds out, what it hands over and what it
+	// sells have to be the same object.
+	spare     int
+	spareSale int
+
 	// seed is a plant this agent ate that survived being eaten, and seedDueAt
 	// when it comes up (stage 17c). Zero means it is carrying nothing. One at
 	// a time: a gut is not a granary.
@@ -586,6 +612,12 @@ type Food struct {
 	Says    SkillKind
 	Written float64
 	Places  []int
+
+	// Style is which ornament this one is (stage 84): a point on a circle, so
+	// that a body can like this one and not that one without anything having
+	// to rank them. Zero for everything nobody made, and for every world
+	// where all bodies want the same thing.
+	Style float64
 
 	// Made is what this trinket came out like (stage 82), and zero for
 	// everything nobody made. It is on the item for the reason Cooked and
