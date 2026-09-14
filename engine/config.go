@@ -1565,12 +1565,23 @@ type Config struct {
 	// there it does not merely cost population: it stops the exchange economy
 	// (sales -4.28 ***, gifts -152.78 ***, cooking -66.68 ***) because a coin
 	// becomes worth holding and one hand is all there is. A map with money
-	// scattered on it should therefore also take the gate off the hand
+	// scattered on it may therefore also take the gate off the hand
 	// (CarrySlotted false, CarryDiminishes true, stage 71), which brings the
 	// market back - at a population cost of its own, and at a cost to how
-	// evenly the two species share the world (rareTrough -0.17 ***). Money,
-	// lookahead and a steady pair of species is a combination this world does
-	// not yet have.
+	// evenly the two species share the world. Money, lookahead and a steady
+	// pair of species is a combination this world does not yet have.
+	//
+	// Stage 76 re-measured that over 96 seeds with the three fixes of stages
+	// 72 to 74 in, and found why it is a combination and not a setting. The
+	// market comes back (sales 1.76 -> 5.23 ***) and rareTrough still falls
+	// 0.16 *** - the fixes softened it by nothing - and it falls by the same
+	// 0.17 *** on a map with no money on it at all, so what is being paid for
+	// is the carrying and not the coins. The control says the same from the
+	// other side: with the weight taken off as well, the cost disappears
+	// (rareTrough -0.02 +/- 0.04) and so does the market (sales 0.00),
+	// because willSell is coin > food - lug and coin is at most food, so the
+	// whole of a seller's margin lives inside the lug. The thing that makes a
+	// sale possible and the thing the world pays for are one quantity.
 	//
 	// And the reason it is still off: with the second window a body that
 	// cannot live out two horizons unfed reads every option as equally
