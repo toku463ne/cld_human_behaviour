@@ -151,21 +151,16 @@ func (w *World) saleTerms(seller *Agent, buyer *Agent, item *Food) (float64, flo
 		}
 		coin += saleGoodwill(cfg, affinity)
 	}
-	// A book is not a meal, and what parting with one costs is what it would
-	// still tell its owner - which, once read, is nothing (stage 69). That is
-	// the asymmetry this world has never had, and it is why this branch is
-	// three lines rather than a second valuation.
-	if item.Kind == FoodBook {
-		return coin, w.bookValue(seller, item)
-	}
-	// What the food in hand is worth to it: eaten now, or kept.
-	nutrition := w.mealValues(seller)[item.Kind]
-	heal := w.itemHealKnown(seller, item)
-	food := mealValue(cfg, &s, 0, nutrition, heal)
-	if kept := keepValue(cfg, &s, 0, nutrition, heal,
-		otherMeals(&s, nutrition)); kept > food {
-		food = kept
-	}
+	// And what parting with the thing would cost: the same figure putting it
+	// down weighs and the same one a gift gives up (handWorth, stage 77).
+	// A meal is worth the better of eating it now and keeping it; a book is
+	// worth what it would still tell its owner, which once read is nothing -
+	// the asymmetry this world has never had anywhere else.
+	//
+	// This used to be worked out again here, which was the same arithmetic in
+	// two places and the reason a stone had no price on this side at all.
+	view := w.handView(seller, item)
+	food := handWorth(cfg, &s, &view)
 	// ... less what carrying it costs between now and then, which is what a
 	// coin does not cost. It is the same lug the option to pick something up
 	// is charged (controller.go), over the same wait.

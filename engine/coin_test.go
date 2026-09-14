@@ -450,3 +450,70 @@ func TestMoneyOnTheGroundIsRacedFor(t *testing.T) {
 		t.Fatalf("a body standing on the coin is no rival for it: %v with one there, %v with one away", near, far)
 	}
 }
+
+// What a seller gives up is what anybody else giving the same thing up gives
+// up: one figure, in one place (stage 77). Carrying is made free so that the
+// lug - which is a cost of keeping a thing, not a part of what it is worth -
+// is out of the way.
+func TestWhatASellerGivesUpIsWhatHandWorthSays(t *testing.T) {
+	cfg := coinConfig()
+	cfg.CarryCost = 0
+	cfg.Books = true
+	w := NewWorld(cfg)
+	sellerID := holding(t, w, 100, 100)
+	buyerID := holdingCoin(t, w, 104, 100)
+	seller, buyer := mustAgent(t, w, sellerID), mustAgent(t, w, buyerID)
+
+	check := func(what string) {
+		t.Helper()
+		item := &seller.carried[0]
+		view := w.handView(seller, item)
+		s := w.selfView(seller)
+		_, given := w.saleTerms(seller, buyer, item)
+		if want := handWorth(&w.cfg, &s, &view); given != want {
+			t.Fatalf("%s: the seller gives up %v and handWorth says %v", what, given, want)
+		}
+	}
+	for _, hunger := range []float64{5, 40, 90} {
+		seller.Hunger = hunger
+		check("a plant")
+	}
+	// And a book, which is the one thing in this world whose owner may have
+	// nothing left to lose by parting with it.
+	seller.carried[0] = Food{ID: -1, Kind: FoodBook, Says: SkillCook, Written: 0.5}
+	check("a book")
+}
+
+// A stone can be weighed and is still not on the counter (stage 77).
+//
+// Counted before deciding, on the played map with throwing on: 5.3% of the
+// bodies holding anything are holding a stone, and every one of those is
+// holding nothing else that could be sold. So the target is not zero on the
+// seller's side - it is zero on the buyer's. A stone has no nutrition, no
+// mending and no worth, so perceive does not call its holder a seller and
+// addBuy scores nothing for it: nobody ever walks up for one. Putting stones
+// on the list could therefore only hand a buyer that came for something else
+// a thing it never valued.
+func TestAStoneIsWeighedAndNotSold(t *testing.T) {
+	cfg := coinConfig()
+	cfg.Throwing = true
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Hunger: 60, Genome: genomeOf(50, 50, 50)})
+	a := mustAgent(t, w, id)
+	w.take(a, w.putFood(Food{X: 101, Y: 100, Kind: FoodStone}))
+	if a.CarriedCount() != 1 {
+		t.Fatal("the body was given a stone and is not holding it")
+	}
+	if got := a.firstForSale(&w.cfg); got != -1 {
+		t.Fatalf("a body holding nothing but a stone offers item %d for sale", got)
+	}
+	// It is weighed all the same, by the one function that weighs everything
+	// a hand can hold. (What that comes to is zero on a quiet patch with
+	// nobody to throw it at, which is stoneWorth's own business.)
+	s := w.selfView(a)
+	view := w.handView(a, &a.carried[0])
+	if got, want := handWorth(&w.cfg, &s, &view), stoneWorth(&w.cfg, &s); got != want {
+		t.Fatalf("a stone in hand is weighed at %v and a stone is worth %v", got, want)
+	}
+}

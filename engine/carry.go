@@ -284,32 +284,41 @@ func (w *World) dropItem(a *Agent, foodID int) bool {
 // the word for putting something down has to choose between.
 func (w *World) handViews(a *Agent, out []FoodView) []FoodView {
 	for i := range a.carried {
-		f := &a.carried[i]
-		v := FoodView{
-			ID:        f.ID,
-			X:         a.X,
-			Y:         a.Y,
-			Kind:      f.Kind,
-			Held:      true,
-			Catch:     1,
-			Cooked:    f.Cooked,
-			RivalDist: math.Inf(1),
-		}
-		switch f.Kind {
-		case FoodBook:
-			v.Worth = w.bookValue(a, f)
-		case FoodCoin, FoodStone:
-			// Neither is worth anything as a meal, and what each is worth
-			// instead the controller works out for itself: a coin from what
-			// it will buy, a stone from what throwing it would do.
-		default:
-			v.Nutrition = w.mealValues(a)[f.Kind]
-			v.Heal = w.itemHealKnown(a, f)
-			v.Danger = w.dangerOf(a, f)
-		}
-		out = append(out, v)
+		out = append(out, w.handView(a, &a.carried[i]))
 	}
 	return out
+}
+
+// handView is one held thing as its holder sees it.
+//
+// It is its own function because the seller of something looks at it through
+// the same eyes (stage 77): willSell used to work the two figures out again
+// for itself, which was the same arithmetic written twice and one of them
+// knowing about fewer kinds than the other.
+func (w *World) handView(a *Agent, f *Food) FoodView {
+	v := FoodView{
+		ID:        f.ID,
+		X:         a.X,
+		Y:         a.Y,
+		Kind:      f.Kind,
+		Held:      true,
+		Catch:     1,
+		Cooked:    f.Cooked,
+		RivalDist: math.Inf(1),
+	}
+	switch f.Kind {
+	case FoodBook:
+		v.Worth = w.bookValue(a, f)
+	case FoodCoin, FoodStone:
+		// Neither is worth anything as a meal, and what each is worth
+		// instead the controller works out for itself: a coin from what
+		// it will buy, a stone from what throwing it would do.
+	default:
+		v.Nutrition = w.mealValues(a)[f.Kind]
+		v.Heal = w.itemHealKnown(a, f)
+		v.Danger = w.dangerOf(a, f)
+	}
+	return v
 }
 
 // eatCarried is eating something out of one's own hands. It is the same meal
