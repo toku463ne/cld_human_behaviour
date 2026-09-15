@@ -2247,6 +2247,60 @@ var variants = []variant{
 			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
 		},
 	},
+	{
+		// Stage 87b: the weather travels. The same picture, slid round the
+		// world once every so many ticks, so that the cold end becomes the
+		// warm one and back - and a coat in a hand becomes merchandise
+		// without its owner walking anywhere.
+		name:  "season",
+		about: "87b: the weather comes round, over four years",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.SeasonTicks = 2000 // four of this world's years
+		},
+	},
+	{
+		name:  "seasonfast",
+		about: "87b at one year a turn: a season inside a body's growing",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.SeasonTicks = 500
+		},
+	},
+	{
+		name:  "seasonslow",
+		about: "87b at twenty years a turn: longer than anybody lives",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.SeasonTicks = 10000
+		},
+	},
+	{
+		// And a season with nothing to answer it: the weather moves and no
+		// ornament keeps anything off. If the coats are what the season is
+		// worth, this is where that goes away.
+		name:  "seasonbare",
+		about: "87b's control: the weather comes round and nothing keeps it off",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.SeasonTicks = 2000
+		},
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no
@@ -4527,7 +4581,7 @@ var metricNames = []string{
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
 	"onCold", "coldGain", "coldFood", "chillTook", "chillShare",
-	"coats", "wearing", "coatsHanded",
+	"coats", "wearing", "coatsHanded", "coatsSpare",
 	"bankSplit", "crossShare", "crossIndex", "crossDry", "bankGeneGap", "bankCountryGap",
 	"bankMoves", "bankBoth",
 	"speedHigh", "speedLow", "highGap",
@@ -5630,6 +5684,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"coats":       float64(weather.Coats),
 		"wearing":     weather.Wearing,
 		"coatsHanded": float64(weather.Handed),
+		"coatsSpare":  weather.Spare,
 		"chillTook":   weather.Taken,
 		"chillShare":  shareOf(weather.Taken, weather.Taken+weather.Starved),
 		"onDear":      tail.onDear,

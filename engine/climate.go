@@ -1,5 +1,7 @@
 package engine
 
+import "math"
+
 // The weather a place keeps, and what it costs to stand in it (stage 85).
 //
 // Nothing in this file does anything yet. It is the same kind of stage as the
@@ -66,8 +68,53 @@ const (
 // will go, and a map that uses one today should read as ordinary rather than
 // as something else.
 func (w *World) buildClimate() {
+	w.layClimate(w.seasonPhase())
+}
+
+// seasonPhase is how far round the year the weather has turned, from 0 to 1
+// (stage 87b). A world with no season is always at nought, which is the same
+// picture for ever and therefore no season at all.
+//
+// It rides the calendar this world already keeps (TicksPerYear), because the
+// rest of a body - how long it takes to grow, how long it lives - is measured
+// in those years, and a season that did not line up with them would be a
+// second clock saying nearly the same thing (#38's rule about second maps,
+// applied to time).
+func (w *World) seasonPhase() float64 {
+	if w.cfg.SeasonTicks <= 0 {
+		return 0
+	}
+	return float64(w.tick%w.cfg.SeasonTicks) / float64(w.cfg.SeasonTicks)
+}
+
+// turnSeason moves the weather round, once a tick and before anything reads
+// it. It draws nothing: the picture is the author's and the phase is the
+// clock's, so a season is as reproducible as the map it turns.
+func (w *World) turnSeason() {
+	if w.cfg.SeasonTicks <= 0 || len(w.cfg.ClimateMap) == 0 {
+		return
+	}
+	w.layClimate(w.seasonPhase())
+}
+
+// layClimate reads the picture into the regions at one phase of the year. At
+// phase nought it is the picture as drawn; further round, the same picture
+// slid sideways - so what was the cold end of the world becomes the warm one
+// and back, and a body that has not moved finds the weather has.
+//
+// Sliding it rather than deepening it is the whole point (#117): a winter that
+// only got colder everywhere would make everybody want a coat at once, which
+// is one demand and no trade. A weather that moves makes the demand somewhere
+// the supply is not, over and over, which is the one structure this world has
+// never had (#115).
+func (w *World) layClimate(phase float64) {
 	if len(w.regions) == 0 {
 		return
+	}
+	// Cleared first, so that an editor redrawing the picture takes the old
+	// weather away rather than leaving it under the new one.
+	for i := range w.regions {
+		w.regions[i].Weather = [NumWeathers]float64{}
 	}
 	// Cleared first, so that an editor redrawing the picture takes the old
 	// weather away rather than leaving it under the new one.
@@ -92,6 +139,8 @@ func (w *World) buildClimate() {
 		// The middle of this block, as a share of the world, read off the
 		// picture.
 		cx := (float64(i%rcols) + 0.5) / float64(rcols)
+		cx += phase
+		cx -= math.Floor(cx) // round the year, and round the world
 		cy := (float64(i/rcols) + 0.5) / float64(rrows)
 		row := []rune(rows[clampInt(int(cy*float64(len(rows))), 0, len(rows)-1)])
 		c := '.'
@@ -252,6 +301,13 @@ type WeatherUse struct {
 	Coats, Handed int
 	Wearing       float64
 
+	// Spare is the share of the coats in hands whose holder is standing
+	// somewhere they are worth nothing (stage 87b). It is the stock of
+	// merchandise: a thing worth everything to somebody else and nothing to
+	// the body carrying it. Where the weather moves, this fills up without
+	// anybody walking anywhere, which is the whole of what a season is for.
+	Spare float64
+
 	// Taken is the vitality the cold has taken over the run and Starved what
 	// hunger took, to read it against: a rule that takes a hundredth of what
 	// hunger does is a rule that will not move any of the world's numbers,
@@ -277,7 +333,7 @@ func (w *World) Weather() WeatherUse {
 		// food weight of the regions, weighted by how cold each one is.
 		out.ColdFood = (coldFood / cold) / (food / float64(len(w.regions)))
 	}
-	var humans, standing, wearing float64
+	var humans, standing, wearing, spare float64
 	for i := range w.agents {
 		a := &w.agents[i]
 		if !a.Alive || a.Species != SpeciesHuman {
@@ -287,6 +343,9 @@ func (w *World) Weather() WeatherUse {
 		standing += w.weatherAt(a.X, a.Y, WeatherChill)
 		if w.wardsOff(a, WeatherChill) > 0 {
 			wearing++
+			if w.weatherAt(a.X, a.Y, WeatherChill) <= 0 {
+				spare++
+			}
 		}
 	}
 	// Nobody alive is no evidence about where the living stand (stage 57's
@@ -298,6 +357,9 @@ func (w *World) Weather() WeatherUse {
 	}
 	if humans > 0 {
 		out.Wearing = wearing / humans
+	}
+	if wearing > 0 {
+		out.Spare = spare / wearing
 	}
 	out.Coats, out.Handed = w.coatsMade, w.coatsHanded
 	out.Gain = out.OnCold - out.All

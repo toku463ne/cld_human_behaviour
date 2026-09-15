@@ -304,3 +304,47 @@ func TestAWarmThingIsWorthWhereItIsCold(t *testing.T) {
 		t.Fatalf("a second coat is worth %v", got)
 	}
 }
+
+// The weather comes round: the same picture, slid sideways, so the cold end of
+// the world becomes the warm one (stage 87b). Nothing is drawn for it.
+func TestTheWeatherComesRound(t *testing.T) {
+	cfg := climateConfig() // the right half cold
+	cfg.SeasonTicks = 1000
+	w := NewWorld(cfg)
+	west, east := cfg.Width*0.1, cfg.Width*0.9
+	if w.weatherAt(west, cfg.Height/2, WeatherChill) != 0 {
+		t.Fatal("the west starts cold")
+	}
+	coldWest, warmEast := false, false
+	draws := w.draws.draws
+	for i := 0; i < cfg.SeasonTicks; i++ {
+		w.turnSeason()
+		w.tick++
+		if w.weatherAt(west, cfg.Height/2, WeatherChill) > 0 {
+			coldWest = true
+		}
+		if w.weatherAt(east, cfg.Height/2, WeatherChill) == 0 {
+			warmEast = true
+		}
+	}
+	if !coldWest || !warmEast {
+		t.Fatalf("after a whole year the west was cold %v and the east warm %v", coldWest, warmEast)
+	}
+	if w.draws.draws != draws {
+		t.Fatalf("turning the year drew %d numbers", w.draws.draws-draws)
+	}
+	// And it comes back: a full turn is the picture as drawn.
+	w.tick = 0
+	w.turnSeason()
+	if w.weatherAt(west, cfg.Height/2, WeatherChill) != 0 {
+		t.Fatal("a full turn did not come back to where it started")
+	}
+	// A world with no season never moves.
+	still := NewWorld(climateConfig())
+	for i := 0; i < 500; i++ {
+		still.Step()
+	}
+	if still.weatherAt(west, still.cfg.Height/2, WeatherChill) != 0 {
+		t.Fatal("a world with no season moved its weather")
+	}
+}

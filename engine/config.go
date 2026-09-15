@@ -972,6 +972,21 @@ type Config struct {
 	// would take the body, in the same one place every option passes through.
 	ChillGradient bool
 
+	// SeasonTicks is how long the weather takes to come back round to where it
+	// started (stage 87b). Zero is a world whose weather never moves, which is
+	// the default.
+	//
+	// What turns is the picture, slid sideways: the cold end of the world
+	// becomes the warm one and back again. A winter that deepened everywhere
+	// at once would give every body the same want at the same time, which is
+	// one demand and no trade; a weather that travels puts the want where the
+	// things that answer it are not, over and over (#117).
+	//
+	// The scale to set it against is TicksPerYear (500) and a life (about six
+	// of those): a season shorter than a body's growing is weather, and one
+	// longer than its life is a different world it will never see.
+	SeasonTicks int
+
 	// ChillKnown is whether a body can feel the weather it is standing in
 	// (stage 86). True in the ordinary world.
 	//
@@ -2916,6 +2931,7 @@ func DefaultConfig() Config {
 		AdornNeedsSurvival:      true,
 		ClimateMap:              nil,
 		ChillDrain:              0,
+		SeasonTicks:             0,
 		ChillKnown:              true,
 		ChillGradient:           false,
 		WardShare:               0,

@@ -868,6 +868,9 @@ func (w *World) Step() {
 	// anybody moves so that the slowing applies to the tick it is about.
 	w.nurse()
 
+	// Where the weather has got to (stage 87b), before anything reads it.
+	w.turnSeason()
+
 	// And how much of an ornament's worth is left to each body (stage 84),
 	// on the same footing: a fact about this tick, written before anything
 	// prices one.
