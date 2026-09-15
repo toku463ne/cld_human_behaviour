@@ -1898,6 +1898,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.lore = w.inheritLore(pa, pb)
 	child.chronotype = w.inheritChronotype(pa, pb)
 	child.taste = w.inheritTaste(pa, pb)
+	child.adornWant = 1 // until the next tick prices its hands (stage 84)
 	child.hintSlots, child.hints = slots, hints
 	// What it knows for having been born where it was, merged with what it
 	// inherited by the one comparison there is (skill.go). A genius child
@@ -2345,6 +2346,10 @@ func (w *World) randomAgent(species Species) Agent {
 	a.lore = w.newLore()
 	a.chronotype = w.drawChronotype()
 	a.taste = w.drawTaste()
+	// Until the tick's own pass has priced its hands (stage 84), a body wants
+	// an ornament the way a whole one does. Nought would mean "wants none",
+	// and nothing has asked this body anything yet.
+	a.adornWant = 1
 	a.hintSlots = w.drawHintSlots()
 	a.hints = w.drawHints(a.hintSlots)
 	// And whatever the country it arrived in has to teach (stage 38a). The

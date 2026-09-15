@@ -16,6 +16,10 @@ func priceConfig() Config {
 	cfg.CarrySlotsWeigh = true
 	cfg.CoinPrices = true
 	cfg.AffinitySale = 6
+	// The price at the seller's floor, which is the world stage 80's own
+	// arithmetic was worked out in. Splitting the surplus became the default
+	// on 2026-09-15 (stage 84) and has its own tests below.
+	cfg.SalePriceSplit = false
 	return cfg
 }
 

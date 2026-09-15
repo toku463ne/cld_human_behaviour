@@ -8,7 +8,7 @@ import (
 // tasteConfig is the ornament world where two bodies can want different
 // things (stage 84).
 func tasteConfig() Config {
-	cfg := trinketConfig()
+	cfg := trinketConfig() // which pins stage 82's world; put ours back
 	cfg.TrinketTaste = 1
 	cfg.AdornNeedsSurvival = true
 	return cfg

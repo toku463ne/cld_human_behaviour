@@ -4080,8 +4080,8 @@ func main() {
 	drop := flag.Bool("drop", false, "bodies can put down what they are holding (stage 70; off is every world before it)")
 	noahead := flag.Bool("noahead", false, "put back the world before 2026-09-13: one planning window rather than two (stages 67, 72, 73, 74)")
 	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
-	trinkets := flag.Bool("trinkets", false, "bodies can make things worth looking at, wanted for nothing but themselves (stage 82; brings -lighthands with it)")
-	taste := flag.Bool("taste", false, "bodies want different ornaments, and only while they expect to be there for them (stage 84; brings -trinkets with it)")
+	trinkets := flag.Bool("trinkets", false, "bodies can make things worth looking at, wanted for nothing but themselves and each body wanting a different one (stages 82 and 84; brings -lighthands with it)")
+	notaste := flag.Bool("notaste", false, "put back the world stage 82 measured: every body wants the same ornament, and wants it whatever is about to happen to it")
 	prices := flag.Bool("prices", false, "a sale costs as many coins as it takes to leave the seller better off (stage 80; brings -lighthands with it)")
 	lighthands := flag.Bool("lighthands", false, "a hand is taken up only by what weighs something, so a coin takes none (stage 80a; needs -terrain for the money)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
@@ -4129,13 +4129,13 @@ func main() {
 	if *trinkets {
 		cfg.CarrySlotsWeigh, cfg.Trinkets = true, true
 	}
-	// And a taste of its own (stage 84): the same piece is worth twice as much
-	// to one body as to another, a body on its way out wants none of it, and
-	// what a body parts with is the piece it minds least.
-	if *taste {
-		cfg.CarrySlotsWeigh, cfg.Trinkets = true, true
-		cfg.TrinketTaste, cfg.AdornNeedsSurvival = 1, true
-		cfg.HandOverCheapest = true
+	// The world before the defaults changed on 2026-09-15 (stage 84): every
+	// body wants the same ornament and wants it on the way out, and a price
+	// sits at the seller's floor. Every figure in HISTORY.md for stages 80
+	// and 82 was measured here.
+	if *notaste {
+		cfg.TrinketTaste, cfg.AdornNeedsSurvival = 0, false
+		cfg.SalePriceSplit = false
 	}
 	// And a price in coins rather than one coin for one thing (stage 80). It
 	// needs a hand a coin does not fill, so it brings 80a with it.

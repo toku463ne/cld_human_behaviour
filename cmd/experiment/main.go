@@ -211,6 +211,21 @@ func playedMap(c *engine.Config) {
 	c.Stones = 60
 }
 
+// beforeTheFlip puts back the three rules whose defaults changed on
+// 2026-09-15 (stage 84): bodies with a taste of their own, an ornament wanted
+// only by a body that expects to be there for it, and a price that splits the
+// surplus rather than sitting at the seller's floor.
+//
+// Every figure recorded for stages 51, 68, 69, 80, 81, 82 and for stage 84's
+// own arms was measured with these off, and an arm exists to reproduce a
+// recorded figure. So the arms written before the flip ask for the old world
+// here, and set whatever they are actually testing afterwards.
+func beforeTheFlip(c *engine.Config) {
+	c.TrinketTaste = 0
+	c.AdornNeedsSurvival = false
+	c.SalePriceSplit = false
+}
+
 // A variant is one arm of an experiment: a name, why it exists, and what it
 // changes about the default configuration.
 type variant struct {
@@ -1808,6 +1823,7 @@ var variants = []variant{
 		name:  "coinsprice",
 		about: "80: the price is the fewest coins that leave the seller better off (needs 80a)",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1820,6 +1836,7 @@ var variants = []variant{
 		name:  "coinspricesplit",
 		about: "80 with the price in the middle of the range rather than at the seller's floor",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices, c.SalePriceSplit = true, true, true
@@ -1834,6 +1851,7 @@ var variants = []variant{
 		name:  "trinkets",
 		about: "82: things made to be looked at, in the priced money world",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1848,6 +1866,7 @@ var variants = []variant{
 		name:  "trinketscheap",
 		about: "82 at a third of the want",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1859,6 +1878,7 @@ var variants = []variant{
 		name:  "trinketsdear",
 		about: "82 at three times the want",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1873,6 +1893,7 @@ var variants = []variant{
 		name:  "pricemean",
 		about: "the priced money world where a hand-over buys nothing",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1884,6 +1905,7 @@ var variants = []variant{
 		name:  "trinketsmean",
 		about: "82 where a hand-over buys nothing: is the ornament a gift or a thing?",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1897,6 +1919,7 @@ var variants = []variant{
 		name:  "trinketsvanish",
 		about: "82's control: the making is done and there is nothing to show for it",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1911,6 +1934,7 @@ var variants = []variant{
 		name:  "trinketssame",
 		about: "82's control: trinkets, but every piece is like every other",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1925,6 +1949,7 @@ var variants = []variant{
 		name:  "skillsprice",
 		about: "the priced money world with skills in it: the pair for trinketsskill",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1936,6 +1961,7 @@ var variants = []variant{
 		name:  "trinketsskill",
 		about: "82 where some hands are better than others",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1951,10 +1977,27 @@ var variants = []variant{
 		name:  "trinketsmeals",
 		about: "82 as it was measured: money can buy a meal and nothing else",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
 			c.Trinkets, c.CoinBuysOnlyMeals = true, true
+		},
+		stores: playedStores,
+	},
+	{
+		// The world as the defaults now stand (2026-09-15): ornaments, a
+		// taste of one's own, an ornament wanted only while there is a life
+		// to enjoy it in, and a price that splits the surplus. It is the arm
+		// with nothing pinned, so it is the one that goes on being right
+		// when a default changes again.
+		name:  "trinketsnow",
+		about: "the priced money world with ornaments, as the defaults now stand",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
 		},
 		stores: playedStores,
 	},
@@ -1968,6 +2011,7 @@ var variants = []variant{
 		name:  "taste",
 		about: "84: the same piece is wanted differently by different bodies",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1979,6 +2023,7 @@ var variants = []variant{
 		name:  "tastehalf",
 		about: "84 at half the taste: the dose",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -1995,6 +2040,7 @@ var variants = []variant{
 		name:  "tasteaimed",
 		about: "84's control: a maker turns out the very thing it likes, so nobody needs anybody",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2006,6 +2052,7 @@ var variants = []variant{
 		name:  "adorn",
 		about: "84: an ornament is only wanted by a body that expects to be there for it",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2017,6 +2064,7 @@ var variants = []variant{
 		name:  "tasteadorn",
 		about: "84 whole: a taste of its own, and only while there is a life to enjoy it in",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2031,6 +2079,7 @@ var variants = []variant{
 		name:  "tastedear",
 		about: "84 at three times the want, which stage 82 could not afford",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2049,6 +2098,7 @@ var variants = []variant{
 		name:  "tastesplit",
 		about: "84 with the price in the middle of the range, so the buyer's want is in it",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices, c.SalePriceSplit = true, true, true
@@ -2061,6 +2111,7 @@ var variants = []variant{
 		name:  "trinketsplit",
 		about: "82 with the price in the middle of the range: the pair for tastesplit",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices, c.SalePriceSplit = true, true, true
@@ -2075,6 +2126,7 @@ var variants = []variant{
 		name:  "tastespare",
 		about: "84 where a body hands over the piece it minds least",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2089,6 +2141,7 @@ var variants = []variant{
 		name:  "tastepaid",
 		about: "84 whole, with giving priced the way selling is",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2103,6 +2156,7 @@ var variants = []variant{
 		name:  "spare",
 		about: "84c alone: a body hands over what it minds least, in the priced money world",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2114,6 +2168,7 @@ var variants = []variant{
 		name:  "giftpaid",
 		about: "84d alone: giving costs what it gives up, in the priced money world",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2128,6 +2183,7 @@ var variants = []variant{
 		name:  "tastemean",
 		about: "84 where a hand-over buys nothing: is the taste worth anything on its own?",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2144,6 +2200,7 @@ var variants = []variant{
 		name:  "tasteblind",
 		about: "84's placebo: the draws are made and the difference they make is nothing",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2159,6 +2216,7 @@ var variants = []variant{
 		name:  "coinspriceblind",
 		about: "80's control: sales are priced, but a buyer reckons on one coin and walks anyway",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			playedMap(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices, c.CoinPriceBlind = true, true, true
@@ -3302,6 +3360,7 @@ var variants = []variant{
 		name:  "coinsflatprice",
 		about: "80 on the flat world, where 80a pays rather than costs",
 		apply: func(c *engine.Config) {
+			beforeTheFlip(c)
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
 		},

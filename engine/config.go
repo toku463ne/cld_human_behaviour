@@ -867,6 +867,12 @@ type Config struct {
 	// from a body's own taste is worth nothing to it and one on its own is
 	// worth twice.
 	//
+	// One by default, on the standing ChronotypeSpread is on: bodies differing
+	// from each other is what this world assumes, and a population that all
+	// wants the same thing is the special case. It is only ever read where a
+	// map's author has put ornaments in, so no world that had none is changed
+	// by it (2026-09-15).
+	//
 	// It moves want about rather than adding any: the multiplier averages one
 	// over a piece drawn at random, so the world holds the same amount of
 	// wanting however far this is turned up. That is stage 15a's rule for
@@ -912,6 +918,11 @@ type Config struct {
 	// it after the chance of not being there. It is on the worth rather than
 	// on the goal's chance because parting with one has to read the same
 	// figure (stage 77).
+	//
+	// On by default (2026-09-15). It is a correction of the same class as
+	// GoalsNeedSurvival, which has been on since stage 73, and it is what
+	// makes a want worth having affordable: at three times the dose it turns
+	// a world that lost a third of its population into one that loses none.
 	AdornNeedsSurvival bool
 
 	// CoinBuysOnlyMeals puts back the world in which the only thing money
@@ -994,6 +1005,15 @@ type Config struct {
 	// with the buyer, and the middle splits it. Counted before it was
 	// written, this decides very little - the median number of whole prices
 	// that fit between the two limits is one.
+	//
+	// On by default since 2026-09-15, because in a world with something worth
+	// haggling over in it, it decides the one thing that made stage 80 worth
+	// doing: with the price at the seller's floor, nine sellers in ten put
+	// nothing on money at all, so the floor is nought and the price is one
+	// coin whatever the buyer would have paid. Sharing the surplus is the
+	// whole of what makes a price a variable with more than one value (the
+	// share of sales going for more than one coin, 0.15 -> 0.40), and it
+	// costs nothing measurable. It is only read where prices are on.
 	SalePriceSplit bool
 
 	// CarrySlotsWeigh is whether a hand is taken up only by what weighs
@@ -2799,16 +2819,16 @@ func DefaultConfig() Config {
 		TrinketSpread:           0.5,
 		TrinketsVanish:          false,
 		SkillTrinketRelief:      0.5,
-		TrinketTaste:            0,
+		TrinketTaste:            1,
 		TrinketTasteMutation:    0.08,
 		TrinketStyleAimed:       false,
-		AdornNeedsSurvival:      false,
+		AdornNeedsSurvival:      true,
 		CoinBuysOnlyMeals:       false,
 		HandOverCheapest:        false,
 		GiftPriced:              false,
 		CoinPrices:              false,
 		CoinPriceBlind:          false,
-		SalePriceSplit:          false,
+		SalePriceSplit:          true,
 		CarrySlotted:            true,
 		CarrySlotsWeigh:         false,
 		CarryDiminishes:         false,

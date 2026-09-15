@@ -7,6 +7,12 @@ func trinketConfig() Config {
 	cfg := coinConfig()
 	cfg.CarrySlotsWeigh = true
 	cfg.Trinkets = true
+	// Stage 82's own world: every body wants the same thing and wants it
+	// whatever is about to happen to it. Both became defaults on 2026-09-15
+	// (stage 84) and are tested in taste_test.go; these tests are about the
+	// ornament itself.
+	cfg.TrinketTaste = 0
+	cfg.AdornNeedsSurvival = false
 	return cfg
 }
 
