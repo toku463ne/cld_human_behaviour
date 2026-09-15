@@ -581,3 +581,54 @@ func TestTheSellersRatioMovesWithWhatItNeeds(t *testing.T) {
 		t.Fatalf("the ratio did not move: %v -> %v", before, after)
 	}
 }
+
+// What a body paid for a thing is remembered on the thing, and every other
+// way into a hand clears it (stage 83). It is a property of the holding, not
+// of the object: what somebody else paid is not something this body knows.
+func TestWhatItPaidIsRememberedAndOnlyWhileItHoldsIt(t *testing.T) {
+	cfg := priceConfig()
+	cfg.AffinitySale, cfg.CoinValue = 20, 0.5
+	w := NewWorld(cfg)
+	sellerID := holding(t, w, 100, 100)
+	buyerID := w.addAgent(Agent{Maturity: 1, X: 105, Y: 100, Vitality: 30,
+		Hunger: 90, Genome: genomeOf(50, 50, 50)})
+	giveCoins(t, w, buyerID, 4)
+	seller, buyer := mustAgent(t, w, sellerID), mustAgent(t, w, buyerID)
+	seller.Hunger, seller.Vitality = 10, 90
+	if !w.sell(buyer, seller) {
+		t.Fatal("no sale to remember the price of")
+	}
+	bought := -1
+	for i := range buyer.carried {
+		if buyer.carried[i].Kind != FoodCoin {
+			bought = i
+		}
+	}
+	if bought < 0 {
+		t.Fatal("the buyer is holding nothing it did not already have")
+	}
+	paid := buyer.carried[bought].PricePaid
+	if paid <= 0 {
+		t.Fatalf("the buyer paid and the thing says %d", paid)
+	}
+	// Handed on, it cost its new holder nothing.
+	third := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 106, Y: 100,
+		Vitality: 90, Hunger: 60, Genome: genomeOf(50, 50, 50)}))
+	buyer = mustAgent(t, w, buyerID)
+	if !w.giveItem(buyer, third) {
+		t.Fatal("nothing was handed over")
+	}
+	for i := range third.carried {
+		if third.carried[i].PricePaid != 0 {
+			t.Fatalf("a gift arrived carrying a price of %d", third.carried[i].PricePaid)
+		}
+	}
+	// And so does picking one up off the ground.
+	id := w.putFood(Food{X: 107, Y: 100, Kind: FoodPlant, PricePaid: 3})
+	w.take(third, id)
+	for i := range third.carried {
+		if third.carried[i].PricePaid != 0 {
+			t.Fatalf("something picked up off the ground cost %d", third.carried[i].PricePaid)
+		}
+	}
+}

@@ -53,6 +53,10 @@ type tradeWatch struct {
 	cookedBetter            int
 	cookedGap               float64
 
+	// Sale attempts over something the seller had bought (stage 83).
+	resold, asked, under int
+	loss                 float64
+
 	// Pairs that walked away from each other, and what came of them. seen is
 	// meetings after a refusal, won is the ones that ended in a sale, gap is
 	// the ticks in between; coinRose and foodFell are how much of the seller's
@@ -80,6 +84,23 @@ func (w *World) noteCookedHandOver(to *Agent, f *Food, sold bool) {
 	w.trade.cookedGap += f.Cooked - own
 	if f.Cooked > own {
 		w.trade.cookedBetter++
+	}
+}
+
+// noteResale records one sale attempt over something the seller bought
+// (stage 83). It is counted where the price is settled, which is the only
+// place both the item and the figure being offered for it exist.
+func (w *World) noteResale(item *Food, price int, agreed bool) {
+	if item.PricePaid <= 0 {
+		return
+	}
+	w.trade.asked++
+	if agreed {
+		w.trade.resold++
+	}
+	if price < item.PricePaid {
+		w.trade.under++
+		w.trade.loss += float64(item.PricePaid - price)
 	}
 }
 
@@ -128,6 +149,23 @@ type TradeUse struct {
 	// a refusal. Both sides of the comparison are the seller's, so this says
 	// which of the two changed its mind.
 	CoinRose, FoodFell float64
+
+	// Resold is how many sales were of something its seller had itself
+	// bought, Asked how many attempts were, and Loss what the seller stood
+	// to lose on those, in coins (stage 83).
+	//
+	// These are the count this world has to pass before an anchor on the
+	// price paid is worth building: a body cannot refuse to sell at a loss
+	// if nothing it holds ever cost it anything. Under is how many of those
+	// attempts were at less than what the seller paid, which is the set an
+	// anchor could act on at all.
+	Resold, Asked, Under int
+	Loss                 float64
+
+	// Held is how many things in hands right now cost their holder something
+	// (stage 83): the stock behind that flow. A market where nothing bought
+	// is ever held has nothing for an anchor to hang on.
+	Held int
 }
 
 // Trade reports what the trading came to. It writes nothing and draws nothing.
@@ -150,6 +188,21 @@ func (w *World) Trade() TradeUse {
 	if t.won > 0 {
 		out.CoinRose = t.coinRose / float64(t.won)
 		out.FoodFell = t.foodFell / float64(t.won)
+	}
+	out.Resold, out.Asked, out.Under = t.resold, t.asked, t.under
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		for k := range a.carried {
+			if a.carried[k].PricePaid > 0 {
+				out.Held++
+			}
+		}
+	}
+	if t.under > 0 {
+		out.Loss = t.loss / float64(t.under)
 	}
 	return out
 }

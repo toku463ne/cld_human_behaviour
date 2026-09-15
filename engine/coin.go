@@ -336,6 +336,7 @@ func (w *World) sell(buyer, seller *Agent) bool {
 	}
 	coinWorth, itemWorth := w.saleTerms(seller, buyer, &seller.carried[item])
 	w.noteSale(buyer, seller, coinWorth, itemWorth, agreed)
+	w.noteResale(&seller.carried[item], price, agreed)
 	if !agreed {
 		w.salesRefused++
 		return false
@@ -348,6 +349,7 @@ func (w *World) sell(buyer, seller *Agent) bool {
 		seller.carried = append(seller.carried, c)
 		w.heldKind[c.Kind]++
 	}
+	f.PricePaid = price // what this holder gave for it (stage 83)
 	buyer.carried = append(buyer.carried, f)
 	w.heldKind[f.Kind]++
 	w.sales++

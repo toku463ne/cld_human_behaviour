@@ -55,6 +55,7 @@ func (w *World) giveItem(from, to *Agent) bool {
 		return false
 	}
 	w.removeCarried(from, at)
+	item.PricePaid = 0 // a gift cost its new holder nothing (stage 83)
 	to.carried = append(to.carried, item)
 	w.heldKind[item.Kind]++
 	w.gifts++

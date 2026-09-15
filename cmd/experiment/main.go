@@ -2001,6 +2001,21 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	{
+		// The biggest market this world can be given without changing a rule:
+		// ornaments worth three times the usual, five times the money, and
+		// the defaults as they now stand. It exists to answer one question
+		// (stage 83): at the ceiling, does anything ever get sold twice?
+		name:  "marketmost",
+		about: "the largest market the rules allow: dear ornaments and five times the money",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 300
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketValue = true, 0.3
+		},
+		stores: playedStores,
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no
@@ -4262,6 +4277,7 @@ var metricNames = []string{
 	"cooked", "cookRate", "cookedMeat", "cookedEaten", "cookedHanded",
 	"cookedGiven", "cookedSold", "cookBetter", "cookGap",
 	"saleMet", "saleWon", "saleGap", "saleCoinRose", "saleFoodFell",
+	"resold", "resaleAsked", "resaleUnder", "resaleLoss", "boughtHeld",
 	"cookStanding", "cookSplit", "cookHeld", "cookReal",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate", "drops", "dropCoins",
@@ -4981,10 +4997,16 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// something better than it could have made itself. saleWon over
 		// saleMet says whether a refusal is final - if it is not, a
 		// bargaining mechanism would be a concept this world need not carry.
-		"cookedGiven":  float64(trade.CookedGiven),
-		"cookedSold":   float64(trade.CookedSold),
-		"cookBetter":   trade.Better,
-		"cookGap":      trade.Gap,
+		"cookedGiven": float64(trade.CookedGiven),
+		"cookedSold":  float64(trade.CookedSold),
+		"cookBetter":  trade.Better,
+		"cookGap":     trade.Gap,
+		// What an anchor on the price paid would have to hang on (stage 83).
+		"resold":       float64(trade.Resold),
+		"resaleAsked":  float64(trade.Asked),
+		"resaleUnder":  float64(trade.Under),
+		"resaleLoss":   trade.Loss,
+		"boughtHeld":   float64(trade.Held),
 		"saleMet":      float64(trade.Met),
 		"saleWon":      float64(trade.Won),
 		"saleGap":      trade.Gap2,

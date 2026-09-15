@@ -613,6 +613,13 @@ type Food struct {
 	Written float64
 	Places  []int
 
+	// PricePaid is what the body holding this paid for it, in coins, and
+	// nought for everything nobody bought (stage 83). It is a property of
+	// the holding rather than of the object: buying it sets it, and every
+	// other way into a hand clears it, because what somebody else paid is
+	// not a thing this body knows or could be anchored by.
+	PricePaid int
+
 	// Style is which ornament this one is (stage 84): a point on a circle, so
 	// that a body can like this one and not that one without anything having
 	// to rank them. Zero for everything nobody made, and for every world
