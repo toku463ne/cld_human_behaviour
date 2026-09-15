@@ -57,6 +57,12 @@ type region struct {
 	// What it does not move is what a body holds: see Agent.capacity.
 	Ability float64
 
+	// Weather is what the climate here is like (stage 85), one figure per
+	// kind, and nought for the ordinary world. It is on the region rather
+	// than on the cell because everything this world knows how to learn and
+	// pass on about a place is on the region - see climate.go.
+	Weather [NumWeathers]float64
+
 	// Enemies is how many of the world's arriving enemies turn up here (stage
 	// 58), relative to an equal share. Like Food it moves where they come
 	// from and not how many there are.
@@ -170,6 +176,10 @@ func (w *World) buildRegions() {
 		w.foodWeight += w.regions[i].Food
 		w.enemyWeight += w.regions[i].Enemies
 	}
+	// And what the weather is like here (stage 85), which is not drawn: it is
+	// a picture the map's author gives, so a world with none takes nothing
+	// from the random source.
+	w.buildClimate()
 }
 
 // tieFoodToTheGround makes where the plants come up depend on how hard the
@@ -622,6 +632,9 @@ type RegionView struct {
 	// Enemies is how many of the world's arriving enemies turn up here
 	// (stage 58), relative to an equal share.
 	Enemies float64
+
+	// Chill is how cold it is here (stage 85), nought for the ordinary world.
+	Chill float64
 }
 
 // Regions reports the blocks the world is divided into. Read only.
@@ -638,6 +651,7 @@ func (w *World) Regions() []RegionView {
 			Food:    w.regions[i].Food,
 			Ability: w.regions[i].Ability,
 			Enemies: w.regions[i].Enemies,
+			Chill:   w.regions[i].Weather[WeatherChill],
 		})
 	}
 	return out

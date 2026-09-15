@@ -4081,6 +4081,7 @@ func main() {
 	noahead := flag.Bool("noahead", false, "put back the world before 2026-09-13: one planning window rather than two (stages 67, 72, 73, 74)")
 	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
 	trinkets := flag.Bool("trinkets", false, "bodies can make things worth looking at, wanted for nothing but themselves and each body wanting a different one (stages 82 and 84; brings -lighthands with it)")
+	cold := flag.Float64("cold", 0, "lay a cold half over the world and charge that much vitality a tick for standing in the coldest of it (stage 85; 0 = the ordinary world)")
 	notaste := flag.Bool("notaste", false, "put back the world stage 82 measured: every body wants the same ornament, and wants it whatever is about to happen to it")
 	prices := flag.Bool("prices", false, "a sale costs as many coins as it takes to leave the seller better off (stage 80; brings -lighthands with it)")
 	lighthands := flag.Bool("lighthands", false, "a hand is taken up only by what weighs something, so a coin takes none (stage 80a; needs -terrain for the money)")
@@ -4128,6 +4129,14 @@ func main() {
 	// with it too.
 	if *trinkets {
 		cfg.CarrySlotsWeigh, cfg.Trinkets = true, true
+	}
+	// A world with weather in it (stage 85). The picture is the author's, so
+	// devview draws the simplest one there is: the right half cold. Nothing
+	// answers the cold yet, so this is what a place that takes something from
+	// a body looks like before anything can be done about it.
+	if *cold > 0 {
+		cfg.ChillDrain = *cold
+		cfg.ClimateMap = []string{"..99", "..99", "..99"}
 	}
 	// The world before the defaults changed on 2026-09-15 (stage 84): every
 	// body wants the same ornament and wants it on the way out, and a price

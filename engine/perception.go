@@ -246,6 +246,15 @@ type SelfView struct {
 	// cannot price leaving.
 	Footing float64
 
+	// Chill is what the weather where this body stands takes from it in
+	// vitality per tick (stage 85), after whatever it is carrying answers.
+	// Nought in a world with no climate on it.
+	//
+	// It goes with the body's own metabolism rather than with what is hitting
+	// it, because a place does not stop being cold while a body thinks about
+	// it - see climate.go.
+	Chill float64
+
 	// PoisonResist is how much of a plant's dose this body turns aside (stage
 	// 38b). It is here rather than folded into each plant's Danger because
 	// the two are different things: Danger is what the warning says, which is
@@ -655,6 +664,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		HomePull:          homePull,
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
+		Chill:             w.chillOf(a),
 		CourtedBy:         a.courtedBy,
 		CourtedTicksLeft:  w.courtAnswerLeft(a),
 		MateValue:         fitness(a, &w.cfg),

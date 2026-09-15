@@ -251,7 +251,12 @@ type riskPair struct{ near, far float64 }
 
 // pressures is pressure with both views kept.
 func pressures(cfg *Config, s *SelfView, vitality, hunger, extra float64) riskPair {
-	own := projectedDrain(cfg, s.HungerRate, hunger)
+	// The body's own metabolism, and what the weather where it stands takes
+	// on top of it (stage 85). The cold goes here rather than in extra
+	// because extra is deliberately dropped at the second window - what is
+	// hitting a body now is a fact about now - and a place does not stop
+	// being cold.
+	own := projectedDrain(cfg, s.HungerRate, hunger) + s.Chill
 	p := oneHorizon(cfg, s, vitality, own+extra, true)
 	if cfg.LookaheadHorizons <= 0 || p >= 1 {
 		return riskPair{p, p}
@@ -290,7 +295,7 @@ func pressures(cfg *Config, s *SelfView, vitality, hunger, extra float64) riskPa
 	if cfg.LookaheadUpkeep > 0 {
 		// What it would be draining on the way, rather than what it is
 		// draining now: a body that keeps its hunger down stops paying for it.
-		drain = projectedDrain(cfg, s.HungerRate, (hunger+hu)/2)
+		drain = projectedDrain(cfg, s.HungerRate, (hunger+hu)/2) + s.Chill
 		// And what it would win back out there. Upkeep is both halves: a body
 		// that has been feeding itself has also been mending, and leaving the
 		// mending out is what made a worn body read its own death as settled
@@ -298,10 +303,10 @@ func pressures(cfg *Config, s *SelfView, vitality, hunger, extra float64) riskPa
 		// over a second window and nothing in it ever got better. What is
 		// hitting it now stays in the first window, here as everywhere else.
 		mend = cfg.LookaheadUpkeep * recoverable(cfg, s.MaxVitality, s.HungerRate,
-			vitality, (hunger+hu)/2, 0, s.RestRate)
+			vitality, (hunger+hu)/2, s.Chill, s.RestRate)
 	}
 	v := clamp(vitality-drain*h+mend, 0, s.MaxVitality)
-	next := oneHorizon(cfg, s, v, projectedDrain(cfg, s.HungerRate, hu), cfg.LookaheadWornAgain)
+	next := oneHorizon(cfg, s, v, projectedDrain(cfg, s.HungerRate, hu)+s.Chill, cfg.LookaheadWornAgain)
 	return riskPair{p, clamp(p+(1-p)*next, 0, 1)}
 }
 
@@ -544,7 +549,7 @@ func (c *AIController) addRest(p *Perception) {
 	// Whatever is hitting the agent goes on hitting it while it sits there,
 	// and so does whatever starts while it is down.
 	after := pressures(cfg, s,
-		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed, s.RestRate),
+		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed+s.Chill, s.RestRate),
 		s.Hunger, incoming+exposed)
 	c.add(Action{Kind: ActRest}, Utility{
 		Life: Goal{Value: gap(cfg, now, after) * cfg.LifeValue, Chance: 1},
@@ -852,7 +857,7 @@ func (c *AIController) addFood(p *Perception) {
 			// cost of walking does: it is what the body would have when it
 			// got there.
 			vitAfter = math.Min(vitAfter+f.Heal, s.MaxVitality)
-			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
+			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming+s.Chill, s.RestRate)
 			after := pressures(cfg, s, vitAfter, hungerAfter, incoming)
 
 			// What the warning on it says it will cost this body. The agent
@@ -1119,7 +1124,7 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 		cost := moveCost(cfg, s, effort) * ticks
 		hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*o.OfferValue)
 		vitAfter := math.Min(s.Vitality-cost+o.OfferHeal, s.MaxVitality)
-		vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming, s.RestRate)
+		vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming+s.Chill, s.RestRate)
 		after := pressures(cfg, s, vitAfter, hungerAfter, incoming)
 		c.offerOpts = append(c.offerOpts, len(c.opts))
 		chance := pGet * clamp(float64(o.OfferLeft)/ticks, 0, 1)

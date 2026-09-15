@@ -2069,6 +2069,18 @@ var variants = []variant{
 		},
 		stores: flatStores,
 	},
+	{
+		// Stage 85's groundwork, with a number actually in it: the right half
+		// of the flat world is cold. Nothing answers the cold yet, so what
+		// this measures is the cost of a place that takes something - the
+		// baseline the stage that gives the world a coat will be read against.
+		name:  "cold",
+		about: "85: half the world is cold, and nothing yet answers it",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+		},
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no

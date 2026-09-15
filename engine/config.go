@@ -925,6 +925,25 @@ type Config struct {
 	// a world that lost a third of its population into one that loses none.
 	AdornNeedsSurvival bool
 
+	// ClimateMap is the map's picture of its weather, read at the middle of
+	// each region (stage 85). Empty is the world as it was, which is the
+	// default: a world that says nothing about its weather has none.
+	//
+	// It is a separate picture from TerrainMap on purpose. The ground and the
+	// weather are two different things about a place - a cold river and a
+	// warm one are both rivers - and stage 22 already settled that the terrain
+	// and the regions are separate maps for the same reason.
+	ClimateMap []string
+
+	// ChillDrain is what the coldest place in the world costs a body in
+	// vitality per tick, before anything that answers it. Zero is the world
+	// as it was, which is the default.
+	//
+	// The scale to set it against is HungerRate's drain: cold that costs more
+	// than starving does is a place nothing can live in, and this world's one
+	// rule that must not be broken is that there is always a way back.
+	ChillDrain float64
+
 	// SaleAnchor is how far towards what it paid a body holds out when asked
 	// to sell something it bought (stage 83, #111).
 	//
@@ -2847,6 +2866,8 @@ func DefaultConfig() Config {
 		TrinketTasteMutation:    0.08,
 		TrinketStyleAimed:       false,
 		AdornNeedsSurvival:      true,
+		ClimateMap:              nil,
+		ChillDrain:              0,
 		SaleAnchor:              0,
 		CoinBuysOnlyMeals:       false,
 		HandOverCheapest:        false,

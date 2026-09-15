@@ -38,6 +38,20 @@ func (w *World) SetTerrain(rows []string) {
 	w.rubble = stoneCells(w.ground)
 }
 
+// SetClimate lays the world's weather out (stage 85), in the same standing
+// SetTerrain is on: the author's picture, read at the middle of each region,
+// and drawing nothing from the random source. An empty picture is the ordinary
+// world, so this is also how an editor clears the weather.
+func (w *World) SetClimate(rows []string) {
+	w.cfg.ClimateMap = append([]string(nil), rows...)
+	w.buildClimate()
+}
+
+// Climate is the weather picture as it stands, for an editor to change.
+func (w *World) Climate() []string {
+	return append([]string(nil), w.cfg.ClimateMap...)
+}
+
 // Terrain is the map as it stands, for an editor to draw and change. The copy
 // is the caller's.
 func (w *World) Terrain() []string {

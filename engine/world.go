@@ -1579,13 +1579,19 @@ func (w *World) metabolise() {
 
 		a.Hunger = math.Min(w.cfg.MaxHunger, a.Hunger+a.HungerRate(&w.cfg))
 
+		// What the weather here takes, whatever else is happening (stage 85).
+		// Nought in a world with no climate on it, and the only place the
+		// cold becomes vitality.
+		chill := w.chillOf(a)
 		if drain := hungerDrain(&w.cfg, a.Hunger); drain > 0 {
-			a.Vitality -= drain
+			a.Vitality -= drain + chill
 		} else if a.Hunger <= w.cfg.SatiatedHunger {
 			// At the rate this hour suits this agent (stage 18): the same
 			// recovery it always had, scaled by how close the world's clock
-			// is to its own.
-			a.Vitality += w.restRate(a) * (1 - clamp(a.effortSpent, 0, 1))
+			// is to its own - less what the cold is taking meanwhile.
+			a.Vitality += w.restRate(a)*(1-clamp(a.effortSpent, 0, 1)) - chill
+		} else {
+			a.Vitality -= chill // neither draining nor recovering, but cold
 		}
 		a.Vitality = math.Min(a.Vitality, a.MaxVitality(&w.cfg))
 
