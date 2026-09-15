@@ -664,7 +664,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		HomePull:          homePull,
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
-		Chill:             w.chillOf(a),
+		Chill:             w.chillFelt(a),
 		CourtedBy:         a.courtedBy,
 		CourtedTicksLeft:  w.courtAnswerLeft(a),
 		MateValue:         fitness(a, &w.cfg),

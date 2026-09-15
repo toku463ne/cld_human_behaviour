@@ -130,6 +130,16 @@ func (w *World) chillOf(a *Agent) float64 {
 	return w.cfg.ChillDrain * cold * (1 - clamp(w.wardsOff(a, WeatherChill), 0, 1))
 }
 
+// chillFelt is what this body reads of the cold it is standing in: the whole
+// of it in the ordinary world, and nothing where the weather is not something
+// a body can feel (stage 86's control). What it pays is not affected.
+func (w *World) chillFelt(a *Agent) float64 {
+	if !w.cfg.ChillKnown {
+		return 0
+	}
+	return w.chillOf(a)
+}
+
 // wardsOff is how much of one weather this body is protected from by what it
 // is carrying: nothing, today.
 //
@@ -142,4 +152,70 @@ func (w *World) chillOf(a *Agent) float64 {
 // disagree.
 func (w *World) wardsOff(a *Agent, kind Weather) float64 {
 	return 0
+}
+
+// --- reading it out ---------------------------------------------------------
+
+// WeatherUse is what the weather came to (stage 86). Read only.
+type WeatherUse struct {
+	// OnCold is how cold it is where the humans are, All how cold the world
+	// is on average, and Gain the difference. Below nought is a population
+	// that has left the cold; nought is one that stands wherever it happens
+	// to be, however cold the map is. It is stage 57's Standing in the same
+	// shape and for the same reason: a spread that nobody responds to reads
+	// nought here however large it is.
+	OnCold, All, Gain float64
+
+	// ColdFood is how much of the world's plant growth happens on the cold
+	// ground, relative to an equal share. It is here because three stages
+	// (33, 35, 36) measured the same thing: a reason to avoid a place and a
+	// reason to eat there sit on two different maps, and while they do,
+	// avoiding is always throwing food away. Without this column a population
+	// that stays in the cold cannot be told from one that is staying with its
+	// dinner.
+	ColdFood float64
+
+	// Taken is the vitality the cold has taken over the run and Starved what
+	// hunger took, to read it against: a rule that takes a hundredth of what
+	// hunger does is a rule that will not move any of the world's numbers,
+	// whatever else is true of it.
+	Taken, Starved float64
+}
+
+// Weather reports what the weather came to. It writes nothing.
+func (w *World) Weather() WeatherUse {
+	out := WeatherUse{Taken: w.chillTaken, Starved: w.hungerTaken}
+	if len(w.regions) == 0 {
+		return out
+	}
+	cold, food, coldFood := 0.0, 0.0, 0.0
+	for i := range w.regions {
+		cold += w.regions[i].Weather[WeatherChill]
+		food += w.regions[i].Food
+		coldFood += w.regions[i].Weather[WeatherChill] * w.regions[i].Food
+	}
+	out.All = cold / float64(len(w.regions))
+	if cold > 0 && food > 0 {
+		// The food on the cold ground, as a share of an equal share: the mean
+		// food weight of the regions, weighted by how cold each one is.
+		out.ColdFood = (coldFood / cold) / (food / float64(len(w.regions)))
+	}
+	var humans, standing float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Species != SpeciesHuman {
+			continue
+		}
+		humans++
+		standing += w.weatherAt(a.X, a.Y, WeatherChill)
+	}
+	// Nobody alive is no evidence about where the living stand (stage 57's
+	// note, which is stage 14's mistake not made a third time).
+	if humans > 0 {
+		out.OnCold = standing / humans
+	} else {
+		out.OnCold = out.All
+	}
+	out.Gain = out.OnCold - out.All
+	return out
 }

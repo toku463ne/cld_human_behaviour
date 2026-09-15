@@ -935,6 +935,17 @@ type Config struct {
 	// and the regions are separate maps for the same reason.
 	ClimateMap []string
 
+	// ChillKnown is whether a body can feel the weather it is standing in
+	// (stage 86). True in the ordinary world.
+	//
+	// It is the control stage 34 used for drowning and it answers the same
+	// question: whether what a rule does to a population is selection or
+	// choice. With it off the cold takes exactly as much vitality as before -
+	// the body simply does not read it in its own state, so nothing it
+	// decides can be about it. If the population leaves the cold either way,
+	// it is leaving because the ones who stayed died.
+	ChillKnown bool
+
 	// ChillDrain is what the coldest place in the world costs a body in
 	// vitality per tick, before anything that answers it. Zero is the world
 	// as it was, which is the default.
@@ -2868,6 +2879,7 @@ func DefaultConfig() Config {
 		AdornNeedsSurvival:      true,
 		ClimateMap:              nil,
 		ChillDrain:              0,
+		ChillKnown:              true,
 		SaleAnchor:              0,
 		CoinBuysOnlyMeals:       false,
 		HandOverCheapest:        false,

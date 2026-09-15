@@ -252,6 +252,35 @@ func playedStores(w *engine.World) {
 
 func flatStores(w *engine.World) { playedStores(w) }
 
+// feedTheCold puts the world's plants on the cold ground, or takes them off it
+// (stage 86). It is laid out after the world is built, in the standing the
+// caches are on: this is the map's author deciding where the food is, not a
+// rule that ties the two together.
+//
+// The weights are ratios, so raising one half and lowering the other by the
+// same factor leaves the world growing exactly as much as it did - which is
+// stage 15a's rule and the reason this can be read at all.
+// shareOf is one figure over another, and nought when there is nothing to
+// divide by.
+func shareOf(a, b float64) float64 {
+	if b == 0 {
+		return 0
+	}
+	return a / b
+}
+
+func feedTheCold(w *engine.World, factor float64) {
+	for i, r := range w.Regions() {
+		food := r.Food
+		if r.Chill > 0 {
+			food *= factor
+		} else {
+			food /= factor
+		}
+		w.SetRegion(i, r.Shelter, food)
+	}
+}
+
 // The arms available. New rules under test get an entry here rather than a
 // branch in the engine, so that both arms live in the same binary and can be
 // run against the same seeds.
@@ -2080,6 +2109,49 @@ var variants = []variant{
 			c.ClimateMap = []string{"..99", "..99", "..99"}
 			c.ChillDrain = 0.02
 		},
+	},
+	{
+		// Stage 86: the cold at a dose that hurts.
+		name:  "coldhard",
+		about: "86: the same cold half, at two and a half times the dose",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+		},
+	},
+	{
+		// The control that decides whether this is selection or choice: the
+		// cold takes exactly as much, and no body reads it in its own state.
+		// Stage 34 asked the same question of drowning and the answer was
+		// that every bit of the effect was selection.
+		name:  "coldblind",
+		about: "86's control: the cold takes the same and nobody can feel it",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain, c.ChillKnown = 0.02, false
+		},
+	},
+	{
+		// And the pair that says what actually moves a population: the same
+		// cold with the food moved onto it, and with the food moved off it.
+		// Six measurements say the distribution of food is the only thing
+		// that has ever moved anybody; this is the seventh.
+		name:  "coldrich",
+		about: "86: the cold half is where the food is",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+		},
+		stores: func(w *engine.World) { feedTheCold(w, 1.6) },
+	},
+	{
+		name:  "coldpoor",
+		about: "86: the cold half is where the food is not",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+		},
+		stores: func(w *engine.World) { feedTheCold(w, 0.4) },
 	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
@@ -4360,6 +4432,7 @@ var metricNames = []string{
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
+	"onCold", "coldGain", "coldFood", "chillTook", "chillShare",
 	"bankSplit", "crossShare", "crossIndex", "crossDry", "bankGeneGap", "bankCountryGap",
 	"bankMoves", "bankBoth",
 	"speedHigh", "speedLow", "highGap",
@@ -4898,6 +4971,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	trinkets := w.Trinkets()
 	kitchen := w.Cooking()
 	trade := w.Trade()
+	weather := w.Weather()
 	feeling := w.Mood()
 	rearing := w.Rearing()
 	apart := w.Loneliness()
@@ -5450,9 +5524,19 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"speedOpen": tail.speedOpen,
 		"speedDear": tail.speedDear,
 		"speedGap":  tail.speedGap,
-		"onDear":    tail.onDear,
-		"onHigh":    tail.onHigh,
-		"onWater":   tail.onWater,
+		// Where the population stands in the weather (stage 86). coldGain is
+		// the figure that says whether anybody responded: below nought is a
+		// population that has left the cold, nought is one that stands where
+		// it happens to be. chillShare is what the cold took against what
+		// hunger took, which is the size of the target.
+		"onCold":     weather.OnCold,
+		"coldGain":   weather.Gain,
+		"coldFood":   weather.ColdFood,
+		"chillTook":  weather.Taken,
+		"chillShare": shareOf(weather.Taken, weather.Taken+weather.Starved),
+		"onDear":     tail.onDear,
+		"onHigh":     tail.onHigh,
+		"onWater":    tail.onWater,
 		// The two banks (stage 37). crossIndex is not to be read on its own -
 		// agents cluster locally whatever the ground is, so it is low
 		// everywhere; what it is for is the arm against its control.

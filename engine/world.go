@@ -515,6 +515,8 @@ type World struct {
 	trinketsGiven    int
 	trinketMoves     int
 	trinketMoveGain  float64
+	chillTaken       float64
+	hungerTaken      float64
 	trinketSales     int
 	trinketSaleGain  float64
 
@@ -1583,7 +1585,9 @@ func (w *World) metabolise() {
 		// Nought in a world with no climate on it, and the only place the
 		// cold becomes vitality.
 		chill := w.chillOf(a)
+		w.chillTaken += chill
 		if drain := hungerDrain(&w.cfg, a.Hunger); drain > 0 {
+			w.hungerTaken += drain
 			a.Vitality -= drain + chill
 		} else if a.Hunger <= w.cfg.SatiatedHunger {
 			// At the rate this hour suits this agent (stage 18): the same

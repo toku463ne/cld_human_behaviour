@@ -157,3 +157,49 @@ func TestTheWeatherSurvivesASave(t *testing.T) {
 		t.Fatalf("the cold half came back at %v", got)
 	}
 }
+
+// A body can be made blind to the weather without being spared it (stage 86's
+// control). What it pays is the same; what it knows is nothing.
+func TestTheColdCanBeFeltOrNot(t *testing.T) {
+	cfg := climateConfig()
+	cfg.ChillKnown = false
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: cfg.Width * 0.9, Y: cfg.Height * 0.5,
+		Vitality: 50, Hunger: 10, Genome: genomeOf(50, 50, 50)})
+	if got := w.selfView(mustAgent(t, w, id)).Chill; got != 0 {
+		t.Fatalf("a body that cannot feel the cold reads %v of it", got)
+	}
+	if got := w.chillOf(mustAgent(t, w, id)); got <= 0 {
+		t.Fatalf("it is not being charged for it either: %v", got)
+	}
+	// And it still loses the vitality.
+	before := mustAgent(t, w, id).Vitality
+	for k := 0; k < 20; k++ {
+		w.metabolise()
+	}
+	if got := mustAgent(t, w, id).Vitality; got >= before {
+		t.Fatalf("twenty ticks in the cold and it is at %v against %v", got, before)
+	}
+}
+
+// And what the measurement reports is where the bodies are against where the
+// cold is, which is nought when nobody has responded to it.
+func TestWhereTheColdIsAndWhereTheBodiesAre(t *testing.T) {
+	cfg := climateConfig()
+	w := NewWorld(cfg)
+	// Two bodies in the warm, one in the cold: below the world's own average.
+	for _, x := range []float64{0.1, 0.2, 0.9} {
+		w.addAgent(Agent{Maturity: 1, X: cfg.Width * x, Y: cfg.Height * 0.5,
+			Vitality: 90, Genome: genomeOf(50, 50, 50)})
+	}
+	got := w.Weather()
+	if got.All <= 0 || got.All >= 1 {
+		t.Fatalf("half a cold world averages %v", got.All)
+	}
+	if got.OnCold >= got.All || got.Gain >= 0 {
+		t.Fatalf("two bodies out of three in the warm reads %v against %v", got.OnCold, got.All)
+	}
+	if got.Taken != 0 {
+		t.Fatalf("nothing has happened yet and the cold has taken %v", got.Taken)
+	}
+}
