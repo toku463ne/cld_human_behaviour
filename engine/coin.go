@@ -268,6 +268,36 @@ func (w *World) wareValue(a *Agent, s *SelfView, item *Food) float64 {
 	return meal
 }
 
+// anchoredFloor is the seller's floor, raised towards what it paid for the
+// thing (stage 83).
+//
+// A price of what it paid clears a floor of one less, so that is what it holds
+// out for, and it holds out that far only in proportion to its own expectation
+// of being here at the end of the window - the same figure an ornament is
+// discounted by (stage 84). Nothing new is estimated: the price paid is on the
+// item and the chance is the one every option in this world is weighed with.
+//
+// It is counted whenever it actually moves the floor, because how often that
+// happens is the whole question (#111): an anchor that never meets a resale
+// never fires.
+func (w *World) anchoredFloor(seller *Agent, item *Food, floor float64) float64 {
+	if w.cfg.SaleAnchor <= 0 || item.PricePaid <= 0 {
+		return floor
+	}
+	reserve := float64(item.PricePaid) - 1
+	if reserve <= floor {
+		return floor // it is being offered more than it paid anyway
+	}
+	s := w.selfView(seller)
+	risk := pressures(&w.cfg, &s, seller.Vitality, seller.Hunger, 0).far
+	hold := clamp(w.cfg.SaleAnchor, 0, 1) * clamp(1-risk, 0, 1)
+	if hold <= 0 {
+		return floor
+	}
+	w.trade.anchored++
+	return floor + (reserve-floor)*hold
+}
+
 // salePrice is what a sale costs, in coins (stage 80).
 //
 // With prices off it is the world every figure before this was measured in:
@@ -288,6 +318,7 @@ func (w *World) salePrice(seller, buyer *Agent, item *Food) (int, bool) {
 	if !ok {
 		return 0, false
 	}
+	floor = w.anchoredFloor(seller, item, floor)
 	price := math.Floor(floor) + 1 // strictly above: the seller has to gain
 	if price < 1 {
 		price = 1

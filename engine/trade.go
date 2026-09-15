@@ -53,9 +53,11 @@ type tradeWatch struct {
 	cookedBetter            int
 	cookedGap               float64
 
-	// Sale attempts over something the seller had bought (stage 83).
+	// Sale attempts over something the seller had bought (stage 83), and how
+	// many times an anchor on what was paid actually moved a floor.
 	resold, asked, under int
 	loss                 float64
+	anchored             int
 
 	// Pairs that walked away from each other, and what came of them. seen is
 	// meetings after a refusal, won is the ones that ended in a sale, gap is
@@ -162,6 +164,11 @@ type TradeUse struct {
 	Resold, Asked, Under int
 	Loss                 float64
 
+	// Anchored is how many times the price a seller held out for was moved by
+	// what it had paid (stage 83). It is the firing count of the one rule in
+	// this world that is a bias rather than a memory, and it is zero.
+	Anchored int
+
 	// Held is how many things in hands right now cost their holder something
 	// (stage 83): the stock behind that flow. A market where nothing bought
 	// is ever held has nothing for an anchor to hang on.
@@ -190,6 +197,7 @@ func (w *World) Trade() TradeUse {
 		out.FoodFell = t.foodFell / float64(t.won)
 	}
 	out.Resold, out.Asked, out.Under = t.resold, t.asked, t.under
+	out.Anchored = t.anchored
 	for i := range w.agents {
 		a := &w.agents[i]
 		if !a.Alive {

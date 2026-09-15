@@ -925,6 +925,30 @@ type Config struct {
 	// a world that lost a third of its population into one that loses none.
 	AdornNeedsSurvival bool
 
+	// SaleAnchor is how far towards what it paid a body holds out when asked
+	// to sell something it bought (stage 83, #111).
+	//
+	// It is the disposition effect, and it is the first thing in this world
+	// that is a bias rather than a memory of something real: everything else
+	// a body carries is either true or its own preference, and this is a body
+	// refusing an offer it would take if the same object had cost it nothing.
+	// The line is crossed deliberately (the precedent is stage 54's mood,
+	// which tilts a preference rather than a fact, and is also off by
+	// default).
+	//
+	// What washes it out is being in trouble: it is scaled by the chance this
+	// body has of still being here at the end of its planning window, so a
+	// whole body holds out for what it paid and a starving one takes what it
+	// can get. That is where the real effect gets its shape - a price that is
+	// sticky while nobody is desperate.
+	//
+	// Zero by default, and it was measured to fire zero times: counted before
+	// it was built and again after, a thing that was bought is never once
+	// offered for sale again (resaleAsked = 0.00, up to the largest market
+	// these rules allow). It is kept because the count is worth reproducing,
+	// and because the condition for it to matter is now a measurable one.
+	SaleAnchor float64
+
 	// CoinBuysOnlyMeals puts back the world in which the only thing money
 	// could buy was food (found in stage 84).
 	//
@@ -2823,6 +2847,7 @@ func DefaultConfig() Config {
 		TrinketTasteMutation:    0.08,
 		TrinketStyleAimed:       false,
 		AdornNeedsSurvival:      true,
+		SaleAnchor:              0,
 		CoinBuysOnlyMeals:       false,
 		HandOverCheapest:        false,
 		GiftPriced:              false,

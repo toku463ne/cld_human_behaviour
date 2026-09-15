@@ -202,3 +202,63 @@ func TestWithPricesOffASaleIsStillOneCoin(t *testing.T) {
 		t.Fatalf("with prices off the seller was paid %d coins", got)
 	}
 }
+
+// A body that bought a thing holds out for what it paid, and a body in
+// trouble does not (stage 83). The rule fires zero times in a running world -
+// nothing bought is ever offered for sale again - so this is where it is
+// shown to work at all.
+func TestASellerHoldsOutForWhatItPaid(t *testing.T) {
+	priceFor := func(anchor float64, hunger, vitality float64) (int, bool) {
+		cfg := priceConfig()
+		cfg.SaleAnchor = anchor
+		w := NewWorld(cfg)
+		sellerID := holding(t, w, 100, 100)
+		buyerID := w.addAgent(Agent{Maturity: 1, X: 104, Y: 100, Vitality: 20,
+			Hunger: 95, Genome: genomeOf(50, 50, 50)})
+		giveCoins(t, w, buyerID, 6)
+		seller, buyer := mustAgent(t, w, sellerID), mustAgent(t, w, buyerID)
+		seller.Hunger, seller.Vitality = hunger, vitality
+		seller.carried[0].PricePaid = 4 // it paid four for what it is holding
+		return w.salePrice(seller, buyer, &seller.carried[0])
+	}
+	// Whole and well fed: it wants back what it gave.
+	held, ok := priceFor(1, 30, 90)
+	loose, ok2 := priceFor(0, 30, 90)
+	if !ok2 {
+		t.Fatal("no price at all without the anchor")
+	}
+	if ok && held <= loose {
+		t.Fatalf("with the anchor it asks %d and without it %d", held, loose)
+	}
+	if ok && held < 4 {
+		t.Fatalf("it paid four and would take %d", held)
+	}
+	// And a body that does not expect to be here for the window takes what it
+	// can get: the anchor is scaled by that chance, so it washes out.
+	sinking, ok3 := priceFor(1, 95, 6)
+	sinkingLoose, ok4 := priceFor(0, 95, 6)
+	if ok3 != ok4 || (ok3 && sinking != sinkingLoose) {
+		t.Fatalf("a sinking body asks %d (%v) with the anchor and %d (%v) without",
+			sinking, ok3, sinkingLoose, ok4)
+	}
+}
+
+// And with the anchor off, nothing about a sale changes however much was paid.
+func TestThePriceIsUntouchedWhereNobodyIsAnchored(t *testing.T) {
+	prices := [2]int{}
+	for i, paid := range []int{0, 9} {
+		cfg := priceConfig()
+		w := NewWorld(cfg)
+		sellerID := holding(t, w, 100, 100)
+		buyerID := w.addAgent(Agent{Maturity: 1, X: 104, Y: 100, Vitality: 20,
+			Hunger: 95, Genome: genomeOf(50, 50, 50)})
+		giveCoins(t, w, buyerID, 6)
+		seller, buyer := mustAgent(t, w, sellerID), mustAgent(t, w, buyerID)
+		seller.Hunger, seller.Vitality = 60, 30
+		seller.carried[0].PricePaid = paid
+		prices[i], _ = w.salePrice(seller, buyer, &seller.carried[0])
+	}
+	if prices[0] != prices[1] {
+		t.Fatalf("with the rule off, what was paid moved the price: %d against %d", prices[0], prices[1])
+	}
+}

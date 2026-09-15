@@ -2016,6 +2016,34 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	{
+		// Stage 83's rule, built so that its firing count is a measurement
+		// rather than an argument: a body holds out for what it paid, in
+		// proportion to its own chance of being here at the end of the
+		// window.
+		name:  "anchor",
+		about: "83: a seller will not take less than it paid, unless it is in trouble",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.SaleAnchor = 1
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "anchormost",
+		about: "83's rule at the ceiling of the market: dear ornaments and five times the money",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 300
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets, c.TrinketValue = true, 0.3
+			c.SaleAnchor = 1
+		},
+		stores: playedStores,
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no
@@ -4277,7 +4305,7 @@ var metricNames = []string{
 	"cooked", "cookRate", "cookedMeat", "cookedEaten", "cookedHanded",
 	"cookedGiven", "cookedSold", "cookBetter", "cookGap",
 	"saleMet", "saleWon", "saleGap", "saleCoinRose", "saleFoodFell",
-	"resold", "resaleAsked", "resaleUnder", "resaleLoss", "boughtHeld",
+	"resold", "resaleAsked", "resaleUnder", "resaleLoss", "boughtHeld", "anchored",
 	"cookStanding", "cookSplit", "cookHeld", "cookReal",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
 	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate", "drops", "dropCoins",
@@ -5007,6 +5035,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"resaleUnder":  float64(trade.Under),
 		"resaleLoss":   trade.Loss,
 		"boughtHeld":   float64(trade.Held),
+		"anchored":     float64(trade.Anchored),
 		"saleMet":      float64(trade.Met),
 		"saleWon":      float64(trade.Won),
 		"saleGap":      trade.Gap2,
