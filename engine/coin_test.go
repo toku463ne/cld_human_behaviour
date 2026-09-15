@@ -632,3 +632,58 @@ func TestWhatItPaidIsRememberedAndOnlyWhileItHoldsIt(t *testing.T) {
 		}
 	}
 }
+
+// A coin claims the best of what this body would buy, and since #116 that
+// includes something that keeps the weather off (stage 88).
+//
+// What it does not do is make a claim out of nothing: a body whose chance of
+// dying is flat gets nought from every branch there is, because all of them
+// are differences in that one chance. That is the finding, so it is the test.
+func TestACoinClaimsTheBestOfWhatThisBodyWouldBuy(t *testing.T) {
+	cfg := coinConfig()
+	cfg.ClimateMap = []string{"99", "99"}
+	cfg.ChillDrain = 0.02
+	cfg.Trinkets = true
+	cfg.WardShare, cfg.WardStrength = 1, 0.6
+	cfg.CoinBuysWarding = true
+	blind := cfg
+	blind.CoinBuysWarding = false
+	w := NewWorld(cfg)
+	at := func(vit, hunger float64) (with, without float64) {
+		id := w.addAgent(Agent{Maturity: 1, X: cfg.Width / 2, Y: cfg.Height / 2,
+			Vitality: vit, Hunger: hunger, Genome: genomeOf(50, 50, 50)})
+		s := w.selfView(mustAgent(t, w, id))
+		return coinWorth(&cfg, &s, 0), coinWorth(&blind, &s, 0)
+	}
+
+	// A body with something to lose in the cold: the branch pays out.
+	with, without := at(70, 40)
+	if with <= 0 {
+		t.Fatalf("a coin is worth %v to a body the cold could finish", with)
+	}
+	if with < without {
+		t.Fatalf("adding a branch made the claim smaller: %v against %v", with, without)
+	}
+
+	// A fed, whole body: nothing from this branch, and nothing from the meal
+	// branch either. The flatness belongs to the body, not to the good - which
+	// is why more kinds of thing to buy cannot give money a job here.
+	with, without = at(90, 20)
+	if with != 0 || without != 0 {
+		t.Fatalf("a whole body puts %v on a coin (%v without the branch)", with, without)
+	}
+
+	// And in a world with no weather it pays nothing at all.
+	warm := testConfig()
+	warm.Trinkets, warm.WardShare, warm.WardStrength = true, 1, 0.6
+	warm.CoinBuysWarding = true
+	noBranch := warm
+	noBranch.CoinBuysWarding = false
+	w2 := NewWorld(warm)
+	id2 := w2.addAgent(Agent{Maturity: 1, X: warm.Width / 2, Y: warm.Height / 2,
+		Vitality: 60, Hunger: 50, Genome: genomeOf(50, 50, 50)})
+	s2 := w2.selfView(mustAgent(t, w2, id2))
+	if coinWorth(&warm, &s2, 0) != coinWorth(&noBranch, &s2, 0) {
+		t.Fatal("the branch paid out in a world with no weather in it")
+	}
+}

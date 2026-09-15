@@ -105,7 +105,35 @@ func coinWorth(cfg *Config, s *SelfView, held float64) float64 {
 			claim = mends
 		}
 	}
+	if cfg.CoinBuysWarding && cfg.WardStrength > 0 {
+		// And the third thing money buys here (#116): something that keeps
+		// the weather off. The ceiling is the weight again - a body in no
+		// weather, or already wearing the best it could buy, gets nothing
+		// from this branch - so nothing has to say how much of the claim is
+		// which.
+		ward := math.Min(clamp(cfg.WardStrength, 0, 1)*s.ChillRaw, s.Chill)
+		if keeps := wardClaim(cfg, s, ward); keeps > claim {
+			claim = keeps
+		}
+	}
 	return cfg.CoinValue * claim
+}
+
+// wardClaim is what something that keeps the weather off would be worth to
+// this body at the moment it is in trouble (#116).
+//
+// Priced there rather than now for keepValue's reason, and it is the same
+// trick: a whole body's chance of dying is flat, so anything read off the
+// gradient as it stands is worth nothing to exactly the bodies that have
+// something to sell. What money claims is never the thing now, it is the thing
+// at the moment of needing it.
+func wardClaim(cfg *Config, s *SelfView, ward float64) float64 {
+	if ward <= 0 {
+		return 0
+	}
+	short := *s
+	short.Hunger = math.Max(s.Hunger, cfg.StarveHunger)
+	return warmthValue(cfg, &short, 0, ward)
 }
 
 // saleGoodwill is what being on better terms with somebody is worth to this

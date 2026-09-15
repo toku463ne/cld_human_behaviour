@@ -1036,6 +1036,23 @@ type Config struct {
 	// and because the condition for it to matter is now a measurable one.
 	SaleAnchor float64
 
+	// CoinBuysWarding is whether a coin is a claim on something that answers
+	// the weather as well as on a meal and on mending (#116, stage 88).
+	//
+	// It is stage 81's step taken once more, and for the reason that stage's
+	// measurement left behind: a coin is worth CoinValue times what it would
+	// buy, and what it would buy is priced off this body's own gradient - so
+	// to a body that is not short of a meal it is worth nothing at all, and
+	// nine sellers in ten therefore have a floor of zero (counted in stage
+	// 84). A body standing in the cold is short of something whether or not
+	// it is hungry, so with more than one thing to claim the claim is almost
+	// never nothing.
+	//
+	// No weights, for stage 81's reason: each branch caps itself. A whole
+	// body gets nothing from the mending branch, a warm body nothing from
+	// this one, and a body already wearing a coat nothing again.
+	CoinBuysWarding bool
+
 	// CoinBuysOnlyMeals puts back the world in which the only thing money
 	// could buy was food (found in stage 84).
 	//
@@ -2943,6 +2960,7 @@ func DefaultConfig() Config {
 		WardShare:               0,
 		WardStrength:            0,
 		SaleAnchor:              0,
+		CoinBuysWarding:         false,
 		CoinBuysOnlyMeals:       false,
 		HandOverCheapest:        false,
 		GiftPriced:              false,

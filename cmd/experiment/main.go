@@ -2346,6 +2346,23 @@ var variants = []variant{
 			c.HandOverCheapest, c.GiftPriced = true, true
 		},
 	},
+	{
+		// #116: a coin claims whichever of the things this body would buy is
+		// worth most to it - a meal, mending, or something that keeps the
+		// weather off. Stage 81 took the same step from one branch to two and
+		// found the market shrank; this is the same step in a world where
+		// there is something to claim that a fed body still wants.
+		name:  "coinward",
+		about: "#116: a coin claims the best of a meal, mending and a coat",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"99ii", "99ii", "99ii"}
+			c.ChillDrain, c.HeatDrain = 0.02, 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.CoinBuysWarding = true
+		},
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no
