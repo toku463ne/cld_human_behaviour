@@ -2207,6 +2207,46 @@ var variants = []variant{
 			c.ChillDrain = 0.05
 		},
 	},
+	{
+		// Stage 87a: a share of the ornaments a body makes keep the cold off.
+		// One is enough (wardsOff is a max), nothing is tied to the ground,
+		// nothing rots and the weather does not move - the whole of what this
+		// arm asks is whether the cold becomes somewhere a body can live, and
+		// how many of these change hands.
+		name:  "coat",
+		about: "87a: some ornaments keep the cold off, and one is enough",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// The control: the same ornaments, made at the same rate, answering
+		// nothing. Everything about the world is the same except that the
+		// cold cannot be kept off.
+		name:  "coatless",
+		about: "87a's control: the same ornaments, and none of them keep anything off",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// And a warm one, to see the same rule where there is no cold to keep
+		// off: it should do nothing at all.
+		name:  "coatwarm",
+		about: "87a's placebo: warding ornaments in a world with no weather",
+		apply: func(c *engine.Config) {
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no
@@ -4487,6 +4527,7 @@ var metricNames = []string{
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
 	"onCold", "coldGain", "coldFood", "chillTook", "chillShare",
+	"coats", "wearing", "coatsHanded",
 	"bankSplit", "crossShare", "crossIndex", "crossDry", "bankGeneGap", "bankCountryGap",
 	"bankMoves", "bankBoth",
 	"speedHigh", "speedLow", "highGap",
@@ -5583,14 +5624,17 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// population that has left the cold, nought is one that stands where
 		// it happens to be. chillShare is what the cold took against what
 		// hunger took, which is the size of the target.
-		"onCold":     weather.OnCold,
-		"coldGain":   weather.Gain,
-		"coldFood":   weather.ColdFood,
-		"chillTook":  weather.Taken,
-		"chillShare": shareOf(weather.Taken, weather.Taken+weather.Starved),
-		"onDear":     tail.onDear,
-		"onHigh":     tail.onHigh,
-		"onWater":    tail.onWater,
+		"onCold":      weather.OnCold,
+		"coldGain":    weather.Gain,
+		"coldFood":    weather.ColdFood,
+		"coats":       float64(weather.Coats),
+		"wearing":     weather.Wearing,
+		"coatsHanded": float64(weather.Handed),
+		"chillTook":   weather.Taken,
+		"chillShare":  shareOf(weather.Taken, weather.Taken+weather.Starved),
+		"onDear":      tail.onDear,
+		"onHigh":      tail.onHigh,
+		"onWater":     tail.onWater,
 		// The two banks (stage 37). crossIndex is not to be read on its own -
 		// agents cluster locally whatever the ground is, so it is low
 		// everywhere; what it is for is the arm against its control.

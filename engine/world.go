@@ -516,6 +516,8 @@ type World struct {
 	trinketMoves     int
 	trinketMoveGain  float64
 	chillTaken       float64
+	coatsMade        int
+	coatsHanded      int
 	hungerTaken      float64
 	trinketSales     int
 	trinketSaleGain  float64

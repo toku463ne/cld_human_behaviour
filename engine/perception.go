@@ -255,6 +255,12 @@ type SelfView struct {
 	// it - see climate.go.
 	Chill float64
 
+	// ChillRaw is what the weather here would take before anything this body
+	// holds keeps it off, and Ward how much of it the best thing in its hands
+	// keeps off already (stage 87a). Chill is what is left: the two are here
+	// so that an option can price a piece that would ward more than this.
+	ChillRaw, Ward float64
+
 	// ChillDX and ChillDY are which way it gets colder from here, per unit of
 	// distance (stage 86b): a sense and not a map, nought where the world has
 	// no weather or the body cannot feel it.
@@ -369,6 +375,10 @@ type FoodView struct {
 	// leafed through. What is hidden is nothing - the whole of what a book
 	// does is say what it says.
 	Worth float64
+
+	// Ward is how much of the weather this piece would keep off whoever held
+	// it (stage 87a), and nought for everything that answers nothing.
+	Ward float64
 
 	// Spoils is how many ticks this one has left before it goes off, and zero
 	// for anything with no clock on it at all (stage 78). The convention is
@@ -518,6 +528,10 @@ type AgentView struct {
 	// zero for anything with no clock. A buyer can see how near a thing is to
 	// turning, the same way it can see what the thing is.
 	OfferSpoils float64
+
+	// OfferWard is how much of the weather what is being held up would keep
+	// off this looker (stage 87a).
+	OfferWard float64
 
 	// OfferWorth is what a book held up would be worth to the one looking
 	// (stage 69), and zero for everything else. It is in the looker's terms
@@ -671,6 +685,8 @@ func (w *World) selfView(a *Agent) SelfView {
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
 		Chill:             w.chillFelt(a),
+		ChillRaw:          w.chillRawFelt(a),
+		Ward:              w.wardsOff(a, WeatherChill),
 		ChillDX:           chillDX,
 		ChillDY:           chillDY,
 		CourtedBy:         a.courtedBy,
@@ -775,6 +791,7 @@ func (w *World) perceive(a *Agent) *Perception {
 				p.Trinkets = append(p.Trinkets, FoodView{
 					ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
 					RivalDist: math.Inf(1), Worth: w.trinketWorth(a, f),
+					Ward: wardOf(f, WeatherChill),
 				})
 			}
 			continue
@@ -883,7 +900,7 @@ func (w *World) perceive(a *Agent) *Perception {
 		// view is: the same figures that price a meal on the ground.
 		offering, offerLeft := false, 0
 		offerKind, offerValue, offerHeal := FoodKind(0), 0.0, 0.0
-		offerWorth, offerSpoils := 0.0, 0.0
+		offerWorth, offerSpoils, offerWard := 0.0, 0.0, 0.0
 		if item := w.offering(o); item != nil && w.canEat(a, item) {
 			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
 			offerValue = p.Self.Nutrition[item.Kind]
@@ -897,6 +914,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			// whole reason there is anything to trade.
 			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
 			offerWorth = w.trinketWorth(a, item)
+			offerWard = wardOf(item, WeatherChill)
 			w.sawOffer = true
 		} else if item != nil && item.Kind == FoodBook && w.cfg.Books {
 			// A book held up is worth what it would tell this looker, which
@@ -944,6 +962,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			OfferValue:  offerValue,
 			OfferHeal:   offerHeal,
 			OfferSpoils: offerSpoils,
+			OfferWard:   offerWard,
 			Uphill:      w.terrainAt(o.X, o.Y).Height > w.terrainAt(a.X, a.Y).Height,
 			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
 			Uncertainty: variance,

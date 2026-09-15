@@ -606,6 +606,25 @@ func (c *AIController) addWarmth(p *Perception) {
 	}
 }
 
+// warmthValue is what a piece that keeps this much of the weather off is worth
+// to this body: the difference it makes to the chance of dying, priced exactly
+// as a meal is (stage 87a).
+//
+// Nothing about it is new. The cold is a drain, a drain is a chance of dying,
+// and this is that chance with less drain in it - which is why a warm thing is
+// worth a great deal in the cold, nothing in the warm, and nothing to a body
+// that already wards as much. None of those three is a rule.
+func warmthValue(cfg *Config, s *SelfView, incoming, ward float64) float64 {
+	if s.ChillRaw <= 0 || ward <= s.Ward {
+		return 0
+	}
+	warm := *s
+	warm.Chill = s.ChillRaw * (1 - clamp(ward, 0, 1))
+	now := pressures(cfg, s, s.Vitality, s.Hunger, incoming)
+	after := pressures(cfg, &warm, s.Vitality, s.Hunger, incoming)
+	return gap(cfg, now, after) * cfg.LifeValue
+}
+
 // addRest scores doing nothing. It is not a fallback: for a satiated agent it
 // is the only way back to full vitality, and it costs nothing.
 func (c *AIController) addRest(p *Perception) {
@@ -1546,6 +1565,7 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	meal := o.OfferWorth * cfg.BookValue
 	if o.OfferKind == FoodTrinket {
 		meal = o.OfferWorth // already what it is worth, to anybody (stage 82)
+		meal += warmthValue(cfg, s, c.incomingDmg, o.OfferWard)
 	}
 	if o.OfferValue > 0 || o.OfferHeal > 0 {
 		meal = mealValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal)
@@ -1621,6 +1641,11 @@ func (c *AIController) addCraft(p *Perception) {
 	// between this and going to eat: a meal is worth more to a body that is
 	// running out, and an ornament is worth less.
 	want := cfg.TrinketValue * cfg.LifeValue * s.CraftQuality * s.CraftDelight * s.AdornWant
+	// And what it might keep off the weather (stage 87a). A maker cannot aim,
+	// so it reckons on how often one comes out answering at all - the same
+	// way it reckons on the middling piece rather than the lucky one.
+	want += clamp(cfg.WardShare, 0, 1) *
+		warmthValue(cfg, s, c.incomingDmg, clamp(cfg.WardStrength, 0, 1))
 	if want <= 0 {
 		return
 	}
@@ -1654,10 +1679,12 @@ func (c *AIController) addTrinkets(p *Perception) {
 			continue
 		}
 		chance := raceChance(cfg, s, f.Dist, f.RivalDist)
+		warmth := warmthValue(cfg, s, c.incomingDmg, f.Ward)
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCost(cfg, s, effort) * ticks
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
+				Life:         Goal{Value: warmth, Chance: chance},
 				Adorn:        Goal{Value: f.Worth, Chance: chance},
 				Vitality:     cost,
 				Ticks:        ticks,
@@ -1753,7 +1780,11 @@ func handWorth(cfg *Config, s *SelfView, h *FoodView) float64 {
 	case FoodBook:
 		return h.Worth // what it would still tell its owner, which once read is nothing
 	case FoodTrinket:
-		return h.Worth // what this particular piece is worth, less what is left of it
+		// What this particular piece is worth, less what is left of it - and
+		// what it keeps off the weather here (stage 87a), which is the one
+		// figure in this world that is large in one place and nought in
+		// another without the object changing at all.
+		return h.Worth + warmthValue(cfg, s, 0, h.Ward)
 	case FoodStone:
 		return stoneWorth(cfg, s)
 	}

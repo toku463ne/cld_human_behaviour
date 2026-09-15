@@ -130,6 +130,24 @@ func (w *World) chillOf(a *Agent) float64 {
 	return w.cfg.ChillDrain * cold * (1 - clamp(w.wardsOff(a, WeatherChill), 0, 1))
 }
 
+// wardOf is what one piece keeps off one weather.
+func wardOf(f *Food, kind Weather) float64 {
+	if f.Wards != kind {
+		return 0
+	}
+	return f.Ward
+}
+
+// chillRawFelt is what the weather here would take before anything in a hand
+// keeps it off: the figure an option needs to price a piece that would ward
+// more than this body wards already.
+func (w *World) chillRawFelt(a *Agent) float64 {
+	if !w.cfg.ChillKnown || w.cfg.ChillDrain <= 0 {
+		return 0
+	}
+	return w.cfg.ChillDrain * w.weatherAt(a.X, a.Y, WeatherChill)
+}
+
 // chillFelt is what this body reads of the cold it is standing in: the whole
 // of it in the ordinary world, and nothing where the weather is not something
 // a body can feel (stage 86's control). What it pays is not affected.
@@ -178,7 +196,31 @@ func (w *World) chillSlope(a *Agent) (dx, dy float64) {
 // utility formula, so that wanting one and being sheltered by one cannot
 // disagree.
 func (w *World) wardsOff(a *Agent, kind Weather) float64 {
-	return 0
+	best := 0.0
+	for i := range a.carried {
+		f := &a.carried[i]
+		if f.Wards == kind && f.Ward > best {
+			best = f.Ward
+		}
+	}
+	return best
+}
+
+// wardMade is what a piece this body has just made keeps off, and which
+// weather it answers (stage 87a).
+//
+// A share of them come out answering the weather rather than all of them, so
+// that making one is not the same thing as making a coat: a maker cannot aim,
+// which is the same hand the style is dealt by (stage 84) and the reason a
+// body that wants one cannot simply sit down and produce it.
+func (w *World) wardMade() float64 {
+	if w.cfg.WardShare <= 0 || w.cfg.WardStrength <= 0 {
+		return 0
+	}
+	if w.rng.Float64() >= clamp(w.cfg.WardShare, 0, 1) {
+		return 0
+	}
+	return clamp(w.cfg.WardStrength, 0, 1)
 }
 
 // --- reading it out ---------------------------------------------------------
@@ -201,6 +243,14 @@ type WeatherUse struct {
 	// that stays in the cold cannot be told from one that is staying with its
 	// dinner.
 	ColdFood float64
+
+	// Coats is how many warding pieces have been made, Wearing the share of
+	// living bodies that are holding one, and Handed how many changed hands
+	// (stage 87a). The last is the stage's own question: a coat is worth
+	// everything in the cold and nothing in the warm, so whether that
+	// asymmetry moves any of them is the whole of what there is to see.
+	Coats, Handed int
+	Wearing       float64
 
 	// Taken is the vitality the cold has taken over the run and Starved what
 	// hunger took, to read it against: a rule that takes a hundredth of what
@@ -227,7 +277,7 @@ func (w *World) Weather() WeatherUse {
 		// food weight of the regions, weighted by how cold each one is.
 		out.ColdFood = (coldFood / cold) / (food / float64(len(w.regions)))
 	}
-	var humans, standing float64
+	var humans, standing, wearing float64
 	for i := range w.agents {
 		a := &w.agents[i]
 		if !a.Alive || a.Species != SpeciesHuman {
@@ -235,6 +285,9 @@ func (w *World) Weather() WeatherUse {
 		}
 		humans++
 		standing += w.weatherAt(a.X, a.Y, WeatherChill)
+		if w.wardsOff(a, WeatherChill) > 0 {
+			wearing++
+		}
 	}
 	// Nobody alive is no evidence about where the living stand (stage 57's
 	// note, which is stage 14's mistake not made a third time).
@@ -243,6 +296,10 @@ func (w *World) Weather() WeatherUse {
 	} else {
 		out.OnCold = out.All
 	}
+	if humans > 0 {
+		out.Wearing = wearing / humans
+	}
+	out.Coats, out.Handed = w.coatsMade, w.coatsHanded
 	out.Gain = out.OnCold - out.All
 	return out
 }

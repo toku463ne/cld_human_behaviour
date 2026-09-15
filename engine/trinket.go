@@ -106,11 +106,15 @@ func (w *World) craft(a *Agent) {
 	item := Food{
 		X: a.X, Y: a.Y, Kind: FoodTrinket, Made: clamp(made, 0, 2),
 		Style: w.drawStyle(a),
+		Ward:  w.wardMade(), Wards: WeatherChill,
 	}
 	w.trinketFitMade += w.trinketDelight(a, &item)
 	w.trinketFitN++
 	if w.cfg.TrinketSpoilTicks > 0 {
 		item.SpoilAt = w.tick + w.cfg.TrinketSpoilTicks
+	}
+	if item.Ward > 0 {
+		w.coatsMade++
 	}
 	a.carried = append(a.carried, item)
 	w.heldKind[FoodTrinket]++
@@ -334,6 +338,9 @@ type TrinketUse struct {
 func (w *World) noteTrinketMove(from, to *Agent, f *Food, sold bool) {
 	if !w.cfg.Trinkets || f.Kind != FoodTrinket {
 		return
+	}
+	if f.Ward > 0 {
+		w.coatsHanded++
 	}
 	gain := w.trinketDelight(to, f) - w.trinketDelight(from, f)
 	w.trinketMoves++

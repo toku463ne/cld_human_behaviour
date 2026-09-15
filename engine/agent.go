@@ -620,6 +620,16 @@ type Food struct {
 	// not a thing this body knows or could be anchored by.
 	PricePaid int
 
+	// Ward is how much of one weather this piece keeps off whoever holds it,
+	// and Wards which weather that is (stage 87a). Zero for everything that
+	// answers nothing, which is everything else in this world.
+	//
+	// One piece answers one weather, rather than carrying a figure per kind:
+	// adding a kind of weather should be a line in the enum and not a wider
+	// array on every item in the world (stage 59's rule for enemy kinds).
+	Ward  float64
+	Wards Weather
+
 	// Style is which ornament this one is (stage 84): a point on a circle, so
 	// that a body can like this one and not that one without anything having
 	// to rank them. Zero for everything nobody made, and for every world

@@ -935,6 +935,26 @@ type Config struct {
 	// and the regions are separate maps for the same reason.
 	ClimateMap []string
 
+	// WardShare is how many of the ornaments a body makes come out answering
+	// the weather, and WardStrength how much of it a perfect one keeps off
+	// (stage 87a). Zero is the world stage 86 measured, which is the default.
+	//
+	// One is enough: what a body wards is the best single thing it holds, not
+	// the sum of them (see wardsOff). That is stage 81's shape - a max over
+	// branches, no weights, each capping itself - and it is the only one that
+	// does not run to a ceiling (stage 17b). It also means the second coat is
+	// worth nothing to its owner and everything to somebody in the cold,
+	// which is the asymmetry stage 69 found in a read book and the one thing
+	// that makes a seller part with something willingly.
+	//
+	// What a warm thing is worth is not given here. It comes out of the
+	// survival gradient, like a meal: the drain it takes off, read through
+	// the same chance of dying everything else in this world is priced by. So
+	// it is worth a great deal in the cold, nothing at all in the warm, and
+	// nothing to a body that already has one - and none of those three needed
+	// a rule.
+	WardShare, WardStrength float64
+
 	// ChillGradient is whether a body can feel which way it gets warmer
 	// (stage 86b). Off by default, which is the world stage 86 measured.
 	//
@@ -2898,6 +2918,8 @@ func DefaultConfig() Config {
 		ChillDrain:              0,
 		ChillKnown:              true,
 		ChillGradient:           false,
+		WardShare:               0,
+		WardStrength:            0,
 		SaleAnchor:              0,
 		CoinBuysOnlyMeals:       false,
 		HandOverCheapest:        false,

@@ -246,3 +246,61 @@ func TestABodyFeelsWhichWayIsWarmer(t *testing.T) {
 		t.Fatal("taking the sense away changed what the cold takes")
 	}
 }
+
+// One is enough: what a body wards is the best thing it holds, not the sum
+// (stage 87a). That is what makes the second one worth nothing to its owner.
+func TestOneCoatIsEnough(t *testing.T) {
+	cfg := climateConfig()
+	cfg.Trinkets = true
+	cfg.WardShare, cfg.WardStrength = 1, 0.6
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: cfg.Width * 0.9,
+		Y: cfg.Height * 0.5, Vitality: 90, Hunger: 20, Genome: genomeOf(50, 50, 50)}))
+	bare := w.chillOf(a)
+	a.carried = append(a.carried, Food{Kind: FoodTrinket, Made: 1, Ward: 0.6, Wards: WeatherChill})
+	one := w.chillOf(a)
+	a.carried = append(a.carried, Food{Kind: FoodTrinket, Made: 1, Ward: 0.6, Wards: WeatherChill})
+	two := w.chillOf(a)
+	if one >= bare {
+		t.Fatalf("a coat keeps nothing off: %v against %v", one, bare)
+	}
+	if two != one {
+		t.Fatalf("a second coat kept off more: %v against %v", two, one)
+	}
+	// And a better one does help, because it is a max and not a first-come.
+	a.carried = append(a.carried, Food{Kind: FoodTrinket, Made: 1, Ward: 0.9, Wards: WeatherChill})
+	if better := w.chillOf(a); better >= one {
+		t.Fatalf("a better coat kept off no more: %v against %v", better, one)
+	}
+}
+
+// What a warm thing is worth is the survival gradient and nothing else: a
+// great deal in the cold, nothing in the warm, nothing to a body that already
+// has one (stage 87a). None of the three is written as a rule.
+func TestAWarmThingIsWorthWhereItIsCold(t *testing.T) {
+	cfg := climateConfig()
+	cfg.Trinkets = true
+	cfg.WardShare, cfg.WardStrength = 1, 0.6
+	w := NewWorld(cfg)
+	coldID := w.addAgent(Agent{Maturity: 1, X: cfg.Width * 0.9, Y: cfg.Height * 0.5,
+		Vitality: 45, Hunger: 45, Genome: genomeOf(50, 50, 50)})
+	warmID := w.addAgent(Agent{Maturity: 1, X: cfg.Width * 0.1, Y: cfg.Height * 0.5,
+		Vitality: 45, Hunger: 45, Genome: genomeOf(50, 50, 50)})
+	inCold := w.selfView(mustAgent(t, w, coldID))
+	inWarm := w.selfView(mustAgent(t, w, warmID))
+	cold := warmthValue(&w.cfg, &inCold, 0, 0.6)
+	warm := warmthValue(&w.cfg, &inWarm, 0, 0.6)
+	if cold <= 0 {
+		t.Fatalf("a coat in the cold is worth %v", cold)
+	}
+	if warm != 0 {
+		t.Fatalf("a coat in the warm is worth %v", warm)
+	}
+	// And nothing on top of what this body already wards.
+	already := inCold
+	already.Ward = 0.6
+	already.Chill = already.ChillRaw * 0.4
+	if got := warmthValue(&w.cfg, &already, 0, 0.6); got != 0 {
+		t.Fatalf("a second coat is worth %v", got)
+	}
+}
