@@ -140,6 +140,33 @@ func (w *World) chillFelt(a *Agent) float64 {
 	return w.chillOf(a)
 }
 
+// chillSlope is which way it gets colder from here, and by how much per unit
+// of distance, in the same vitality-per-tick the chill itself is in
+// (stage 86b).
+//
+// It is read off the ground a region's width away in each direction, because
+// that is the grain the weather has: a finer step would read the same region
+// twice and say the world is flat. Nothing is remembered and nothing is told -
+// this is what a body feels where it stands, and it is gone the moment it
+// moves.
+func (w *World) chillSlope(a *Agent) (dx, dy float64) {
+	if !w.cfg.ChillGradient || !w.cfg.ChillKnown || w.cfg.ChillDrain <= 0 {
+		return 0, 0
+	}
+	cols, rows := max(w.cfg.RegionCols, 1), max(w.cfg.RegionRows, 1)
+	spanX, spanY := w.cfg.Width/float64(cols), w.cfg.Height/float64(rows)
+	if spanX <= 0 || spanY <= 0 {
+		return 0, 0
+	}
+	at := func(x, y float64) float64 {
+		return w.cfg.ChillDrain * w.weatherAt(clamp(x, 0, w.cfg.Width-1e-9),
+			clamp(y, 0, w.cfg.Height-1e-9), WeatherChill)
+	}
+	dx = (at(a.X+spanX, a.Y) - at(a.X-spanX, a.Y)) / (2 * spanX)
+	dy = (at(a.X, a.Y+spanY) - at(a.X, a.Y-spanY)) / (2 * spanY)
+	return dx, dy
+}
+
 // wardsOff is how much of one weather this body is protected from by what it
 // is carrying: nothing, today.
 //

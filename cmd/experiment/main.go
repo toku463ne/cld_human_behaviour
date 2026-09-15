@@ -2153,6 +2153,60 @@ var variants = []variant{
 		},
 		stores: func(w *engine.World) { feedTheCold(w, 0.4) },
 	},
+	{
+		// Stage 86b: the same tax on a world that slopes, and a body that can
+		// feel which way. Stage 86's map was two values with a step in the
+		// middle, so a body anywhere but the boundary had nothing to feel;
+		// this one gets colder from west to east, and the mean cold is the
+		// same 0.53 the step map had, so the dose is unchanged.
+		name:  "coldramp",
+		about: "86b: the cold slopes across the world, and a body feels which way is warmer",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"1369", "1369", "1369"}
+			c.ChillDrain, c.ChillGradient = 0.02, true
+		},
+	},
+	{
+		// The control that decides it: the same slope, the same tax, and no
+		// sense of which way. If the population still leaves the cold, the
+		// slope did it rather than the sense.
+		name:  "coldrampblind",
+		about: "86b's control: the same slope, and nobody can feel which way it runs",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"1369", "1369", "1369"}
+			c.ChillDrain = 0.02
+		},
+	},
+	{
+		// And the sense on stage 86's step map, where there is nothing to feel
+		// except at one line: if this moves less than the ramp does, the shape
+		// of the map was half the answer.
+		name:  "coldstepgrad",
+		about: "86b: the sense, on the two-valued map stage 86 measured",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain, c.ChillGradient = 0.02, true
+		},
+	},
+	{
+		// And the same pair at two and a half times the cold. What a walk to
+		// warmer country saves scales with the dose; what the walk costs does
+		// not, so this is where it should start to be worth it if it ever is.
+		name:  "coldramphard",
+		about: "86b at 0.05: the slope, and a body that can feel it",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"1369", "1369", "1369"}
+			c.ChillDrain, c.ChillGradient = 0.05, true
+		},
+	},
+	{
+		name:  "coldrampharddull",
+		about: "86b's control at 0.05: the same slope, no sense of which way",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"1369", "1369", "1369"}
+			c.ChillDrain = 0.05
+		},
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no

@@ -108,13 +108,17 @@ type AIController struct {
 	// Where home is and how far out this body is (stage 64), in the width of
 	// a region, with the direction and speed needed to charge an option for
 	// where it would take the body.
-	homePull  float64
-	homeAway  float64
-	homeUX    float64
-	homeUY    float64
-	homeSpan  float64
-	homeSpeed float64
-	lifeValue float64
+	homePull float64
+
+	// Which way it gets colder from here and how fast this body walks, kept
+	// for the one charge that tells two headings apart (stage 86b).
+	chillDX, chillDY, chillSpeed float64
+	homeAway                     float64
+	homeUX                       float64
+	homeUY                       float64
+	homeSpan                     float64
+	homeSpeed                    float64
+	lifeValue                    float64
 
 	// Which option, if any, was the one that goes to better country (stage
 	// 15b), and whether it won. Measurement only: no rule reads it, and it
@@ -186,6 +190,8 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.hints = p.Self.Hints
 	c.feats.readSelf(p)
 	c.drownChance, c.lifeValue = p.Self.Drown, p.Cfg.LifeValue
+	c.chillDX, c.chillDY = p.Self.ChillDX, p.Self.ChillDY
+	c.chillSpeed = p.Self.MaxSpeed
 	// And how far from home this body is (stage 64), in the width of a
 	// region, with the direction home kept so that an option can be charged
 	// for where it would take the body rather than only for where it is.
@@ -208,6 +214,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	// courting and wandering all ask for the same figure (stage 73, which is
 	// also where wandering started needing it).
 	c.riskNow = pressures(p.Cfg, &p.Self, p.Self.Vitality, p.Self.Hunger, c.incomingDmg)
+	c.addWarmth(p)
 	c.addRest(p)
 	c.addExplore(p)
 	c.addFood(p)
@@ -519,6 +526,25 @@ func (c *AIController) add(a Action, u Utility) {
 			u.Roam = c.homePull * (away - 0.5) * ticks
 		}
 	}
+	// And what the weather where this option would leave the body costs it
+	// (stage 86b). Only the difference from here: the cold underfoot is
+	// already in the risk, where it lifts every candidate alike - stage 86
+	// measured that it therefore moves nobody however large it is - so what
+	// is charged here is the part that tells one heading from another.
+	//
+	// It is charged over the ticks the option takes, which is how the ground's
+	// own danger and the pull of home are charged, and it is nought for every
+	// option that does not carry the body anywhere.
+	if a.Kind == ActMove && (c.chillDX != 0 || c.chillDY != 0) {
+		ticks := u.Ticks
+		if ticks < 1 {
+			ticks = 1
+		}
+		gone := speedAt(c.chillSpeed, a.Effort) * ticks
+		if worse := (a.DX*c.chillDX + a.DY*c.chillDY) * gone; worse != 0 {
+			u.Weather = worse * ticks
+		}
+	}
 	c.opts = append(c.opts, option{action: a, util: u.Total()})
 	if c.tracing {
 		c.terms = append(c.terms, u)
@@ -526,6 +552,59 @@ func (c *AIController) add(a Action, u Utility) {
 }
 
 // --- options ---------------------------------------------------------------
+
+// addWarmth scores heading for warmer country (stage 86b).
+//
+// The slope underfoot is a direction, and this is the option of following it
+// far enough for the difference to be worth anything: a region's width, which
+// is the grain the weather has. Nothing is remembered and nobody is told - the
+// body is not going somewhere it knows about, it is going the way the wind is
+// less cold.
+//
+// It is valued the way stage 15b values a walk to better country: by what the
+// place would be worth rather than by what the step is worth. Counted before
+// this was written, the step is worth nothing at all - the per-move charge in
+// add() averages 0.000013 against a spread between the best and worst option
+// of 118 and an evaluation noise of 139, because the weather changes over four
+// hundred units of world and a decision carries a body ten or twenty. Two
+// factors of forty, and the sense alone can never clear them.
+func (c *AIController) addWarmth(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if s.ChillDX == 0 && s.ChillDY == 0 {
+		return
+	}
+	slope := math.Hypot(s.ChillDX, s.ChillDY)
+	if slope <= 0 {
+		return
+	}
+	// The way it gets warmer, and how much warmer a region's width is.
+	ux, uy := -s.ChillDX/slope, -s.ChillDY/slope
+	span := max(cfg.Width/float64(max(cfg.RegionCols, 1)), 1)
+	warmer := math.Min(slope*span, s.Chill) // it cannot get warmer than warm
+	if warmer <= 0 {
+		return
+	}
+	incoming := c.incomingDmg
+	now := c.riskNow
+	for _, effort := range effortLevels {
+		ticks := span/speedAt(s.MaxSpeed, effort) + 1
+		cost := moveCost(cfg, s, effort) * ticks
+		// The same body, in country that much less cold. Chill is the one
+		// thing about it that changes: this option is not about what grows
+		// there or who is there, neither of which it knows.
+		there := *s
+		there.Chill = s.Chill - warmer
+		after := pressures(cfg, &there, s.Vitality-cost,
+			s.Hunger+s.HungerRate*ticks, incoming)
+		c.add(Action{Kind: ActMove, DX: ux, DY: uy, Effort: effort}, Utility{
+			Life:         Goal{Value: gap(cfg, now, after) * cfg.LifeValue, Chance: 1},
+			Vitality:     cost,
+			Ticks:        ticks,
+			VitalityCost: cost * cfg.VitalityWeight,
+			TimeCost:     ticks * cfg.TimeCost,
+		})
+	}
+}
 
 // addRest scores doing nothing. It is not a fallback: for a satiated agent it
 // is the only way back to full vitality, and it costs nothing.

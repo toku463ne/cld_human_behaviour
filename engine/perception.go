@@ -255,6 +255,11 @@ type SelfView struct {
 	// it - see climate.go.
 	Chill float64
 
+	// ChillDX and ChillDY are which way it gets colder from here, per unit of
+	// distance (stage 86b): a sense and not a map, nought where the world has
+	// no weather or the body cannot feel it.
+	ChillDX, ChillDY float64
+
 	// PoisonResist is how much of a plant's dose this body turns aside (stage
 	// 38b). It is here rather than folded into each plant's Danger because
 	// the two are different things: Danger is what the warning says, which is
@@ -629,6 +634,7 @@ type Perception struct {
 // such rule, and it is asked of the seller, not of the body doing the asking.
 func (w *World) selfView(a *Agent) SelfView {
 	ground := w.terrainAt(a.X, a.Y)
+	chillDX, chillDY := w.chillSlope(a)
 	homeX, homeY, homePull := w.homeFor(a)
 	return SelfView{
 		ID:           a.ID,
@@ -665,6 +671,8 @@ func (w *World) selfView(a *Agent) SelfView {
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
 		Chill:             w.chillFelt(a),
+		ChillDX:           chillDX,
+		ChillDY:           chillDY,
 		CourtedBy:         a.courtedBy,
 		CourtedTicksLeft:  w.courtAnswerLeft(a),
 		MateValue:         fitness(a, &w.cfg),

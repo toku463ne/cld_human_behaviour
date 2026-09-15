@@ -203,3 +203,46 @@ func TestWhereTheColdIsAndWhereTheBodiesAre(t *testing.T) {
 		t.Fatalf("nothing has happened yet and the cold has taken %v", got.Taken)
 	}
 }
+
+// A body feels which way it gets colder, and that tells two headings apart -
+// which is the one thing the cold underfoot cannot do (stage 86b).
+func TestABodyFeelsWhichWayIsWarmer(t *testing.T) {
+	cfg := climateConfig()
+	cfg.ClimateMap = []string{"1369", "1369", "1369"} // colder towards the east
+	cfg.ChillGradient = true
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: cfg.Width * 0.5, Y: cfg.Height * 0.5,
+		Vitality: 90, Hunger: 30, Genome: genomeOf(50, 50, 50)})
+	s := w.selfView(mustAgent(t, w, id))
+	if s.ChillDX <= 0 {
+		t.Fatalf("the world gets colder eastward and the slope reads %v", s.ChillDX)
+	}
+	if s.ChillDY != 0 {
+		t.Fatalf("the world is the same north and south and the slope reads %v", s.ChillDY)
+	}
+	// East costs more than west, and by more than nothing.
+	c := &AIController{}
+	p := w.perceive(mustAgent(t, w, id))
+	c.chillDX, c.chillDY, c.chillSpeed = p.Self.ChillDX, p.Self.ChillDY, p.Self.MaxSpeed
+	c.opts, c.terms, c.tracing = nil, nil, true
+	c.add(Action{Kind: ActMove, DX: 1, Effort: 0.5}, Utility{Ticks: 10})
+	c.add(Action{Kind: ActMove, DX: -1, Effort: 0.5}, Utility{Ticks: 10})
+	east, west := c.terms[0].Weather, c.terms[1].Weather
+	if east <= 0 || west >= 0 || east != -west {
+		t.Fatalf("east is charged %v and west %v", east, west)
+	}
+	// And with the sense off, the two headings are charged the same nothing -
+	// which is the world stage 86 measured.
+	blind := climateConfig()
+	blind.ClimateMap = cfg.ClimateMap
+	w2 := NewWorld(blind)
+	id2 := w2.addAgent(Agent{Maturity: 1, X: blind.Width * 0.5, Y: blind.Height * 0.5,
+		Vitality: 90, Hunger: 30, Genome: genomeOf(50, 50, 50)})
+	if s2 := w2.selfView(mustAgent(t, w2, id2)); s2.ChillDX != 0 || s2.ChillDY != 0 {
+		t.Fatalf("a body that cannot feel the slope reads %v, %v", s2.ChillDX, s2.ChillDY)
+	}
+	// The cold itself is still there, and still costs the same.
+	if w2.chillOf(mustAgent(t, w2, id2)) != w.chillOf(mustAgent(t, w, id)) {
+		t.Fatal("taking the sense away changed what the cold takes")
+	}
+}

@@ -935,6 +935,23 @@ type Config struct {
 	// and the regions are separate maps for the same reason.
 	ClimateMap []string
 
+	// ChillGradient is whether a body can feel which way it gets warmer
+	// (stage 86b). Off by default, which is the world stage 86 measured.
+	//
+	// Stage 86 found that the cold takes more vitality than hunger does and
+	// moves nobody at all, and named the reason: what a body reads is the
+	// cold underfoot, so it lifts every candidate alike and cancels out of
+	// the comparison. What it did not test is whether a body that could tell
+	// one direction from another would go the warmer way - the control there
+	// took away the level, not a gradient, because there was no gradient to
+	// take away.
+	//
+	// So this is a sense rather than knowledge: no map, no memory, no telling
+	// anybody. It is the wind on a face - which way is colder, and by how
+	// much - and it is charged the way stage 64 charges a move for where it
+	// would take the body, in the same one place every option passes through.
+	ChillGradient bool
+
 	// ChillKnown is whether a body can feel the weather it is standing in
 	// (stage 86). True in the ordinary world.
 	//
@@ -2880,6 +2897,7 @@ func DefaultConfig() Config {
 		ClimateMap:              nil,
 		ChillDrain:              0,
 		ChillKnown:              true,
+		ChillGradient:           false,
 		SaleAnchor:              0,
 		CoinBuysOnlyMeals:       false,
 		HandOverCheapest:        false,

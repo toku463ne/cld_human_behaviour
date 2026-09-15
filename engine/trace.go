@@ -132,6 +132,18 @@ type Utility struct {
 	// wins by costing less rather than by being worth something.
 	Roam float64
 
+	// Weather is what the weather where this option would leave the body
+	// costs it, over the ticks the option takes (stage 86b). It is the
+	// difference from the weather here rather than the whole of it: the cold
+	// underfoot is already in the risk, where it lifts every candidate alike
+	// and cancels out of the comparison (stage 86 measured exactly that), so
+	// what is charged here is only the part that tells two directions apart.
+	//
+	// It is its own term rather than part of Risk for the reason Roam is:
+	// what a place costs and what the bodies in it cost are different things
+	// and are read separately.
+	Weather float64
+
 	// The two costs of the formula, already weighted, plus what they were
 	// worked out from so that a trace can show both.
 	VitalityCost float64
@@ -146,7 +158,7 @@ func (u Utility) Total() float64 {
 	return u.Life.Score() + u.Stake.Score() + u.Rival.Score() +
 		u.Offspring.Score() + u.Info.Score() + u.Explore.Score() + u.Lore.Score() +
 		u.Adorn.Score() +
-		u.Hint - u.Risk - u.Hazard - u.Roam - u.VitalityCost - u.TimeCost
+		u.Hint - u.Risk - u.Hazard - u.Roam - u.Weather - u.VitalityCost - u.TimeCost
 }
 
 // NamedGoal is a goal together with the name it goes by, for display.
