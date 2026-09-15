@@ -2044,6 +2044,31 @@ var variants = []variant{
 		},
 		stores: playedStores,
 	},
+	{
+		// The same market on a world with food to spare, and on one with the
+		// food halved. Trade is supposed to want a surplus on one side and a
+		// need on the other, and these say which of the two this world is
+		// actually short of.
+		name:  "marketrich",
+		about: "the priced money world with ornaments, on the flat world where food is plentiful",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+		},
+		stores: flatStores,
+	},
+	{
+		name:  "marketlean",
+		about: "the same, with the food halved: does scarcity make anybody sell?",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.FoodSpawnRate *= 0.5
+		},
+		stores: flatStores,
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no
