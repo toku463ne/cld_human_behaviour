@@ -106,8 +106,8 @@ func (w *World) craft(a *Agent) {
 	item := Food{
 		X: a.X, Y: a.Y, Kind: FoodTrinket, Made: clamp(made, 0, 2),
 		Style: w.drawStyle(a),
-		Ward:  w.wardMade(), Wards: WeatherChill,
 	}
+	item.Ward, item.Wards = w.wardMade()
 	w.trinketFitMade += w.trinketDelight(a, &item)
 	w.trinketFitN++
 	if w.cfg.TrinketSpoilTicks > 0 {

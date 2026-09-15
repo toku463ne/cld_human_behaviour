@@ -288,20 +288,21 @@ func TestAWarmThingIsWorthWhereItIsCold(t *testing.T) {
 		Vitality: 45, Hunger: 45, Genome: genomeOf(50, 50, 50)})
 	inCold := w.selfView(mustAgent(t, w, coldID))
 	inWarm := w.selfView(mustAgent(t, w, warmID))
-	cold := warmthValue(&w.cfg, &inCold, 0, 0.6)
-	warm := warmthValue(&w.cfg, &inWarm, 0, 0.6)
+	piece := Food{Kind: FoodTrinket, Made: 1, Ward: 0.6, Wards: WeatherChill}
+	cold := warmthValue(&w.cfg, &inCold, 0, w.wardValue(mustAgent(t, w, coldID), &piece))
+	warm := warmthValue(&w.cfg, &inWarm, 0, w.wardValue(mustAgent(t, w, warmID), &piece))
 	if cold <= 0 {
 		t.Fatalf("a coat in the cold is worth %v", cold)
 	}
 	if warm != 0 {
 		t.Fatalf("a coat in the warm is worth %v", warm)
 	}
-	// And nothing on top of what this body already wards.
-	already := inCold
-	already.Ward = 0.6
-	already.Chill = already.ChillRaw * 0.4
-	if got := warmthValue(&w.cfg, &already, 0, 0.6); got != 0 {
-		t.Fatalf("a second coat is worth %v", got)
+	// And nothing on top of what this body already wards: the world says the
+	// second piece would take nothing more off.
+	holder := mustAgent(t, w, coldID)
+	holder.carried = append(holder.carried, piece)
+	if got := w.wardValue(holder, &piece); got != 0 {
+		t.Fatalf("a second coat would take off %v more", got)
 	}
 }
 
@@ -346,5 +347,45 @@ func TestTheWeatherComesRound(t *testing.T) {
 	}
 	if still.weatherAt(west, still.cfg.Height/2, WeatherChill) != 0 {
 		t.Fatal("a world with no season moved its weather")
+	}
+}
+
+// A second weather is a line in the enum, a character in the map, a figure for
+// what it costs, and something that answers it (stage 88). One piece answers
+// one weather, so a coat in a hot place keeps nothing off.
+func TestASecondWeatherIsOneRow(t *testing.T) {
+	cfg := testConfig()
+	cfg.ClimateMap = []string{"99ii", "99ii", "99ii"} // cold west, hot east
+	cfg.ChillDrain, cfg.HeatDrain = 0.02, 0.02
+	w := NewWorld(cfg)
+	west, east := cfg.Width*0.1, cfg.Width*0.9
+	if w.weatherAt(west, cfg.Height/2, WeatherChill) <= 0 {
+		t.Fatal("the west is not cold")
+	}
+	if w.weatherAt(east, cfg.Height/2, WeatherHeat) <= 0 {
+		t.Fatal("the east is not hot")
+	}
+	cold := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: west, Y: cfg.Height / 2,
+		Vitality: 90, Genome: genomeOf(50, 50, 50)}))
+	hot := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: east, Y: cfg.Height / 2,
+		Vitality: 90, Genome: genomeOf(50, 50, 50)}))
+	if w.chillOf(cold) <= 0 || w.chillOf(hot) <= 0 {
+		t.Fatal("standing in either costs nothing")
+	}
+	coat := Food{Kind: FoodTrinket, Made: 1, Ward: 0.6, Wards: WeatherChill}
+	if w.wardValue(cold, &coat) <= 0 {
+		t.Fatal("a coat is worth nothing in the cold")
+	}
+	if got := w.wardValue(hot, &coat); got != 0 {
+		t.Fatalf("a coat keeps %v off in the heat", got)
+	}
+	shade := Food{Kind: FoodTrinket, Made: 1, Ward: 0.6, Wards: WeatherHeat}
+	if w.wardValue(hot, &shade) <= 0 {
+		t.Fatal("a sunshade is worth nothing in the heat")
+	}
+	// And carrying both answers both.
+	hot.carried = append(hot.carried, coat, shade)
+	if w.chillOf(hot) >= w.weatherTax(hot, false) {
+		t.Fatal("carrying the right thing kept nothing off")
 	}
 }

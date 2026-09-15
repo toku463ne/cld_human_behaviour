@@ -615,11 +615,11 @@ func (c *AIController) addWarmth(p *Perception) {
 // worth a great deal in the cold, nothing in the warm, and nothing to a body
 // that already wards as much. None of those three is a rule.
 func warmthValue(cfg *Config, s *SelfView, incoming, ward float64) float64 {
-	if s.ChillRaw <= 0 || ward <= s.Ward {
+	if ward <= 0 || s.Chill <= 0 {
 		return 0
 	}
 	warm := *s
-	warm.Chill = s.ChillRaw * (1 - clamp(ward, 0, 1))
+	warm.Chill = math.Max(0, s.Chill-ward)
 	now := pressures(cfg, s, s.Vitality, s.Hunger, incoming)
 	after := pressures(cfg, &warm, s.Vitality, s.Hunger, incoming)
 	return gap(cfg, now, after) * cfg.LifeValue
@@ -1641,11 +1641,12 @@ func (c *AIController) addCraft(p *Perception) {
 	// between this and going to eat: a meal is worth more to a body that is
 	// running out, and an ornament is worth less.
 	want := cfg.TrinketValue * cfg.LifeValue * s.CraftQuality * s.CraftDelight * s.AdornWant
-	// And what it might keep off the weather (stage 87a). A maker cannot aim,
-	// so it reckons on how often one comes out answering at all - the same
-	// way it reckons on the middling piece rather than the lucky one.
+	// And what it might keep off the weather (stages 87a, 88). A maker cannot
+	// aim - not at how good it comes out, not at what it answers - so it
+	// reckons on how often one comes out answering at all, and on the weather
+	// where it is standing, which is the only one it can price.
 	want += clamp(cfg.WardShare, 0, 1) *
-		warmthValue(cfg, s, c.incomingDmg, clamp(cfg.WardStrength, 0, 1))
+		warmthValue(cfg, s, c.incomingDmg, clamp(cfg.WardStrength, 0, 1)*s.ChillRaw)
 	if want <= 0 {
 		return
 	}

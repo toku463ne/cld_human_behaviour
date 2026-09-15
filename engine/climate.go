@@ -49,6 +49,12 @@ const (
 	// WeatherChill is how cold it is here, from 0 (the ordinary world) up.
 	WeatherChill Weather = iota
 
+	// WeatherHeat is the second one (stage 88), and the proof that adding a
+	// kind is a line here: nothing counts them, the map reads a character for
+	// it, one figure says what standing in it costs, and whatever answers it
+	// says so on itself.
+	WeatherHeat
+
 	// NumWeathers is how many there are. No rule counts them; it is the size
 	// of the array on a region.
 	NumWeathers
@@ -63,10 +69,7 @@ const (
 //
 //	.       the ordinary world
 //	1 - 9   that much cold
-//
-// Letters are left alone on purpose: they are where a second kind of weather
-// will go, and a map that uses one today should read as ordinary rather than
-// as something else.
+//	a - i   that much heat (stage 88)
 func (w *World) buildClimate() {
 	w.layClimate(w.seasonPhase())
 }
@@ -147,8 +150,13 @@ func (w *World) layClimate(phase float64) {
 		if x := clampInt(int(cx*float64(cols)), 0, cols-1); x < len(row) {
 			c = row[x]
 		}
-		if c >= '1' && c <= '9' {
+		switch {
+		case c >= '1' && c <= '9':
 			w.regions[i].Weather[WeatherChill] = float64(c-'0') / 9
+		case c >= 'a' && c <= 'i':
+			// The letters are the second weather (stage 88), written the way
+			// the terrain map writes its slopes.
+			w.regions[i].Weather[WeatherHeat] = float64(c-'a'+1) / 9
 		}
 	}
 }
@@ -162,21 +170,89 @@ func (w *World) weatherAt(x, y float64, kind Weather) float64 {
 	return 0
 }
 
-// chillOf is what standing here costs this body in vitality per tick.
+// drainFor is what the worst of one weather costs a body per tick. One line
+// per kind (stage 88), which is the whole of what adding a weather costs.
+func (w *World) drainFor(kind Weather) float64 {
+	switch kind {
+	case WeatherChill:
+		return w.cfg.ChillDrain
+	case WeatherHeat:
+		return w.cfg.HeatDrain
+	}
+	return 0
+}
+
+// chillOf is what standing here costs this body in vitality per tick, over
+// every weather there is.
 //
-// It is the one place the cold is turned into a number, so it is also the one
-// place anything that answers the cold will be subtracted - a coat, a fire,
-// whatever a later stage gives the world. wardsOff is that seam, and it is
-// nought today: nothing a body can hold answers the weather yet.
+// It is the one place the weather is turned into a number, so it is also the
+// one place what a body carries is subtracted - and one thing answers one
+// weather, so a body in a cold place with a sunshade pays the whole of the
+// cold (stage 88).
 func (w *World) chillOf(a *Agent) float64 {
-	if w.cfg.ChillDrain <= 0 {
+	return w.weatherTax(a, true)
+}
+
+// weatherTax is that sum, with or without what the body is carrying.
+func (w *World) weatherTax(a *Agent, warded bool) float64 {
+	total := 0.0
+	for kind := Weather(0); kind < NumWeathers; kind++ {
+		drain := w.drainFor(kind)
+		if drain <= 0 {
+			continue
+		}
+		here := w.weatherAt(a.X, a.Y, kind)
+		if here <= 0 {
+			continue
+		}
+		off := 0.0
+		if warded {
+			off = clamp(w.wardsOff(a, kind), 0, 1)
+		}
+		total += drain * here * (1 - off)
+	}
+	return total
+}
+
+// wardValue is what one piece would take off this body's drain where it is
+// standing: nought for a piece that answers a weather this place does not
+// have, and nought for one no better than what the body wards already
+// (stage 88). It is what an option needs to know and the only thing it needs.
+func (w *World) wardValue(a *Agent, f *Food) float64 {
+	if f.Ward <= 0 {
 		return 0
 	}
-	cold := w.weatherAt(a.X, a.Y, WeatherChill)
-	if cold <= 0 {
+	drain := w.drainFor(f.Wards)
+	here := w.weatherAt(a.X, a.Y, f.Wards)
+	if drain <= 0 || here <= 0 {
 		return 0
 	}
-	return w.cfg.ChillDrain * cold * (1 - clamp(w.wardsOff(a, WeatherChill), 0, 1))
+	// What it adds to the rest of this hand. For something out in the world
+	// that is everything this body wards; for something already in the hand
+	// it is that piece's own worth, which is what parting with it would cost.
+	skip := -1
+	for i := range a.carried {
+		if &a.carried[i] == f {
+			skip = i
+			break
+		}
+	}
+	gain := clamp(f.Ward, 0, 1) - clamp(w.wardsOffBut(a, f.Wards, skip), 0, 1)
+	if gain <= 0 {
+		return 0
+	}
+	return drain * here * gain
+}
+
+// wardsAnything says whether this body is carrying something that answers any
+// weather at all.
+func (w *World) wardsAnything(a *Agent) bool {
+	for i := range a.carried {
+		if a.carried[i].Ward > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // wardOf is what one piece keeps off one weather.
@@ -191,10 +267,10 @@ func wardOf(f *Food, kind Weather) float64 {
 // keeps it off: the figure an option needs to price a piece that would ward
 // more than this body wards already.
 func (w *World) chillRawFelt(a *Agent) float64 {
-	if !w.cfg.ChillKnown || w.cfg.ChillDrain <= 0 {
+	if !w.cfg.ChillKnown {
 		return 0
 	}
-	return w.cfg.ChillDrain * w.weatherAt(a.X, a.Y, WeatherChill)
+	return w.weatherTax(a, false)
 }
 
 // chillFelt is what this body reads of the cold it is standing in: the whole
@@ -217,7 +293,7 @@ func (w *World) chillFelt(a *Agent) float64 {
 // this is what a body feels where it stands, and it is gone the moment it
 // moves.
 func (w *World) chillSlope(a *Agent) (dx, dy float64) {
-	if !w.cfg.ChillGradient || !w.cfg.ChillKnown || w.cfg.ChillDrain <= 0 {
+	if !w.cfg.ChillGradient || !w.cfg.ChillKnown {
 		return 0, 0
 	}
 	cols, rows := max(w.cfg.RegionCols, 1), max(w.cfg.RegionRows, 1)
@@ -226,8 +302,12 @@ func (w *World) chillSlope(a *Agent) (dx, dy float64) {
 		return 0, 0
 	}
 	at := func(x, y float64) float64 {
-		return w.cfg.ChillDrain * w.weatherAt(clamp(x, 0, w.cfg.Width-1e-9),
-			clamp(y, 0, w.cfg.Height-1e-9), WeatherChill)
+		x, y = clamp(x, 0, w.cfg.Width-1e-9), clamp(y, 0, w.cfg.Height-1e-9)
+		total := 0.0
+		for kind := Weather(0); kind < NumWeathers; kind++ {
+			total += w.drainFor(kind) * w.weatherAt(x, y, kind)
+		}
+		return total
 	}
 	dx = (at(a.X+spanX, a.Y) - at(a.X-spanX, a.Y)) / (2 * spanX)
 	dy = (at(a.X, a.Y+spanY) - at(a.X, a.Y-spanY)) / (2 * spanY)
@@ -245,8 +325,23 @@ func (w *World) chillSlope(a *Agent) (dx, dy float64) {
 // utility formula, so that wanting one and being sheltered by one cannot
 // disagree.
 func (w *World) wardsOff(a *Agent, kind Weather) float64 {
+	return w.wardsOffBut(a, kind, -1)
+}
+
+// wardsOffBut is the same, ignoring one thing in the hand.
+//
+// It is what lets a body price the coat it is wearing (stage 88's correction):
+// asked what one more would be worth, the answer is what it adds to the best
+// it already has - but asked what parting with this one would cost, the answer
+// is what it adds to the best of the rest. Without the second reading a body
+// prices its own coat at nothing and hands it over for nothing, which is what
+// stage 87a measured before this was found.
+func (w *World) wardsOffBut(a *Agent, kind Weather, skip int) float64 {
 	best := 0.0
 	for i := range a.carried {
+		if i == skip {
+			continue
+		}
 		f := &a.carried[i]
 		if f.Wards == kind && f.Ward > best {
 			best = f.Ward
@@ -262,14 +357,28 @@ func (w *World) wardsOff(a *Agent, kind Weather) float64 {
 // that making one is not the same thing as making a coat: a maker cannot aim,
 // which is the same hand the style is dealt by (stage 84) and the reason a
 // body that wants one cannot simply sit down and produce it.
-func (w *World) wardMade() float64 {
+func (w *World) wardMade() (float64, Weather) {
 	if w.cfg.WardShare <= 0 || w.cfg.WardStrength <= 0 {
-		return 0
+		return 0, WeatherChill
 	}
 	if w.rng.Float64() >= clamp(w.cfg.WardShare, 0, 1) {
-		return 0
+		return 0, WeatherChill
 	}
-	return clamp(w.cfg.WardStrength, 0, 1)
+	// And which weather it answers, where the world has more than one
+	// (stage 88). Drawn rather than chosen, for the reason the style is: a
+	// maker that could aim would have no reason to want anybody else's.
+	kind := WeatherChill
+	kinds := 0
+	for k := Weather(0); k < NumWeathers; k++ {
+		if w.drainFor(k) > 0 {
+			kinds++
+		}
+	}
+	if kinds > 1 {
+		n := int(w.rng.Float64() * float64(NumWeathers))
+		kind = Weather(clampInt(n, 0, int(NumWeathers)-1))
+	}
+	return clamp(w.cfg.WardStrength, 0, 1), kind
 }
 
 // --- reading it out ---------------------------------------------------------
@@ -301,11 +410,11 @@ type WeatherUse struct {
 	Coats, Handed int
 	Wearing       float64
 
-	// Spare is the share of the coats in hands whose holder is standing
-	// somewhere they are worth nothing (stage 87b). It is the stock of
-	// merchandise: a thing worth everything to somebody else and nothing to
-	// the body carrying it. Where the weather moves, this fills up without
-	// anybody walking anywhere, which is the whole of what a season is for.
+	// Spare is the share of the warding pieces in hands that are worth
+	// nothing to whoever is carrying them (stages 87b, 88): the wrong weather
+	// here, no weather here, or one no better than the one already worn. It
+	// is the stock of merchandise - a thing worth everything to somebody else
+	// and nothing to its holder.
 	Spare float64
 
 	// Taken is the vitality the cold has taken over the run and Starved what
@@ -333,7 +442,7 @@ func (w *World) Weather() WeatherUse {
 		// food weight of the regions, weighted by how cold each one is.
 		out.ColdFood = (coldFood / cold) / (food / float64(len(w.regions)))
 	}
-	var humans, standing, wearing, spare float64
+	var humans, standing, wearing, worn, spare float64
 	for i := range w.agents {
 		a := &w.agents[i]
 		if !a.Alive || a.Species != SpeciesHuman {
@@ -341,11 +450,18 @@ func (w *World) Weather() WeatherUse {
 		}
 		humans++
 		standing += w.weatherAt(a.X, a.Y, WeatherChill)
-		if w.wardsOff(a, WeatherChill) > 0 {
-			wearing++
-			if w.weatherAt(a.X, a.Y, WeatherChill) <= 0 {
+		for k := range a.carried {
+			f := &a.carried[k]
+			if f.Ward <= 0 {
+				continue
+			}
+			worn++
+			if w.wardValue(a, f) <= 0 {
 				spare++
 			}
+		}
+		if w.wardsAnything(a) {
+			wearing++
 		}
 	}
 	// Nobody alive is no evidence about where the living stand (stage 57's
@@ -358,8 +474,8 @@ func (w *World) Weather() WeatherUse {
 	if humans > 0 {
 		out.Wearing = wearing / humans
 	}
-	if wearing > 0 {
-		out.Spare = spare / wearing
+	if worn > 0 {
+		out.Spare = spare / worn
 	}
 	out.Coats, out.Handed = w.coatsMade, w.coatsHanded
 	out.Gain = out.OnCold - out.All

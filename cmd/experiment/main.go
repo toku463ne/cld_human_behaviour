@@ -2301,6 +2301,51 @@ var variants = []variant{
 			c.SeasonTicks = 2000
 		},
 	},
+	{
+		// Stage 88: two weathers, and two things to answer them. A maker
+		// cannot aim at which, so half of what it makes answers a weather it
+		// is not standing in - which is the first time this world has a good
+		// that is useless to the body holding it and wanted by another for a
+		// reason both of them can see (#118).
+		name:  "twoweathers",
+		about: "88: cold in the west, heat in the east, and coats and sunshades",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"99ii", "99ii", "99ii"}
+			c.ChillDrain, c.HeatDrain = 0.02, 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// The pair: the same amount of weather, all of it one kind. Same tax,
+		// same coats, one good instead of two.
+		name:  "oneweather",
+		about: "88's pair: the same tax, all of it cold, so there is one good",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"9999", "9999", "9999"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// And the same two-good world where handing something over is not
+		// free (#115(a)). Stage 87a measured 85% of the coats changing hands
+		// with not one of them sold; this is the arm that says whether the
+		// free channel is the whole of the reason.
+		name:  "twoweatherspaid",
+		about: "88 with giving priced: two goods, and a hand-over that costs what it gives up",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"99ii", "99ii", "99ii"}
+			c.ChillDrain, c.HeatDrain = 0.02, 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.HandOverCheapest, c.GiftPriced = true, true
+		},
+	},
 	// Stage 84: two bodies that want different things. The ornament of stage
 	// 82 was worth the same to everybody, which is the wall stage 79 wrote in
 	// arithmetic - two bodies that cannot disagree about a thing have no

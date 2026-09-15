@@ -448,7 +448,7 @@ func (w *World) handView(a *Agent, f *Food) FoodView {
 		v.Worth = w.bookValue(a, f)
 	case FoodTrinket:
 		v.Worth = w.trinketWorth(a, f)
-		v.Ward = wardOf(f, WeatherChill)
+		v.Ward = w.wardValue(a, f)
 	case FoodCoin, FoodStone:
 		// Neither is worth anything as a meal, and what each is worth
 		// instead the controller works out for itself: a coin from what

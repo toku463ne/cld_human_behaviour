@@ -256,10 +256,10 @@ type SelfView struct {
 	Chill float64
 
 	// ChillRaw is what the weather here would take before anything this body
-	// holds keeps it off, and Ward how much of it the best thing in its hands
-	// keeps off already (stage 87a). Chill is what is left: the two are here
-	// so that an option can price a piece that would ward more than this.
-	ChillRaw, Ward float64
+	// holds keeps it off (stage 87a); Chill is what is left after it. The two
+	// are here so that an option can price a piece that would keep off more,
+	// and the piece's own view carries how much more (FoodView.Ward).
+	ChillRaw float64
 
 	// ChillDX and ChillDY are which way it gets colder from here, per unit of
 	// distance (stage 86b): a sense and not a map, nought where the world has
@@ -376,8 +376,10 @@ type FoodView struct {
 	// does is say what it says.
 	Worth float64
 
-	// Ward is how much of the weather this piece would keep off whoever held
-	// it (stage 87a), and nought for everything that answers nothing.
+	// Ward is how much of the weather this piece would take off the drain of
+	// whoever is looking at it, here and now (stages 87a, 88): nought for a
+	// piece that answers nothing, nought where its weather is not, and nought
+	// to a body already carrying one as good.
 	Ward float64
 
 	// Spoils is how many ticks this one has left before it goes off, and zero
@@ -686,7 +688,6 @@ func (w *World) selfView(a *Agent) SelfView {
 		Drown:             w.drownFelt(a, ground),
 		Chill:             w.chillFelt(a),
 		ChillRaw:          w.chillRawFelt(a),
-		Ward:              w.wardsOff(a, WeatherChill),
 		ChillDX:           chillDX,
 		ChillDY:           chillDY,
 		CourtedBy:         a.courtedBy,
@@ -791,7 +792,7 @@ func (w *World) perceive(a *Agent) *Perception {
 				p.Trinkets = append(p.Trinkets, FoodView{
 					ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
 					RivalDist: math.Inf(1), Worth: w.trinketWorth(a, f),
-					Ward: wardOf(f, WeatherChill),
+					Ward: w.wardValue(a, f),
 				})
 			}
 			continue
@@ -914,7 +915,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			// whole reason there is anything to trade.
 			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
 			offerWorth = w.trinketWorth(a, item)
-			offerWard = wardOf(item, WeatherChill)
+			offerWard = w.wardValue(a, item)
 			w.sawOffer = true
 		} else if item != nil && item.Kind == FoodBook && w.cfg.Books {
 			// A book held up is worth what it would tell this looker, which

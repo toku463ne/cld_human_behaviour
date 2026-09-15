@@ -987,6 +987,11 @@ type Config struct {
 	// longer than its life is a different world it will never see.
 	SeasonTicks int
 
+	// HeatDrain is the same for the second weather (stage 88): what the
+	// hottest place in the world costs a body per tick. Zero by default, and
+	// a map that draws no heat has none either way.
+	HeatDrain float64
+
 	// ChillKnown is whether a body can feel the weather it is standing in
 	// (stage 86). True in the ordinary world.
 	//
@@ -2931,6 +2936,7 @@ func DefaultConfig() Config {
 		AdornNeedsSurvival:      true,
 		ClimateMap:              nil,
 		ChillDrain:              0,
+		HeatDrain:               0,
 		SeasonTicks:             0,
 		ChillKnown:              true,
 		ChillGradient:           false,
