@@ -4086,6 +4086,7 @@ func main() {
 	prices := flag.Bool("prices", false, "a sale costs as many coins as it takes to leave the seller better off (stage 80; brings -lighthands with it)")
 	lighthands := flag.Bool("lighthands", false, "a hand is taken up only by what weighs something, so a coin takes none (stage 80a; needs -terrain for the money)")
 	kingifts := flag.Bool("kingifts", false, "giving costs a quarter of what was given up, a gift to one's own child is worth what it does for them, and the thing priced is the thing that goes (stage 92)")
+	rate := flag.Float64("rate", 0, "read starving as a rate rather than as a deadline, so a body that outlasts the window still has a gradient (stage 93; 0 = every world before it)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
 	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
 	flag.Parse()
@@ -4130,6 +4131,12 @@ func main() {
 	// with it too.
 	if *trinkets {
 		cfg.CarrySlotsWeigh, cfg.Trinkets = true, true
+	}
+	// Starving read as a rate (stage 93). It takes the flat gradient off a
+	// body in no trouble - and costs population, and shuts the market, which
+	// is why it is a number rather than a default.
+	if *rate > 0 {
+		cfg.LookaheadReadsRate = *rate
 	}
 	// Giving that costs something, and a reason to give to one's own (stage
 	// 92). All three together because the measurement said so: what is

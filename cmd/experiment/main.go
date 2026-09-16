@@ -2031,6 +2031,87 @@ var variants = []variant{
 		stores: playedStores,
 	},
 	{
+		// Stage 93: the chance of starving read as a rate rather than as a
+		// deadline. What it is aimed at is the flat gradient P14 kept running
+		// into - counted before building it: 27.7% of satiated whole bodies
+		// price a meal in the hand at exactly nothing, and the rate reading
+		// makes every one of them positive.
+		name:  "rate",
+		about: "93: starving read as a rate, so a body that outlasts the window still has a gradient",
+		apply: func(c *engine.Config) { c.LookaheadReadsRate = 1 },
+	},
+	{
+		name:  "ratehalf",
+		about: "93 at half the weight",
+		apply: func(c *engine.Config) { c.LookaheadReadsRate = 0.5 },
+	},
+	{
+		// The arm the stage is really read against, and the one stage 67
+		// taught this project to run: a tail that never vanishes lifts what
+		// every body reads, and lifting everybody's risk alike is lifting
+		// LifeValue. The figure is measured rather than guessed - mean
+		// pressure goes from 0.1604 to 0.2273, which is 1.418.
+		name:  "rateflat",
+		about: "93's flat control: the same rise in the risk, given to every body alike",
+		apply: func(c *engine.Config) { c.LifeValue *= 1.418 },
+	},
+	{
+		// And whether stage 74 still earns its keep under a rate: it exists
+		// because the far window saturates and stops telling two states
+		// apart, which a reading that never reaches zero may not do.
+		name:  "rateblind",
+		about: "93 without stage 74: the far window only, saturation and all",
+		apply: func(c *engine.Config) {
+			c.LookaheadReadsRate = 1
+			c.LookaheadNeverBlinds = false
+		},
+	},
+	{
+		// On the played map with money and ornaments, which is where P14's
+		// dead end was measured: if the flat gradient was what stopped the
+		// market, this is where it shows.
+		name:  "ratemarket",
+		about: "93 in the money world: does a gradient for the comfortable open the market?",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.LookaheadReadsRate = 1
+		},
+		stores: playedStores,
+	},
+	{
+		// A quarter of the weight in the same world: if there is a dose where
+		// the comfortable get a gradient and the market is not squeezed shut,
+		// it is down here.
+		name:  "ratemarketthin",
+		about: "93 in the money world at a quarter of the weight",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.LookaheadReadsRate = 0.25
+		},
+		stores: playedStores,
+	},
+	{
+		// And with weather in it (stage 86), where the drain a place puts on
+		// a body is already in this same reading: a coat should be worth
+		// something to a body that is not yet in trouble.
+		name:  "ratecold",
+		about: "93 with the cold in it, where what a coat is worth was nought to a whole body",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.3, 0.6
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.LookaheadReadsRate = 1
+		},
+	},
+	{
 		// Stage 92: what a gift costs its giver, and what it does for one of
 		// its own. They are read as a 2x2 because pricing the giving alone
 		// has been measured twice and stopped the exchange both times (84d,

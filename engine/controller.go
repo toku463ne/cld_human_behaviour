@@ -355,8 +355,24 @@ func oneHorizon(cfg *Config, s *SelfView, vitality, drain float64, worn bool) fl
 	}
 	pDrain := 0.0
 	if drain > 0 {
-		if ticksLeft := vitality / drain; ticksLeft < cfg.PlanHorizon {
+		ticksLeft := vitality / drain
+		// The deadline reading: nothing at all once the tank outlasts the
+		// window, which is where every flat gradient in this world comes from
+		// (stage 93).
+		if ticksLeft < cfg.PlanHorizon {
 			pDrain = 1 - ticksLeft/cfg.PlanHorizon
+		}
+		// And the rate reading, blended in at whatever weight the world
+		// carries: the same countdown as a hazard - how many times over a
+		// window this body would run out at this drain - which keeps a shape
+		// out past the horizon instead of stopping at it.
+		//
+		// Blended and not swapped, because a tail that never vanishes lifts
+		// what every body reads, and lifting every body's risk alike is
+		// lifting LifeValue, which is a rule of its own and was measured as
+		// one (stage 67).
+		if w := cfg.LookaheadReadsRate; w > 0 {
+			pDrain = (1-w)*pDrain + w*(1-math.Exp(-cfg.PlanHorizon/ticksLeft))
 		}
 	}
 	pWorn := 0.0

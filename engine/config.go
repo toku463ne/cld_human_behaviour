@@ -2024,6 +2024,28 @@ type Config struct {
 	// the life goal and everything that is not priced in death.
 	LookaheadNeverBlinds bool
 
+	// LookaheadReadsRate is how much of the chance of starving inside a window
+	// is read as a rate rather than as a deadline (stage 93). Zero is every
+	// world before it.
+	//
+	// What it is aimed at is one line in oneHorizon. The chance of running out
+	// is 1 - ticksLeft/PlanHorizon while the tank lasts less than a window,
+	// and nought otherwise - so a body that outlasts the window reads nought
+	// however fast it is going, and a body with room to spare has no gradient
+	// at all. Every dead end P14 ran into is that flat: a coin, a price, an
+	// ornament and a coat were all worth nothing to a body in no trouble,
+	// because everything here is priced as a difference in one chance of
+	// dying and the difference was zero.
+	//
+	// The rate reading is the same countdown taken as a hazard - how many
+	// times over a window this body would run out at this drain - which never
+	// reaches zero and keeps its shape out past the horizon. It is blended
+	// rather than swapped in, because a tail that does not vanish raises what
+	// every body reads, and a uniform rise in the risk is a rise in LifeValue,
+	// which stage 67 measured on its own and which costs population. So the
+	// weight is a dial, and the arm to read it against is the flat one.
+	LookaheadReadsRate float64
+
 	// GoalsNeedSurvival is whether a goal that happens later is discounted by
 	// the chance of this body being there for it (stage 73).
 	//
@@ -3052,6 +3074,7 @@ func DefaultConfig() Config {
 		LookaheadHolds:       false, // stage 78: measured, and not the default
 		LookaheadSpoils:      false, // stage 78
 		LookaheadNeverBlinds: true,  // stage 74: on with the window
+		LookaheadReadsRate:   0,     // stage 93: a deadline, not a rate
 		GoalsNeedSurvival:    true,  // stage 73: on with the window
 		LookaheadWornAgain:   false, // stage 72
 
