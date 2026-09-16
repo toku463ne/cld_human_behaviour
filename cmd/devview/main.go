@@ -4085,6 +4085,7 @@ func main() {
 	notaste := flag.Bool("notaste", false, "put back the world stage 82 measured: every body wants the same ornament, and wants it whatever is about to happen to it")
 	prices := flag.Bool("prices", false, "a sale costs as many coins as it takes to leave the seller better off (stage 80; brings -lighthands with it)")
 	lighthands := flag.Bool("lighthands", false, "a hand is taken up only by what weighs something, so a coin takes none (stage 80a; needs -terrain for the money)")
+	kingifts := flag.Bool("kingifts", false, "giving costs a quarter of what was given up, a gift to one's own child is worth what it does for them, and the thing priced is the thing that goes (stage 92)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
 	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
 	flag.Parse()
@@ -4129,6 +4130,14 @@ func main() {
 	// with it too.
 	if *trinkets {
 		cfg.CarrySlotsWeigh, cfg.Trinkets = true, true
+	}
+	// Giving that costs something, and a reason to give to one's own (stage
+	// 92). All three together because the measurement said so: what is
+	// priced is the cheapest thing in the hand, and unless the cheapest is
+	// also what leaves the hand, most of what the pair costs is the mismatch.
+	if *kingifts {
+		cfg.GiftSelfLookahead, cfg.GiftKinWeight = 0.25, 0.25
+		cfg.HandOverCheapest = true
 	}
 	// A world with weather in it (stage 85). The picture is the author's, so
 	// devview draws the simplest one there is: the right half cold. Nothing

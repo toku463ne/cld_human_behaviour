@@ -2031,6 +2031,105 @@ var variants = []variant{
 		stores: playedStores,
 	},
 	{
+		// Stage 92: what a gift costs its giver, and what it does for one of
+		// its own. They are read as a 2x2 because pricing the giving alone
+		// has been measured twice and stopped the exchange both times (84d,
+		// 88) - what is new is the second channel, not the price.
+		//
+		// The dose is small on purpose: what a body holds is worth tens of
+		// utility units to it and the goodwill a gift buys is worth 2.7, so a
+		// quarter of the price is already most of the way to switching the
+		// giving off.
+		name:  "giftcost",
+		about: "92a: a gift costs a quarter of what it was worth to its giver",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftSelfLookahead = 0.25
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "giftkin",
+		about: "92b: and a gift to one's own is worth what it does for them",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftKinWeight = 0.25
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "giftboth",
+		about: "92: the pair together, which is the arm the stage is about",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftSelfLookahead, c.GiftKinWeight = 0.25, 0.25
+		},
+		stores: playedStores,
+	},
+	{
+		// The doses. Four times the price is where stage 84d already is, and
+		// four times the kin term is where a body should be handing its
+		// children everything it has.
+		name:  "giftcostdear",
+		about: "92a at the whole price, which is stage 84d's switch",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftSelfLookahead = 1
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "giftkindear",
+		about: "92b at four times the weight",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftKinWeight = 1
+		},
+		stores: playedStores,
+	},
+	{
+		// And the arm that says what the mismatch costs: what the giver
+		// prices is the cheapest thing in its hand, and what leaves the hand
+		// is the first thing in it unless this is on.
+		name:  "giftcheapest",
+		about: "92: the pair, with the thing that is priced being the thing that goes",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftSelfLookahead, c.GiftKinWeight = 0.25, 0.25
+			c.HandOverCheapest = true
+		},
+		stores: playedStores,
+	},
+	{
+		// And the same pair on the flat world, because every rule that spends
+		// food has come out one way on the played map and the other way on
+		// the flat one (stages 40, 44, 48, 80a). Giving is one of those: it
+		// was worth +9.35 * flat and -11.27 ** on the played map.
+		name:  "giftflatboth",
+		about: "92: the pair on the flat world, where food is not the binding thing",
+		apply: func(c *engine.Config) {
+			c.GiftSelfLookahead, c.GiftKinWeight = 0.25, 0.25
+		},
+	},
+	{
 		// Stage 91's pair for it: the same world with nothing to be gained by
 		// handing anybody anything. Stage 84 ran this 2x2 and reported only
 		// the population from it, and the question left over was what the

@@ -1093,6 +1093,43 @@ type Config struct {
 	// something to spare has no reason to hold out for a coin.
 	GiftPriced bool
 
+	// GiftSelfLookahead is how much of what a gift costs its giver the giver
+	// weighs (stage 92a). Zero is the world where giving is free; one is the
+	// whole of it, which is what GiftPriced does as a switch.
+	//
+	// The figure is the same one GiftPriced subtracts - what the thing in the
+	// hand is worth to its holder, which for food, money and a coat is a
+	// difference in this body's own chance of dying and so already the
+	// lookahead read on a body without it. What this adds is a dial and the
+	// company it is measured in: pricing the giving on its own has been run
+	// twice and stopped the exchange both times (stage 84d, stage 88), so it
+	// is meant to be read against GiftKinWeight rather than alone.
+	//
+	// What is priced is the cheapest thing in the hand, which is the thing
+	// that would go where HandOverCheapest is on and not otherwise - the two
+	// are meant to be run together, and the arm without it says what the
+	// mismatch costs.
+	GiftSelfLookahead float64
+
+	// GiftKinWeight is what a gift to one's own parent or child is worth
+	// beyond the goodwill it buys (stage 92b): Hamilton's rB, with the
+	// relatedness of the only relation this world has - one hop, parent to
+	// child - folded into the weight, since a constant half tells nobody
+	// anything they did not already know from the flag.
+	//
+	// It is a second channel and not a bigger first one. The trust a gift
+	// buys saturates, which is why 95% of gifts go to strangers (stage 48),
+	// and that is a real force rather than a fault: raising it would fight
+	// the selection already there. This adds the term that is missing
+	// instead - what the gift does for whoever receives it - and lets it
+	// count only where the receiver carries this body's own genes.
+	//
+	// What the receiver gets is reckoned on the standard, not looked up: a
+	// stranger's hunger is hidden (only its vitality shows), so the giver
+	// prices the thing as it would price it for itself and scales it by how
+	// far down the receiver looks. Nobody aims; the world pays out.
+	GiftKinWeight float64
+
 	// SkillTrinketRelief is how much of what a piece could be worth is the
 	// maker's skill rather than anybody's hands. At zero anybody makes a
 	// perfect one; at one a body with no skill makes nothing worth having.
@@ -2964,6 +3001,8 @@ func DefaultConfig() Config {
 		CoinBuysOnlyMeals:       false,
 		HandOverCheapest:        false,
 		GiftPriced:              false,
+		GiftSelfLookahead:       0, // stage 92a: giving is free unless the map says otherwise
+		GiftKinWeight:           0, // stage 92b: and buys nothing extra for one's own
 		CoinPrices:              false,
 		CoinPriceBlind:          false,
 		SalePriceSplit:          true,

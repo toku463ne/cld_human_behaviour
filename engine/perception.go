@@ -561,6 +561,16 @@ type AgentView struct {
 	// the other, and the other may well not return it.
 	Affinity float64
 
+	// Kin says this one is this body's own parent or child (stage 92b).
+	//
+	// Not the same thing as affinity, which kin start with a helping of
+	// (AffinityKin) and anybody can earn: relatedness is a fact about the
+	// two bodies that nothing either of them does can change, which is the
+	// whole of why it can carry Hamilton's rB. A body knowing its own
+	// children is not new knowledge - the world has drawn the player's in
+	// gold since stage 19 - and no ability of theirs becomes visible with it.
+	Kin bool
+
 	// Fitness is how good a mate they look, ability and condition together,
 	// already blurred by the observer's rationality.
 	Fitness float64
@@ -969,6 +979,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Uncertainty: variance,
 			Risk:        risk,
 			Affinity:    affinity,
+			Kin:         a.isKin(o.ID),
 			Fitness:     fitness(o, &w.cfg) + w.noise(unit, w.cfg.JudgementNoise*0.5),
 		})
 	}
@@ -1066,7 +1077,7 @@ func (w *World) perceive(a *Agent) *Perception {
 	// Only where something reads it, because working out what a held thing is
 	// worth is not free: the word for putting things down (stage 70), and the
 	// price of a gift (stage 84).
-	if w.cfg.Dropping || w.cfg.GiftPriced {
+	if w.cfg.Dropping || w.cfg.GiftPriced || w.cfg.GiftSelfLookahead > 0 || w.cfg.GiftKinWeight > 0 {
 		p.Held = w.handViews(a, p.Held)
 	}
 	if i, gain, ok := w.bestKnownRegion(a); ok {

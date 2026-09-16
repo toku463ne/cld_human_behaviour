@@ -1068,6 +1068,28 @@ func trustBought(cfg *Config, affinity, amount float64) float64 {
 		clamp(affinity/cfg.AffinityTrust, 0, 1)
 }
 
+// takerWorth is what the thing that would change hands looks like it would do
+// for the one receiving it (stage 92b), in the units everything else here is
+// in: the same handWorth, read for a body in the receiver's condition.
+//
+// Two things are assumed rather than looked up, and both are assumptions this
+// world already makes about strangers. Hunger is hidden, so the standard is
+// used - the point at which a body runs short, which is exactly what keepValue
+// assumes about this body's own future. And the piece is the giver's own view
+// of it, because a stranger's diet ledger and what it already holds are hidden
+// too. What is not assumed is the half that shows: how far down the other one
+// is, which is what makes the same mouthful worth more to a battered child
+// than to a whole one.
+//
+// No lookahead is nested in a lookahead here: this is one more reading of the
+// same function, on a different body's numbers.
+func takerWorth(cfg *Config, s *SelfView, o *AgentView, item *FoodView) float64 {
+	as := *s
+	as.Vitality = clamp(o.Vitality, 0, as.MaxVitality)
+	as.Hunger = cfg.StarveHunger
+	return handWorth(cfg, &as, item)
+}
+
 // addGive scores handing what is in this body's hand to somebody (stage 48).
 //
 // What it is worth is what being on better terms with them is worth, which is
@@ -1099,22 +1121,57 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 	if !room {
 		return
 	}
+	// What being on better terms with this one would buy, which for a parent
+	// or a child of one's own is usually nothing at all: kin start at
+	// AffinityKin, that is over AffinityTrust, and a trust already full buys
+	// nothing more. Until stage 92b that ended the matter here, and it is why
+	// only 6% of gifts go to kin - not a preference for strangers but the
+	// saturation, which is the thing #121 says not to fight.
 	gained := trustBought(cfg, o.Affinity, cfg.AffinityGift)
-	if gained <= 0 {
+	kin := cfg.GiftKinWeight > 0 && o.Kin
+	if gained <= 0 && !kin {
 		return
 	}
 	// And what it would be giving up, where a gift costs what it was worth
-	// (stage 84). Selling has always priced this (willSell) and so has
-	// putting something down, and leaving it out here is why a body with
-	// something to spare hands it over rather than holding out for a coin.
-	// It is the same figure both of those weigh: the cheapest thing in the
-	// hand, because that is the one that would go.
+	// (stage 84), at whatever share of it this body weighs (stage 92a).
+	// Selling has always priced this (willSell) and so has putting something
+	// down, and leaving it out here is why a body with something to spare
+	// hands it over rather than holding out for a coin. It is the same figure
+	// both of those weigh: the cheapest thing in the hand, because that is
+	// the one that would go where HandOverCheapest is on.
+	//
+	// GiftPriced is the whole of it as a switch, which is how stage 84 ran
+	// it; the dial is here because pricing the giving on its own has been
+	// measured twice and stopped the exchange both times, so what it is for
+	// is being read next to the reason below rather than alone.
+	var item *FoodView
+	spare := 0.0
+	if cfg.GiftPriced || cfg.GiftSelfLookahead > 0 || kin {
+		item, spare = c.spareItem(p)
+	}
 	gift := cfg.LoreValue * gained
-	if cfg.GiftPriced {
-		gift -= c.spareWorth(p)
-		if gift <= 0 {
-			return
-		}
+	switch {
+	case cfg.GiftPriced:
+		gift -= spare
+	case cfg.GiftSelfLookahead > 0:
+		gift -= cfg.GiftSelfLookahead * spare
+	}
+	// And what it does for whoever receives it, where that one carries this
+	// body's own genes (stage 92b). Hamilton's rB: a second channel, added
+	// rather than folded into the trust, because the trust saturates and that
+	// saturation is the force that sends 95% of gifts to strangers.
+	//
+	// The receiver's own reckoning is not available and is not asked for: its
+	// hunger is hidden, three bodies' worth of lookahead nested inside one
+	// decision is not free, and this world has priced a stranger on the
+	// standard since stage 49. So the thing is worth what it is worth here,
+	// scaled by how far down the other one looks - the one half of its need
+	// that shows.
+	if kin && item != nil {
+		gift += cfg.GiftKinWeight * takerWorth(cfg, s, o, item)
+	}
+	if gift <= 0 {
+		return
 	}
 	// The best hand-over in sight, kept for the cry that would arrange one
 	// instead of walking to it (stage 49). It is worked out here rather than
@@ -1139,17 +1196,25 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 // the least it minds losing, which is the thing that would actually go
 // (stage 84). Nothing in hand is nothing to give.
 func (c *AIController) spareWorth(p *Perception) float64 {
+	_, worth := c.spareItem(p)
+	return worth
+}
+
+// spareItem is the same question with the thing itself, which stage 92b needs:
+// what it is worth to whoever receives it can only be asked of a particular
+// piece.
+func (c *AIController) spareItem(p *Perception) (*FoodView, float64) {
 	cfg, s := p.Cfg, &p.Self
-	least := math.Inf(1)
+	least, at := math.Inf(1), -1
 	for i := range p.Held {
 		if worth := handWorth(cfg, s, &p.Held[i]); worth < least {
-			least = worth
+			least, at = worth, i
 		}
 	}
-	if math.IsInf(least, 1) {
-		return 0
+	if at < 0 {
+		return nil, 0
 	}
-	return least
+	return &p.Held[at], least
 }
 
 // addOffer scores standing there and crying what is in the hand (stage 49).
