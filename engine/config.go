@@ -2221,6 +2221,24 @@ type Config struct {
 	// same things and has nothing for selection to work on - the arm that says
 	// how much of what follows is selection on preference.
 	LoreInitSpread  float64
+
+	// MateWeightSpread is how far apart bodies are in what a child is worth to
+	// them (stage 94). Zero is every world before it: the figure is the
+	// world's own for everybody, nothing is drawn for it and nothing mutates,
+	// so a world that has not asked for the rule runs bit for bit as it did.
+	//
+	// It is the fourth preference and the first one about a goal rather than
+	// about a danger - the three that were there price what an option might
+	// cost, and none of them can make one body keener on offspring than
+	// another. It sits outside the gene budget for the reason a chronotype
+	// and a taste do: it is not a quantity of anything a body could buy more
+	// of, so putting it in the budget would claim a trade nothing in biology
+	// makes.
+	//
+	// Spread and mutation are one switch rather than two because what is
+	// being asked is whether the population varies at all. LoreMutationStd
+	// sets how far a child drifts from its parent, as it does for the others.
+	MateWeightSpread float64
 	LoreMutationStd float64
 
 	// --- trading it (stage 12b) ---
@@ -3276,6 +3294,7 @@ func DefaultConfig() Config {
 		// real. The jog on inheritance is smaller than the gene mutation
 		// because it happens at every birth rather than one in fifty.
 		LoreInitSpread:  0.15,
+		MateWeightSpread: 0, // stage 94: everybody wants a child the same amount
 		LoreMutationStd: 0.08,
 
 		// Two percent of the gap, not the half that meeting in the middle

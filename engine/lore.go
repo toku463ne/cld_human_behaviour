@@ -55,6 +55,18 @@ type lore struct {
 	riskWeight        float64 // how much what somebody once cost you puts you off
 	competitionWeight float64 // what removing a future rival for food is worth
 	shockRisk         float64 // how dangerous being low on vitality feels
+
+	// And what a child is worth to this body (stage 94). The three above are
+	// all readings of danger: they price what an option might cost. This is
+	// the first preference on the other side of the formula - what one of the
+	// goals is worth - and it is here rather than in the budget for the same
+	// reason a chronotype and a taste are, which is that it is not a quantity
+	// of anything a body could buy more of.
+	//
+	// It is frozen at the world's own figure unless MateWeightSpread says
+	// otherwise, so a world that has not asked for it draws nothing, mutates
+	// nothing, and runs bit for bit as it always did.
+	mateWeight float64
 }
 
 // newLore draws what a founder starts life assuming. The facts start at the
@@ -70,6 +82,7 @@ func (w *World) newLore() lore {
 		riskWeight:        w.spreadAround(cfg.RiskWeight, cfg.LoreInitSpread),
 		competitionWeight: w.spreadAround(cfg.CompetitionWeight, cfg.LoreInitSpread),
 		shockRisk:         w.spreadAround(cfg.ShockRisk, cfg.LoreInitSpread),
+		mateWeight:        w.spreadAround(cfg.OffspringValue, cfg.MateWeightSpread),
 	}
 }
 
@@ -85,6 +98,7 @@ func (w *World) plainLore() lore {
 		riskWeight:        cfg.RiskWeight,
 		competitionWeight: cfg.CompetitionWeight,
 		shockRisk:         cfg.ShockRisk,
+		mateWeight:        cfg.OffspringValue,
 	}
 }
 
@@ -146,6 +160,14 @@ func (w *World) inheritLore(pa, pb *Agent) lore {
 		riskWeight:        mutate(pick(pa.lore.riskWeight, pb.lore.riskWeight), cfg.RiskWeight),
 		competitionWeight: mutate(pick(pa.lore.competitionWeight, pb.lore.competitionWeight), cfg.CompetitionWeight),
 		shockRisk:         mutate(pick(pa.lore.shockRisk, pb.lore.shockRisk), cfg.ShockRisk),
+		// And what a child is worth (stage 94), which varies only where the
+		// world asked for it to: with the spread at nought every body has the
+		// same figure, so drawing for it would move the random source along
+		// and change a world that has not asked for the rule.
+		mateWeight: cfg.OffspringValue,
+	}
+	if cfg.MateWeightSpread > 0 {
+		out.mateWeight = mutate(pick(pa.lore.mateWeight, pb.lore.mateWeight), cfg.OffspringValue)
 	}
 
 	l := clamp(cfg.LamarckRate, 0, 1)
@@ -240,6 +262,10 @@ func (w *World) exchangeLore(a, o *Agent) {
 	meet(&a.lore.riskWeight, &o.lore.riskWeight, cfg.RiskWeight)
 	meet(&a.lore.competitionWeight, &o.lore.competitionWeight, cfg.CompetitionWeight)
 	meet(&a.lore.shockRisk, &o.lore.shockRisk, cfg.ShockRisk)
+	// What a child is worth rubs off the same way the other preferences do
+	// (stage 94). Where nobody varies there is no gap to close, so this line
+	// moves nothing in a world without the rule.
+	meet(&a.lore.mateWeight, &o.lore.mateWeight, cfg.OffspringValue)
 
 	// A rule of thumb is not a number two agents can average: half of "go for
 	// the big ones when you are starving" is not a weaker version of it, it is
@@ -326,6 +352,7 @@ type Assumptions struct {
 	RiskWeight  float64
 	Competition float64
 	ShockRisk   float64
+	MateWeight  float64
 }
 
 // Assumes reports what this agent brings to the utility formula. Read only.
@@ -338,6 +365,7 @@ func (a *Agent) Assumes() Assumptions {
 		RiskWeight:      a.lore.riskWeight,
 		Competition:     a.lore.competitionWeight,
 		ShockRisk:       a.lore.shockRisk,
+		MateWeight:      a.lore.mateWeight,
 	}
 }
 
@@ -400,12 +428,14 @@ type LoreView struct {
 	RiskWeight  float64
 	Competition float64
 	ShockRisk   float64
+	MateWeight  float64
 
-	// The spread of the three preferences. A mean says which way a population
+	// The spread of the preferences. A mean says which way a population
 	// leans; only the spread says whether there is anything left to select.
 	SdRiskWeight  float64
 	SdCompetition float64
 	SdShockRisk   float64
+	SdMateWeight  float64
 
 	// What the world actually does, over the whole run: how often somebody who
 	// was hit hit back, and how often a courtship was accepted. These are what
@@ -429,6 +459,7 @@ func (w *World) Lore() LoreView {
 		out.RiskWeight += a.lore.riskWeight
 		out.Competition += a.lore.competitionWeight
 		out.ShockRisk += a.lore.shockRisk
+		out.MateWeight += a.lore.mateWeight
 		n++
 	}
 	out.Retaliation /= n
@@ -436,16 +467,19 @@ func (w *World) Lore() LoreView {
 	out.RiskWeight /= n
 	out.Competition /= n
 	out.ShockRisk /= n
+	out.MateWeight /= n
 
 	for i := range w.agents {
 		a := &w.agents[i]
 		out.SdRiskWeight += square(a.lore.riskWeight - out.RiskWeight)
 		out.SdCompetition += square(a.lore.competitionWeight - out.Competition)
 		out.SdShockRisk += square(a.lore.shockRisk - out.ShockRisk)
+		out.SdMateWeight += square(a.lore.mateWeight - out.MateWeight)
 	}
 	out.SdRiskWeight = math.Sqrt(out.SdRiskWeight / n)
 	out.SdCompetition = math.Sqrt(out.SdCompetition / n)
 	out.SdShockRisk = math.Sqrt(out.SdShockRisk / n)
+	out.SdMateWeight = math.Sqrt(out.SdMateWeight / n)
 
 	if w.blowsSeen > 0 {
 		out.TrueRetaliation = float64(w.blowsAnswered) / float64(w.blowsSeen)

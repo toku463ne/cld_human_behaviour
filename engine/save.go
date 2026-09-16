@@ -269,6 +269,7 @@ type loreSnap struct {
 	RiskWeight                    float64
 	CompetitionWeight             float64
 	ShockRisk                     float64
+	MateWeight                    float64
 }
 
 type regionSnap struct {
@@ -409,6 +410,7 @@ func snapAgent(a *Agent) agentSnap {
 			RiskWeight:        a.lore.riskWeight,
 			CompetitionWeight: a.lore.competitionWeight,
 			ShockRisk:         a.lore.shockRisk,
+			MateWeight:        a.lore.mateWeight,
 		},
 		Hints:       a.hints,
 		HintSlots:   a.hintSlots,
@@ -502,7 +504,7 @@ func Load(in io.Reader) (*World, error) {
 		w.pendingSeeds = append(w.pendingSeeds, pendingSeed{x: p.X, y: p.Y, genes: p.Genes})
 	}
 	for i := range s.Agents {
-		w.agents = append(w.agents, loadAgent(&s.Agents[i]))
+		w.agents = append(w.agents, loadAgent(&s.Agents[i], &w.cfg))
 	}
 	for i := range w.agents {
 		w.index[w.agents[i].ID] = i
@@ -563,7 +565,7 @@ func Load(in io.Reader) (*World, error) {
 	return w, nil
 }
 
-func loadAgent(s *agentSnap) Agent {
+func loadAgent(s *agentSnap, cfg *Config) Agent {
 	a := s.Agent
 	a.frailTicks = s.FrailTicks
 	a.courtStartTick = s.CourtStartTick
@@ -583,6 +585,16 @@ func loadAgent(s *agentSnap) Agent {
 		riskWeight:        s.Lore.RiskWeight,
 		competitionWeight: s.Lore.CompetitionWeight,
 		shockRisk:         s.Lore.ShockRisk,
+		mateWeight:        s.Lore.MateWeight,
+	}
+	// A file written before stage 94 has no figure for what a child is worth,
+	// and a body that reads nought there would be one that never courts. Zero
+	// is taken as "nobody said" for the same reason a belief with no evidence
+	// behind it is (lore.unset): the alternative is a version number on every
+	// file. A body that genuinely wants no children is possible and rare, and
+	// reading an old world back is not the place to keep it.
+	if a.lore.mateWeight <= 0 {
+		a.lore.mateWeight = cfg.OffspringValue
 	}
 	a.hints = s.Hints
 	a.hintSlots = s.HintSlots
@@ -687,6 +699,7 @@ func (w *World) Nodes() []Node {
 				RiskWeight:        a.lore.riskWeight,
 				CompetitionWeight: a.lore.competitionWeight,
 				ShockRisk:         a.lore.shockRisk,
+				MateWeight:        a.lore.mateWeight,
 			},
 			Hints:      append([]Hint(nil), a.hints...),
 			HintSlots:  a.hintSlots,
@@ -750,6 +763,10 @@ func (w *World) Repopulate(nodes []Node) int {
 			riskWeight:        n.Lore.RiskWeight,
 			competitionWeight: n.Lore.CompetitionWeight,
 			shockRisk:         n.Lore.ShockRisk,
+			mateWeight:        n.Lore.MateWeight,
+		}
+		if a.lore.mateWeight <= 0 { // a file from before stage 94; see loadAgent
+			a.lore.mateWeight = w.cfg.OffspringValue
 		}
 		a.hints = append([]Hint(nil), n.Hints...)
 		a.hintSlots = n.HintSlots

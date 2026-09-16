@@ -3012,8 +3012,8 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		as := a.Assumes()
 		t.line("assumes: hit back %.2f (%.0f seen)   courted %.2f (%.0f seen)",
 			as.Retaliation, as.RetaliationSeen, as.Accept, as.AcceptSeen)
-		t.line("wants:   risk x%.2f   rival %.3f   empty %.2f",
-			as.RiskWeight, as.Competition, as.ShockRisk)
+		t.line("wants:   risk x%.2f   rival %.3f   empty %.2f   a child %.1f",
+			as.RiskWeight, as.Competition, as.ShockRisk, as.MateWeight)
 		// And how it is feeling, which leans the last of those three (stage
 		// 54). Both figures are shown because the difference between them is
 		// the whole of what a mood is: what the body inherited, and what it
@@ -4087,6 +4087,7 @@ func main() {
 	lighthands := flag.Bool("lighthands", false, "a hand is taken up only by what weighs something, so a coin takes none (stage 80a; needs -terrain for the money)")
 	kingifts := flag.Bool("kingifts", false, "giving costs a quarter of what was given up, a gift to one's own child is worth what it does for them, and the thing priced is the thing that goes (stage 92)")
 	rate := flag.Float64("rate", 0, "read starving as a rate rather than as a deadline, so a body that outlasts the window still has a gradient (stage 93; 0 = every world before it)")
+	matewant := flag.Float64("matewant", 0, "how far apart bodies are in what a child is worth to them (stage 94; 0 = everybody the same, which is every world before it)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
 	nodes := flag.String("nodes", "", "start a new world and put a population saved earlier into it (stage 21)")
 	flag.Parse()
@@ -4131,6 +4132,11 @@ func main() {
 	// with it too.
 	if *trinkets {
 		cfg.CarrySlotsWeigh, cfg.Trinkets = true, true
+	}
+	// The fourth preference (stage 94): what a child is worth, which until
+	// this was a constant every body shared.
+	if *matewant > 0 {
+		cfg.MateWeightSpread = *matewant
 	}
 	// Starving read as a rate (stage 93). It takes the flat gradient off a
 	// body in no trouble - and costs population, and shuts the market, which

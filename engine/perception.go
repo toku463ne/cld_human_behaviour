@@ -64,6 +64,11 @@ type SelfView struct {
 	CompetitionWeight float64
 	ShockRisk         float64
 
+	// And what a child is worth to this body (stage 94), which is the first
+	// preference about a goal rather than about a danger. Frozen at the
+	// world's own figure unless MateWeightSpread says otherwise.
+	MateWeight float64
+
 	// Hints are this agent's own rules of thumb (stage 12c). They are its
 	// own, so they belong here; they read nothing that is not already in this
 	// Perception, and all they can do is add to an option's score.
@@ -687,6 +692,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		RiskWeight:        a.lore.riskWeight,
 		CompetitionWeight: a.lore.competitionWeight,
 		ShockRisk:         w.shockRiskFelt(a),
+		MateWeight:        a.lore.mateWeight,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),

@@ -2281,7 +2281,7 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 	// starving body court instead of eat - the life term shrinks as the
 	// window it is read over lengthens, and a constant does not.
 	c.add(Action{Kind: ActCourt, TargetID: o.ID, Effort: effort}, Utility{
-		Offspring:    Goal{Value: cfg.OffspringValue * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance * survives(cfg, after.far, ticks+float64(cfg.PairBondDuration))},
+		Offspring:    Goal{Value: s.MateWeight * clamp(o.Fitness/MaxAbility, 0, 1), Chance: s.AcceptChance * survives(cfg, after.far, ticks+float64(cfg.PairBondDuration))},
 		Life:         Goal{Value: gap(cfg, now, after) * cfg.LifeValue, Chance: 1},
 		Vitality:     cost + birth,
 		Ticks:        ticks,

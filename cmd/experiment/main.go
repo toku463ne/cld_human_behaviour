@@ -2031,6 +2031,39 @@ var variants = []variant{
 		stores: playedStores,
 	},
 	{
+		// Stage 94: a fourth preference, and the first about a goal rather
+		// than a danger. The dose is the spread, because what is being asked
+		// is whether a population that varies in how much it wants offspring
+		// does better than one that does not - the mean is the same either
+		// way, so the base arm is its own flat control.
+		name:  "mate",
+		about: "94: bodies differ in what a child is worth to them",
+		apply: func(c *engine.Config) { c.MateWeightSpread = 0.15 },
+	},
+	{
+		name:  "matewide",
+		about: "94 at twice the spread",
+		apply: func(c *engine.Config) { c.MateWeightSpread = 0.3 },
+	},
+	{
+		// And the arm that says whether it is the spread or the trading that
+		// matters: the preferences rub off when two bodies watch each other,
+		// and stage 12b measured that flattening two thirds of the spread.
+		name:  "matekept",
+		about: "94 with the spread, and nothing rubbing off between bodies",
+		apply: func(c *engine.Config) {
+			c.MateWeightSpread = 0.15
+			c.LoreExchangeRate = 0
+		},
+	},
+	{
+		// The pair for it, so that what killing the trading does on its own
+		// can be told from what it does to this.
+		name:  "noexchange",
+		about: "the control for matekept: nothing rubs off between bodies, and no spread either",
+		apply: func(c *engine.Config) { c.LoreExchangeRate = 0 },
+	},
+	{
 		// Stage 93: the chance of starving read as a rate rather than as a
 		// deadline. What it is aimed at is the flat gradient P14 kept running
 		// into - counted before building it: 27.7% of satiated whole bodies
@@ -4887,6 +4920,7 @@ var metricNames = []string{
 	"swimHeld", "swimNominal", "swimReal",
 	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
+	"mateWeight", "sdMateWeight",
 	"extinct",
 }
 
@@ -4941,6 +4975,12 @@ type sample struct {
 	retal, accept                        float64
 	riskWeight, competition, shock       float64
 	sdRiskWeight, sdCompetition, sdShock float64
+
+	// And the fourth preference (stage 94): what a child is worth to a body,
+	// which is the first one about a goal rather than about a danger. Frozen
+	// in every world that has not asked for it, so the spread is what says
+	// whether the rule is on at all.
+	mateWeight, sdMateWeight float64
 
 	// How the trading of assumptions is spread: trades per agent per thousand
 	// ticks alive, and the share of it done by the busiest fifth. The second
@@ -5352,6 +5392,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
 			retal: lore.Retaliation, accept: lore.Accept,
 			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
+			mateWeight: lore.MateWeight, sdMateWeight: lore.SdMateWeight,
 			sdRiskWeight: lore.SdRiskWeight, sdCompetition: lore.SdCompetition, sdShock: lore.SdShockRisk,
 			budget: budget, sdBudget: sdBudget, shares: shares,
 			age: s.AvgAge, maturity: s.AvgMaturity, ageFactor: s.AvgAgeFactor,
@@ -5674,6 +5715,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"sdCompetition": tail.sdCompetition,
 		"shock":         tail.shock,
 		"sdShock":       tail.sdShock,
+		"mateWeight":    tail.mateWeight,
+		"sdMateWeight":  tail.sdMateWeight,
 		// How often what an agent assumes actually changes hands, and how
 		// evenly it is spread. A weight explains nothing if the rule hardly
 		// ever fires, and a rule meant to spread something around must not
@@ -6123,6 +6166,8 @@ func tailAverage(series []sample) sample {
 		out.sdRiskWeight += s.sdRiskWeight
 		out.sdCompetition += s.sdCompetition
 		out.sdShock += s.sdShock
+		out.mateWeight += s.mateWeight
+		out.sdMateWeight += s.sdMateWeight
 		out.taught += s.taught
 		out.teachTop += s.teachTop
 		out.restShelter += s.restShelter
@@ -6301,6 +6346,8 @@ func tailAverage(series []sample) sample {
 	out.sdRiskWeight /= d
 	out.sdCompetition /= d
 	out.sdShock /= d
+	out.mateWeight /= d
+	out.sdMateWeight /= d
 	out.taught /= d
 	out.teachTop /= d
 	out.restShelter /= d
