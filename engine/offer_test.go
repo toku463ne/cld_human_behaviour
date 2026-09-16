@@ -220,3 +220,46 @@ func TestWaresNobodyCanSeeAreStillCried(t *testing.T) {
 		t.Fatal("somebody walked towards wares they cannot see")
 	}
 }
+
+// Cutting the goodwill a hand-over buys does not only stop the giving: it
+// closes the shop front (stage 91).
+//
+// A cry is priced at what the hand-over it arranges would buy, which is
+// addGive's figure - so with AffinityGift at nought no cry is ever worth
+// making, and since the only thing that can be bought is something held out
+// (stage 51), nothing can be bought at all. The measured arms show it: every
+// arm in this project with AffinityGift = 0 has sales of exactly 0.00.
+//
+// It is pinned here because those arms are used as the control for something
+// else - what an ornament is for (stages 82, 84), what cooking is worth (stage
+// 52) - and a control that silently removes the market cannot answer a
+// question about the market.
+func TestWithNoGoodwillInAHandOverNobodyCriesAndNothingIsSold(t *testing.T) {
+	cfg := offerConfig()
+	cfg.AffinityGift = 0
+	w := NewWorld(cfg)
+	sellerID := holding(t, w, 100, 100)
+	buyerID := w.addAgent(Agent{Maturity: 1, X: 130, Y: 100, Vitality: 60,
+		Hunger: 60, Genome: genomeOf(50, 50, 50)})
+
+	if cries(t, w, sellerID) {
+		t.Fatal("a body with nothing to gain from handing anything over still cried its wares")
+	}
+
+	// And with nobody crying, there is nothing on any counter to be seen.
+	mustAgent(t, w, sellerID).Action = Action{Kind: ActRest}
+	if sees(t, w, buyerID, sellerID).Selling {
+		t.Fatal("a body that is not crying is seen to be selling")
+	}
+
+	// The same world with the goodwill back is the control: the cry returns,
+	// so what was removed was the advertising and not the wares.
+	cfg.AffinityGift = DefaultConfig().AffinityGift
+	back := NewWorld(cfg)
+	backID := holding(t, back, 100, 100)
+	back.addAgent(Agent{Maturity: 1, X: 130, Y: 100, Vitality: 60,
+		Hunger: 60, Genome: genomeOf(50, 50, 50)})
+	if !cries(t, back, backID) {
+		t.Fatal("with the goodwill back, the cry is still not worth making")
+	}
+}

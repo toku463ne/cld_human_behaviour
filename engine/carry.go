@@ -129,8 +129,13 @@ func (w *World) mealsOf(a *Agent, f *Food) float64 {
 }
 
 // weightless says whether a thing of this kind costs nothing to carry (#66).
-// A coin and a book are the two: what they cost a body is the hand, and
-// whether the hand is a cost at all is what CarrySlotsWeigh decides.
+// A coin, a book and an ornament are the three: what they cost a body is the
+// hand, and whether the hand is a cost at all is what CarrySlotsWeigh decides.
+//
+// The ornament joined them with stage 82 and the comment here went on saying
+// two, which is worth a word because of what it means where CarrySlotsWeigh is
+// on: an ornament then takes no hand at all, so "an ornament blocks a hand"
+// is not a thing that happens in those worlds (stage 91).
 func weightless(kind FoodKind) bool {
 	return kind == FoodCoin || kind == FoodBook || kind == FoodTrinket
 }
@@ -601,6 +606,34 @@ type CarryUse struct {
 	Held    float64
 	Holders float64
 	Load    float64
+
+	// Full is the share of living bodies with no room for another thing, and
+	// Blocked the share whose room is being taken by an ornament (stage 91).
+	//
+	// What matters is not what is in the hand but what the slots are
+	// counting: where an ornament weighs nothing and the slot is priced by
+	// weight alone (CarrySlotsWeigh, stage 80a), an ornament takes no room
+	// and Blocked is nought however many are being carried. That is the
+	// question stage 91 had to settle before reading anything else - whether
+	// "an ornament blocks a hand" is even switched on in the arm it is being
+	// read in.
+	Full    float64
+	Blocked float64
+}
+
+// slotBlockedByTrinket says whether one of the things taking up this body's
+// room is an ornament (stage 91). It asks the same question slotsTaken asks,
+// item by item, so the two cannot disagree about what counts.
+func (a *Agent) slotBlockedByTrinket(cfg *Config) bool {
+	for i := range a.carried {
+		if a.carried[i].Kind != FoodTrinket {
+			continue
+		}
+		if !cfg.CarrySlotsWeigh || !weightless(FoodTrinket) {
+			return true
+		}
+	}
+	return false
 }
 
 // Carrying reports what the population is holding.
@@ -618,6 +651,12 @@ func (w *World) Carrying() CarryUse {
 		if len(a.carried) > 0 {
 			out.Holders++
 		}
+		if !a.canCarryMore(&w.cfg) {
+			out.Full++
+			if a.slotBlockedByTrinket(&w.cfg) {
+				out.Blocked++
+			}
+		}
 	}
 	if n == 0 {
 		return CarryUse{}
@@ -625,5 +664,7 @@ func (w *World) Carrying() CarryUse {
 	out.Held /= n
 	out.Holders /= n
 	out.Load /= n
+	out.Full /= n
+	out.Blocked /= n
 	return out
 }

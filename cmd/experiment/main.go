@@ -2031,6 +2031,51 @@ var variants = []variant{
 		stores: playedStores,
 	},
 	{
+		// Stage 91's pair for it: the same world with nothing to be gained by
+		// handing anybody anything. Stage 84 ran this 2x2 and reported only
+		// the population from it, and the question left over was what the
+		// ablation does to the ornaments themselves - whether a body that
+		// cannot be given one goes and buys one.
+		name:  "nowmean",
+		about: "91: the ornament world as it now stands, where a hand-over buys nothing",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.AffinityGift = 0
+		},
+		stores: playedStores,
+	},
+	{
+		// And the same pair in a world where an ornament takes a hand at all.
+		// With CarrySlotsWeigh on - which every ornament arm has had since
+		// stage 82 - an ornament weighs nothing and so takes no room, and
+		// "the ornament somebody gave me is blocking my hand" cannot happen.
+		// Turning the weighing off is the world where it can.
+		name:  "trinketshands",
+		about: "91: ornaments in a world where a hand is a slot, so an ornament fills one",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CoinPrices = true
+			c.Trinkets = true
+		},
+		stores: playedStores,
+	},
+	{
+		name:  "handsmean",
+		about: "91: the same, and a hand-over buys nothing",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CoinPrices = true
+			c.Trinkets = true
+			c.AffinityGift = 0
+		},
+		stores: playedStores,
+	},
+	{
 		// The biggest market this world can be given without changing a rule:
 		// ornaments worth three times the usual, five times the money, and
 		// the defaults as they now stand. It exists to answer one question
@@ -4627,7 +4672,7 @@ var metricNames = []string{
 	"resold", "resaleAsked", "resaleUnder", "resaleLoss", "boughtHeld", "anchored",
 	"cookStanding", "cookSplit", "cookHeld", "cookReal",
 	"wadersWet", "bankersWet", "anglerSplit", "waders", "bankers",
-	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "takeRate", "drops", "dropCoins",
+	"starvedSeen", "starvedNear", "spareShare", "held", "holders", "load", "handsFull", "handsTrinket", "takeRate", "drops", "dropCoins",
 	"flees", "escapeShare",
 	"restShelter", "shelterAll", "shelterGain",
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
@@ -4863,6 +4908,13 @@ type sample struct {
 	// bodies holding anything, and how full the hands that exist are.
 	held, holders, load float64
 
+	// And whether a hand is full, and whether what is filling it is an
+	// ornament (stage 91). Where the slot is priced by weight alone
+	// (CarrySlotsWeigh) an ornament takes no room at all, so handsTrinket is
+	// nought by construction - which is the thing to check before reading
+	// anything about ornaments blocking hands.
+	handsFull, handsTrinket float64
+
 	// What the population is living on: how mixed the average diet is, and
 	// what the average mouthful is actually worth after the discount for
 	// sameness. A rule that never fires leaves the second at one.
@@ -5075,6 +5127,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			regionRank: known.Rank, regionSpread: known.Spread,
 			dietVariety: diet.Variety, dietDiscount: diet.Discount,
 			held: carry.Held, holders: carry.Holders, load: carry.Load,
+			handsFull: carry.Full, handsTrinket: carry.Blocked,
 			fishItems: float64(fish.Items), foodInWater: fish.InWater,
 			speedOpen: ground.open, speedDear: ground.dear, speedGap: ground.gap,
 			onDear: ground.dearShare, onHigh: ground.highShare,
@@ -5621,6 +5674,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// have anything in them, how full they are, and how often something
 		// was picked up.
 		"held":     tail.held,
+		// And whether the hands are full, and whether an ornament is what is
+		// filling them (stage 91).
+		"handsFull":    tail.handsFull,
+		"handsTrinket": tail.handsTrinket,
 		"holders":  tail.holders,
 		"load":     tail.load,
 		"takeRate": perAgentLifetime(end.Taken-tailStart.Taken, personTicks),
@@ -5986,6 +6043,8 @@ func tailAverage(series []sample) sample {
 		out.held += s.held
 		out.holders += s.holders
 		out.load += s.load
+		out.handsFull += s.handsFull
+		out.handsTrinket += s.handsTrinket
 		out.dietVariety += s.dietVariety
 		out.dietDiscount += s.dietDiscount
 		out.plantSpread += s.plantSpread
@@ -6160,6 +6219,8 @@ func tailAverage(series []sample) sample {
 	out.fishItems /= d
 	out.foodInWater /= d
 	out.held /= d
+	out.handsFull /= d
+	out.handsTrinket /= d
 	out.holders /= d
 	out.load /= d
 	out.dietVariety /= d

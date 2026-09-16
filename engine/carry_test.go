@@ -277,3 +277,60 @@ func TestAWordNobodyUsesCostsNothing(t *testing.T) {
 		t.Fatal("a world with hands nobody fills differs from a world with no hands")
 	}
 }
+
+// What takes up a hand is what the slots are counting (stage 91). An ornament
+// weighs nothing, so where the slot is priced by weight alone it takes no room
+// however many are held - and where the slot is a slot, it takes one.
+//
+// This is the reading stage 91 had to have before it could read anything else:
+// stages 82 and 84 measured their ornaments in worlds with CarrySlotsWeigh on,
+// and "an ornament blocks a hand" is not a thing that happens there.
+func TestAnOrnamentTakesRoomOnlyWhereSlotsAreSlots(t *testing.T) {
+	for _, weigh := range []bool{true, false} {
+		cfg := trinketConfig()
+		cfg.CarrySlotsWeigh = weigh
+		w := NewWorld(cfg)
+		a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 100,
+			Vitality: 90, Hunger: 20, Genome: genomeOf(50, 50, 50)}))
+		a.carried = append(a.carried, Food{Kind: FoodTrinket, Made: 1})
+
+		room := a.canCarryMore(&w.cfg)
+		blocked := a.slotBlockedByTrinket(&w.cfg)
+		if weigh && (!room || blocked) {
+			t.Fatalf("with the hand priced by weight, an ornament left room=%v blocked=%v", room, blocked)
+		}
+		if !weigh && (room || !blocked) {
+			t.Fatalf("with the hand a slot, an ornament left room=%v blocked=%v", room, blocked)
+		}
+
+		use := w.Carrying()
+		wantFull := 0.0
+		if !weigh {
+			wantFull = 1
+		}
+		if use.Full != wantFull || use.Blocked != wantFull {
+			t.Fatalf("with weigh=%v the reading is full=%v blocked=%v, want %v for both",
+				weigh, use.Full, use.Blocked, wantFull)
+		}
+	}
+}
+
+// And the reading is a reading: it writes nothing and draws no random number,
+// so a run that is measured is the same run as one that is not.
+func TestCarryingChangesNothing(t *testing.T) {
+	cfg := trinketConfig()
+	cfg.Seed = 11
+	quiet, loud := NewWorld(cfg), NewWorld(cfg)
+	for i := 0; i < 300; i++ {
+		quiet.Step()
+		loud.Step()
+		loud.Carrying()
+	}
+	if quiet.draws.draws != loud.draws.draws {
+		t.Fatalf("the measured world drew %d random numbers, the unmeasured one %d",
+			loud.draws.draws, quiet.draws.draws)
+	}
+	if q, l := quiet.Stats(), loud.Stats(); q != l {
+		t.Fatalf("measuring the world changed it:\n%+v\n%+v", l, q)
+	}
+}
