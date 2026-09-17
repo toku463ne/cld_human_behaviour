@@ -852,7 +852,11 @@ func TestIntelligenceMakesTheChoiceReliable(t *testing.T) {
 		c := &AIController{}
 		p := &Perception{
 			Cfg:  &cfg,
-			Self: SelfView{Intelligence: intelligence},
+			// NoiseWeight one is the world as it was: from stage 95 the
+			// amplitude is intelligence times this body's own multiplier, and
+			// a literal built here would otherwise read nought and never
+			// wander at all.
+			Self: SelfView{Intelligence: intelligence, NoiseWeight: 1},
 			Rand: w.rng}
 		count := 0
 		for i := 0; i < 2000; i++ {

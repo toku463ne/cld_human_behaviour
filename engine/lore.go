@@ -67,6 +67,23 @@ type lore struct {
 	// otherwise, so a world that has not asked for it draws nothing, mutates
 	// nothing, and runs bit for bit as it always did.
 	mateWeight float64
+
+	// And how hard this body's judgement wobbles (stage 95): a multiplier on
+	// the spread of the error it makes scoring an option, where one is the
+	// world as it was.
+	//
+	// It is a preference rather than a fact for the usual reason - there is no
+	// right answer to how much to trust a close call - but it is a stranger
+	// one than the other four, because on the face of it less of it is always
+	// better. That is what the stage is asking: intelligence already sets how
+	// well a body can tell two options apart, and until this it also set, by
+	// the same number, how far the body would wander from its own ranking.
+	// One gene was doing two jobs, so "impulsive" and "calculating" were not
+	// two ways of being built, and nothing could select between them.
+	//
+	// Frozen at NoiseWeight unless NoiseWeightSpread says otherwise, so a
+	// world that has not asked for it draws nothing and mutates nothing.
+	noiseWeight float64
 }
 
 // newLore draws what a founder starts life assuming. The facts start at the
@@ -83,6 +100,7 @@ func (w *World) newLore() lore {
 		competitionWeight: w.spreadAround(cfg.CompetitionWeight, cfg.LoreInitSpread),
 		shockRisk:         w.spreadAround(cfg.ShockRisk, cfg.LoreInitSpread),
 		mateWeight:        w.spreadAround(cfg.OffspringValue, cfg.MateWeightSpread),
+		noiseWeight:       w.spreadAround(cfg.NoiseWeight, cfg.NoiseWeightSpread),
 	}
 }
 
@@ -99,6 +117,7 @@ func (w *World) plainLore() lore {
 		competitionWeight: cfg.CompetitionWeight,
 		shockRisk:         cfg.ShockRisk,
 		mateWeight:        cfg.OffspringValue,
+		noiseWeight:       cfg.NoiseWeight,
 	}
 }
 
@@ -165,9 +184,16 @@ func (w *World) inheritLore(pa, pb *Agent) lore {
 		// same figure, so drawing for it would move the random source along
 		// and change a world that has not asked for the rule.
 		mateWeight: cfg.OffspringValue,
+		// ... and how hard its judgement wobbles (stage 95), on the same
+		// terms: with no spread asked for, every body carries the world's own
+		// figure and no draw is made for it.
+		noiseWeight: cfg.NoiseWeight,
 	}
 	if cfg.MateWeightSpread > 0 {
 		out.mateWeight = mutate(pick(pa.lore.mateWeight, pb.lore.mateWeight), cfg.OffspringValue)
+	}
+	if cfg.NoiseWeightSpread > 0 {
+		out.noiseWeight = mutate(pick(pa.lore.noiseWeight, pb.lore.noiseWeight), cfg.NoiseWeight)
 	}
 
 	l := clamp(cfg.LamarckRate, 0, 1)
@@ -266,6 +292,10 @@ func (w *World) exchangeLore(a, o *Agent) {
 	// (stage 94). Where nobody varies there is no gap to close, so this line
 	// moves nothing in a world without the rule.
 	meet(&a.lore.mateWeight, &o.lore.mateWeight, cfg.OffspringValue)
+	// And how much either of them goes on a hunch (stage 95). Whether a
+	// steadier head is something one body can rub off on another is exactly
+	// the question the arm with the trading switched off answers.
+	meet(&a.lore.noiseWeight, &o.lore.noiseWeight, cfg.NoiseWeight)
 
 	// A rule of thumb is not a number two agents can average: half of "go for
 	// the big ones when you are starving" is not a weaker version of it, it is
@@ -353,6 +383,7 @@ type Assumptions struct {
 	Competition float64
 	ShockRisk   float64
 	MateWeight  float64
+	NoiseWeight float64
 }
 
 // Assumes reports what this agent brings to the utility formula. Read only.
@@ -366,6 +397,7 @@ func (a *Agent) Assumes() Assumptions {
 		Competition:     a.lore.competitionWeight,
 		ShockRisk:       a.lore.shockRisk,
 		MateWeight:      a.lore.mateWeight,
+		NoiseWeight:     a.lore.noiseWeight,
 	}
 }
 
@@ -429,6 +461,7 @@ type LoreView struct {
 	Competition float64
 	ShockRisk   float64
 	MateWeight  float64
+	NoiseWeight float64
 
 	// The spread of the preferences. A mean says which way a population
 	// leans; only the spread says whether there is anything left to select.
@@ -436,6 +469,7 @@ type LoreView struct {
 	SdCompetition float64
 	SdShockRisk   float64
 	SdMateWeight  float64
+	SdNoiseWeight float64
 
 	// What the world actually does, over the whole run: how often somebody who
 	// was hit hit back, and how often a courtship was accepted. These are what
@@ -460,6 +494,7 @@ func (w *World) Lore() LoreView {
 		out.Competition += a.lore.competitionWeight
 		out.ShockRisk += a.lore.shockRisk
 		out.MateWeight += a.lore.mateWeight
+		out.NoiseWeight += a.lore.noiseWeight
 		n++
 	}
 	out.Retaliation /= n
@@ -468,6 +503,7 @@ func (w *World) Lore() LoreView {
 	out.Competition /= n
 	out.ShockRisk /= n
 	out.MateWeight /= n
+	out.NoiseWeight /= n
 
 	for i := range w.agents {
 		a := &w.agents[i]
@@ -475,11 +511,13 @@ func (w *World) Lore() LoreView {
 		out.SdCompetition += square(a.lore.competitionWeight - out.Competition)
 		out.SdShockRisk += square(a.lore.shockRisk - out.ShockRisk)
 		out.SdMateWeight += square(a.lore.mateWeight - out.MateWeight)
+		out.SdNoiseWeight += square(a.lore.noiseWeight - out.NoiseWeight)
 	}
 	out.SdRiskWeight = math.Sqrt(out.SdRiskWeight / n)
 	out.SdCompetition = math.Sqrt(out.SdCompetition / n)
 	out.SdShockRisk = math.Sqrt(out.SdShockRisk / n)
 	out.SdMateWeight = math.Sqrt(out.SdMateWeight / n)
+	out.SdNoiseWeight = math.Sqrt(out.SdNoiseWeight / n)
 
 	if w.blowsSeen > 0 {
 		out.TrueRetaliation = float64(w.blowsAnswered) / float64(w.blowsSeen)

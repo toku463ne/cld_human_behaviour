@@ -270,6 +270,7 @@ type loreSnap struct {
 	CompetitionWeight             float64
 	ShockRisk                     float64
 	MateWeight                    float64
+	NoiseWeight                   float64
 }
 
 type regionSnap struct {
@@ -411,6 +412,7 @@ func snapAgent(a *Agent) agentSnap {
 			CompetitionWeight: a.lore.competitionWeight,
 			ShockRisk:         a.lore.shockRisk,
 			MateWeight:        a.lore.mateWeight,
+			NoiseWeight:       a.lore.noiseWeight,
 		},
 		Hints:       a.hints,
 		HintSlots:   a.hintSlots,
@@ -586,6 +588,7 @@ func loadAgent(s *agentSnap, cfg *Config) Agent {
 		competitionWeight: s.Lore.CompetitionWeight,
 		shockRisk:         s.Lore.ShockRisk,
 		mateWeight:        s.Lore.MateWeight,
+		noiseWeight:       s.Lore.NoiseWeight,
 	}
 	// A file written before stage 94 has no figure for what a child is worth,
 	// and a body that reads nought there would be one that never courts. Zero
@@ -595,6 +598,12 @@ func loadAgent(s *agentSnap, cfg *Config) Agent {
 	// reading an old world back is not the place to keep it.
 	if a.lore.mateWeight <= 0 {
 		a.lore.mateWeight = cfg.OffspringValue
+	}
+	// The same for how hard its judgement wobbles (stage 95), where a nought
+	// in an old file would mean a body that reads every option exactly - a
+	// sharper animal than anything the world has ever built.
+	if a.lore.noiseWeight <= 0 {
+		a.lore.noiseWeight = cfg.NoiseWeight
 	}
 	a.hints = s.Hints
 	a.hintSlots = s.HintSlots
@@ -700,6 +709,7 @@ func (w *World) Nodes() []Node {
 				CompetitionWeight: a.lore.competitionWeight,
 				ShockRisk:         a.lore.shockRisk,
 				MateWeight:        a.lore.mateWeight,
+				NoiseWeight:       a.lore.noiseWeight,
 			},
 			Hints:      append([]Hint(nil), a.hints...),
 			HintSlots:  a.hintSlots,
@@ -764,9 +774,13 @@ func (w *World) Repopulate(nodes []Node) int {
 			competitionWeight: n.Lore.CompetitionWeight,
 			shockRisk:         n.Lore.ShockRisk,
 			mateWeight:        n.Lore.MateWeight,
+			noiseWeight:       n.Lore.NoiseWeight,
 		}
 		if a.lore.mateWeight <= 0 { // a file from before stage 94; see loadAgent
 			a.lore.mateWeight = w.cfg.OffspringValue
+		}
+		if a.lore.noiseWeight <= 0 { // ... and from before stage 95
+			a.lore.noiseWeight = w.cfg.NoiseWeight
 		}
 		a.hints = append([]Hint(nil), n.Hints...)
 		a.hintSlots = n.HintSlots

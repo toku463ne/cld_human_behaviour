@@ -226,6 +226,19 @@ func beforeTheFlip(c *engine.Config) {
 	c.SalePriceSplit = false
 }
 
+// The level the flat control for stage 95 hands every body: the one selection
+// actually chose, measured over 96 seeds in the arm where nothing rubs off
+// between bodies. Stage 54 and stage 66 both needed a control of this shape,
+// and both found the flat version accounted for most of what the structured
+// one did - the figure has to be matched or the comparison says nothing.
+//
+// Note what matching it exposes. The draw is mean preserving, and so is the
+// trade between two bodies, so with the trading on the varying arm settles at
+// exactly one - which makes the matched flat control for that arm the baseline
+// itself. It is only with the trading off that selection moves the mean at
+// all, and this is where it takes it.
+const wobbleFlatLevel = 0.93
+
 // A variant is one arm of an experiment: a name, why it exists, and what it
 // changes about the default configuration.
 type variant struct {
@@ -2053,6 +2066,65 @@ var variants = []variant{
 		about: "94 with the spread, and nothing rubbing off between bodies",
 		apply: func(c *engine.Config) {
 			c.MateWeightSpread = 0.15
+			c.LoreExchangeRate = 0
+		},
+	},
+	{
+		// Stage 95: how hard a body's judgement wobbles, as a trait of its
+		// own. Counted before building it: the amplitude decides most
+		// decisions rather than a few - 85.2% of them have less than one
+		// amplitude between the best option and the runner up, 48.2% less
+		// than a tenth of one, and a fresh draw moves the winner in 69.8%.
+		// So there is room here, and the question is which way selection
+		// takes it.
+		name:  "wobble",
+		about: "95: bodies differ in how far their judgement strays from their own ranking",
+		apply: func(c *engine.Config) { c.NoiseWeightSpread = 0.15 },
+	},
+	{
+		name:  "wobblewide",
+		about: "95 at twice the spread",
+		apply: func(c *engine.Config) { c.NoiseWeightSpread = 0.3 },
+	},
+	{
+		// The control the stage turns on, and the same shape stage 54 needed:
+		// every body handed the same amplitude the varying arm settles at. It
+		// is what tells "the population varying is what did it" from "there
+		// is simply more noise about". The figure is set from the mean the
+		// spread arm reaches, so read that first.
+		name:  "wobbleflat",
+		about: "the control for 95: everybody wobbles the same amount, at the level selection chose",
+		apply: func(c *engine.Config) { c.NoiseWeight = wobbleFlatLevel },
+	},
+	{
+		// The other end of the same dose, so that the sign of the gradient in
+		// the flat direction is known rather than assumed: if the world reads
+		// the same at 0.93 and at 1.15, no amount of spread around one could
+		// have moved it either.
+		name:  "wobblemore",
+		about: "the flat dose the other way: everybody wobbles more, and nobody varies",
+		apply: func(c *engine.Config) { c.NoiseWeight = 1.15 },
+	},
+	{
+		// And whether what dulls the spread is the selection or the teaching,
+		// which is what stage 94 found for the fourth preference.
+		name:  "wobblekept",
+		about: "95 with the spread, and nothing rubbing off between bodies",
+		apply: func(c *engine.Config) {
+			c.NoiseWeightSpread = 0.15
+			c.LoreExchangeRate = 0
+		},
+	},
+	{
+		// And the flat control inside that world, which is where the stage is
+		// actually decided: with the teaching off, selection moves the level
+		// to wobbleFlatLevel, so the question is whether a population that
+		// varies and finds that level does any better than one simply handed
+		// it. Read against noexchange, not against baseline.
+		name:  "wobbleflatkept",
+		about: "the flat control for wobblekept: everybody handed the level selection chose, and nothing rubbing off",
+		apply: func(c *engine.Config) {
+			c.NoiseWeight = wobbleFlatLevel
 			c.LoreExchangeRate = 0
 		},
 	},
@@ -4921,6 +4993,7 @@ var metricNames = []string{
 	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"mateWeight", "sdMateWeight",
+	"wobble", "sdWobble",
 	"extinct",
 }
 
@@ -4981,6 +5054,7 @@ type sample struct {
 	// in every world that has not asked for it, so the spread is what says
 	// whether the rule is on at all.
 	mateWeight, sdMateWeight float64
+	wobble, sdWobble         float64
 
 	// How the trading of assumptions is spread: trades per agent per thousand
 	// ticks alive, and the share of it done by the busiest fifth. The second
@@ -5393,6 +5467,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			retal: lore.Retaliation, accept: lore.Accept,
 			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
 			mateWeight: lore.MateWeight, sdMateWeight: lore.SdMateWeight,
+			wobble: lore.NoiseWeight, sdWobble: lore.SdNoiseWeight,
 			sdRiskWeight: lore.SdRiskWeight, sdCompetition: lore.SdCompetition, sdShock: lore.SdShockRisk,
 			budget: budget, sdBudget: sdBudget, shares: shares,
 			age: s.AvgAge, maturity: s.AvgMaturity, ageFactor: s.AvgAgeFactor,
@@ -5717,6 +5792,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"sdShock":       tail.sdShock,
 		"mateWeight":    tail.mateWeight,
 		"sdMateWeight":  tail.sdMateWeight,
+		"wobble":        tail.wobble,
+		"sdWobble":      tail.sdWobble,
 		// How often what an agent assumes actually changes hands, and how
 		// evenly it is spread. A weight explains nothing if the rule hardly
 		// ever fires, and a rule meant to spread something around must not
@@ -5896,14 +5973,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// And what carrying itself does: how much is in hand, how many hands
 		// have anything in them, how full they are, and how often something
 		// was picked up.
-		"held":     tail.held,
+		"held": tail.held,
 		// And whether the hands are full, and whether an ornament is what is
 		// filling them (stage 91).
 		"handsFull":    tail.handsFull,
 		"handsTrinket": tail.handsTrinket,
-		"holders":  tail.holders,
-		"load":     tail.load,
-		"takeRate": perAgentLifetime(end.Taken-tailStart.Taken, personTicks),
+		"holders":      tail.holders,
+		"load":         tail.load,
+		"takeRate":     perAgentLifetime(end.Taken-tailStart.Taken, personTicks),
 		// And how often one was put down again (stage 70). A total rather
 		// than a rate, like gifts and sales: what the question is about is
 		// whether the word is ever used at all.
@@ -6168,6 +6245,8 @@ func tailAverage(series []sample) sample {
 		out.sdShock += s.sdShock
 		out.mateWeight += s.mateWeight
 		out.sdMateWeight += s.sdMateWeight
+		out.wobble += s.wobble
+		out.sdWobble += s.sdWobble
 		out.taught += s.taught
 		out.teachTop += s.teachTop
 		out.restShelter += s.restShelter
@@ -6348,6 +6427,8 @@ func tailAverage(series []sample) sample {
 	out.sdShock /= d
 	out.mateWeight /= d
 	out.sdMateWeight /= d
+	out.wobble /= d
+	out.sdWobble /= d
 	out.taught /= d
 	out.teachTop /= d
 	out.restShelter /= d

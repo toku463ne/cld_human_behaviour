@@ -2409,7 +2409,13 @@ func (c *AIController) pick(p *Perception) Action {
 		return Action{Kind: ActRest}
 	}
 
-	noise := (MaxAbility - p.Self.Intelligence) / MaxAbility * p.Cfg.ChoiceNoise
+	// Intelligence sets how far the body wanders from its own ranking, and
+	// stage 95 puts a second number on it: how much this particular body goes
+	// on a hunch, which is one in every world that has not asked otherwise.
+	// The two multiply rather than add, because what the trait scales is the
+	// error that is already there - a body that can tell every option apart
+	// has nothing for a hunch to move.
+	noise := (MaxAbility - p.Self.Intelligence) / MaxAbility * p.Cfg.ChoiceNoise * p.Self.NoiseWeight
 	best, bestScore := 0, math.Inf(-1)
 	for i := range c.opts {
 		misjudged := 0.0

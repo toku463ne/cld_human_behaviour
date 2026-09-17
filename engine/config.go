@@ -2220,7 +2220,7 @@ type Config struct {
 	// different sizes. Zero for both gives a population that wants exactly the
 	// same things and has nothing for selection to work on - the arm that says
 	// how much of what follows is selection on preference.
-	LoreInitSpread  float64
+	LoreInitSpread float64
 
 	// MateWeightSpread is how far apart bodies are in what a child is worth to
 	// them (stage 94). Zero is every world before it: the figure is the
@@ -2239,6 +2239,29 @@ type Config struct {
 	// being asked is whether the population varies at all. LoreMutationStd
 	// sets how far a child drifts from its parent, as it does for the others.
 	MateWeightSpread float64
+
+	// NoiseWeight and NoiseWeightSpread are how hard a body's judgement
+	// wobbles, and how far apart bodies are in it (stage 95). One is every
+	// world before it, and a spread of nought means the figure is one for
+	// everybody: nothing is drawn for it and nothing mutates.
+	//
+	// Until this, the spread of the error a body makes scoring an option was
+	// (MaxAbility - Intelligence) / MaxAbility * ChoiceNoise, so one gene set
+	// both how well a body could tell two options apart and how far it would
+	// wander from its own ranking. Those are different things - a clever body
+	// that goes on hunches and a dull one that sticks to its ranking are both
+	// buildable animals - and with one number doing both, "impulsive" and
+	// "calculating" were not two ways of being built.
+	//
+	// The two fields are separate because the control arm needs them to be:
+	// handing every body the same raised amplitude is what says whether it is
+	// the variation that matters or simply the amount of noise (the same
+	// flat-bias control stage 54 needed). It sits outside the gene budget with
+	// the chronotype, the taste and what a child is worth, for the same reason
+	// - it is not a quantity of anything a body could buy more of.
+	NoiseWeight       float64
+	NoiseWeightSpread float64
+
 	LoreMutationStd float64
 
 	// --- trading it (stage 12b) ---
@@ -3293,9 +3316,13 @@ func DefaultConfig() Config {
 		// 24 seeds) and the spread still standing at the end of a run is
 		// real. The jog on inheritance is smaller than the gene mutation
 		// because it happens at every birth rather than one in fifty.
-		LoreInitSpread:  0.15,
+		LoreInitSpread:   0.15,
 		MateWeightSpread: 0, // stage 94: everybody wants a child the same amount
-		LoreMutationStd: 0.08,
+		// Stage 95: everybody's judgement wobbles exactly as much as its
+		// intelligence says, which is every world before it.
+		NoiseWeight:       1,
+		NoiseWeightSpread: 0,
+		LoreMutationStd:   0.08,
 
 		// Two percent of the gap, not the half that meeting in the middle
 		// would suggest. The symmetry is in the rule, not in the size: both

@@ -69,6 +69,11 @@ type SelfView struct {
 	// world's own figure unless MateWeightSpread says otherwise.
 	MateWeight float64
 
+	// And how hard its judgement wobbles (stage 95), which is a multiplier on
+	// the spread of the error it makes scoring an option. One unless
+	// NoiseWeightSpread says otherwise.
+	NoiseWeight float64
+
 	// Hints are this agent's own rules of thumb (stage 12c). They are its
 	// own, so they belong here; they read nothing that is not already in this
 	// Perception, and all they can do is add to an option's score.
@@ -693,6 +698,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		CompetitionWeight: a.lore.competitionWeight,
 		ShockRisk:         w.shockRiskFelt(a),
 		MateWeight:        a.lore.mateWeight,
+		NoiseWeight:       a.lore.noiseWeight,
 		Hints:             a.hints,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),
