@@ -4091,6 +4091,8 @@ func main() {
 	kingifts := flag.Bool("kingifts", false, "giving costs a quarter of what was given up, a gift to one's own child is worth what it does for them, and the thing priced is the thing that goes (stage 92)")
 	rate := flag.Float64("rate", 0, "read starving as a rate rather than as a deadline, so a body that outlasts the window still has a gradient (stage 93; 0 = every world before it)")
 	matewant := flag.Float64("matewant", 0, "how far apart bodies are in what a child is worth to them (stage 94; 0 = everybody the same, which is every world before it)")
+	ally := flag.Float64("ally", 0, "goodwill wanted for its own sake, worth most to a body with nobody near (stage 96; 0 = every world before it)")
+	allyflat := flag.Float64("allyflat", 0, "the control for -ally: goodwill simply worth more to everybody, whoever is standing near (stage 96)")
 	wobble := flag.Float64("wobble", 0, "how far apart bodies are in how much their judgement strays from their own ranking (stage 95; 0 = every world before it)")
 	wobbleflat := flag.Float64("wobbleflat", 0, "the control for -wobble: every body handed the same amplitude, with no spread at all (stage 95)")
 	load := flag.String("load", "", "start from a world saved earlier (stage 21) instead of a new one")
@@ -4147,6 +4149,15 @@ func main() {
 	// this its intelligence alone decided. The flat flag is the control -
 	// everybody raised together, nobody varying - and the two are separate so
 	// that they can be told apart.
+	// Wanting goodwill for itself (stage 96), and the control that takes the
+	// reason out of it. Two flags rather than one, because the pair is the
+	// whole of what the stage measures.
+	if *ally > 0 {
+		cfg.AllyValue = *ally
+	}
+	if *allyflat > 0 {
+		cfg.AllyFlat = *allyflat
+	}
 	if *wobble > 0 {
 		cfg.NoiseWeightSpread = *wobble
 	}

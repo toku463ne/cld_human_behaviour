@@ -99,6 +99,12 @@ type AIController struct {
 	incomingDmg float64
 	exposure    float64
 
+	// And how much trust is standing near it (stage 96): the sum over the
+	// neighbours of how far each is towards being trusted. It is what damps
+	// the wanting of more goodwill, so that the first body one is on terms
+	// with is worth the most. Summed in the same walk, so it costs nothing.
+	trustNear float64
+
 	// What a tick spent on this ground may cost (stage 34): the chance of
 	// drowning where the agent is standing, and what a life is worth. Zero
 	// everywhere but in the water, and zero in every world with no map, which
@@ -1071,6 +1077,23 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 	}
 }
 
+// goodwillWorth is what one whole unit of trust is worth to this body right
+// now (stage 96).
+//
+// Until that stage it was LoreValue, the same figure to a body with nobody in
+// the world and to one standing among friends. AllyValue adds to it, damped by
+// the trust already standing near, so that the first body one is on terms with
+// is worth the most and the fifth almost nothing. That is what gives the
+// wanting a reason - and a want that is sated by having any at all is a want
+// that cannot hoard, which is what this stage was warned about.
+//
+// AllyFlat is the same addition undamped, and exists only so that the two can
+// be run against each other: without it there is no telling whether what a
+// measurement shows is the reason or merely the amount.
+func (c *AIController) goodwillWorth(cfg *Config) float64 {
+	return cfg.LoreValue + cfg.AllyFlat + cfg.AllyValue/(1+c.trustNear)
+}
+
 // trustBought is how much of the way to being trusted a hand-over of this size
 // would carry somebody who is this far along already. Trust saturates, so it is
 // worth most between strangers and nothing at all between two who are already
@@ -1165,7 +1188,7 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 	if cfg.GiftPriced || cfg.GiftSelfLookahead > 0 || kin {
 		item, spare = c.spareItem(p)
 	}
-	gift := cfg.LoreValue * gained
+	gift := c.goodwillWorth(cfg) * gained
 	switch {
 	case cfg.GiftPriced:
 		gift -= spare
@@ -1256,7 +1279,7 @@ func (c *AIController) addOffer(p *Perception) {
 	ticks := float64(cfg.OfferTicks)
 	comes := clamp(ticks*cfg.MaxSpeed/math.Max(c.bestGiftDist, 1e-9), 0, 1)
 	c.add(Action{Kind: ActOffer}, Utility{
-		Lore:     Goal{Value: cfg.LoreValue * c.bestGiftGain, Chance: comes},
+		Lore:     Goal{Value: c.goodwillWorth(cfg) * c.bestGiftGain, Chance: comes},
 		Ticks:    ticks,
 		TimeCost: ticks * cfg.TimeCost,
 	})
@@ -1447,7 +1470,7 @@ func (c *AIController) addBooks(p *Perception) {
 			}
 		}
 		if best > 0 {
-			gain := cfg.BookValue * cfg.LoreValue * best
+			gain := cfg.BookValue * c.goodwillWorth(cfg) * best
 			c.add(Action{Kind: ActWrite}, Utility{
 				Lore:     Goal{Value: gain, Chance: 1},
 				Ticks:    ticks,
@@ -2325,7 +2348,7 @@ func (c *AIController) addObserve(p *Perception, o *AgentView) {
 // another.
 func (c *AIController) survey(p *Perception) {
 	cfg := p.Cfg
-	c.incomingDmg, c.exposure = 0, 0
+	c.incomingDmg, c.exposure, c.trustNear = 0, 0, 0
 	attacker := p.Self.AttackerID
 	known := false
 
@@ -2337,6 +2360,17 @@ func (c *AIController) survey(p *Perception) {
 		// it hits: the other one is as strong as it is, and what this body
 		// knows is what it can do about it.
 		threat *= 1 - o.Ward
+
+		// How far this one is towards being trusted (stage 96). Taken as a
+		// sum rather than a count of friends, because a count needs a line
+		// drawn somewhere and this world does not draw those. It is gathered
+		// whether or not the exposure below is being worked out, since the
+		// two ask different questions of the same number: that one wants to
+		// know who would watch over a nap, this one wants to know whether
+		// the body has anybody at all.
+		if cfg.AffinityTrust > 0 {
+			c.trustNear += clamp(o.Affinity/cfg.AffinityTrust, 0, 1)
+		}
 
 		// Somebody who has taken a target on, and how much of its weight this
 		// agent can count on (stage 32). Trust, not affinity: what is being

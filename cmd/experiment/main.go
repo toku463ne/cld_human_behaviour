@@ -239,6 +239,17 @@ func beforeTheFlip(c *engine.Config) {
 // all, and this is where it takes it.
 const wobbleFlatLevel = 0.93
 
+// The dose for stage 96 and the damping it averages out at. The dose is twice
+// LoreValue, which the count before the stage put at about four times what a
+// gift's goodwill is worth today once the damping is applied - enough to close
+// a majority of the gaps a gift loses by. The damping is the measured mean of
+// 1/(1 + trust standing near) over a run, and it is what the flat control is
+// scaled by so that the two arms carry the same amount of wanting.
+const (
+	allyDose        = 18.0
+	allyMeanDamping = 0.7268
+)
+
 // A variant is one arm of an experiment: a name, why it exists, and what it
 // changes about the default configuration.
 type variant struct {
@@ -2070,6 +2081,48 @@ var variants = []variant{
 		},
 	},
 	{
+		// Stage 96: wanting goodwill for its own sake, damped by how much of
+		// it is already standing near. Counted before building it: a gift is
+		// scored in 14.1% of decisions and wins 20.6% of those, the goodwill
+		// in one is worth 2.69 today, and the gap it loses by has a median of
+		// 7.63 - so quadrupling what goodwill is worth closes 61% of the
+		// losses and the rule will fire. 48% of decisions have no trust in
+		// sight at all, which is the half the damping reaches into.
+		name:  "ally",
+		about: "96: goodwill is wanted for itself, and wanted most by a body with nobody",
+		apply: func(c *engine.Config) { c.AllyValue = allyDose },
+	},
+	{
+		// Not "allyhalf": that name was already taken by the AllyTrustWeight
+		// sweep above, and variantByName takes the first match - so an arm
+		// named twice runs the other one and reports it under this name.
+		name:  "allylow",
+		about: "96 at half the dose",
+		apply: func(c *engine.Config) { c.AllyValue = allyDose / 2 },
+	},
+	{
+		name:  "allywide",
+		about: "96 at twice the dose",
+		apply: func(c *engine.Config) { c.AllyValue = allyDose * 2 },
+	},
+	{
+		// The control the stage turns on: the same addition with no reason in
+		// it. The level is the dose times the mean damping, measured over a
+		// run before it was built, so the two arms differ in whether the
+		// wanting has a reason and not in how much of it there is.
+		name:  "allyflat",
+		about: "the control for 96: goodwill simply worth more, to everybody, whoever is standing near",
+		apply: func(c *engine.Config) { c.AllyFlat = allyDose * allyMeanDamping },
+	},
+	{
+		// And the same control at the low dose, because that is where the
+		// rule stops costing anything: matched to allylow's mean addition
+		// rather than to ally's.
+		name:  "allyflatlow",
+		about: "the control for 96 at half the dose",
+		apply: func(c *engine.Config) { c.AllyFlat = allyDose / 2 * allyMeanDamping },
+	},
+	{
 		// Stage 95: how hard a body's judgement wobbles, as a trait of its
 		// own. Counted before building it: the amplitude decides most
 		// decisions rather than a few - 85.2% of them have less than one
@@ -2128,13 +2181,11 @@ var variants = []variant{
 			c.LoreExchangeRate = 0
 		},
 	},
-	{
-		// The pair for it, so that what killing the trading does on its own
-		// can be told from what it does to this.
-		name:  "noexchange",
-		about: "the control for matekept: nothing rubs off between bodies, and no spread either",
-		apply: func(c *engine.Config) { c.LoreExchangeRate = 0 },
-	},
+	// The pair for matekept and wobblekept - what killing the trading does on
+	// its own - is the "noexchange" arm defined with stage 12b above. It was
+	// written out a second time here and the duplicate never ran, which did no
+	// harm because the two applied the same thing; checkVariantNames now says
+	// so rather than leaving it to be noticed.
 	{
 		// Stage 93: the chance of starving read as a rate rather than as a
 		// deadline. What it is aimed at is the flat gradient P14 kept running
@@ -4748,11 +4799,8 @@ var variants = []variant{
 			c.TerrainMap, c.TerrainFoodCorrelation, c.HighGroundCover = mapPlateau, 1, 0.3
 		},
 	},
-	{
-		name:  "plateaulink",
-		about: "control: the same plateau world with no cover",
-		apply: func(c *engine.Config) { c.TerrainMap, c.TerrainFoodCorrelation = mapPlateau, 1 },
-	},
+	// "plateaulink" - the same plateau with the food following the ground - is
+	// defined with the terrain arms above and serves as the control here too.
 	{
 		name:  "countrycover",
 		about: "the whole country, with high ground as cover",
@@ -4884,6 +4932,22 @@ var variants = []variant{
 		about: "MaxLifespan cut to 1500: how visible aging death becomes when the budget is tight",
 		apply: func(c *engine.Config) { c.MaxLifespan = 1500 },
 	},
+}
+
+// checkVariantNames reports any name given to two arms. variantByName takes the
+// first match, so a duplicate silently runs the wrong arm and reports it under
+// the name that was asked for - which happened once, to stage 96's half dose,
+// and was only caught by the number coming out at nothing.
+func checkVariantNames() []string {
+	seen := map[string]int{}
+	var dupes []string
+	for _, v := range variants {
+		seen[v.name]++
+		if seen[v.name] == 2 {
+			dupes = append(dupes, v.name)
+		}
+	}
+	return dupes
 }
 
 func variantByName(name string) (variant, bool) {
@@ -6975,6 +7039,11 @@ func main() {
 	list := flag.Bool("list", false, "list the arms and exit")
 	flag.Parse()
 
+	if dupes := checkVariantNames(); len(dupes) > 0 {
+		fmt.Fprintf(os.Stderr, "two arms share a name, so one of them can never be run: %s\n",
+			strings.Join(dupes, ", "))
+		os.Exit(1)
+	}
 	if *list {
 		for _, v := range variants {
 			fmt.Printf("%-12s %s\n", v.name, v.about)

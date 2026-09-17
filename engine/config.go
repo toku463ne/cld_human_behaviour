@@ -2337,6 +2337,41 @@ type Config struct {
 	// and leaves the trade happening without anybody seeking it out.
 	LoreValue float64
 
+	// AllyValue and AllyFlat are wanting goodwill for its own sake (stage 96),
+	// and the control that says whether the wanting needs a reason. Both are
+	// nought in every world before it.
+	//
+	// What the goodwill an act would buy is worth has been LoreValue flat
+	// since stage 48: the same figure to a body with nobody in the world and
+	// to one standing among friends. AllyValue adds to it, and the addition
+	// falls away as this body already has trust in sight -
+	//
+	//	LoreValue + AllyValue/(1 + trust standing near)
+	//
+	// - so the first one a body is on terms with is worth the most and the
+	// fifth almost nothing. That shape is the answer to the trap this stage
+	// was warned about (#112(c)): a want with nothing behind it hoards, and a
+	// want that is sated by having any at all cannot.
+	//
+	// It is also what keeps the rule away from the wall this world has
+	// measured six times over: goodwill makes resting look safe, so a body
+	// with friends about is a body that rests among them and dies of it. The
+	// damping means the rule reaches hardest into the bodies that have none -
+	// 48% of decisions, counted before it was built - and least into the ones
+	// already on the wrong side of that.
+	//
+	// AllyFlat is the same addition with no damping at all, and it is the arm
+	// that has to be run beside it: set to AllyValue times the mean damping,
+	// the two arms differ in whether the wanting has a reason and not in how
+	// much of it there is (the control stage 54 and stage 95 both needed).
+	//
+	// Selling is left on LoreValue. The two ends of a sale have to read the
+	// same figure (stage 68), the seller's is a rule of the world with no
+	// walk over the neighbours to hand, and AffinitySale is nought by default,
+	// so no world runs both.
+	AllyValue float64
+	AllyFlat  float64
+
 	// --- rules of thumb (stage 12c, hint.go) ---
 	//
 	// A hint is a situation, a move, and a weight: the relations the designer
@@ -3349,6 +3384,10 @@ func DefaultConfig() Config {
 		// worth about a third of a child.
 		AffinityLore: 30,
 		LoreValue:    9,
+		// Stage 96: goodwill is worth the same to a body with nobody as to one
+		// among friends, which is every world before it.
+		AllyValue: 0,
+		AllyFlat:  0,
 
 		// Four ideas at most, at five budget apiece. The price was swept
 		// against a world with no room for ideas at all: at fifteen a full
