@@ -1246,6 +1246,35 @@ type Config struct {
 
 	// --- cooking (stage 52) ---
 
+	// EatTicks is how long a body stands at a meal before it has it, and
+	// EatTicksKnown is whether it knows that when it is choosing. Zero is
+	// every world before this: a meal reached is a meal had, in the tick it
+	// was reached.
+	//
+	// It is the occupancy that was left out when the words were written. The
+	// price is time and only time, in the shape the call, the cry, the
+	// cooking and the writing already use (#76) - the same actionTicks, and
+	// no new parallel machinery. An interrupted meal is time spent for
+	// nothing, exactly as an interrupted cry is, and nothing here stops a
+	// body abandoning one: being hit already asks it to think again, so what
+	// happens at a meal that turns dangerous comes out of the ordinary
+	// comparison rather than out of a rule about meals.
+	//
+	// The time is spent at the food and not on the way to it, which is why
+	// the counter is held at nought while the body is still walking. It was
+	// counted before this was built: only 0.13% of a life is spent standing
+	// at a meal, against 10.8% walking to one, so occupancy is small however
+	// it is dosed - but eating is scored in 49.8% of decisions, so what the
+	// extra time does to the comparison is not small.
+	//
+	// EatTicksKnown is the control in the shape stage 34 and stage 86 both
+	// needed: the world holds the body either way, and turning it off leaves
+	// the utility pricing a meal at one tick. Without it there is no telling
+	// whether what a measurement shows is bodies choosing differently or
+	// simply being held still.
+	EatTicks      int
+	EatTicksKnown bool
+
 	// CookTicks is how long a body stands there preparing what is in its
 	// hand. Zero takes the word out of the world: nothing is scored and
 	// nothing is ever cooked.
@@ -3111,6 +3140,11 @@ func DefaultConfig() Config {
 		// Stage 52. The word costs the vocabulary whether or not anybody uses
 		// it, so a world without cooking is CookVitality at zero rather than
 		// a world with a shorter list.
+		// Stage: occupancy. Nought is every world before it - a meal reached
+		// is a meal had - and the control defaults to the body knowing.
+		EatTicks:      0,
+		EatTicksKnown: true,
+
 		CookTicks:            20,
 		CookVitality:         0.5, // the same as a carcass, so the two never stack
 		CookQuality:          1,   // anybody can cook; a map that wants otherwise says so

@@ -966,10 +966,28 @@ func (c *AIController) addFood(p *Perception) {
 		}
 		pGet *= raceChance(cfg, s, f.Dist, f.RivalDist)
 
+		// How long the body would stand there getting it (#76). One is every
+		// world before the rule, and it is the tick the meal always took;
+		// where the body is not told, it goes on pricing a meal at that one
+		// tick while the world holds it for longer.
+		gather := 1.0
+		if cfg.EatTicks > 0 && cfg.EatTicksKnown {
+			gather = float64(cfg.EatTicks)
+		}
 		for _, effort := range effortLevels {
-			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
+			travel := f.Dist / speedAt(s.MaxSpeed, effort)
+			ticks := travel + gather
 
-			cost := moveCost(cfg, s, effort) * ticks
+			// Walking is what costs vitality; standing at the meal is not.
+			// The one tick added to the travel is the one the meal has always
+			// been charged, which is what keeps a world without the rule
+			// exactly as it was.
+			cost := moveCost(cfg, s, effort) * (travel + 1)
+			// Picking a thing up is still one tick, here and in the world
+			// (#76): putting the gathering time on the carrying too would
+			// leave no way to tell which of the two did whatever the
+			// measurement shows.
+			takeTicks := travel + 1
 			hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*f.Nutrition)
 			vitAfter := s.Vitality - cost
 			// What the item itself mends, up to what is missing (stage 39).
@@ -1022,9 +1040,9 @@ func (c *AIController) addFood(p *Perception) {
 				u := Utility{
 					Life:         Goal{Value: keep, Chance: pGet * need},
 					Vitality:     cost + lug + poison*pGet,
-					Ticks:        ticks,
+					Ticks:        takeTicks,
 					VitalityCost: (cost + lug + poison*pGet) * cfg.VitalityWeight,
-					TimeCost:     ticks * cfg.TimeCost,
+					TimeCost:     takeTicks * cfg.TimeCost,
 				}
 				if s.CarryRoom {
 					c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, u)

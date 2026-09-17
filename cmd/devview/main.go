@@ -4091,6 +4091,7 @@ func main() {
 	kingifts := flag.Bool("kingifts", false, "giving costs a quarter of what was given up, a gift to one's own child is worth what it does for them, and the thing priced is the thing that goes (stage 92)")
 	rate := flag.Float64("rate", 0, "read starving as a rate rather than as a deadline, so a body that outlasts the window still has a gradient (stage 93; 0 = every world before it)")
 	matewant := flag.Float64("matewant", 0, "how far apart bodies are in what a child is worth to them (stage 94; 0 = everybody the same, which is every world before it)")
+	gather := flag.Int("gather", 0, "how long a body stands at a meal before it has it (#76; 0 = every world before it, where a meal reached is a meal had)")
 	ally := flag.Float64("ally", 0, "goodwill wanted for its own sake, worth most to a body with nobody near (stage 96; 0 = every world before it)")
 	allyflat := flag.Float64("allyflat", 0, "the control for -ally: goodwill simply worth more to everybody, whoever is standing near (stage 96)")
 	wobble := flag.Float64("wobble", 0, "how far apart bodies are in how much their judgement strays from their own ranking (stage 95; 0 = every world before it)")
@@ -4152,6 +4153,10 @@ func main() {
 	// Wanting goodwill for itself (stage 96), and the control that takes the
 	// reason out of it. Two flags rather than one, because the pair is the
 	// whole of what the stage measures.
+	// Occupancy (#76): the time a meal takes, spent at the food.
+	if *gather > 0 {
+		cfg.EatTicks = *gather
+	}
 	if *ally > 0 {
 		cfg.AllyValue = *ally
 	}

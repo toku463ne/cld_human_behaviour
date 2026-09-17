@@ -2081,6 +2081,35 @@ var variants = []variant{
 		},
 	},
 	{
+		// Occupancy (#76): a meal takes time at the food. Counted before
+		// building it: only 0.13% of a life is spent standing at a meal
+		// against 10.8% walking to one, so the occupancy itself is small
+		// however it is dosed - but eating is scored in 49.8% of decisions,
+		// so what the extra time does to the comparison is not.
+		name:  "gather",
+		about: "#76: a meal takes time at the food rather than being had in the tick it is reached",
+		apply: func(c *engine.Config) { c.EatTicks = 8 },
+	},
+	{
+		name:  "gatherlong",
+		about: "#76 at five times the time, where the standing rivals resting",
+		apply: func(c *engine.Config) { c.EatTicks = 40 },
+	},
+	{
+		// The control in the shape stage 34 and stage 86 both needed: the
+		// world holds the body either way, and the utility goes on pricing a
+		// meal at the one tick it always took. It says whether what shows up
+		// is bodies choosing differently or simply being held still.
+		name:  "gatherblind",
+		about: "the control for #76: the world holds the body at its meal, but it does not know that when choosing",
+		apply: func(c *engine.Config) { c.EatTicks, c.EatTicksKnown = 8, false },
+	},
+	{
+		name:  "gatherlongblind",
+		about: "the same control at five times the time",
+		apply: func(c *engine.Config) { c.EatTicks, c.EatTicksKnown = 40, false },
+	},
+	{
 		// Stage 96: wanting goodwill for its own sake, damped by how much of
 		// it is already standing near. Counted before building it: a gift is
 		// scored in 14.1% of decisions and wins 20.6% of those, the goodwill

@@ -1096,6 +1096,9 @@ func (w *World) perform(a *Agent) {
 		// distance to cover and nobody to race: the only thing carrying
 		// changes about a meal is where it was a moment before.
 		if a.carriedIndex(a.Action.TargetID) >= 0 {
+			if a.actionTicks < w.cfg.EatTicks {
+				return // still at it
+			}
 			w.eatCarried(a, a.Action.TargetID)
 			return
 		}
@@ -1108,7 +1111,21 @@ func (w *World) perform(a *Agent) {
 		// that has learned to fish from the bank, far enough to keep its feet
 		// dry (stage 43).
 		if reach := w.fishReach(a, f.Kind); dist2(a.X, a.Y, f.X, f.Y) > reach*reach {
+			// The time a meal takes is spent at it, not on the way to it, so
+			// the counter does not start until the body is there. Held at
+			// nought only where the rule is on, so that a world without it
+			// saves and reloads exactly as it did.
+			if w.cfg.EatTicks > 0 {
+				a.actionTicks = 0
+			}
 			w.moveToward(a, f.X, f.Y, a.Action.Effort)
+			return
+		}
+		// Standing there getting it (#76). Whatever it is - digging a root
+		// up, working a fish loose - the body is doing it rather than
+		// choosing, and it is defenceless while it does: eating has no stance
+		// (stance.go), and that was free when a meal took one tick.
+		if a.actionTicks < w.cfg.EatTicks {
 			return
 		}
 		// And whether it comes off. Two foods in this world can be reached and
@@ -1133,7 +1150,21 @@ func (w *World) perform(a *Agent) {
 			return
 		}
 		if reach := w.fishReach(a, f.Kind); dist2(a.X, a.Y, f.X, f.Y) > reach*reach {
+			// The time a meal takes is spent at it, not on the way to it, so
+			// the counter does not start until the body is there. Held at
+			// nought only where the rule is on, so that a world without it
+			// saves and reloads exactly as it did.
+			if w.cfg.EatTicks > 0 {
+				a.actionTicks = 0
+			}
 			w.moveToward(a, f.X, f.Y, a.Action.Effort)
+			return
+		}
+		// Standing there getting it (#76). Whatever it is - digging a root
+		// up, working a fish loose - the body is doing it rather than
+		// choosing, and it is defenceless while it does: eating has no stance
+		// (stance.go), and that was free when a meal took one tick.
+		if a.actionTicks < w.cfg.EatTicks {
 			return
 		}
 		if f.Kind == FoodFish && w.rng.Float64() >= w.fishCatch(a, f.Kind) {
