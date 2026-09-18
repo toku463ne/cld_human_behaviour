@@ -382,6 +382,11 @@ type World struct {
 	kills                int
 	agingDeaths          int
 	drownDeaths          int
+	// drownTakenSwim is the realised swimming of the bodies the water has
+	// taken, summed (stage 98). Against the swimming of the bodies standing in
+	// the water it says whether the river was already sorting them before any
+	// rule was written to make it.
+	drownTakenSwim float64
 	// drownWitnesses is how many times somebody has watched the ground take
 	// somebody else (stage 35). Counted because a rule that hardly ever fires
 	// explains nothing whatever its weight - the lesson of stage 24.

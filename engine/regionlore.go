@@ -281,6 +281,13 @@ func (w *World) worthOfRegion(a *Agent, i int, seen float64) float64 {
 	// (stage 35). Nothing is gated on this: as with the cost, what it changes
 	// is the ranking of the country the agent is already considering.
 	if danger, ok := w.regionDangerEstimate(a, i); ok {
+		// Whose danger it is (stage 98). The belief is about the place, so by
+		// default every body prices the same figure; the arm scales it by what
+		// this body would actually face there, which is what the rule about
+		// not being able to swim says the place will do to it.
+		if w.cfg.DrownBeliefPerBody {
+			danger *= w.drownFactorFor(a)
+		}
 		worth -= w.dangerPrice(danger)
 	}
 	return worth

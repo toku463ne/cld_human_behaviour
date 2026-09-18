@@ -413,11 +413,102 @@ func (w *World) drownChanceFor(a *Agent, t terrain) float64 {
 	if a.Species == SpeciesEnemy && w.kindOf(a).Water {
 		return 0
 	}
+	chance := t.Drown * w.drownFactorFor(a)
 	if w.cfg.SkillSwimRelief <= 0 {
-		return t.Drown
+		return chance
 	}
 	relief := clamp(a.skillAt(&w.cfg, SkillSwim)*w.cfg.SkillSwimRelief, 0, 1)
-	return t.Drown * (1 - relief)
+	return chance * (1 - relief)
+}
+
+// drownFactorFor is the other end of the same curve (stage 98): what the water
+// asks of a body that cannot swim, over what it asks of one that can.
+//
+// One curve and not a second rule. It runs from DrownUnskilledFactor at no
+// swimming down to one at DrownSkillFull, and SkillSwimRelief carries it on
+// down from there - so a body that knows the water faces exactly the chance it
+// faced before this stage, and everything the ground is charged for is still
+// the ground's own figure times something the body brings.
+//
+// Reaching one at a mastery that bodies in this world actually attain is the
+// whole of the shape. Counted before it was built: 71% of the bodies standing
+// in a river hold no swimming at all, and the ones that do are up around 0.5,
+// so a curve that only got there at a mastery of one would charge the ones who
+// know the water nearly the full penalty - which is the flat rise this stage
+// has to be told apart from.
+func (w *World) drownFactorFor(a *Agent) float64 {
+	f := w.cfg.DrownUnskilledFactor
+	if f <= 1 || a == nil {
+		return 1
+	}
+	learned := 0.0
+	if full := w.cfg.DrownSkillFull; full > 0 {
+		learned = clamp(a.skillAt(&w.cfg, SkillSwim)/full, 0, 1)
+	}
+	return 1 + (f-1)*(1-learned)
+}
+
+// Drowning is what the water is asking of the bodies that are in it (stage
+// 98). Read only: nothing here writes to the world or draws a random number.
+type Drowning struct {
+	// In is the share of the living standing in water at all.
+	In float64
+
+	// Chance is the mean chance a tick in there is the last one, as the bodies
+	// standing in it actually face it, and Floor the ground's own figure for
+	// those same bodies. Chance/Floor is the multiplier the population is
+	// actually paying, which is the figure a flat arm has to be set to: an arm
+	// that raises the ground's figure for everybody by the same mean says how
+	// much of whatever moves is the spread rather than the level.
+	Chance, Floor float64
+
+	// Skill is the mean realised swimming of those bodies and Unskilled the
+	// share of them holding none at all. The second is the one that matters
+	// here - what this world has is not a low mean but two humps.
+	Skill, Unskilled float64
+
+	// TakenSkill is the mean realised swimming of every body the water has
+	// taken since the world began. Below Skill means the river is sorting
+	// them; equal to it means the rule is not reaching who drowns.
+	TakenSkill float64
+}
+
+// Drowning reports it.
+func (w *World) Drowning() Drowning {
+	var out Drowning
+	var n, all float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		all++
+		t := w.terrainAt(a.X, a.Y)
+		if t.Drown <= 0 {
+			continue
+		}
+		n++
+		out.Chance += w.drownChanceFor(a, t)
+		out.Floor += t.Drown
+		s := a.skillAt(&w.cfg, SkillSwim)
+		out.Skill += s
+		if s <= 0 {
+			out.Unskilled++
+		}
+	}
+	if all > 0 {
+		out.In = n / all
+	}
+	if n > 0 {
+		out.Chance /= n
+		out.Floor /= n
+		out.Skill /= n
+		out.Unskilled /= n
+	}
+	if w.drownDeaths > 0 {
+		out.TakenSkill = w.drownTakenSwim / float64(w.drownDeaths)
+	}
+	return out
 }
 
 // drownings is the whole of the rule. Every body standing in the water at the
@@ -450,6 +541,7 @@ func (w *World) drownings() {
 		}
 		if w.rng.Float64() < p {
 			w.drownDeaths++
+			w.drownTakenSwim += a.skillAt(&w.cfg, SkillSwim)
 			a.drowned = true
 			// Before the body is taken out of the world, because the ones who
 			// are about to learn from it are the ones who can see it where it

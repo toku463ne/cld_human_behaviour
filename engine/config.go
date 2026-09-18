@@ -2704,6 +2704,51 @@ type Config struct {
 	// here and runs identically.
 	DrownChancePerTick float64
 
+	// DrownUnskilledFactor is how much more likely the water is to be the end
+	// of a body that cannot swim at all than of one that knows it (stage 98).
+	//
+	// One is the world before this stage - every body faces the ground's own
+	// figure, whatever it knows - and nothing here draws a random number, so a
+	// world at one runs identically.
+	//
+	// What this stage is FOR is the individual difference, not the danger.
+	// Raising DrownChancePerTick for everybody was measured at stage 34 and
+	// takes the world with it (five times over leaves a population of 18 and
+	// no enemies at all), so the arm this has to beat is a flat rise by the
+	// same mean multiplier - if it cannot, what it bought was the level and
+	// not the spread, which is what stage 95 found about the wobble.
+	//
+	// It is one curve with SkillSwimRelief and not a second knob on the same
+	// effect: the multiplier below runs from this figure at no skill down to
+	// one, and the relief carries on down from there. Stage 97 kept its own
+	// figure for the drag because not drowning and not being dragged are two
+	// effects; here there is one effect and two ends of it.
+	DrownUnskilledFactor float64
+
+	// DrownSkillFull is the realised swimming at which the penalty above is
+	// gone and the water is as dangerous as it has always been.
+	//
+	// It exists because the realised figures in this world are small and
+	// two-humped: counted before this was built, 71% of the bodies standing in
+	// a river hold no swimming at all and the rest are up around 0.5, so a
+	// curve that only reaches its floor at a mastery of one would leave even
+	// the ones who know the water paying most of the penalty - which is to say
+	// it would be the flat rise it has to be told apart from. One is that
+	// linear curve, and it is an arm rather than the default.
+	DrownSkillFull float64
+
+	// DrownBeliefPerBody says whether what an agent believes a place will do
+	// to it is scaled by its own swimming as well (stage 98).
+	//
+	// False is the ordinary world, and the reason is what the belief is: a
+	// place is as dangerous as it is, and stage 35's rule learns that from the
+	// ground underfoot and from watching somebody go under. Scaling it per
+	// body makes "it is dangerous over there" a different number for the one
+	// who says it and the one who hears it, which is a change to what is being
+	// handed on and not a change to what is true. True is the arm that says
+	// how much that distinction is worth.
+	DrownBeliefPerBody bool
+
 	// DrownKnown says whether an agent feels how dangerous the ground it is
 	// standing on is (stage 34). True is the ordinary world: the chance is in
 	// Perception.Self.Drown and priced into every option that would keep the
@@ -3339,6 +3384,11 @@ func DefaultConfig() Config {
 		// HISTORY.md, 2026-09-07.
 		DrownChancePerTick: 0.0002,
 		DrownKnown:         true,
+		// One is off: the water takes the swimmer and the sinker alike, as it
+		// has since stage 34. The reachable-mastery point is set even so, so
+		// that turning the rule on is one figure and not two.
+		DrownUnskilledFactor: 1,
+		DrownSkillFull:       0.5,
 
 		// Long enough to read the proposal and decide, short enough that a
 		// player who has walked away does not hold a stranger in place. The

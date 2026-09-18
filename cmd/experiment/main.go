@@ -55,6 +55,13 @@ var (
 	// A river north to south, two cells wide, with no bridge: crossing is
 	// dear, not impossible, which is the difference between a cost and an
 	// obstacle.
+	// sinkFlatMult is what sink3 was measured to be paying over what the base
+	// pays (drownMult 2.26 against 0.87, 48 seeds). The flat control raises
+	// the ground's own figure by it, so that the pair differs in WHO pays and
+	// not in how much is paid - see the arms below. Both arms report their own
+	// drownMult, which is how the match is checked rather than assumed.
+	sinkFlatMult = 2.60
+
 	mapRiver = []string{
 		".......~~.......",
 		".......~~.......",
@@ -4711,6 +4718,96 @@ var variants = []variant{
 			c.SkillBirthplace = 0.5
 		},
 	},
+	// Stage 98: the water asks more of a body that cannot swim. The base is
+	// riverswim again, for the same reason - the skill's half needs somebody
+	// who has the skill - and the sweep is on the multiplier a body with none
+	// of it pays.
+	//
+	// The arm this has to beat is sinkflat, not the base. Stage 34 already
+	// measured a flat rise and it takes the world with it, so what is being
+	// asked here is whether the SPREAD buys anything the level does not:
+	// sinkflat raises the ground's own figure for everybody by the multiplier
+	// sink3 was measured to be paying, which makes the pair differ in nothing
+	// but who pays it. sinknoskill is the same rule with the skill worth
+	// nothing - everybody at the full penalty - and says what knowing the
+	// water bought. sinkblind separates the choosing from the sorting
+	// (DrownKnown's shape, for the fourth time). sinklinear is the curve that
+	// only reaches its floor at a mastery of one, which the count before this
+	// was built says is nearly the flat arm. sinkbelief hands the body's own
+	// figure to what it believes about a place, which stage 35's rule keeps
+	// as a property of the place.
+	{
+		name:  "sink3",
+		about: "98: a body that cannot swim is three times as likely to be taken by the river",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.DrownUnskilledFactor = 3
+		},
+	},
+	{
+		name:  "sink2",
+		about: "sweep: twice as likely instead of three times",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.DrownUnskilledFactor = 2
+		},
+	},
+	{
+		name:  "sink5",
+		about: "sweep: five times, which is the dose stage 34 measured flat and it broke the world",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.DrownUnskilledFactor = 5
+		},
+	},
+	{
+		name:  "sinkflat",
+		about: "control: the same mean multiplier, paid by everybody - the level without the spread (98)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.DrownChancePerTick *= sinkFlatMult
+		},
+	},
+	{
+		name:  "sinknoskill",
+		about: "control: three times for everybody, so knowing the water buys nothing (98)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.DrownChancePerTick *= 3
+		},
+	},
+	{
+		name:  "sinkblind",
+		about: "control: the river takes the sinkers just as often and no body can feel it (98)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.DrownUnskilledFactor, c.DrownKnown = 3, false
+		},
+	},
+	{
+		name:  "sinklinear",
+		about: "arm: the curve that only lets go at a mastery of one, which nobody here reaches (98)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.DrownUnskilledFactor, c.DrownSkillFull = 3, 1
+		},
+	},
+	{
+		name:  "sinkbelief",
+		about: "arm: what a place is believed to do is scaled by the body asking (98)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.DrownUnskilledFactor, c.DrownBeliefPerBody = 3, true
+		},
+	},
+	{
+		name:  "playsink",
+		about: "98 on the map that gets played on, where the banks are rich and the water is fished",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.SkillBirthplace, c.DrownUnskilledFactor = 0.5, 3
+		},
+	},
 	// Stage 31: what a killing leaves with the people who saw it. The base
 	// is baseline - the rule is on by default - so the arms here are the
 	// controls: each half off, both off, and the reading half at weights
@@ -5179,6 +5276,7 @@ var metricNames = []string{
 	"forageHeld", "forageNominal", "forageReal",
 	"swimHeld", "swimNominal", "swimReal", "swimWet",
 	"wetPace", "wetFloor",
+	"drownMult", "wetGreen", "drownTaken",
 	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"mateWeight", "sdMateWeight",
@@ -5446,7 +5544,15 @@ type sample struct {
 	// would have made it, and swimWet what the ones standing on the dear
 	// ground know - the three figures that say whether the skill's half of
 	// this rule reaches anybody.
-	wetPace, wetFloor, swimWet   float64
+	wetPace, wetFloor, swimWet float64
+
+	// What the water is asking of the bodies in it (stage 98). drownMult is
+	// the multiplier the population is actually paying over the ground's own
+	// figure - the number a flat arm has to be set to - wetGreen the share of
+	// the bodies in the water holding no swimming at all, and drownTaken the
+	// mean swimming of everybody the water has taken, which against swimWet
+	// says whether the river is sorting them.
+	drownMult, wetGreen, drownTaken float64
 	tolHeld, tolNominal, tolReal float64
 }
 
@@ -5558,6 +5664,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		forage := w.Skills(engine.SkillForage)
 		swim := w.Skills(engine.SkillSwim)
 		wading := w.Wading()
+		sinking := w.Drowning()
 		bank := w.Skills(engine.SkillFishLand)
 		wade := w.Skills(engine.SkillFishWater)
 		anglers := w.Anglers()
@@ -5640,6 +5747,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			swimHeld: swim.Held, swimNominal: swim.Nominal,
 			swimReal: swim.Realised, swimWet: swim.Dear,
 			wetPace: wading.Pace, wetFloor: wading.Floor,
+			drownMult: mult(sinking.Chance, sinking.Floor), wetGreen: sinking.Unskilled,
+			drownTaken: sinking.TakenSkill,
 			bankHeld: bank.Held, bankReal: bank.Realised,
 			wadeHeld: wade.Held, wadeReal: wade.Realised,
 			anglerGap:  wade.Realised - bank.Realised,
@@ -6027,6 +6136,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"swimWet":        tail.swimWet,
 		"wetPace":        tail.wetPace,
 		"wetFloor":       tail.wetFloor,
+		// What not being able to swim costs (stage 98). drownMult at one is
+		// the world before the stage; above one it is what the bodies in the
+		// water are paying on average, which is what the flat arm is set to.
+		"drownMult":      tail.drownMult,
+		"wetGreen":       tail.wetGreen,
+		"drownTaken":     tail.drownTaken,
 		"forageHeld":     tail.forageHeld,
 		"forageNominal":  tail.forageNominal,
 		"forageReal":     tail.forageReal,
@@ -6578,6 +6693,9 @@ func tailAverage(series []sample) sample {
 		out.swimWet += s.swimWet
 		out.wetPace += s.wetPace
 		out.wetFloor += s.wetFloor
+		out.drownMult += s.drownMult
+		out.wetGreen += s.wetGreen
+		out.drownTaken += s.drownTaken
 		out.forageHeld += s.forageHeld
 		out.forageNominal += s.forageNominal
 		out.forageReal += s.forageReal
@@ -6763,6 +6881,9 @@ func tailAverage(series []sample) sample {
 	out.swimWet /= d
 	out.wetPace /= d
 	out.wetFloor /= d
+	out.drownMult /= d
+	out.wetGreen /= d
+	out.drownTaken /= d
 	out.forageHeld /= d
 	out.forageNominal /= d
 	out.forageReal /= d
@@ -6954,6 +7075,17 @@ func speciesMean(c engine.Census, s engine.Species) float64 {
 		}
 	}
 	return 0
+}
+
+// mult is one figure over another when the neutral answer is one rather than
+// nought - what the bodies in the water are paying over what the ground itself
+// asks (stage 98). With nobody in the water there is nothing being paid, and
+// one is the reading that keeps its meaning when a run's samples are averaged.
+func mult(got, floor float64) float64 {
+	if floor <= 0 {
+		return 1
+	}
+	return got / floor
 }
 
 func share(part, whole int) float64 {

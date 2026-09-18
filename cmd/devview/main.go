@@ -4099,6 +4099,8 @@ func main() {
 	gather := flag.Int("gather", 0, "how long a body stands at a meal before it has it (#76; 0 = every world before it, where a meal reached is a meal had)")
 	wade := flag.Float64("wade", -1, "how much of its speed a body keeps while it is in the water (stage 97; needs -terrain river or country). A laid-out world uses 0.75; pass 1 to put back the world before stage 97, where the river was dear but no slower")
 	wadeblind := flag.Bool("wadeblind", false, "the control for -wade: the water drags just as hard and no body can feel that it has (stage 97)")
+	sink := flag.Float64("sink", 0, "how many times more likely the water is to be the end of a body that cannot swim at all (stage 98; needs -terrain river or country). 0 or 1 is the world before this stage, where the river took the swimmer and the sinker alike")
+	sinkblind := flag.Bool("sinkblind", false, "the control for -sink: the river takes the ones who cannot swim just as often and no body can feel it (stage 98)")
 	ally := flag.Float64("ally", 0, "goodwill wanted for its own sake, worth most to a body with nobody near (stage 96; 0 = every world before it)")
 	allyflat := flag.Float64("allyflat", 0, "the control for -ally: goodwill simply worth more to everybody, whoever is standing near (stage 96)")
 	wobble := flag.Float64("wobble", 0, "how far apart bodies are in how much their judgement strays from their own ranking (stage 95; 0 = every world before it)")
@@ -4169,6 +4171,16 @@ func main() {
 	// the laid-out world has put its own figure in.
 	if *wadeblind {
 		cfg.WaterSlowKnown = false
+	}
+	// What the river asks of a body that cannot swim (stage 98), and the
+	// control that leaves it asking and takes the feeling away. Default off
+	// in the physics at every dose measured, so this is the flag a laid-out
+	// world would have to be given rather than something it carries.
+	if *sink > 1 {
+		cfg.DrownUnskilledFactor = *sink
+	}
+	if *sinkblind {
+		cfg.DrownKnown = false
 	}
 	if *ally > 0 {
 		cfg.AllyValue = *ally
