@@ -78,17 +78,25 @@ func (w *World) beingReared(a *Agent) bool {
 }
 
 // speedNow is how fast this body can go today: what it is built for, less
-// whatever it is carrying and whoever it is carrying it for (stage 66).
+// whatever it is carrying, whoever it is carrying it for (stage 66), and what
+// it is standing in (stage 97).
 //
-// It is a method on the agent rather than on the world so that the three
-// places that read a speed - moving, dodging, and what a body knows about
-// itself - can all reach it. They have to agree: a mother who is actually
-// slower but dodges and is perceived as if she were not would be three
-// different bodies.
+// It is a method on the agent rather than on the world so that the places that
+// read a speed - moving, dodging, holding a stance, and what a body knows
+// about itself - can all reach it. They have to agree: a mother who is
+// actually slower but dodges and is perceived as if she were not would be
+// three different bodies, and so would a body wading a river.
+//
+// What is multiplied here is what the body can do today and never what it is
+// built for: MaxVitality, MaxSpeed and the rest of the ceilings go through
+// Agent.capacity and read no ground at all (stage 57).
 func (a *Agent) speedNow(cfg *Config) float64 {
 	speed := a.MaxSpeed(cfg)
 	if a.Nursing && cfg.NursingSpeedShare > 0 && cfg.NursingSpeedShare < 1 {
 		speed *= cfg.NursingSpeedShare
+	}
+	if a.wading > 0 && a.wading < 1 {
+		speed *= a.wading
 	}
 	return speed
 }

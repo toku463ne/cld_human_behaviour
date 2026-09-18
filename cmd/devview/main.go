@@ -3270,6 +3270,11 @@ func (g *game) drawWhatItKnows(t *textBox, view engine.HumanView) {
 			line += fmt.Sprintf(", and drowns it %.2f%% of ticks", self.Drown*100)
 		}
 		t.line("%s", line)
+		// And the pace it can make here (stage 97). Read off Self.MaxSpeed,
+		// which is the body's own legs and nothing else - so in the arm where
+		// the water drags without being felt this figure does not move, which
+		// is the truth about that body and worth seeing.
+		t.line("  it can make %.2f of a pace here", self.MaxSpeed)
 	}
 	if !self.CanReproduce {
 		// Why, not merely that. The three conditions are the node's own rule
@@ -4092,6 +4097,8 @@ func main() {
 	rate := flag.Float64("rate", 0, "read starving as a rate rather than as a deadline, so a body that outlasts the window still has a gradient (stage 93; 0 = every world before it)")
 	matewant := flag.Float64("matewant", 0, "how far apart bodies are in what a child is worth to them (stage 94; 0 = everybody the same, which is every world before it)")
 	gather := flag.Int("gather", 0, "how long a body stands at a meal before it has it (#76; 0 = every world before it, where a meal reached is a meal had)")
+	wade := flag.Float64("wade", -1, "how much of its speed a body keeps while it is in the water (stage 97; needs -terrain river or country). A laid-out world uses 0.75; pass 1 to put back the world before stage 97, where the river was dear but no slower")
+	wadeblind := flag.Bool("wadeblind", false, "the control for -wade: the water drags just as hard and no body can feel that it has (stage 97)")
 	ally := flag.Float64("ally", 0, "goodwill wanted for its own sake, worth most to a body with nobody near (stage 96; 0 = every world before it)")
 	allyflat := flag.Float64("allyflat", 0, "the control for -ally: goodwill simply worth more to everybody, whoever is standing near (stage 96)")
 	wobble := flag.Float64("wobble", 0, "how far apart bodies are in how much their judgement strays from their own ranking (stage 95; 0 = every world before it)")
@@ -4156,6 +4163,12 @@ func main() {
 	// Occupancy (#76): the time a meal takes, spent at the food.
 	if *gather > 0 {
 		cfg.EatTicks = *gather
+	}
+	// The control for the drag of the water (stage 97): it is just as slow
+	// and no body can feel that it is. The drag itself is set below, after
+	// the laid-out world has put its own figure in.
+	if *wadeblind {
+		cfg.WaterSlowKnown = false
 	}
 	if *ally > 0 {
 		cfg.AllyValue = *ally
@@ -4271,6 +4284,17 @@ func main() {
 		// what gives the two fishing skills something to be about, and a
 		// played world should have the water be work.
 		cfg.FishCatchWater, cfg.FishCatchBank = 0.75, 0.3
+		// And the water drags on whoever is in it (stage 97). Until this a
+		// body waded at 0.978 of its speed on land, which is to say at its
+		// speed on land, and a river that costs three times as much to cross
+		// and drowns whoever lingers looked from the outside like open
+		// ground. It is here for the reason the rest of this block is here:
+		// it is a thing a player will see, and the measurement of what it
+		// does to a world is an arm rather than a default of the physics -
+		// a quarter off the pace costs about eight bodies on the bare river
+		// (-8.04 *) against -37.43 *** at half, which is why the figure is
+		// the gentlest of the three doses that were measured.
+		cfg.WaterSpeedShare = 0.75
 		// And a body with a stone in its hand can throw it (stage 46). It
 		// costs the world about six bodies and makes running away work less
 		// well, which is a thing a played world should have and the physics
@@ -4327,6 +4351,14 @@ func main() {
 		cfg.MoodWeight, cfg.MoodDreadGain, cfg.MoodCheerGain = 0.5, 30, 3
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
+	}
+
+	// The drag of the water (stage 97), last so that it has the final word:
+	// a laid-out world puts 0.75 in above, and whoever asked for a figure on
+	// the command line gets theirs - including 1, which is how the world
+	// before this stage is asked for.
+	if *wade >= 0 && *wade <= 1 {
+		cfg.WaterSpeedShare = *wade
 	}
 
 	// Effort 1.0 to start with. Walking flat out costs MoveCost per tick and

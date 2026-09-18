@@ -868,6 +868,11 @@ func (w *World) Step() {
 	// anybody moves so that the slowing applies to the tick it is about.
 	w.nurse()
 
+	// And who is standing in the water (stage 97), on the same footing and
+	// for the same reason: what drags on a body this tick is where it was
+	// when the tick began.
+	w.wade()
+
 	// Where the weather has got to (stage 87b), before anything reads it.
 	w.turnSeason()
 

@@ -64,6 +64,17 @@ type terrain struct {
 	Height int8
 	Slope  bool
 
+	// Slow is what this cell does to a body's speed, as a multiplier (stage
+	// 97). One - or nought, which is what a cell that never set it holds - is
+	// ground that does nothing to a pace; below one is ground that drags.
+	//
+	// It sits on the cell beside Cost rather than being worked out from the
+	// Kind, so that the second slow ground needs a line in cellFor and
+	// nothing else. Cost and Slow are deliberately two figures: the same
+	// cell can be dear without being slow (broken country takes it out of a
+	// body, but a body crosses it at a walk) or slow without being dear.
+	Slow float64
+
 	// Drown is the chance that a tick spent on this cell is the last one
 	// (stage 34). Water is the only ground that carries one today.
 	//
@@ -79,7 +90,7 @@ type terrain struct {
 
 // flatGround is what a world with no map is made of, and what every cell off
 // the edge of a map is.
-var flatGround = terrain{Cost: 1, Kind: GroundOpen}
+var flatGround = terrain{Cost: 1, Slow: 1, Kind: GroundOpen}
 
 // terrainGrid is the map: cells of equal size laid over the world.
 //
@@ -153,13 +164,14 @@ func buildTerrain(cfg *Config) *terrainGrid {
 func cellFor(c rune, cfg *Config) terrain {
 	switch {
 	case c == ':':
-		return terrain{Cost: cfg.RoughMoveCost, Kind: GroundRough}
+		return terrain{Cost: cfg.RoughMoveCost, Slow: 1, Kind: GroundRough}
 	case c == '~':
-		return terrain{Cost: cfg.WaterMoveCost, Drown: cfg.DrownChancePerTick, Kind: GroundWater}
+		return terrain{Cost: cfg.WaterMoveCost, Slow: cfg.WaterSpeedShare,
+			Drown: cfg.DrownChancePerTick, Kind: GroundWater}
 	case c >= '1' && c <= '9':
-		return terrain{Cost: 1, Height: int8(c - '0'), Kind: GroundOpen}
+		return terrain{Cost: 1, Slow: 1, Height: int8(c - '0'), Kind: GroundOpen}
 	case c >= 'A' && c <= 'I':
-		return terrain{Cost: cfg.SlopeMoveCost, Height: int8(c-'A') + 1, Slope: true, Kind: GroundSlope}
+		return terrain{Cost: cfg.SlopeMoveCost, Slow: 1, Height: int8(c-'A') + 1, Slope: true, Kind: GroundSlope}
 	default:
 		return flatGround
 	}
@@ -202,6 +214,124 @@ func (w *World) groundCostFor(a *Agent, t terrain) float64 {
 	return 1 + (t.Cost-1)*(1-relief)
 }
 
+// --- what the ground does to a pace (stage 97) -------------------------------
+
+// groundSpeedFor is what this ground does to this body's speed: the terrain's
+// own figure, less whatever the body knows about getting through it.
+//
+// Only the shortfall below level ground is relieved, so no amount of skill
+// makes the water quicker than a field - the mirror of groundCostFor, and the
+// same reason: a skill takes the ground's penalty off, it does not add a
+// factor of its own to the agent.
+func (w *World) groundSpeedFor(a *Agent, t terrain) float64 {
+	slow := t.Slow
+	if slow <= 0 || slow >= 1 {
+		return 1
+	}
+	if a == nil {
+		return slow
+	}
+	// A creature of the water is not dragged by the water (stage 63). The
+	// same flag that puts it there, and the same one fact: what lives in the
+	// river does not wade through it.
+	if a.Species == SpeciesEnemy && w.kindOf(a).Water {
+		return 1
+	}
+	if w.cfg.SkillSwimSpeedRelief <= 0 {
+		return slow
+	}
+	relief := clamp(a.skillAt(&w.cfg, SkillSwim)*w.cfg.SkillSwimSpeedRelief, 0, 1)
+	return slow + (1-slow)*relief
+}
+
+// wade tells every living body what the water under it is doing to its pace,
+// once a tick and before anybody decides anything.
+//
+// It is held on the agent for the reason standOnGround (stage 57) holds
+// footing there: Agent.speedNow is asked many times a tick and knows nothing
+// about the world it is in, while the four places that read a speed - walking,
+// dodging, holding a stance, and what a body knows about itself - all have to
+// read the same one. A tick's worth of staleness is the price, and it is the
+// price everything else about this tick pays: what a body decides now, it
+// decides about where it was when the tick began.
+//
+// A world whose water does not slow anybody never enters the loop, so it is
+// not merely unchanged but untouched.
+func (w *World) wade() {
+	if w.ground == nil || w.cfg.WaterSpeedShare >= 1 {
+		return
+	}
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		a.wading = w.groundSpeedFor(a, w.terrainAt(a.X, a.Y))
+	}
+}
+
+// speedFelt is what a body makes of its own legs: the truth, or the legs it
+// would have on dry ground in the arm that takes the feeling away and leaves
+// the water exactly as slow (stage 97, and the same shape as drownFelt).
+func (w *World) speedFelt(a *Agent) float64 {
+	speed := a.speedNow(&w.cfg)
+	if !w.cfg.WaterSlowKnown && a.wading > 0 {
+		speed /= a.wading
+	}
+	return speed
+}
+
+// Wading is what the water is doing to the bodies that are in it (stage 97).
+// Read only, and it writes nothing and draws no random number.
+type Wading struct {
+	// In is the share of the living standing in water that drags.
+	In float64
+
+	// Pace is the mean multiplier those bodies are actually moving at, and
+	// Floor what the ground alone would have made it. The gap between the two
+	// is what knowing the water bought, measured on the bodies that are in it
+	// rather than over a population most of which is on dry land - which is
+	// the distinction stage 62 found mattered (a skill's reach is its holding
+	// times its realised value times the size of what it acts on).
+	//
+	// Both are one when nobody is in the water, which is the reading that
+	// composes: a sample where nothing is being dragged says "no drag", and
+	// averaging such samples with the rest cannot pull the figure below the
+	// floor the ground actually sets.
+	Pace, Floor float64
+}
+
+// Wading reports it.
+func (w *World) Wading() Wading {
+	out := Wading{Pace: 1, Floor: 1}
+	var n, all float64
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive {
+			continue
+		}
+		all++
+		t := w.terrainAt(a.X, a.Y)
+		if t.Slow <= 0 || t.Slow >= 1 {
+			continue
+		}
+		if n == 0 {
+			out.Pace, out.Floor = 0, 0
+		}
+		n++
+		out.Pace += w.groundSpeedFor(a, t)
+		out.Floor += t.Slow
+	}
+	if all > 0 {
+		out.In = n / all
+	}
+	if n > 0 {
+		out.Pace /= n
+		out.Floor /= n
+	}
+	return out
+}
+
 // canStep says whether a body standing on one spot may put itself on another.
 //
 // Level ground is always passable, whatever it is made of: water is dear, not
@@ -232,6 +362,7 @@ func (w *World) canStep(fromX, fromY, toX, toY float64) bool {
 type GroundView struct {
 	Kind   Ground
 	Cost   float64
+	Slow   float64
 	Height int
 	Slope  bool
 	Drown  float64
@@ -246,7 +377,12 @@ type GroundView struct {
 // terrain cell is what movement costs.
 func (w *World) TerrainAt(x, y float64) GroundView {
 	t := w.terrainAt(x, y)
-	return GroundView{Kind: t.Kind, Cost: t.Cost, Height: int(t.Height), Slope: t.Slope, Drown: t.Drown}
+	slow := t.Slow
+	if slow <= 0 {
+		slow = 1
+	}
+	return GroundView{Kind: t.Kind, Cost: t.Cost, Slow: slow,
+		Height: int(t.Height), Slope: t.Slope, Drown: t.Drown}
 }
 
 // TerrainSize is how many cells the map has, and how big one is. Zero when the

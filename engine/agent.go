@@ -296,6 +296,15 @@ type Agent struct {
 	// rather than a slice so that a copy of an Agent carries its own.
 	footing [NumGenes]float64
 
+	// wading is what the water this agent is standing in does to its pace
+	// (stage 97), as a multiplier. Written once a tick by World.wade and read
+	// by Agent.speedNow; a zero means nobody has said, and reads as one.
+	//
+	// Here for the same reason footing is, and not a state axis either: it is
+	// a copy of a property of the ground under this body, kept on the body
+	// because speedNow is on the hot path and knows nothing about the world.
+	wading float64
+
 	// chronotype is the hour of the world's day this agent sleeps best at, on
 	// a circle from 0 to 1 (stage 18, clock.go). Deliberately not one of the
 	// budget genes: those are quantities you can buy more of, and an hour is a

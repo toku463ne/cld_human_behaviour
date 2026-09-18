@@ -4616,6 +4616,101 @@ var variants = []variant{
 			c.TerrainMap, c.SkillBirthplace, c.WatersideFood = mapRiver, 0.5, 1
 		},
 	},
+	// Stage 97: the water is slow as well as dear. The base to read these
+	// against is riverswim - the river with swimming learnable on it, which is
+	// stages 34 to 38b as they stand - because the skill's half of this rule
+	// needs somebody who has the skill.
+	//
+	// Four controls, one for each thing that rides the one knob. waterslowblind
+	// separates the choosing from the sorting (DrownKnown's shape).
+	// waterslownoskill says what the skill bought. waterslowfree takes the
+	// water's cost away, which is the arm stage 20 said could not exist: it
+	// slows without making anything dear, so whatever moves in it is the pace
+	// and not the price. waterslowdry takes the drowning away, because a body
+	// at half speed spends twice as long throwing those dice.
+	{
+		name:  "waterslow",
+		about: "97: the river is slow as well as dear, and knowing it keeps a body quick (half speed)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterSpeedShare = mapRiver, 0.5, 0.5
+		},
+	},
+	{
+		name:  "waterslowlight",
+		about: "sweep: a quarter off the pace instead of half",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterSpeedShare = mapRiver, 0.5, 0.75
+		},
+	},
+	{
+		name:  "waterslowdeep",
+		about: "sweep: a quarter of the pace, which is the dose that cannot be missed",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterSpeedShare = mapRiver, 0.5, 0.25
+		},
+	},
+	{
+		name:  "waterslowblind",
+		about: "control: the water drags just as hard and no body can feel that it has (97)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterSpeedShare = mapRiver, 0.5, 0.5
+			c.WaterSlowKnown = false
+		},
+	},
+	{
+		name:  "waterslownoskill",
+		about: "control: the drag is the same for everybody, so knowing the water buys no pace (97)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterSpeedShare = mapRiver, 0.5, 0.5
+			c.SkillSwimSpeedRelief = 0
+		},
+	},
+	{
+		name:  "waterslowfree",
+		about: "control: slow but not dear - the arm stage 20 said could not tell a pace from an effort (97)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterSpeedShare = mapRiver, 0.5, 0.5
+			c.WaterMoveCost = 1
+		},
+	},
+	{
+		name:  "waterslowdry",
+		about: "control: slow, and nothing drowns - which is how much of the cost is the longer stay (97)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterSpeedShare = mapRiver, 0.5, 0.5
+			c.DrownChancePerTick = 0
+		},
+	},
+	{
+		name:  "riverswimdry",
+		about: "the base for waterslowdry: the river with nothing drowning in it (97)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.DrownChancePerTick = mapRiver, 0.5, 0
+		},
+	},
+	{
+		name:  "riverswimfree",
+		about: "the base for waterslowfree: the river crossable at the price of a field (97)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterMoveCost = mapRiver, 0.5, 1
+		},
+	},
+	{
+		name:  "playslow",
+		about: "97 on the map that gets played on, where a fifth of all the walking is done in the water",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.SkillBirthplace, c.WaterSpeedShare = 0.5, 0.5
+		},
+	},
+	{
+		name:  "playswim",
+		about: "the base for playslow: the played map with swimming learnable on it (97)",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.SkillBirthplace = 0.5
+		},
+	},
 	// Stage 31: what a killing leaves with the people who saw it. The base
 	// is baseline - the rule is on by default - so the arms here are the
 	// controls: each half off, both off, and the reading half at weights
@@ -5082,7 +5177,8 @@ var metricNames = []string{
 	"skillHeld", "skillNominal", "skillReal", "skillSlots", "skillGap",
 	"skillBornRate", "skillCopyRate", "skillLeaps",
 	"forageHeld", "forageNominal", "forageReal",
-	"swimHeld", "swimNominal", "swimReal",
+	"swimHeld", "swimNominal", "swimReal", "swimWet",
+	"wetPace", "wetFloor",
 	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"mateWeight", "sdMateWeight",
@@ -5344,7 +5440,14 @@ type sample struct {
 	skillHeld, skillNominal, skillReal, skillSlots, skillGap float64
 	forageHeld, forageNominal, forageReal                    float64
 	swimHeld, swimNominal, swimReal                          float64
-	tolHeld, tolNominal, tolReal                             float64
+
+	// What the water is doing to the bodies in it (stage 97). wetPace is the
+	// multiplier they are actually moving at, wetFloor what the ground alone
+	// would have made it, and swimWet what the ones standing on the dear
+	// ground know - the three figures that say whether the skill's half of
+	// this rule reaches anybody.
+	wetPace, wetFloor, swimWet   float64
+	tolHeld, tolNominal, tolReal float64
 }
 
 // perAgentLifetime converts a count of events into a rate per ten thousand
@@ -5454,6 +5557,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		skills := w.Skills(engine.SkillRough)
 		forage := w.Skills(engine.SkillForage)
 		swim := w.Skills(engine.SkillSwim)
+		wading := w.Wading()
 		bank := w.Skills(engine.SkillFishLand)
 		wade := w.Skills(engine.SkillFishWater)
 		anglers := w.Anglers()
@@ -5534,7 +5638,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			tolHeld:      tol.Held, tolNominal: tol.Nominal,
 			tolReal:  tol.Realised,
 			swimHeld: swim.Held, swimNominal: swim.Nominal,
-			swimReal: swim.Realised,
+			swimReal: swim.Realised, swimWet: swim.Dear,
+			wetPace: wading.Pace, wetFloor: wading.Floor,
 			bankHeld: bank.Held, bankReal: bank.Realised,
 			wadeHeld: wade.Held, wadeReal: wade.Realised,
 			anglerGap:  wade.Realised - bank.Realised,
@@ -5909,12 +6014,19 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// And the second skill (stage 38b), which is capped by a different
 		// gene and seeded by what the ground provides rather than by what it
 		// is made of.
-		"tolHeld":        tail.tolHeld,
-		"tolNominal":     tail.tolNominal,
-		"tolReal":        tail.tolReal,
-		"swimHeld":       tail.swimHeld,
-		"swimNominal":    tail.swimNominal,
-		"swimReal":       tail.swimReal,
+		"tolHeld":     tail.tolHeld,
+		"tolNominal":  tail.tolNominal,
+		"tolReal":     tail.tolReal,
+		"swimHeld":    tail.swimHeld,
+		"swimNominal": tail.swimNominal,
+		"swimReal":    tail.swimReal,
+		// What the bodies standing on the dear ground know, and what the
+		// water is actually doing to the ones in it (stage 97). wetPace above
+		// wetFloor is the skill giving the drag back; the two equal is a rule
+		// that reaches nobody.
+		"swimWet":        tail.swimWet,
+		"wetPace":        tail.wetPace,
+		"wetFloor":       tail.wetFloor,
 		"forageHeld":     tail.forageHeld,
 		"forageNominal":  tail.forageNominal,
 		"forageReal":     tail.forageReal,
@@ -6463,6 +6575,9 @@ func tailAverage(series []sample) sample {
 		out.swimHeld += s.swimHeld
 		out.swimNominal += s.swimNominal
 		out.swimReal += s.swimReal
+		out.swimWet += s.swimWet
+		out.wetPace += s.wetPace
+		out.wetFloor += s.wetFloor
 		out.forageHeld += s.forageHeld
 		out.forageNominal += s.forageNominal
 		out.forageReal += s.forageReal
@@ -6645,6 +6760,9 @@ func tailAverage(series []sample) sample {
 	out.swimHeld /= d
 	out.swimNominal /= d
 	out.swimReal /= d
+	out.swimWet /= d
+	out.wetPace /= d
+	out.wetFloor /= d
 	out.forageHeld /= d
 	out.forageNominal /= d
 	out.forageReal /= d

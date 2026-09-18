@@ -564,6 +564,9 @@ func Load(in io.Reader) (*World, error) {
 	// copy of a property of the ground the agent is standing on (stage 57),
 	// so it is worked out from where they are rather than saved.
 	w.standOnGround()
+	// And what the water is doing to their pace (stage 97), for exactly the
+	// same reason.
+	w.wade()
 	return w, nil
 }
 

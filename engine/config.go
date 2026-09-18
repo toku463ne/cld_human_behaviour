@@ -2505,6 +2505,19 @@ type Config struct {
 	// fast it crosses. Zero is the same kind of arm as the one above.
 	SkillSwimRelief float64
 
+	// SkillSwimSpeedRelief is how much of the water's drag on a body's speed
+	// a fully mastered, fully suited one gets back (stage 97). Zero is the
+	// arm where knowing the water keeps nobody quick in it.
+	//
+	// A second figure rather than a second job for SkillSwimRelief, because
+	// the two are two effects and not one effect and its price. Stage 62's
+	// SkillWard shares one number between its two halves for exactly that
+	// reason - there, what a blow does and what standing near one looks like
+	// it will cost are the same fact wearing two hats. Not drowning and not
+	// being dragged are different things, so the control that switches one
+	// off has to leave the other standing.
+	SkillSwimSpeedRelief float64
+
 	// SkillCookRelief is how much of what an ignorant cook wastes a fully
 	// mastered, fully suited body gets back (stage 52b). It is a yield and
 	// not a speed: what being good at this means is that what comes out is
@@ -2640,6 +2653,37 @@ type Config struct {
 	RoughMoveCost float64
 	WaterMoveCost float64
 	SlopeMoveCost float64
+
+	// WaterSpeedShare is how much of its speed a body keeps while it is in
+	// the water (stage 97), as a multiplier. One is the world before this
+	// stage - dear to cross and no slower - and it is still the default, so
+	// every map measured until now runs as it did.
+	//
+	// This is the one place terrain acts on speed, and stage 20 said it never
+	// should. Both of that decision's reasons have been looked at again
+	// (PLAN.md, stage 97): the first - that a multiplier on speed could not be
+	// told apart from effort in a measurement - is answered by an arm that
+	// slows the water without making it dear; the second - that putting the
+	// figure on the cost is what would finally set speed against vitality -
+	// was measured three times and came back at nought (stages 20, 33, 57).
+	// The cost stays where it is: water is slow AND dear, and because the
+	// cost is charged by the tick, crossing at half speed pays it twice.
+	//
+	// It goes on Agent.speedNow, which is what a body can do today, and never
+	// on Agent.MaxSpeed, which is what it is built for. Stage 57 drew that
+	// line: a ceiling that moves with the ground makes a body that steps over
+	// a boundary and finds itself above its own limit.
+	WaterSpeedShare float64
+
+	// WaterSlowKnown says whether a body feels how slow the water it is
+	// standing in has made it (stage 97). True is the ordinary world: the
+	// figure is in Perception.Self.MaxSpeed, so every option that involves
+	// covering ground is priced with the legs the body actually has. False
+	// leaves the water just as slow and the body reckoning with legs it has
+	// not got, which is the control that says how much of whatever moves is
+	// the choosing and how much is simply what happened to the ones who were
+	// in there. The same shape as DrownKnown and ChillKnown.
+	WaterSlowKnown bool
 
 	// DrownChancePerTick is the chance that a tick spent in the water is the
 	// last one (stage 34). It is what makes a river something other than a
@@ -3282,6 +3326,11 @@ func DefaultConfig() Config {
 		WaterMoveCost: 3.0,
 		SlopeMoveCost: 2.0,
 
+		// Water slows nobody by default (stage 97): a map's author turns it
+		// on, the way they turn on everything else the ground can do.
+		WaterSpeedShare: 1,
+		WaterSlowKnown:  true,
+
 		// Calibrated against how long a body actually spends in the water,
 		// which was counted before the rule was written: about a seventh of
 		// all agent-ticks on the river map, in stays averaging 127 ticks. At
@@ -3474,22 +3523,23 @@ func DefaultConfig() Config {
 			// gene to hang a want with no survival value on.
 			SkillTrinket: GeneAttractiveness,
 		},
-		SkillForageRelief:  1,
-		SkillSwimRelief:    1,
-		SkillPoisonRelief:  1,
-		SkillWardRelief:    0.5,
-		SkillFishReach:     2,
-		FishCatchWater:     1,
-		FishCatchBank:      1,
-		SkillFishRelief:    1,
-		SkillHarvestRelief: 1,
-		SkillCookRelief:    1,
-		SkillThrowRelief:   1,
-		SkillsSpread:       true,
-		HintSlotCost:       5,
-		HintWeightStd:      6,
-		HintWeightMax:      20,
-		HintTradeWorth:     0.5,
-		HintsSpread:        true,
+		SkillForageRelief:    1,
+		SkillSwimRelief:      1,
+		SkillSwimSpeedRelief: 1,
+		SkillPoisonRelief:    1,
+		SkillWardRelief:      0.5,
+		SkillFishReach:       2,
+		FishCatchWater:       1,
+		FishCatchBank:        1,
+		SkillFishRelief:      1,
+		SkillHarvestRelief:   1,
+		SkillCookRelief:      1,
+		SkillThrowRelief:     1,
+		SkillsSpread:         true,
+		HintSlotCost:         5,
+		HintWeightStd:        6,
+		HintWeightMax:        20,
+		HintTradeWorth:       0.5,
+		HintsSpread:          true,
 	}
 }
