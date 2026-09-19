@@ -1,18 +1,23 @@
 package engine
 
+import "math"
+
 // Regions an author draws, rather than a grid the world cuts for itself
 // (2026-09-19). Until now the regions were RegionCols x RegionRows equal
-// blocks; a map may now name its own, as rectangles.
+// blocks; a map may now name its own, drawn two ways: as rectangles, or
+// painted cell by cell in Config.RegionMap.
 //
-// Why rectangles and not any shape: every rule that reads a region reads it
+// Both end in the same place, because every rule that reads a region reads it
 // through regionIndexAt, and what that has to be is fast and exact, not
-// general. A rectangle is enough to say "this valley", "that shore" - and if
-// something more is ever wanted, the index below is a lookup table already and
-// does not care what filled it in.
+// general: a lookup table over a fixed grid, which does not care whether a
+// rectangle or a painted cell filled it in. That is why painting cost nothing
+// to add - a rectangle was never the cheap shape, it was the cheap thing to
+// write.
 
-// RegionShape is one region as its author drew it: a rectangle in fractions of
-// the map (0 to 1), so that the same drawing describes the same country
-// whatever size the world is given.
+// RegionShape is one region as its author drew it: either a rectangle in
+// fractions of the map (0 to 1), so that the same drawing describes the same
+// country whatever size the world is given, or - when Key is set - every cell
+// Config.RegionMap paints with that character.
 //
 // The four figures are the region's own, and nought means "leave what the
 // world's spreads drew for it" - so an author can name a place without having
@@ -21,6 +26,19 @@ type RegionShape struct {
 	Name                            string
 	X, Y, W, H                      float64
 	Shelter, Food, Special, Enemies float64
+
+	// Key is the character that stands for this region in Config.RegionMap,
+	// for a region that is painted cell by cell rather than boxed in by a
+	// rectangle (2026-09-20). Nought means the rectangle above says where it
+	// is.
+	//
+	// Painting is the better of the two and the rectangle is kept because it
+	// is the cheaper to write: a painted region may be any shape at all - a
+	// valley that forks, a shore that bends - while a rectangle says "the
+	// western quarter" in one line. What a painted region cannot do is be two
+	// regions with the same figures, because the figures belong to the
+	// character; that wants two characters.
+	Key byte
 
 	// Goal marks a region the game asks something of - the places a player's
 	// line has to be living in at once, in the dynasty this is being built
@@ -49,7 +67,16 @@ type RegionShape struct {
 type regionIndexGrid struct {
 	cols, rows int
 	at         []int
+
+	// bounds is the box each region is inside, in fractions of the map, kept
+	// because a viewer and a map editor want somewhere to draw a region's
+	// outline (2026-09-20). It is worked out once here rather than each time
+	// it is asked for, and it is only a box: a painted region may be any
+	// shape, and the box round an L is not the L.
+	bounds []regionBox
 }
+
+type regionBox struct{ minX, minY, maxX, maxY float64 }
 
 // regionShapeGridSize is how finely the lookup table is cut. It is not a rule
 // of the world - nothing about the simulation reads it - so it is a constant
@@ -75,6 +102,13 @@ func (w *World) buildRegionShapes() bool {
 	for i := range g.at {
 		g.at[i] = rest
 	}
+	byKey := map[byte]int{}
+	for i := range shapes {
+		if k := shapes[i].Key; k != 0 && k != regionUnpainted {
+			byKey[k] = i
+		}
+	}
+	painted := w.cfg.RegionMap
 	for r := 0; r < g.rows; r++ {
 		// The centre of each cell, in fractions of the map.
 		fy := (float64(r) + 0.5) / float64(g.rows)
@@ -84,14 +118,68 @@ func (w *World) buildRegionShapes() bool {
 			// what is drawn on top is what is there.
 			for i := range shapes {
 				s := &shapes[i]
+				if s.W <= 0 || s.H <= 0 {
+					continue // a painted region: the map below says where
+				}
 				if fx >= s.X && fx < s.X+s.W && fy >= s.Y && fy < s.Y+s.H {
+					g.at[r*g.cols+c] = i
+				}
+			}
+			// And the painted map over the top of them, because painting a
+			// cell is the more particular thing to have said about it.
+			if k := paintedKeyAt(painted, fx, fy); k != 0 {
+				if i, ok := byKey[k]; ok {
 					g.at[r*g.cols+c] = i
 				}
 			}
 		}
 	}
+	g.measure(len(shapes) + 1)
 	w.shapeIndex = g
 	return true
+}
+
+// measure works out the box round each region, "everywhere else" included.
+func (g *regionIndexGrid) measure(n int) {
+	g.bounds = make([]regionBox, n)
+	for i := range g.bounds {
+		g.bounds[i] = regionBox{minX: 1, minY: 1}
+	}
+	for r := 0; r < g.rows; r++ {
+		y0, y1 := float64(r)/float64(g.rows), float64(r+1)/float64(g.rows)
+		for c := 0; c < g.cols; c++ {
+			i := g.at[r*g.cols+c]
+			if i < 0 || i >= n {
+				continue
+			}
+			x0, x1 := float64(c)/float64(g.cols), float64(c+1)/float64(g.cols)
+			b := &g.bounds[i]
+			b.minX, b.minY = math.Min(b.minX, x0), math.Min(b.minY, y0)
+			b.maxX, b.maxY = math.Max(b.maxX, x1), math.Max(b.maxY, y1)
+		}
+	}
+}
+
+// regionUnpainted is the character for a cell no region was painted on.
+const regionUnpainted = '.'
+
+// paintedKeyAt is the character painted at a point of the map, in fractions.
+// A short row, and a row past the end, are unpainted - the same forgiveness
+// the spawn map gives.
+func paintedKeyAt(rows []string, fx, fy float64) byte {
+	if len(rows) == 0 {
+		return 0
+	}
+	r := clampInt(int(fy*float64(len(rows))), 0, len(rows)-1)
+	row := rows[r]
+	if len(row) == 0 {
+		return 0
+	}
+	c := clampInt(int(fx*float64(len(row))), 0, len(row)-1)
+	if k := row[c]; k != regionUnpainted {
+		return k
+	}
+	return 0
 }
 
 // regionShapeAt is the lookup. Positions are kept inside the world by the
@@ -157,3 +245,9 @@ func (w *World) RegionNames() []string {
 	}
 	return out
 }
+
+// DrawnRegions says whether this world's regions were drawn by an author -
+// rectangles or painted cells - rather than cut into equal blocks. Read only,
+// for a viewer that has to know whether a region is a block on a grid before
+// it draws one.
+func (w *World) DrawnRegions() bool { return w.shapeIndex != nil }

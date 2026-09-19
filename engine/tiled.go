@@ -13,11 +13,11 @@ import (
 // what a Config needs, exactly as save.go does. Whoever read the file - a
 // devview flag today, a fetch in the browser later - keeps that job.
 //
-// Two layers are read and nothing else. A tile layer becomes the terrain the
-// world is laid on, and an object layer's rectangles become its regions. Both
-// end up in the fields stage 20 and stage 14 already have, so nothing
-// downstream learns that a map came from a drawing program rather than from a
-// literal in a test.
+// Tile layers become the terrain the world is laid on, the painted layer that
+// says where things may come up, and the regions; an object layer's rectangles
+// are the other way to draw a region. All of them end up in the fields stages
+// 14, 20 and 56 already have, so nothing downstream learns that a map came
+// from a drawing program rather than from a literal in a test.
 
 // TiledWorld is a map as drawn: the terrain as the one-character-per-cell rows
 // Config.TerrainMap takes, and the regions as fractions of the map (0 to 1),
@@ -26,6 +26,11 @@ import (
 type TiledWorld struct {
 	Terrain []string
 	Regions []RegionShape
+
+	// RegionMap is the painted region layer: which cell belongs to which of
+	// Regions, one character per cell (2026-09-20). Nil when the author drew
+	// the regions as rectangles instead, or drew none.
+	RegionMap []string
 
 	// Spawn is the painted layer: where plants, fish and enemies are allowed
 	// to come up, one character per cell (2026-09-19). Nil when the map does
@@ -98,15 +103,21 @@ const tiledFlipMask = 0x1FFFFFFF
 //     through its own properties in the tileset: "kind" is flat, rough, water,
 //     slope or high, and "height" is how many levels up it sits. A tile with
 //     no properties, and an empty cell, are level open ground.
-//   - the second visible tile layer, as the painted layer: where plants, fish
-//     and enemies may come up, read from the same tiles' "spawn" property
-//     (plant, fish, enemy, food or all). A map that paints nothing has no
-//     second layer, and then everything comes up where it always did.
+//   - a later visible tile layer whose tiles carry "spawn", as the painted
+//     layer: where plants, fish and enemies may come up (plant, fish, enemy,
+//     food or all). A map that paints nothing has no such layer, and then
+//     everything comes up where it always did.
+//   - a later visible tile layer whose tiles carry "region", as the regions:
+//     the property is the region's name, and tiles with the same name are one
+//     region however far apart they are painted. The same tiles may carry
+//     "shelter", "food", "special", "enemies" and "goal". A painted region may
+//     be any shape at all, which is what a rectangle cannot be.
 //   - every object layer's rectangles, as the regions. A rectangle may carry
 //     "shelter", "food", "special" and "enemies" as properties, which are the
 //     region's own figures; anything it leaves out keeps whatever the world's
 //     spreads drew for it. It may also carry "goal", which marks a place the
 //     game asks something of - the engine carries that and never reads it.
+//     Where a map draws both, the painted cells win over the rectangles.
 //
 // What it refuses: a compressed or base64 tile layer, and a tileset kept in a
 // separate file. Both are Tiled options rather than requirements, and reading
@@ -126,6 +137,7 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 	if err != nil {
 		return nil, err
 	}
+	places := tileRegions(f.Tilesets)
 	for _, l := range f.Layers {
 		switch l.Type {
 		case "tilelayer":
@@ -140,10 +152,25 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 				out.Terrain = rows
 				continue
 			}
-			// The second tile layer is the painted one: where things may come
-			// up (2026-09-19). It is read through the same tiles' own "spawn"
-			// property, so one tileset can describe both layers - and a map
-			// that paints nothing simply has no second layer.
+			// After the ground, a tile layer is whichever of the two it
+			// paints, not whichever comes first (2026-09-20): a map may draw
+			// its regions and no painted layer, or the other way about, and
+			// numbering the layers would have read one as the other.
+			//
+			// The ground is still the first layer rather than the layer that
+			// paints no region and no spawn, because the same tile may say
+			// both what it is and what comes up on it - a water tile that
+			// fish come up on - and then there is nothing to tell apart.
+			if out.RegionMap == nil {
+				rows, shapes, err := regionRows(l, f.Width, f.Height, places)
+				if err != nil {
+					return nil, err
+				}
+				if len(shapes) > 0 {
+					out.RegionMap, out.Regions = rows, append(out.Regions, shapes...)
+					continue
+				}
+			}
 			if out.Spawn == nil {
 				rows, err := terrainRows(l, f.Width, f.Height, spawns)
 				if err != nil {
@@ -276,6 +303,18 @@ func heightChar(height int, slope bool) (byte, error) {
 
 // terrainRows reads the tile layer into the rows the world is laid on.
 func terrainRows(l tiledLayer, cols, rows int, kinds map[int]byte) ([]string, error) {
+	return terrainRowsFunc(l, cols, rows, func(gid int) byte {
+		ch, ok := kinds[gid]
+		if !ok {
+			ch = '.' // an empty cell, or a tile nobody described
+		}
+		return ch
+	})
+}
+
+// terrainRowsFunc is the walk itself, with what a tile means left to the
+// caller: the ground, what comes up, or which region it is.
+func terrainRowsFunc(l tiledLayer, cols, rows int, of func(gid int) byte) ([]string, error) {
 	if len(l.Data) == 0 {
 		return nil, fmt.Errorf("tiled: the layer %q has no readable data; "+
 			"save the map with CSV or uncompressed tile layers", l.Name)
@@ -294,16 +333,110 @@ func terrainRows(l tiledLayer, cols, rows int, kinds map[int]byte) ([]string, er
 	line := make([]byte, cols)
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
-			gid := int(l.Data[r*cols+c] & tiledFlipMask)
-			ch, ok := kinds[gid]
-			if !ok {
-				ch = '.' // an empty cell, or a tile nobody described
-			}
-			line[c] = ch
+			line[c] = of(int(l.Data[r*cols+c] & tiledFlipMask))
 		}
 		out[r] = string(line)
 	}
 	return out, nil
+}
+
+// tiledRegion is what a tile says about the region it paints.
+type tiledRegion struct {
+	shape RegionShape
+	named bool // the tile carried a "region" property at all
+}
+
+// tileRegions turns the tilesets into "this tile id paints this region".
+func tileRegions(sets []tiledTilset) map[int]tiledRegion {
+	out := map[int]tiledRegion{}
+	for _, s := range sets {
+		for _, t := range s.Tiles {
+			name, ok := propString(t.Properties, "region")
+			if !ok {
+				continue
+			}
+			out[s.FirstGID+t.ID] = tiledRegion{
+				named: true,
+				shape: RegionShape{
+					Name:    name,
+					Shelter: propNumber(t.Properties, "shelter"),
+					Food:    propNumber(t.Properties, "food"),
+					Special: propNumber(t.Properties, "special"),
+					Enemies: propNumber(t.Properties, "enemies"),
+					Goal:    propNumber(t.Properties, "goal") > 0,
+				},
+			}
+		}
+	}
+	return out
+}
+
+// regionKeys are the characters a painted region map is written in. They are
+// printable and in a fixed order so that a map read twice reads the same, and
+// so that a RegionMap can be pasted into a test and read by eye.
+const regionKeys = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+// regionRows reads a tile layer as the painted regions: the rows saying which
+// cell is whose, and the regions themselves.
+//
+// Tiles with the same name are one region however far apart they are painted,
+// which is the point of painting them - a shore that bends, a valley that
+// forks. Two tiles with the same name and different figures is the author
+// saying one thing twice, so the first painted wins.
+func regionRows(l tiledLayer, cols, rows int, places map[int]tiledRegion) ([]string, []RegionShape, error) {
+	if len(places) == 0 {
+		return nil, nil, nil
+	}
+	keys := map[int]byte{} // tile id -> the character it paints
+	byName := map[string]byte{}
+	var shapes []RegionShape
+	tooMany := false
+	// Regions are numbered in the order they are first met reading the layer
+	// top to bottom, left to right - the same rule the rectangles are sorted
+	// by, so that the drawing and not the drawing program decides.
+	take := func(gid int) byte {
+		if k, ok := keys[gid]; ok {
+			return k
+		}
+		p, ok := places[gid]
+		if !ok || !p.named {
+			keys[gid] = regionUnpainted
+			return regionUnpainted
+		}
+		if k, ok := byName[p.shape.Name]; ok && p.shape.Name != "" {
+			keys[gid] = k
+			return k
+		}
+		if len(shapes) >= len(regionKeys) {
+			tooMany = true
+			keys[gid] = regionUnpainted
+			return regionUnpainted
+		}
+		k := regionKeys[len(shapes)]
+		shape := p.shape
+		shape.Key = k
+		shapes = append(shapes, shape)
+		keys[gid] = k
+		if shape.Name != "" {
+			byName[shape.Name] = k
+		}
+		return k
+	}
+	painted, err := terrainRowsFunc(l, cols, rows, take)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(shapes) == 0 {
+		return nil, nil, nil // not a region layer at all
+	}
+	// The count that matters is how many regions were painted, not how many
+	// the tileset could paint: a tileset may hold a region for every map its
+	// author ever drew.
+	if tooMany {
+		return nil, nil, fmt.Errorf("tiled: the layer %q paints more than %d regions",
+			l.Name, len(regionKeys))
+	}
+	return painted, shapes, nil
 }
 
 // regionShapes reads an object layer's rectangles as regions, in fractions of
@@ -392,5 +525,8 @@ func (t *TiledWorld) Apply(cfg *Config) {
 	}
 	if len(t.Regions) > 0 {
 		cfg.RegionShapes = append([]RegionShape(nil), t.Regions...)
+	}
+	if len(t.RegionMap) > 0 {
+		cfg.RegionMap = append([]string(nil), t.RegionMap...)
 	}
 }

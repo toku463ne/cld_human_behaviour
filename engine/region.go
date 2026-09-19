@@ -661,9 +661,20 @@ func (w *World) Regions() []RegionView {
 	cw, ch := w.cfg.Width/float64(cols), w.cfg.Height/float64(rows)
 	for i := range w.regions {
 		c, r := i%cols, i/cols
+		minX, minY := float64(c)*cw, float64(r)*ch
+		maxX, maxY := float64(c+1)*cw, float64(r+1)*ch
+		// A drawn region is not a block on a grid, so its corners come from
+		// where it actually is (2026-09-20). For a painted one that is the box
+		// round it, which is all a rectangle can say about a shape that is not
+		// one - regionIndexAt remains the only exact answer.
+		if g := w.shapeIndex; g != nil && i < len(g.bounds) {
+			b := g.bounds[i]
+			minX, maxX = b.minX*w.cfg.Width, b.maxX*w.cfg.Width
+			minY, maxY = b.minY*w.cfg.Height, b.maxY*w.cfg.Height
+		}
 		out = append(out, RegionView{
-			MinX: float64(c) * cw, MinY: float64(r) * ch,
-			MaxX: float64(c+1) * cw, MaxY: float64(r+1) * ch,
+			MinX: minX, MinY: minY,
+			MaxX: maxX, MaxY: maxY,
 			Shelter: w.regions[i].Shelter,
 			Food:    w.regions[i].Food,
 			Ability: w.regions[i].Ability,

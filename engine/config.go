@@ -127,9 +127,21 @@ type Config struct {
 	// about where the water is without the world having to stop.
 	SpawnMap []string
 
-	// RegionShapes are the regions an author drew, as rectangles in fractions
-	// of the map (2026-09-19). Empty is every world before that: the regions
-	// are RegionCols x RegionRows equal blocks, cut by the world itself.
+	// RegionMap paints which cell belongs to which region, one character per
+	// cell, each character being a RegionShape's Key (2026-09-20). A dot, a
+	// short row and a character nobody claimed are "no region painted here".
+	//
+	// It is the other way to draw a region, and the better one: a painted
+	// region may be any shape, while a rectangle can only be a rectangle.
+	// Where both say something, the painting wins - painting a cell is the
+	// more particular thing to have said about it.
+	RegionMap []string
+
+	// RegionShapes are the regions an author drew: rectangles in fractions of
+	// the map (2026-09-19), or - when one carries a Key - the cells RegionMap
+	// paints with that character (2026-09-20). Empty is every world before
+	// that: the regions are RegionCols x RegionRows equal blocks, cut by the
+	// world itself.
 	//
 	// A drawing need not cover the map - whatever is left over becomes one
 	// more region, "everywhere else" - and a rectangle that names nothing but

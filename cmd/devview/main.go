@@ -2657,6 +2657,10 @@ func (g *game) drawTerrain(screen *ebiten.Image) {
 }
 
 func (g *game) drawRegions(screen *ebiten.Image) {
+	if g.world.DrawnRegions() {
+		g.drawPaintedRegions(screen)
+		return
+	}
 	for _, r := range g.world.Regions() {
 		rx, ry := g.onScreen(r.MinX, r.MinY)
 		w, h := g.long(r.MaxX-r.MinX), g.long(r.MaxY-r.MinY)
@@ -2678,6 +2682,55 @@ func (g *game) drawRegions(screen *ebiten.Image) {
 			thick := float32(1 + clamp01((1-r.Shelter)/0.6)*3)
 			vector.StrokeRect(screen, rx, ry, w, h, thick, colorRegionEdge, false)
 		}
+	}
+}
+
+// drawPaintedRegions shades a world whose regions an author drew (2026-09-20).
+// It asks cell by cell instead of drawing each region's rectangle, because a
+// painted region may be any shape at all - an L, a fork, a shore that bends -
+// and the box round one is not it.
+//
+// The lattice is coarse on purpose: this is the same wash as above, and what
+// it has to show is where a region reaches, not where its edge is to the
+// pixel. Regions are asked for through RegionAt, the one answer that is exact.
+func (g *game) drawPaintedRegions(screen *ebiten.Image) {
+	regions := g.world.Regions()
+	if len(regions) == 0 {
+		return
+	}
+	const lattice = 120 // cells across the world
+	cw := float64(worldWidth) / lattice
+	ch := cw
+	rows := int(math.Ceil(float64(worldHeight) / ch))
+	for row := 0; row < rows; row++ {
+		for col := 0; col < lattice; col++ {
+			i := g.world.RegionAt((float64(col)+0.5)*cw, (float64(row)+0.5)*ch)
+			if i < 0 || i >= len(regions) {
+				continue
+			}
+			r := regions[i]
+			shade := uint8(clamp01(math.Abs(r.Food-1)/0.6) * 55)
+			if shade == 0 {
+				continue
+			}
+			fill := color.RGBA{0x30, 0x70, 0x30, shade} // rich
+			if r.Food < 1 {
+				fill = color.RGBA{0x80, 0x60, 0x20, shade} // thin
+			}
+			x, y := g.onScreen(float64(col)*cw, float64(row)*ch)
+			vector.DrawFilledRect(screen, x, y, g.long(cw), g.long(ch), fill, false)
+		}
+	}
+	// One outline round each region's reach, thick where the resting is
+	// sheltered - the same reading as the borders above.
+	for _, r := range regions {
+		if r.Shelter >= 1 {
+			continue
+		}
+		x, y := g.onScreen(r.MinX, r.MinY)
+		thick := float32(1 + clamp01((1-r.Shelter)/0.6)*3)
+		vector.StrokeRect(screen, x, y, g.long(r.MaxX-r.MinX), g.long(r.MaxY-r.MinY),
+			thick, colorRegionEdge, false)
 	}
 }
 

@@ -479,3 +479,192 @@ func TestAMapMayMarkGoalRegions(t *testing.T) {
 		t.Fatalf("a marked world ran to %+v and an unmarked one to %+v", a.Stats(), b.Stats())
 	}
 }
+
+// Regions may be painted cell by cell instead of boxed in by a rectangle, and
+// then they may be any shape at all - here an L, which no rectangle can be.
+func TestRegionsMayBePaintedCellByCell(t *testing.T) {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 400
+	cfg.RegionShapes = []RegionShape{
+		{Name: "the bend", Key: 'a', Food: 1.6},
+		{Name: "the scree", Key: 'b'},
+	}
+	cfg.RegionMap = []string{
+		"aa......",
+		"aa....bb",
+		"aaaa..bb",
+		"aaaa..bb",
+	}
+	w := NewWorld(cfg)
+
+	if got, want := len(w.regions), 3; got != want {
+		t.Fatalf("%d regions, want %d (the two painted, and everywhere else)", got, want)
+	}
+	for _, tc := range []struct {
+		x, y float64
+		want int
+		what string
+	}{
+		{50, 50, 0, "the top of the bend"},
+		{350, 350, 0, "the foot of the bend, where no rectangle could reach both"},
+		{350, 50, 2, "above the foot, which is outside it"},
+		{750, 250, 1, "the scree"},
+		{500, 200, 2, "the gap between them"},
+	} {
+		if got := w.regionIndexAt(tc.x, tc.y); got != tc.want {
+			t.Fatalf("%s is region %d, want %d", tc.what, got, tc.want)
+		}
+	}
+	if got := w.regions[0].Food; got != 1.6 {
+		t.Fatalf("the bend grows %v, want the 1.6 it was painted with", got)
+	}
+	if got := w.RegionNames(); got[0] != "the bend" || got[2] != "elsewhere" {
+		t.Fatalf("the regions are called %v", got)
+	}
+}
+
+// Where a map says both, the painting wins: painting a cell is the more
+// particular thing to have said about it.
+func TestAPaintedCellWinsOverARectangle(t *testing.T) {
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 400
+	cfg.RegionShapes = []RegionShape{
+		{Name: "the west", X: 0, Y: 0, W: 0.5, H: 1},
+		{Name: "the spring", Key: 'a'},
+	}
+	cfg.RegionMap = []string{"..a.....", "..a....."}
+	w := NewWorld(cfg)
+	if got := w.regionIndexAt(100, 200); got != 0 {
+		t.Fatalf("the unpainted west is region %d, want 0", got)
+	}
+	if got := w.regionIndexAt(250, 200); got != 1 {
+		t.Fatalf("the spring inside the west is region %d, want 1", got)
+	}
+}
+
+// A painted region layer, read from a drawing: tiles that carry "region", with
+// the same name being one region however far apart it is painted.
+func TestReadingAPaintedRegionLayer(t *testing.T) {
+	const drawing = `{
+	 "width":4,"height":2,"tilewidth":16,"tileheight":16,
+	 "tilesets":[{"firstgid":1,"tiles":[
+	   {"id":0,"properties":[{"name":"kind","value":"flat"}]},
+	   {"id":1,"properties":[{"name":"region","value":"the shore"},{"name":"food","value":1.5},
+	                         {"name":"goal","type":"bool","value":true}]},
+	   {"id":2,"properties":[{"name":"region","value":"the scree"},{"name":"shelter","value":0.5}]},
+	   {"id":3,"properties":[{"name":"region","value":"the shore"}]}
+	 ]}],
+	 "layers":[
+	  {"type":"tilelayer","name":"ground","width":4,"height":2,"data":[1,1,1,1, 1,1,1,1]},
+	  {"type":"tilelayer","name":"regions","width":4,"height":2,"data":[2,0,3,0, 4,0,3,0]}
+	 ]}`
+	m, err := ParseTiled([]byte(drawing))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(m.RegionMap, "|"), "a.b.|a.b."; got != want {
+		t.Fatalf("the painted regions read %q, want %q", got, want)
+	}
+	if len(m.Regions) != 2 {
+		t.Fatalf("read %d regions, want 2: the two tiles called \"the shore\" are one", len(m.Regions))
+	}
+	if r := m.Regions[0]; r.Name != "the shore" || r.Key != 'a' || r.Food != 1.5 || !r.Goal {
+		t.Fatalf("the first region reads %+v", r)
+	}
+	if r := m.Regions[1]; r.Name != "the scree" || r.Key != 'b' || r.Shelter != 0.5 {
+		t.Fatalf("the second region reads %+v", r)
+	}
+
+	cfg := quietConfig()
+	cfg.Width, cfg.Height = 800, 400
+	m.Apply(&cfg)
+	w := NewWorld(cfg)
+	if got := w.regionIndexAt(50, 200); got != 0 {
+		t.Fatalf("the painted shore is region %d, want 0", got)
+	}
+	if got := w.regionIndexAt(250, 200); got != 2 {
+		t.Fatalf("the unpainted gap is region %d, want 2 (everywhere else)", got)
+	}
+	if got := w.GoalRegions(); len(got) != 1 || got[0] != 0 {
+		t.Fatalf("the world reports goals %v, want [0]", got)
+	}
+}
+
+// A tile layer after the ground is read as whichever of the two it paints, not
+// as whichever came first: a map may draw regions and no painted spawns.
+func TestAMapMayDrawRegionsWithNoPaintedSpawns(t *testing.T) {
+	m, err := ParseTiled([]byte(`{
+	 "width":2,"height":1,"tilewidth":16,"tileheight":16,
+	 "tilesets":[{"firstgid":1,"tiles":[
+	   {"id":0,"properties":[{"name":"kind","value":"flat"}]},
+	   {"id":1,"properties":[{"name":"region","value":"the meadow"}]}
+	 ]}],
+	 "layers":[
+	  {"type":"tilelayer","name":"ground","width":2,"height":1,"data":[1,1]},
+	  {"type":"tilelayer","name":"regions","width":2,"height":1,"data":[2,0]}
+	 ]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Spawn != nil {
+		t.Fatalf("the region layer was read as a painting of spawns: %q", m.Spawn)
+	}
+	if len(m.Regions) != 1 || m.RegionMap == nil {
+		t.Fatalf("read %d regions and the map %q", len(m.Regions), m.RegionMap)
+	}
+}
+
+// A painted world saves and loads like any other: the painting is part of the
+// Config, and the lookup is built again from it.
+func TestAPaintedRegionWorldSavesAndLoads(t *testing.T) {
+	cfg := quietConfig()
+	cfg.Seed = 5
+	cfg.Width, cfg.Height = 800, 400
+	cfg.RegionShapes = []RegionShape{{Name: "the bend", Key: 'a', Food: 1.4}}
+	cfg.RegionMap = []string{"aa......", "aaaa...."}
+	w := NewWorld(cfg)
+	for i := 0; i < 200; i++ {
+		w.Step()
+	}
+	var buf strings.Builder
+	if err := w.Save(&buf); err != nil {
+		t.Fatal(err)
+	}
+	back, err := Load(strings.NewReader(buf.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := back.regionIndexAt(50, 300); got != 0 {
+		t.Fatalf("the painted bend of the loaded world is region %d, want 0", got)
+	}
+	if got := back.regionIndexAt(700, 300); got != 1 {
+		t.Fatalf("the unpainted east of the loaded world is region %d, want 1", got)
+	}
+	for i := 0; i < 300; i++ {
+		w.Step()
+		back.Step()
+	}
+	if w.Stats() != back.Stats() {
+		t.Fatalf("saved-and-loaded ran to %+v, the original to %+v", back.Stats(), w.Stats())
+	}
+}
+
+// A world that paints no regions is the world as it was, down to the random
+// numbers.
+func TestAWorldWithNoPaintedRegionsIsUnchanged(t *testing.T) {
+	run := func(paint bool) Stats {
+		cfg := testConfig()
+		cfg.Seed = 7
+		if paint {
+			cfg.RegionMap = []string{"........"} // painted, and nothing on it
+		}
+		w := NewWorld(cfg)
+		for i := 0; i < 400; i++ {
+			w.Step()
+		}
+		return w.Stats()
+	}
+	if blank, plain := run(true), run(false); blank != plain {
+		t.Fatalf("a blank painting ran to %+v and no painting to %+v", blank, plain)
+	}
+}
