@@ -62,6 +62,23 @@ var (
 	// drownMult, which is how the match is checked rather than assumed.
 	sinkFlatMult = 2.60
 
+	// soakFlatDrain is the same mean drain as the soak arm, handed to every
+	// body wherever it stands: the river is 2 cells of 16, and bodies spend
+	// 0.148 of their ticks in it, so 0.05 in the water is 0.0074 everywhere.
+	// The flat arm carries it as a weather over the whole map, which is the
+	// one mechanism this engine already has for "a place takes something".
+	soakFlatDrain = 0.0074
+
+	// flatChillMap is one weather over the whole world, for the flat arm of
+	// stage 99: every cell as cold as every other, so nothing can be walked
+	// away from.
+	flatChillMap = []string{
+		"9999999999999999", "9999999999999999", "9999999999999999",
+		"9999999999999999", "9999999999999999", "9999999999999999",
+		"9999999999999999", "9999999999999999", "9999999999999999",
+		"9999999999999999", "9999999999999999", "9999999999999999",
+	}
+
 	mapRiver = []string{
 		".......~~.......",
 		".......~~.......",
@@ -4800,6 +4817,141 @@ var variants = []variant{
 			c.DrownUnskilledFactor, c.DrownBeliefPerBody = 3, true
 		},
 	},
+	// Stage 99: the water takes something out of a body standing in it. The
+	// base is riverswim again. What makes this different from every other
+	// terrain rule is where it lands: a place's drain is subtracted inside
+	// recoverable, so what gets dearer is RESTING here in particular, and
+	// every other option only sees the same common shift. Stage 86 could not
+	// act on that because a region is 400 wide; a wet cell is 77.
+	//
+	// Three controls. soakblind separates the choosing from the sorting
+	// (DrownKnown's shape, the fourth time). soakfree takes the water's toll
+	// on movement away, so that whatever moves is the drain and not the
+	// price. soakflat hands the same mean drain to everybody wherever they
+	// stand, which is the arm stages 95 and 98 both said to run: it says
+	// whether what moves is the place or the level.
+	{
+		name:  "soak",
+		about: "99: a tick in the river takes vitality, standing still or not (0.05/tick)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.05
+		},
+	},
+	{
+		name:  "soaklight",
+		about: "sweep: 0.02/tick, a fifth of what a body recovers",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.02
+		},
+	},
+	{
+		name:  "soakdeep",
+		about: "sweep: 0.09/tick, which cancels recovery outright",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.09
+		},
+	},
+	{
+		name:  "soakblind",
+		about: "control: the river takes just as much and no body can feel it (99)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.05
+			c.WaterDrainKnown = false
+		},
+	},
+	{
+		name:  "soakfree",
+		about: "control: draining but not dear - what moves without the toll on movement (99)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.05
+			c.WaterMoveCost = 1
+		},
+	},
+	{
+		name:  "soakflat",
+		about: "control: the same mean drain everywhere, so the place cannot be left (99)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.ClimateMap, c.ChillDrain = flatChillMap, soakFlatDrain
+		},
+	},
+	{
+		name:  "playsoak",
+		about: "99 on the map that gets played on, where the water is fished and the banks are rich",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.SkillBirthplace, c.WaterDrain = 0.5, 0.05
+		},
+	},
+	// Stage 100: an option is priced with the ground one cell toward where it
+	// would take the body, read with the reader's own error. The base is
+	// riverswim; the drain of stage 99 is in the arms that carry it, because
+	// the read covers both figures.
+	//
+	// Three controls. aheadsharp reads perfectly, which separates "being able
+	// to look" from "looking correctly". aheadblind looks, draws the same
+	// numbers and reads the world's average ground instead of the cell, which
+	// is stage 35's lesson: a wrong belief moved the population by as much as
+	// a right one, so the information has to be told from the numbers.
+	// aheadwrong doubles the error, because the failure worth seeing is a
+	// body that takes a river for a field.
+	{
+		name:  "ahead",
+		about: "100: an option is priced with the ground one cell ahead, read as well as the body can",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.GroundAheadSeen = true
+		},
+	},
+	{
+		name:  "aheadsharp",
+		about: "arm: the same, read without error - being able to look, apart from looking correctly (100)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.GroundAheadSeen, c.GroundAheadNoise = true, 0
+		},
+	},
+	{
+		name:  "aheadwrong",
+		about: "arm: the same, read twice as badly - a body that takes a river for a field (100)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.GroundAheadSeen, c.GroundAheadNoise = true, 2
+		},
+	},
+	{
+		name:  "aheadblind",
+		about: "control: it looks, draws the same numbers, and reads the world instead of the cell (100)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.GroundAheadSeen, c.GroundAheadBlind = true, true
+		},
+	},
+	{
+		name:  "aheadsoak",
+		about: "100 where the water also drains (99), which is the other figure the read carries",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.05
+			c.GroundAheadSeen = true
+		},
+	},
+	{
+		name:  "aheadsoakblind",
+		about: "control for aheadsoak: it looks and reads the world instead of the cell (100)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.05
+			c.GroundAheadSeen, c.GroundAheadBlind = true, true
+		},
+	},
+	{
+		name:  "playahead",
+		about: "100 on the map that gets played on, where the ground actually varies",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.SkillBirthplace = 0.5
+			c.GroundAheadSeen = true
+		},
+	},
 	{
 		name:  "playsink",
 		about: "98 on the map that gets played on, where the banks are rich and the water is fished",
@@ -5276,7 +5428,7 @@ var metricNames = []string{
 	"forageHeld", "forageNominal", "forageReal",
 	"swimHeld", "swimNominal", "swimReal", "swimWet",
 	"wetPace", "wetFloor",
-	"drownMult", "wetGreen", "drownTaken",
+	"drownMult", "wetGreen", "drownTaken", "wetStill", "soakTaken",
 	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"mateWeight", "sdMateWeight",
@@ -5553,6 +5705,13 @@ type sample struct {
 	// mean swimming of everybody the water has taken, which against swimWet
 	// says whether the river is sorting them.
 	drownMult, wetGreen, drownTaken float64
+
+	// What the water takes of a body standing in it (stage 99). wetStill is
+	// the share of the body-ticks spent in the water where the body did not
+	// move - the ticks that cost nothing before that stage, and the thing it
+	// aims at - and soakTaken the vitality the wet ground has taken over the
+	// run, to be read against what hunger takes.
+	wetStill, soakTaken float64
 	tolHeld, tolNominal, tolReal float64
 }
 
@@ -5749,6 +5908,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 			wetPace: wading.Pace, wetFloor: wading.Floor,
 			drownMult: mult(sinking.Chance, sinking.Floor), wetGreen: sinking.Unskilled,
 			drownTaken: sinking.TakenSkill,
+			wetStill:   sinking.Still, soakTaken: sinking.Soaked,
 			bankHeld: bank.Held, bankReal: bank.Realised,
 			wadeHeld: wade.Held, wadeReal: wade.Realised,
 			anglerGap:  wade.Realised - bank.Realised,
@@ -6142,6 +6302,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"drownMult":      tail.drownMult,
 		"wetGreen":       tail.wetGreen,
 		"drownTaken":     tail.drownTaken,
+		// What the wet ground takes, and of what it is taken (stage 99).
+		"wetStill":       tail.wetStill,
+		"soakTaken":      tail.soakTaken,
 		"forageHeld":     tail.forageHeld,
 		"forageNominal":  tail.forageNominal,
 		"forageReal":     tail.forageReal,
@@ -6696,6 +6859,8 @@ func tailAverage(series []sample) sample {
 		out.drownMult += s.drownMult
 		out.wetGreen += s.wetGreen
 		out.drownTaken += s.drownTaken
+		out.wetStill += s.wetStill
+		out.soakTaken += s.soakTaken
 		out.forageHeld += s.forageHeld
 		out.forageNominal += s.forageNominal
 		out.forageReal += s.forageReal
@@ -6884,6 +7049,8 @@ func tailAverage(series []sample) sample {
 	out.drownMult /= d
 	out.wetGreen /= d
 	out.drownTaken /= d
+	out.wetStill /= d
+	out.soakTaken /= d
 	out.forageHeld /= d
 	out.forageNominal /= d
 	out.forageReal /= d

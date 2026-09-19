@@ -387,6 +387,15 @@ type World struct {
 	// the water it says whether the river was already sorting them before any
 	// rule was written to make it.
 	drownTakenSwim float64
+	// soakTaken is the vitality the wet ground has taken, summed (stage 99),
+	// kept beside chillTaken so the two places that take a body apart can be
+	// read against each other.
+	soakTaken float64
+	// wetTicks is how many body-ticks have been spent in the water and
+	// wetStill how many of those the body did not move on (stage 99). The
+	// second over the first is what this stage is aimed at: until it, those
+	// ticks cost nothing whatever.
+	wetTicks, wetStill float64
 	// drownWitnesses is how many times somebody has watched the ground take
 	// somebody else (stage 35). Counted because a rule that hardly ever fires
 	// explains nothing whatever its weight - the lesson of stage 24.
@@ -904,6 +913,7 @@ func (w *World) Step() {
 		}
 		a.Age++
 		a.effortSpent = 0
+		a.stirred = false
 		a.actionTicks++
 		if a.CooldownTimer > 0 {
 			a.CooldownTimer--
@@ -1632,6 +1642,20 @@ func (w *World) metabolise() {
 		// cold becomes vitality.
 		chill := w.chillOf(a)
 		w.chillTaken += chill
+		// And what the ground here takes, whatever else is happening (stage
+		// 99). Two facts on two maps, one subtraction: the weather is a
+		// property of a region and the wet is a property of a cell, but both
+		// are vitality per tick and both land in the same place.
+		if w.ground != nil && w.terrainAt(a.X, a.Y).Drown > 0 {
+			w.wetTicks++
+			if !a.stirred {
+				w.wetStill++
+			}
+		}
+		if soak := w.soakOf(a); soak > 0 {
+			w.soakTaken += soak
+			chill += soak
+		}
 		if drain := hungerDrain(&w.cfg, a.Hunger); drain > 0 {
 			w.hungerTaken += drain
 			a.Vitality -= drain + chill
@@ -2320,6 +2344,7 @@ func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 	// is the ground it spent the tick crossing.
 	a.Vitality -= w.moveCostOn(a, a.X, a.Y, effort)
 	a.effortSpent = math.Max(a.effortSpent, effort)
+	a.stirred = true
 	w.invalidateIndex()
 }
 

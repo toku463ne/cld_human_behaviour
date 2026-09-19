@@ -85,6 +85,19 @@ type terrain struct {
 	// gather them up (#60).
 	Drown float64
 
+	// Drain is what a tick spent on this cell takes out of a body in vitality,
+	// whatever it is doing (stage 99). Water is the only ground that carries
+	// one today.
+	//
+	// A drain and not another multiplier on the cost, because the cost is only
+	// charged on a tick the body actually moved: standing in a river was free
+	// until this, which is the hole stage 97 measured from the other side
+	// ("standing still is the one thing that does not get slower"). It is also
+	// the only shape the lookahead reads without a line of new code - the
+	// chill (stage 85) goes into the same figure - so a place that takes
+	// something is a place a body can reckon with.
+	Drain float64
+
 	Kind Ground
 }
 
@@ -167,7 +180,7 @@ func cellFor(c rune, cfg *Config) terrain {
 		return terrain{Cost: cfg.RoughMoveCost, Slow: 1, Kind: GroundRough}
 	case c == '~':
 		return terrain{Cost: cfg.WaterMoveCost, Slow: cfg.WaterSpeedShare,
-			Drown: cfg.DrownChancePerTick, Kind: GroundWater}
+			Drown: cfg.DrownChancePerTick, Drain: cfg.WaterDrain, Kind: GroundWater}
 	case c >= '1' && c <= '9':
 		return terrain{Cost: 1, Slow: 1, Height: int8(c - '0'), Kind: GroundOpen}
 	case c >= 'A' && c <= 'I':
@@ -359,6 +372,11 @@ func (w *World) canStep(fromX, fromY, toX, toY float64) bool {
 // GroundView is what an interface or a measurement may read about one spot.
 // The agents get the cost and nothing else (Perception.Self.Ground); this is
 // for whoever is drawing the world or counting who stands where.
+// GroundRead is what a body makes of a piece of ground it has not reached:
+// what crossing it would multiply the cost by, and what standing on it would
+// drain per tick (stage 100). Both carry the reader's own error.
+type GroundRead struct{ Cost, Drain float64 }
+
 type GroundView struct {
 	Kind   Ground
 	Cost   float64
@@ -471,6 +489,12 @@ type Drowning struct {
 	// taken since the world began. Below Skill means the river is sorting
 	// them; equal to it means the rule is not reaching who drowns.
 	TakenSkill float64
+
+	// Still is the share of all the body-ticks spent in the water where the
+	// body did not move, and Soaked the vitality the wet ground has taken
+	// (stage 99). Still is what that stage aims at: until it, those ticks
+	// were free, and stage 97 measured bodies drifting into exactly them.
+	Still, Soaked float64
 }
 
 // Drowning reports it.
@@ -508,7 +532,102 @@ func (w *World) Drowning() Drowning {
 	if w.drownDeaths > 0 {
 		out.TakenSkill = w.drownTakenSwim / float64(w.drownDeaths)
 	}
+	if w.wetTicks > 0 {
+		out.Still = w.wetStill / w.wetTicks
+	}
+	out.Soaked = w.soakTaken
 	return out
+}
+
+// aroundDirs is the eight directions a body reads the ground in, in the order
+// SelfView.Around holds them: E, NE, N, NW, W, SW, S, SE.
+var aroundDirs = [8][2]float64{
+	{1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}, {0, 1}, {1, 1},
+}
+
+// readAround fills in what this body makes of the ground one cell away in each
+// direction (stage 100).
+//
+// One draw per direction, of the size every other reading of the world is
+// scaled by - (MaxAbility - rationality)/MaxAbility times GroundAheadNoise -
+// and the same draw moves both figures, because a body that misjudges a piece
+// of ground misjudges it in one way rather than in two. The error is added to
+// the multiplier so that a bad enough reader can take a river for a field, and
+// scaled on the drain, which has no natural unit of its own.
+//
+// Nothing is drawn and nothing is written when the rule is off, which is what
+// keeps every world before this one consuming the random source as it did.
+func (w *World) readAround(a *Agent, s *SelfView) {
+	if !w.cfg.GroundAheadSeen || w.ground == nil {
+		s.AroundSeen = false
+		return
+	}
+	s.AroundSeen = true
+	scale := w.judgementScale(a)
+	cw, ch := w.ground.cellW, w.ground.cellH
+	meanCost, meanDrain := 0.0, 0.0
+	if w.cfg.GroundAheadBlind {
+		meanCost, meanDrain = w.groundMean()
+	}
+	for i, d := range aroundDirs {
+		cost, drain := meanCost, meanDrain
+		if !w.cfg.GroundAheadBlind {
+			t := w.terrainAt(a.X+d[0]*cw, a.Y+d[1]*ch)
+			cost, drain = t.Cost, t.Drain
+		}
+		e := w.noise(scale, w.cfg.GroundAheadNoise)
+		s.Around[i] = GroundRead{
+			Cost:  math.Max(0.1, cost+e),
+			Drain: math.Max(0, drain*(1+e)),
+		}
+	}
+}
+
+// groundMean is the world's average cell, for the blind arm above: the arm
+// looks, draws the same numbers and prices the same way, and what it reads is
+// the world rather than the cell it is about to step onto (stage 35's lesson).
+func (w *World) groundMean() (cost, drain float64) {
+	if w.ground == nil || len(w.ground.cells) == 0 {
+		return 1, 0
+	}
+	for i := range w.ground.cells {
+		cost += w.ground.cells[i].Cost
+		drain += w.ground.cells[i].Drain
+	}
+	n := float64(len(w.ground.cells))
+	return cost / n, drain / n
+}
+
+// soakOf is what the ground under this body takes out of it per tick, whatever
+// it is doing (stage 99): the one place a wet cell becomes vitality.
+//
+// It is kept apart from the weather's own figure (chillOf, stage 85) because
+// the two are different facts on different maps - the climate is a property of
+// a region and this is a property of a cell - and the author of a map sets
+// them separately. What they share is the unit and where they land: both are
+// subtracted in metabolise, and both ride into the lookahead through the same
+// field, so nothing here needs a rule of its own to be reckoned with.
+//
+// A creature of the water is not drained by the water (stage 63). Same flag,
+// same one fact as not drowning and not being dragged.
+func (w *World) soakOf(a *Agent) float64 {
+	if a == nil || w.ground == nil || w.cfg.WaterDrain <= 0 {
+		return 0
+	}
+	if a.Species == SpeciesEnemy && w.kindOf(a).Water {
+		return 0
+	}
+	return w.terrainAt(a.X, a.Y).Drain
+}
+
+// soakFelt is what this body reads of it: the whole of it in the ordinary
+// world, and nothing in the arm where the ground takes just as much and no
+// body can feel that it does (the same shape as DrownKnown and ChillKnown).
+func (w *World) soakFelt(a *Agent) float64 {
+	if !w.cfg.WaterDrainKnown {
+		return 0
+	}
+	return w.soakOf(a)
 }
 
 // drownings is the whole of the rule. Every body standing in the water at the

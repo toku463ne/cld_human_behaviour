@@ -269,7 +269,7 @@ func pressures(cfg *Config, s *SelfView, vitality, hunger, extra float64) riskPa
 	// because extra is deliberately dropped at the second window - what is
 	// hitting a body now is a fact about now - and a place does not stop
 	// being cold.
-	own := projectedDrain(cfg, s.HungerRate, hunger) + s.Chill
+	own := projectedDrain(cfg, s.HungerRate, hunger) + placeDrain(s)
 	p := oneHorizon(cfg, s, vitality, own+extra, true)
 	if cfg.LookaheadHorizons <= 0 || p >= 1 {
 		return riskPair{p, p}
@@ -308,7 +308,7 @@ func pressures(cfg *Config, s *SelfView, vitality, hunger, extra float64) riskPa
 	if cfg.LookaheadUpkeep > 0 {
 		// What it would be draining on the way, rather than what it is
 		// draining now: a body that keeps its hunger down stops paying for it.
-		drain = projectedDrain(cfg, s.HungerRate, (hunger+hu)/2) + s.Chill
+		drain = projectedDrain(cfg, s.HungerRate, (hunger+hu)/2) + placeDrain(s)
 		// And what it would win back out there. Upkeep is both halves: a body
 		// that has been feeding itself has also been mending, and leaving the
 		// mending out is what made a worn body read its own death as settled
@@ -316,10 +316,10 @@ func pressures(cfg *Config, s *SelfView, vitality, hunger, extra float64) riskPa
 		// over a second window and nothing in it ever got better. What is
 		// hitting it now stays in the first window, here as everywhere else.
 		mend = cfg.LookaheadUpkeep * recoverable(cfg, s.MaxVitality, s.HungerRate,
-			vitality, (hunger+hu)/2, s.Chill, s.RestRate)
+			vitality, (hunger+hu)/2, placeDrain(s), s.RestRate)
 	}
 	v := clamp(vitality-drain*h+mend, 0, s.MaxVitality)
-	next := oneHorizon(cfg, s, v, projectedDrain(cfg, s.HungerRate, hu)+s.Chill, cfg.LookaheadWornAgain)
+	next := oneHorizon(cfg, s, v, projectedDrain(cfg, s.HungerRate, hu)+placeDrain(s), cfg.LookaheadWornAgain)
 	return riskPair{p, clamp(p+(1-p)*next, 0, 1)}
 }
 
@@ -437,6 +437,15 @@ func speedAt(maxSpeed, effort float64) float64 {
 // groundOf is what the ground under this body multiplies movement by, and
 // burdenOf what its load does (stage 40), with the guard the rest of the file
 // uses for a view that never had one set.
+// placeDrain is what standing where this body stands costs it per tick,
+// whatever it is doing: the weather (stage 85) plus the ground (stage 99).
+//
+// One function so that the two arrive everywhere together. Both are facts
+// about a place rather than about what is happening to the body, which is why
+// they go with the metabolism and are carried into the second window, while
+// what is hitting the body now is not (see pressures).
+func placeDrain(s *SelfView) float64 { return s.Chill + s.Soak }
+
 func groundOf(s *SelfView) float64 {
 	if s.Ground <= 0 {
 		return 1
@@ -487,6 +496,65 @@ func moveCostAt(cfg *Config, effort float64) float64 {
 // the most an animal can do without a map. On level open ground - the whole
 // world before terrain, and the default still - Ground is 1 and this is the
 // flat figure exactly, so nothing about a flat world changed when this arrived.
+// moveCostTo is moveCost for an option that points somewhere (stage 100): the
+// same figure, with the ground read one cell toward the target in place of the
+// ground underfoot.
+//
+// With the rule off, or for a target the body is standing on, it is moveCost
+// exactly - so every world before that stage prices every option as it did.
+func moveCostTo(cfg *Config, s *SelfView, effort, x, y float64) float64 {
+	return moveCostDir(cfg, s, effort, x-s.X, y-s.Y)
+}
+
+// moveCostDir is the same for an option that names a direction rather than a
+// place.
+func moveCostDir(cfg *Config, s *SelfView, effort, dx, dy float64) float64 {
+	if !s.AroundSeen {
+		return moveCost(cfg, s, effort)
+	}
+	i, ok := aroundIndex(dx, dy)
+	if !ok {
+		return moveCost(cfg, s, effort)
+	}
+	g := s.Around[i].Cost
+	if g <= 0 {
+		g = 1
+	}
+	b := s.Burden
+	if b <= 0 {
+		b = 1
+	}
+	// And what standing over there would take that standing here does not
+	// (stage 99's drain, read ahead). The difference and not the figure: what
+	// this place takes is already in the life term of every option alike, so
+	// charging the whole of it again here would count it twice. Zero when the
+	// ground ahead drains like the ground underfoot, which is every world
+	// before stage 99.
+	//
+	// The same unit as the cost above - vitality per tick of this option - so
+	// every caller that multiplies by a duration charges both over the same
+	// ticks, and no caller had to learn a second thing.
+	return moveCostAt(cfg, effort)*g*b + (s.Around[i].Drain - s.Soak)
+}
+
+// aroundIndex is which of the eight readings a direction falls in. It matches
+// aroundDirs (E, NE, N, NW, W, SW, S, SE); a direction of nothing at all has
+// no reading, which is what the second return says.
+func aroundIndex(dx, dy float64) (int, bool) {
+	if dx == 0 && dy == 0 {
+		return 0, false
+	}
+	// Eight buckets of 45 degrees, starting at east and going anticlockwise
+	// in screen coordinates (y grows downward), which is the order the
+	// directions are laid out in.
+	ang := math.Atan2(-dy, dx)
+	if ang < 0 {
+		ang += 2 * math.Pi
+	}
+	i := int(math.Round(ang/(math.Pi/4))) % 8
+	return i, true
+}
+
 func moveCost(cfg *Config, s *SelfView, effort float64) float64 {
 	g := s.Ground
 	if g <= 0 {
@@ -610,7 +678,7 @@ func (c *AIController) addWarmth(p *Perception) {
 	now := c.riskNow
 	for _, effort := range effortLevels {
 		ticks := span/speedAt(s.MaxSpeed, effort) + 1
-		cost := moveCost(cfg, s, effort) * ticks
+		cost := moveCostDir(cfg, s, effort, ux, uy) * ticks
 		// The same body, in country that much less cold. Chill is the one
 		// thing about it that changes: this option is not about what grows
 		// there or who is there, neither of which it knows.
@@ -669,7 +737,7 @@ func (c *AIController) addRest(p *Perception) {
 	// Whatever is hitting the agent goes on hitting it while it sits there,
 	// and so does whatever starts while it is down.
 	after := pressures(cfg, s,
-		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed+s.Chill, s.RestRate),
+		s.Vitality+recoverable(cfg, s.MaxVitality, s.HungerRate, s.Vitality, s.Hunger, incoming+exposed+placeDrain(s), s.RestRate),
 		s.Hunger, incoming+exposed)
 	c.add(Action{Kind: ActRest}, Utility{
 		Life: Goal{Value: gap(cfg, now, after) * cfg.LifeValue, Chance: 1},
@@ -866,7 +934,7 @@ func (c *AIController) addExplore(p *Perception) {
 		dx, dy = math.Cos(angle), math.Sin(angle)
 	}
 	effort := 0.4
-	cost := moveCost(cfg, s, effort)
+	cost := moveCostDir(cfg, s, effort, dx, dy)
 	c.add(Action{Kind: ActMove, DX: dx, DY: dy, Effort: effort}, Utility{
 		Explore:      Goal{Value: cfg.ExploreValue, Chance: hungry},
 		Vitality:     cost,
@@ -982,7 +1050,7 @@ func (c *AIController) addFood(p *Perception) {
 			// The one tick added to the travel is the one the meal has always
 			// been charged, which is what keeps a world without the rule
 			// exactly as it was.
-			cost := moveCost(cfg, s, effort) * (travel + 1)
+			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * (travel + 1)
 			// Picking a thing up is still one tick, here and in the world
 			// (#76): putting the gathering time on the carrying too would
 			// leave no way to tell which of the two did whatever the
@@ -995,7 +1063,7 @@ func (c *AIController) addFood(p *Perception) {
 			// cost of walking does: it is what the body would have when it
 			// got there.
 			vitAfter = math.Min(vitAfter+f.Heal, s.MaxVitality)
-			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming+s.Chill, s.RestRate)
+			vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming+placeDrain(s), s.RestRate)
 			after := pressures(cfg, s, vitAfter, hungerAfter, incoming)
 
 			// What the warning on it says it will cost this body. The agent
@@ -1238,7 +1306,7 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 	}
 	for _, effort := range effortLevels {
 		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
-		cost := moveCost(cfg, s, effort) * ticks
+		cost := moveCostTo(cfg, s, effort, o.X, o.Y) * ticks
 		c.add(Action{Kind: ActGive, TargetID: o.ID, Effort: effort}, Utility{
 			Lore:         Goal{Value: gift, Chance: 1},
 			Vitality:     cost,
@@ -1341,10 +1409,10 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 			pGet = clamp(theirs/(theirs+mine+1e-9), 0.05, 1)
 		}
 		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
-		cost := moveCost(cfg, s, effort) * ticks
+		cost := moveCostTo(cfg, s, effort, o.X, o.Y) * ticks
 		hungerAfter := math.Max(0, s.Hunger+s.HungerRate*ticks-cfg.FoodNutrition*o.OfferValue)
 		vitAfter := math.Min(s.Vitality-cost+o.OfferHeal, s.MaxVitality)
-		vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming+s.Chill, s.RestRate)
+		vitAfter += recoverable(cfg, s.MaxVitality, s.HungerRate, vitAfter, hungerAfter, incoming+placeDrain(s), s.RestRate)
 		after := pressures(cfg, s, vitAfter, hungerAfter, incoming)
 		c.offerOpts = append(c.offerOpts, len(c.opts))
 		chance := pGet * clamp(float64(o.OfferLeft)/ticks, 0, 1)
@@ -1424,7 +1492,7 @@ func (c *AIController) addPutInStore(p *Perception) {
 		}
 		for _, effort := range effortLevels {
 			ticks := st.Dist/speedAt(s.MaxSpeed, effort) + 1
-			cost := moveCost(cfg, s, effort) * ticks
+			cost := moveCostTo(cfg, s, effort, st.X, st.Y) * ticks
 			c.add(Action{Kind: ActStore, TargetID: st.Index, Effort: effort}, Utility{
 				Life:         Goal{Value: keep, Chance: need},
 				Vitality:     cost,
@@ -1515,7 +1583,7 @@ func (c *AIController) addBooks(p *Perception) {
 		}
 		for _, effort := range effortLevels {
 			walk := f.Dist/speedAt(s.MaxSpeed, effort) + 1
-			cost := moveCost(cfg, s, effort) * walk
+			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * walk
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
 				Lore:         Goal{Value: f.Worth, Chance: 1},
 				Vitality:     cost,
@@ -1643,7 +1711,7 @@ func (c *AIController) addCoins(p *Perception) {
 		}
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
-			cost := moveCost(cfg, s, effort) * ticks
+			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * ticks
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: want, Chance: chance},
 				Vitality:     cost,
@@ -1729,7 +1797,7 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	}
 	for _, effort := range effortLevels {
 		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
-		cost := moveCost(cfg, s, effort) * ticks
+		cost := moveCostTo(cfg, s, effort, o.X, o.Y) * ticks
 		c.add(Action{Kind: ActBuy, TargetID: o.ID, Effort: effort}, Utility{
 			Life:         Goal{Value: gain, Chance: 1},
 			Vitality:     cost,
@@ -1805,7 +1873,7 @@ func (c *AIController) addTrinkets(p *Perception) {
 		warmth := warmthValue(cfg, s, c.incomingDmg, f.Ward)
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
-			cost := moveCost(cfg, s, effort) * ticks
+			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * ticks
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: warmth, Chance: chance},
 				Adorn:        Goal{Value: f.Worth, Chance: chance},
@@ -1960,7 +2028,7 @@ func (c *AIController) addStones(p *Perception) {
 		st := &p.Stones[i]
 		for _, effort := range effortLevels {
 			ticks := st.Dist/speedAt(s.MaxSpeed, effort) + 1
-			cost := moveCost(cfg, s, effort) * ticks
+			cost := moveCostTo(cfg, s, effort, st.X, st.Y) * ticks
 			c.add(Action{Kind: ActTake, TargetID: st.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: want, Chance: 1},
 				Vitality:     cost,
@@ -2213,7 +2281,7 @@ func (c *AIController) scoreFight(p *Perception, o *AgentView, help allyForce, k
 	travel := o.Dist / speedAt(s.MaxSpeed, effort)
 	ticks := exchange + travel + float64(extraTicks)
 
-	cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCost(cfg, s, effort)
+	cost := exchange*(theirs+stanceCost(cfg, stance)*effort) + travel*moveCostTo(cfg, s, effort, o.X, o.Y)
 
 	now := pressures(cfg, s, s.Vitality, s.Hunger, c.incomingDmg)
 	after := pressures(cfg, s, s.Vitality-cost, s.Hunger+s.HungerRate*ticks, 0)
@@ -2281,7 +2349,7 @@ func (c *AIController) addFlee(p *Perception, o *AgentView) {
 	// hit. This is the only option that gets the incoming damage out of the
 	// picture, which is why running away wins exactly when the damage is what
 	// is about to kill the agent, and loses whenever it is not.
-	cost := moveCost(cfg, s, cfg.FleeEffort)*fleeExposureTicks + incoming*fleeExposureTicks*0.4
+	cost := moveCostDir(cfg, s, cfg.FleeEffort, s.X-o.X, s.Y-o.Y)*fleeExposureTicks + incoming*fleeExposureTicks*0.4
 	pEscape := clamp(s.Vitality/(s.Vitality+o.Vitality+1e-9), 0.15, 0.9)
 	fled := pressures(cfg, s, s.Vitality-cost, s.Hunger, 0)
 
@@ -2302,7 +2370,7 @@ func (c *AIController) addCourt(p *Perception, o *AgentView) {
 
 	effort := 0.6
 	ticks := o.Dist/speedAt(p.Self.MaxSpeed, effort) + 1
-	cost := moveCost(cfg, s, effort) * ticks
+	cost := moveCostTo(cfg, s, effort, o.X, o.Y) * ticks
 
 	// What a child costs the body that has one: the parents share the birth,
 	// and it is only paid if the courtship is accepted (stage 25).

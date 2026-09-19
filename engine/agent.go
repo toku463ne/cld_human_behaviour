@@ -305,6 +305,13 @@ type Agent struct {
 	// because speedNow is on the hot path and knows nothing about the world.
 	wading float64
 
+	// stirred says this body changed position this tick. It is written where
+	// the step is taken and cleared where effortSpent is, and nothing in the
+	// simulation reads it: it is there so that "standing still in the water"
+	// (stage 99) can be counted exactly rather than guessed from effort, which
+	// a fight also spends.
+	stirred bool
+
 	// chronotype is the hour of the world's day this agent sleeps best at, on
 	// a circle from 0 to 1 (stage 18, clock.go). Deliberately not one of the
 	// budget genes: those are quantities you can buy more of, and an hour is a

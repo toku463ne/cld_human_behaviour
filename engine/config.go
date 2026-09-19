@@ -2704,6 +2704,84 @@ type Config struct {
 	// here and runs identically.
 	DrownChancePerTick float64
 
+	// GroundAheadSeen says whether a body prices an option with the ground one
+	// cell toward where that option would take it, rather than with the ground
+	// under its own feet (stage 100).
+	//
+	// False is every world before it. Since stage 20 the utility has assumed
+	// "the country ahead is like the country I am standing on", which is the
+	// most an animal without a map can do - and it is also why nothing about
+	// terrain has ever changed where a body stands: five stages (34, 35, 63,
+	// 98, 99) put a cost or a danger on the water and none of them could be
+	// told from the arm where the body could not feel it, because no term in
+	// the comparison knows where an option would take the body.
+	//
+	// What is read is the two figures that are vitality - the crossing cost
+	// and the drain - and not the drowning chance, which stage 34 priced per
+	// tick of the option's duration. Putting a destination's chance into that
+	// term would change what Hazard means and make four stages of recorded
+	// figures unreadable; it belongs in its own stage.
+	//
+	// The read is applied to the whole of an option's duration, which is the
+	// same assumption as today's with one cell more in it: "the country ahead
+	// is like the next cell" rather than "like this one". It is not a path.
+	GroundAheadSeen bool
+
+	// GroundAheadNoise is how badly that reading goes, scaled the way every
+	// other reading of the world is: (MaxAbility - rationality)/MaxAbility
+	// times this, as the spread of one normal draw in units of the crossing
+	// multiplier (stage 100).
+	//
+	// Rationality and not intelligence, because this is reading the world
+	// rather than choosing among what has been read - the same split that has
+	// kept the two genes from taking on each other's work since stage 6. The
+	// error is added, not scaled, so a body that reads badly enough can think
+	// a river is a field, which is the failure worth being able to see.
+	//
+	// Zero is the arm that separates "being able to look" from "looking
+	// correctly".
+	GroundAheadNoise float64
+
+	// GroundAheadBlind is the control for the above: the body looks ahead,
+	// draws the same random numbers and prices the option the same way, but
+	// what it reads is the world's average ground rather than the cell it is
+	// about to step onto (stage 100).
+	//
+	// Stage 35 is why this exists. There, a belief that correlated 0.77 with
+	// the truth raised the population - and so did an arm whose belief was
+	// wrong, by the same amount. Without this control, "the information did
+	// it" cannot be told from "the numbers moved".
+	GroundAheadBlind bool
+
+	// WaterDrain is what a tick spent in the water takes out of a body in
+	// vitality, whatever the body is doing (stage 99). Nought is every world
+	// measured before it, where the water was a toll on movement and nothing
+	// at all to a body standing still in it.
+	//
+	// A drain rather than a heavier toll, for two reasons that are the whole
+	// of the stage. It reaches the 37% of wet ticks a body spends standing
+	// still, which cost nothing until now - the hole stage 97 measured from
+	// the other side. And a drain is the one shape the lookahead reads
+	// already (pressures adds the place's figure to the metabolism), so the
+	// body reckons with it without a line of new code - which is exactly what
+	// stage 85 built that path for.
+	//
+	// What it is expected to do, and how it differs from the cold that failed
+	// (stage 86): a place's drain is subtracted inside recoverable, so what
+	// gets dearer is RESTING here in particular, while every other option
+	// only sees the same common shift. The cold could not act on that because
+	// a region is 400 wide and walking does not get a body out of it; a wet
+	// cell is 77 wide and two steps do.
+	WaterDrain float64
+
+	// WaterDrainKnown says whether a body feels what the water is taking out
+	// of it (stage 99). False leaves the water taking just as much and the
+	// body unable to reckon with it - the control that says how much of
+	// whatever moves is the choosing and how much is the ones who stayed in
+	// the river being gone. The same shape as DrownKnown, ChillKnown and
+	// WaterSlowKnown.
+	WaterDrainKnown bool
+
 	// DrownUnskilledFactor is how much more likely the water is to be the end
 	// of a body that cannot swim at all than of one that knows it (stage 98).
 	//
@@ -3384,6 +3462,15 @@ func DefaultConfig() Config {
 		// HISTORY.md, 2026-09-07.
 		DrownChancePerTick: 0.0002,
 		DrownKnown:         true,
+		// Nought is off: the water is a toll on movement and nothing to a body
+		// standing in it, as it has been since stage 34.
+		WaterDrain:      0,
+		WaterDrainKnown: true,
+		// Off: the utility assumes the country ahead is like the country
+		// underfoot, as it has since stage 20. The noise is set even so, so
+		// that turning the rule on is one flag and not two.
+		GroundAheadSeen:  false,
+		GroundAheadNoise: 1,
 		// One is off: the water takes the swimmer and the sinker alike, as it
 		// has since stage 34. The reachable-mastery point is set even so, so
 		// that turning the rule on is one figure and not two.

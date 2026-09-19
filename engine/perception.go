@@ -265,6 +265,31 @@ type SelfView struct {
 	// it - see climate.go.
 	Chill float64
 
+	// Around is what this body makes of the ground one cell away in each of
+	// eight directions (stage 100): the crossing multiplier and the drain,
+	// read with whatever error its rationality leaves it with. AroundSeen
+	// says whether it was filled in at all - false is every world before that
+	// stage, where an option was priced with the ground underfoot whatever
+	// direction it pointed.
+	//
+	// Eight readings rather than one per option: what a body can see of the
+	// ground is a property of where it stands, not of what it is considering,
+	// so it is read once and every option that points somewhere uses the one
+	// that matches.
+	Around     [8]GroundRead
+	AroundSeen bool
+
+	// Soak is what the ground where this body stands takes from it in vitality
+	// per tick (stage 99) - the water, today. Nought on dry land and in every
+	// world before that stage.
+	//
+	// A second figure beside Chill rather than one number for "what this place
+	// takes", because the two are facts on two different maps and a body may
+	// be standing in a warm river or a dry cold field. They are added wherever
+	// a decision reads them (placeDrain), which is every place Chill was
+	// already read.
+	Soak float64
+
 	// ChillRaw is what the weather here would take before anything this body
 	// holds keeps it off (stage 87a); Chill is what is left after it. The two
 	// are here so that an option can price a piece that would keep off more,
@@ -708,6 +733,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		HomePull:          homePull,
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
+		Soak:              w.soakFelt(a),
 		Chill:             w.chillFelt(a),
 		ChillRaw:          w.chillRawFelt(a),
 		ChillDX:           chillDX,
@@ -759,6 +785,12 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Others = p.Others[:0]
 
 	p.Self = w.selfView(a)
+	// What the ground looks like one cell away, in eight directions (stage
+	// 100). Filled here rather than in selfView because selfView is also
+	// asked about other bodies (a seller's own view, stage 51), and what the
+	// ground around THEM looks like is neither wanted nor theirs to draw
+	// random numbers for.
+	w.readAround(a, &p.Self)
 
 	// The index narrows the world down to the cells sight could possibly reach;
 	// what is actually visible is still tested one by one below, exactly as it

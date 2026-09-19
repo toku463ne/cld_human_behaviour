@@ -3264,10 +3264,16 @@ func (g *game) drawWhatItKnows(t *textBox, view engine.HumanView) {
 	// The footing, when it is anything other than level open ground. The
 	// drowning chance is what the node itself feels (stage 34) - it says
 	// nothing about the far bank, because the node cannot see it either.
-	if self.Ground > 1 || self.Drown > 0 {
+	if self.Ground > 1 || self.Drown > 0 || self.Soak > 0 {
 		line := fmt.Sprintf("  the ground here costs x%.1f to cross", self.Ground)
 		if self.Drown > 0 {
 			line += fmt.Sprintf(", and drowns it %.2f%% of ticks", self.Drown*100)
+		}
+		// And what standing in it takes, whatever it is doing (stage 99).
+		// Nought until a map is given one, and the one figure that is charged
+		// on a tick where the node did not move at all.
+		if self.Soak > 0 {
+			line += fmt.Sprintf(", and takes %.3f a tick just to stand in", self.Soak)
 		}
 		t.line("%s", line)
 		// And the pace it can make here (stage 97). Read off Self.MaxSpeed,
@@ -4101,6 +4107,8 @@ func main() {
 	wadeblind := flag.Bool("wadeblind", false, "the control for -wade: the water drags just as hard and no body can feel that it has (stage 97)")
 	sink := flag.Float64("sink", 0, "how many times more likely the water is to be the end of a body that cannot swim at all (stage 98; needs -terrain river or country). 0 or 1 is the world before this stage, where the river took the swimmer and the sinker alike")
 	sinkblind := flag.Bool("sinkblind", false, "the control for -sink: the river takes the ones who cannot swim just as often and no body can feel it (stage 98)")
+	soak := flag.Float64("soak", 0, "what a tick in the water takes out of a body in vitality, standing still or not (stage 99; needs -terrain river or country). 0 is the world before this stage, where the water was a toll on movement and nothing to a body standing in it. A body recovers 0.09 a tick, so 0.02 is a fifth of that")
+	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	ally := flag.Float64("ally", 0, "goodwill wanted for its own sake, worth most to a body with nobody near (stage 96; 0 = every world before it)")
 	allyflat := flag.Float64("allyflat", 0, "the control for -ally: goodwill simply worth more to everybody, whoever is standing near (stage 96)")
 	wobble := flag.Float64("wobble", 0, "how far apart bodies are in how much their judgement strays from their own ranking (stage 95; 0 = every world before it)")
@@ -4181,6 +4189,16 @@ func main() {
 	}
 	if *sinkblind {
 		cfg.DrownKnown = false
+	}
+	// What the water takes out of a body standing in it (stage 99), and the
+	// control that takes the feeling away. Default off in the physics: it
+	// costs nothing at a fifth of the recovery rate and 17 bodies at half of
+	// it, so it is the map's author's call.
+	if *soak > 0 {
+		cfg.WaterDrain = *soak
+	}
+	if *soakblind {
+		cfg.WaterDrainKnown = false
 	}
 	if *ally > 0 {
 		cfg.AllyValue = *ally
