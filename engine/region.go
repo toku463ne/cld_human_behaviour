@@ -103,8 +103,16 @@ func (r *region) favourOf(g Gene) float64 {
 // against, and it has to be exact rather than merely similar.
 func (w *World) buildRegions() {
 	cfg := &w.cfg
-	cols, rows := max(cfg.RegionCols, 1), max(cfg.RegionRows, 1)
-	w.regions = make([]region, cols*rows)
+	// The regions an author drew, if the map drew any: the rectangles, plus
+	// one more for everywhere they left out (2026-09-19). Otherwise the grid
+	// the world has always cut for itself, and nothing here changes.
+	count := 0
+	if w.buildRegionShapes() {
+		count = w.shapedRegionCount()
+	} else {
+		count = max(cfg.RegionCols, 1) * max(cfg.RegionRows, 1)
+	}
+	w.regions = make([]region, count)
 	for i := range w.regions {
 		w.regions[i] = region{Shelter: 1, Food: 1, Special: 1, Ability: 1, Enemies: 1}
 	}
@@ -180,6 +188,9 @@ func (w *World) buildRegions() {
 	// a picture the map's author gives, so a world with none takes nothing
 	// from the random source.
 	w.buildClimate()
+	// And what the author set on the regions they drew, over whatever the
+	// spreads above put there (2026-09-19).
+	w.applyRegionShapes()
 }
 
 // tieFoodToTheGround makes where the plants come up depend on how hard the
@@ -590,6 +601,12 @@ func (w *World) regionBounds(i int) (minX, minY, maxX, maxY float64) {
 
 // regionIndexAt is which block a position falls in, as an index.
 func (w *World) regionIndexAt(x, y float64) int {
+	// The regions an author drew, when there are any (2026-09-19). It is a
+	// lookup table rather than a walk through the rectangles, so this stays
+	// what it was: a multiplication and an array read.
+	if w.shapeIndex != nil {
+		return w.regionShapeAt(x, y)
+	}
 	cols, rows := max(w.cfg.RegionCols, 1), max(w.cfg.RegionRows, 1)
 	c := clampInt(int(x/w.cfg.Width*float64(cols)), 0, cols-1)
 	r := clampInt(int(y/w.cfg.Height*float64(rows)), 0, rows-1)

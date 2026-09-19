@@ -73,7 +73,15 @@ func (w *World) spawnFish() bool {
 	if w.rng.Float64() >= w.cfg.FishShare {
 		return false
 	}
-	c := w.water[w.rng.Intn(len(w.water))]
+	// Where the author painted that fish may come up (2026-09-19), and only
+	// the painted squares that are actually water - a fish drawn onto dry
+	// land is ignored, because "fish are grown in water" is stage 42's
+	// invariant and a drawing does not get to break it.
+	pool := w.water
+	if painted := w.paintedWater(); len(painted) > 0 {
+		pool = painted
+	}
+	c := pool[w.rng.Intn(len(pool))]
 	x := clamp(c.x+w.randRange(-c.w/2, c.w/2), 10, w.cfg.Width-10)
 	y := clamp(c.y+w.randRange(-c.h/2, c.h/2), 10, w.cfg.Height-10)
 	return w.addFish(x, y) != 0

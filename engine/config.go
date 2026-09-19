@@ -108,6 +108,39 @@ type Config struct {
 	// 1 +/- spread. Zero makes every region ordinary AND takes nothing from
 	// the random source, so the run is identical to one from before regions
 	// existed - which is the arm this is measured against.
+	// SpawnMap is where things are allowed to come up, painted one character
+	// per cell (2026-09-19): 'p' plants, 'f' fish, 'e' enemies, 'F' plants and
+	// fish, '*' all three, '.' nothing. A short row, and any character nobody
+	// knows, are bare ground.
+	//
+	// Empty is every world before it: plants land where the region weights
+	// send them, fish anywhere in the water, enemies where stage 58's
+	// weighting puts them.
+	//
+	// It says where and never how much. FoodSpawnRate still decides how many
+	// plants a tick and EnemySpawnTicks how often an enemy walks in, so the
+	// conservation stage 15a insisted on holds inside the painted squares
+	// rather than over the whole map.
+	//
+	// A fish painted onto dry land is ignored rather than refused: stage 42's
+	// invariant is that fish are grown in water, and a drawing may be wrong
+	// about where the water is without the world having to stop.
+	SpawnMap []string
+
+	// RegionShapes are the regions an author drew, as rectangles in fractions
+	// of the map (2026-09-19). Empty is every world before that: the regions
+	// are RegionCols x RegionRows equal blocks, cut by the world itself.
+	//
+	// A drawing need not cover the map - whatever is left over becomes one
+	// more region, "everywhere else" - and a rectangle that names nothing but
+	// a place keeps whatever the world's spreads drew there.
+	//
+	// It is a Config field rather than something a map file owns, because
+	// this is the same standing TerrainMap has: the world is described, and
+	// whoever describes it may be a test, a flag or a file read by something
+	// that is not the engine.
+	RegionShapes []RegionShape
+
 	RegionCols    int
 	RegionRows    int
 	ShelterSpread float64

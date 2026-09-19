@@ -381,6 +381,16 @@ type World struct {
 	deaths               int
 	kills                int
 	agingDeaths          int
+	// shapeIndex turns a position into one of the regions an author drew
+	// (2026-09-19). Nil in a world whose regions are the grid it always cut
+	// for itself, and then nothing about the lookup changes.
+	shapeIndex *regionIndexGrid
+
+	// spawnCells is where the author painted that plants, fish and enemies
+	// may come up (2026-09-19). All three are empty in a world with no
+	// painted layer, and then every spawn takes the path it always did.
+	spawnCells [numSpawnKinds][]cell
+
 	drownDeaths          int
 	// drownTakenSwim is the realised swimming of the bodies the water has
 	// taken, summed (stage 98). Against the swimming of the bodies standing in
@@ -685,6 +695,7 @@ func NewWorld(cfg Config) *World {
 	// something the population decides.
 	w.ground = buildTerrain(&w.cfg)
 	w.water = waterCells(w.ground)
+	w.buildSpawnCells()
 	w.rubble = stoneCells(w.ground)
 	w.buildRegions()
 	// The stones are laid out before anybody arrives (stage 45): they are
@@ -2669,6 +2680,14 @@ func (w *World) spawnFood() {
 		}
 	}
 
+	// Where the author painted that plants may come up (2026-09-19). It
+	// decides where and never how many: the tick grows exactly as many plants
+	// as it would have, and all of them land on painted ground.
+	if w.paintedFor(spawnKindPlant) {
+		x, y := w.pickPainted(spawnKindPlant, 10)
+		defended(x, y)
+		return
+	}
 	if w.cfg.FoodSpread <= 0 {
 		defended(w.randRange(10, w.cfg.Width-10), w.randRange(10, w.cfg.Height-10))
 		return

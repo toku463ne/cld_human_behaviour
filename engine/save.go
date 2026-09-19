@@ -498,8 +498,16 @@ func Load(in io.Reader) (*World, error) {
 		tolls:       make([]regionToll, len(s.Regions)),
 	}
 	w.rng, w.draws = replayTo(s.Seed, s.Draws)
+	// The lookup for regions an author drew (2026-09-19). The regions
+	// themselves are in the file; this is the table that turns a position
+	// into one of them, and it is derived rather than saved - the same
+	// standing the terrain below has.
+	w.buildRegionShapes()
 	w.ground = buildTerrain(&w.cfg)
 	w.water = waterCells(w.ground)
+	// And where the author painted that things may come up (2026-09-19),
+	// derived from the Config the file carries rather than saved.
+	w.buildSpawnCells()
 	w.rubble = stoneCells(w.ground)
 	for i := range s.PendingSeeds {
 		p := &s.PendingSeeds[i]
