@@ -3281,6 +3281,17 @@ func (g *game) drawWhatItKnows(t *textBox, view engine.HumanView) {
 		// the water drags without being felt this figure does not move, which
 		// is the truth about that body and worth seeing.
 		t.line("  it can make %.2f of a pace here", self.MaxSpeed)
+		// And what it makes of the ground around it (stage 100): the cheapest
+		// and the dearest of the eight readings, which is what tells it that
+		// one way out is dearer than another - or, with a bad enough reader,
+		// tells it nothing true at all.
+		if self.AroundSeen {
+			lo, hi := self.Around[0].Cost, self.Around[0].Cost
+			for _, g := range self.Around {
+				lo, hi = math.Min(lo, g.Cost), math.Max(hi, g.Cost)
+			}
+			t.line("  it reads the ground around it as x%.1f to x%.1f", lo, hi)
+		}
 	}
 	if !self.CanReproduce {
 		// Why, not merely that. The three conditions are the node's own rule
@@ -4109,6 +4120,8 @@ func main() {
 	sinkblind := flag.Bool("sinkblind", false, "the control for -sink: the river takes the ones who cannot swim just as often and no body can feel it (stage 98)")
 	soak := flag.Float64("soak", 0, "what a tick in the water takes out of a body in vitality, standing still or not (stage 99; needs -terrain river or country). 0 is the world before this stage, where the water was a toll on movement and nothing to a body standing in it. A body recovers 0.09 a tick, so 0.02 is a fifth of that")
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
+	noahead100 := flag.Bool("groundunread", false, "put back the world before 2026-09-19: every option priced with the ground underfoot rather than with the ground one cell toward where it would take the node (stage 100)")
+	aheadblind := flag.Bool("aheadblind", false, "the control for -ahead: it looks, draws the same numbers, and reads the world's average ground instead of the cell (stage 100)")
 	ally := flag.Float64("ally", 0, "goodwill wanted for its own sake, worth most to a body with nobody near (stage 96; 0 = every world before it)")
 	allyflat := flag.Float64("allyflat", 0, "the control for -ally: goodwill simply worth more to everybody, whoever is standing near (stage 96)")
 	wobble := flag.Float64("wobble", 0, "how far apart bodies are in how much their judgement strays from their own ranking (stage 95; 0 = every world before it)")
@@ -4199,6 +4212,14 @@ func main() {
 	}
 	if *soakblind {
 		cfg.WaterDrainKnown = false
+	}
+	// Reading the ground one cell ahead (stage 100), and the control that
+	// looks at the world instead of the cell.
+	if *noahead100 {
+		cfg.GroundAheadSeen = false
+	}
+	if *aheadblind {
+		cfg.GroundAheadBlind = true
 	}
 	if *ally > 0 {
 		cfg.AllyValue = *ally

@@ -124,6 +124,12 @@ func coverConfig() Config {
 		"....A111",
 		"....A111",
 	}
+	// These tests are about the ground under two bodies in a fight, not about
+	// what either of them can read of the ground around it (stage 100). The
+	// read draws eight numbers per perception, which moves the random stream
+	// and with it the blur on an attacker's strength - nothing to do with
+	// what is being asked here.
+	cfg.GroundAheadSeen = false
 	return cfg
 }
 

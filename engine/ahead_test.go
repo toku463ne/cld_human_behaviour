@@ -19,12 +19,28 @@ func aheadWorld(t *testing.T, noise float64, seen bool) *World {
 	return NewWorld(cfg)
 }
 
-// The default is every world since stage 20: an option is priced with the
-// ground underfoot, whatever direction it points.
-func TestTheGroundAheadIsNotReadByDefault(t *testing.T) {
-	if DefaultConfig().GroundAheadSeen {
-		t.Fatal("bodies read the ground ahead by default")
+// Since 2026-09-19 the default is to read, and a world with no map reads
+// nothing at all - which is what keeps every flat world running as it did.
+func TestAFlatWorldReadsNothing(t *testing.T) {
+	if !DefaultConfig().GroundAheadSeen {
+		t.Fatal("bodies no longer read the ground ahead by default")
 	}
+	cfg := quietConfig() // no TerrainMap
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)}))
+	self := w.perceive(a).Self
+	if self.AroundSeen {
+		t.Fatal("a world with no ground filled the readings in")
+	}
+	if got := moveCostDir(&w.cfg, &self, 0.5, 1, 0); got != moveCost(&w.cfg, &self, 0.5) {
+		t.Fatalf("a flat world prices a direction at %v, want the flat figure", got)
+	}
+}
+
+// And the arm that puts the old world back prices every option with the
+// ground underfoot, whatever direction it points.
+func TestTheGroundAheadCanBePutBack(t *testing.T) {
 	w := aheadWorld(t, 0, false)
 	a := mustAgent(t, w, swimmer(t, w, 250, 300, 0)) // on the bank, river to the east
 	self := w.perceive(a).Self

@@ -4897,10 +4897,25 @@ var variants = []variant{
 	// body that takes a river for a field.
 	{
 		name:  "ahead",
-		about: "100: an option is priced with the ground one cell ahead, read as well as the body can",
+		about: "100: an option is priced with the ground one cell ahead, read as well as the body can (now the default)",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
-			c.GroundAheadSeen = true
+		},
+	},
+	{
+		name:  "groundunread",
+		about: "the world before 2026-09-19: every option priced with the ground underfoot (stages 20 to 99)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
+			c.GroundAheadSeen = false
+		},
+	},
+	{
+		name:  "playunread",
+		about: "the played map before 2026-09-19, where every terrain figure up to stage 99 was measured",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.SkillBirthplace, c.GroundAheadSeen = 0.5, false
 		},
 	},
 	{
@@ -4908,7 +4923,7 @@ var variants = []variant{
 		about: "arm: the same, read without error - being able to look, apart from looking correctly (100)",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
-			c.GroundAheadSeen, c.GroundAheadNoise = true, 0
+			c.GroundAheadNoise = 0
 		},
 	},
 	{
@@ -4916,7 +4931,7 @@ var variants = []variant{
 		about: "arm: the same, read twice as badly - a body that takes a river for a field (100)",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
-			c.GroundAheadSeen, c.GroundAheadNoise = true, 2
+			c.GroundAheadNoise = 2
 		},
 	},
 	{
@@ -4924,7 +4939,7 @@ var variants = []variant{
 		about: "control: it looks, draws the same numbers, and reads the world instead of the cell (100)",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.SkillBirthplace = mapRiver, 0.5
-			c.GroundAheadSeen, c.GroundAheadBlind = true, true
+			c.GroundAheadBlind = true
 		},
 	},
 	{
@@ -4932,7 +4947,6 @@ var variants = []variant{
 		about: "100 where the water also drains (99), which is the other figure the read carries",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.05
-			c.GroundAheadSeen = true
 		},
 	},
 	{
@@ -4940,7 +4954,7 @@ var variants = []variant{
 		about: "control for aheadsoak: it looks and reads the world instead of the cell (100)",
 		apply: func(c *engine.Config) {
 			c.TerrainMap, c.SkillBirthplace, c.WaterDrain = mapRiver, 0.5, 0.05
-			c.GroundAheadSeen, c.GroundAheadBlind = true, true
+			c.GroundAheadBlind = true
 		},
 	},
 	{
@@ -4949,7 +4963,6 @@ var variants = []variant{
 		apply: func(c *engine.Config) {
 			playedMap(c)
 			c.SkillBirthplace = 0.5
-			c.GroundAheadSeen = true
 		},
 	},
 	{

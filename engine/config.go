@@ -3466,10 +3466,16 @@ func DefaultConfig() Config {
 		// standing in it, as it has been since stage 34.
 		WaterDrain:      0,
 		WaterDrainKnown: true,
-		// Off: the utility assumes the country ahead is like the country
-		// underfoot, as it has since stage 20. The noise is set even so, so
-		// that turning the rule on is one flag and not two.
-		GroundAheadSeen:  false,
+		// On since 2026-09-19 (stage 100): an option is priced with the ground
+		// one cell toward where it would take the body. It is the third
+		// deliberate reset of the measuring baseline, after stage 7b and the
+		// lookahead - every terrain figure recorded before that date was
+		// measured with the ground underfoot standing in for the ground
+		// ahead, and cmd/experiment's groundunread arm puts that world back.
+		//
+		// A world with no map reads nothing and draws nothing, so the flat
+		// default runs exactly as it always did.
+		GroundAheadSeen:  true,
 		GroundAheadNoise: 1,
 		// One is off: the water takes the swimmer and the sinker alike, as it
 		// has since stage 34. The reachable-mastery point is set even so, so
