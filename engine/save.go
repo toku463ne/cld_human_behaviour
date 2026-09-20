@@ -230,8 +230,9 @@ type agentSnap struct {
 	Seed      plantGenes
 	SeedDueAt int
 
-	RecentFood [NumFoodKinds]float64
-	DietTick   int
+	RecentFood  [NumFoodKinds]float64
+	DietTick    int
+	RecentAdorn float64
 
 	Regions []regionSnap
 	// Which caches this body could find, and how firmly (stage 50). It is
@@ -424,6 +425,7 @@ func snapAgent(a *Agent) agentSnap {
 		SeedDueAt:   a.seedDueAt,
 		RecentFood:  a.recentFood,
 		DietTick:    a.dietTick,
+		RecentAdorn: a.recentAdorn,
 		Carried:     a.carried,
 		TimesTaught: a.timesTaught,
 		Looks: looksSnap{N: a.looks.n, Sx: a.looks.sx, Sy: a.looks.sy,
@@ -629,6 +631,7 @@ func loadAgent(s *agentSnap, cfg *Config) Agent {
 	}
 	a.seed, a.seedDueAt = s.Seed, s.SeedDueAt
 	a.recentFood, a.dietTick = s.RecentFood, s.DietTick
+	a.recentAdorn = s.RecentAdorn
 	a.carried = s.Carried
 	a.timesTaught = s.TimesTaught
 	a.looks = looksModel{n: s.Looks.N, sx: s.Looks.Sx, sy: s.Looks.Sy,

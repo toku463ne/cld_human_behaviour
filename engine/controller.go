@@ -1860,7 +1860,8 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 // answers drift, a body pays for a hide it will not use or throws away one it
 // would have.
 func craftWant(cfg *Config, s *SelfView, incoming float64) float64 {
-	want := cfg.TrinketValue * cfg.LifeValue * s.CraftQuality * s.CraftDelight * s.AdornWant
+	want := cfg.TrinketValue * cfg.LifeValue * s.CraftQuality * s.CraftDelight *
+		s.AdornWant * spareOrOne(s.AdornSpare)
 	// And what it might keep off the weather (stages 87a, 88). A maker cannot
 	// aim - not at how good it comes out, not at what it answers - so it
 	// reckons on how often one comes out answering at all, and on the weather
@@ -1881,6 +1882,17 @@ func craftWant(cfg *Config, s *SelfView, incoming float64) float64 {
 		warm = warmthValue(cfg, s, incoming, s.WardGain)
 	}
 	return want + share*warm
+}
+
+// spareOrOne is the want a body has left where the rule is in force, and one
+// where it is not. A SelfView built before that field existed - a test, a
+// saved world - reads as nought, and nought here would quietly switch
+// ornaments off altogether.
+func spareOrOne(spare float64) float64 {
+	if spare <= 0 {
+		return 1
+	}
+	return spare
 }
 
 // hideWorth is what having the material is worth: what this body could make

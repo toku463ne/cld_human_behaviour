@@ -376,7 +376,13 @@ type Agent struct {
 	// reading, like every other quantity that fades. It is not a state axis:
 	// there are still three of those, and this is bookkeeping.
 	recentFood [NumFoodKinds]float64
-	dietTick   int
+
+	// recentAdorn is how adorned this body has been lately (TODO 12): a
+	// decaying reading of how many ornaments have been in its hands, which
+	// is what says whether it wants another. It is bookkeeping of the same
+	// sort as recentFood above, and like it, it is no new state axis.
+	recentAdorn float64
+	dietTick    int
 
 	// regions is what this agent has made of the ground it has been on (stage
 	// 15b, regionlore.go). Allocated on the first look, and never counted

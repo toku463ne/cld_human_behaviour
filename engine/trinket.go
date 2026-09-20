@@ -129,6 +129,60 @@ func (w *World) craft(a *Agent) {
 	a.requestDecision(TriggerGoalReached)
 }
 
+// noteAdorned moves the ledger of how adorned this body has been lately one
+// tick on (TODO 12, stage 89).
+//
+// Written once a tick per body rather than lazily on reading, which is the
+// one place this differs from the diet's ledger it is otherwise copied from
+// (stage 16). The diet's is written when something is eaten and faded when it
+// is read, because eating is an event; being adorned is not an event, it is a
+// state of the hands, and a ledger of a state has to be walked along with it.
+// It rides on the pass that already looks at every body's hands once a tick
+// (priceHands), so it costs a multiply and an add.
+//
+// It moves towards what is in the hand rather than jumping to it, and that
+// lag is the whole of the rule: a body that has just lost its ornament is
+// still recently adorned and does not want another this minute, and one that
+// has carried three for a year is thoroughly sated. Without the lag this
+// would be a second way of counting the hand.
+func (w *World) noteAdorned(a *Agent) {
+	rate := clamp(w.cfg.AdornForgetPerTick, 0, 1)
+	if rate <= 0 {
+		return
+	}
+	held := 0.0
+	for i := range a.carried {
+		if a.carried[i].Kind == FoodTrinket {
+			held++
+		}
+	}
+	if w.cfg.AdornKeepsSated {
+		// The far end of the rule, for the control arm: satisfied once and
+		// never again, so the want never comes back and the demand never
+		// repeats.
+		if held > a.recentAdorn {
+			a.recentAdorn = held
+		}
+		return
+	}
+	a.recentAdorn += rate * (held - a.recentAdorn)
+}
+
+// adornSpare is how much of the want for an ornament this body has left.
+//
+// One in a world without the rule, and in a body with empty hands. Saturating
+// rather than linear, for the diet's reason: the first few of a thing are
+// much the same as each other, and the twentieth is no worse than the tenth.
+// It never quite reaches nought, which matters less here than it does for
+// food but keeps the same shape - a sated body still prefers a fine piece to
+// a poor one, it simply does not prefer it to dinner.
+func (w *World) adornSpare(a *Agent) float64 {
+	if w.cfg.AdornSatiety <= 0 || a == nil {
+		return 1
+	}
+	return w.cfg.AdornSatiety / (w.cfg.AdornSatiety + math.Max(a.recentAdorn, 0))
+}
+
 // trinketWorth is what having this particular one is worth to this body.
 //
 // It is the given figure times what this piece came out like, less what is
@@ -161,7 +215,11 @@ func (w *World) trinketWorth(a *Agent, f *Food) float64 {
 	if a == nil {
 		return worth
 	}
-	return worth * w.trinketDelight(a, f) * w.adornWantOf(a)
+	// ... and how much want this body has left (TODO 12). Here rather than
+	// at any of the half dozen sites that ask what an ornament is worth, for
+	// the reason the taste and the survival gate are here: when the same
+	// question is answered in two places, the two answers drift.
+	return worth * w.trinketDelight(a, f) * w.adornWantOf(a) * w.adornSpare(a)
 }
 
 // trinketDelight is how much this body wants this particular piece rather
@@ -256,12 +314,20 @@ func (w *World) inheritTaste(pa, pb *Agent) float64 {
 func (w *World) priceHands() {
 	adorn := w.cfg.Trinkets && w.cfg.AdornNeedsSurvival
 	spare := w.cfg.HandOverCheapest
-	if !adorn && !spare {
+	sated := w.cfg.Trinkets && w.cfg.AdornSatiety > 0
+	if !adorn && !spare && !sated {
 		return // never written, never read
 	}
 	for i := range w.agents {
 		a := &w.agents[i]
 		if !a.Alive {
+			continue
+		}
+		// Before the views below are built, because they read it (TODO 12).
+		if sated {
+			w.noteAdorned(a)
+		}
+		if !adorn && !spare {
 			continue
 		}
 		s := w.selfView(a)
@@ -321,6 +387,13 @@ type TrinketUse struct {
 	Sold  int
 	Given int
 	Want  float64
+
+	// Spare is the mean share of the want that is left once what a body is
+	// already carrying is taken off (TODO 12, stage 89): one where nobody is
+	// sated, and the rule's own firing rate everywhere else. It is the first
+	// figure to read of that stage - a rule that leaves it at one has not
+	// fired, whatever else moved.
+	Spare float64
 
 	// Gained is what a hand-over did to how well the piece suited whoever was
 	// holding it: the new holder's liking for it less the old one's, over
@@ -393,6 +466,7 @@ func (w *World) Trinkets() TrinketUse {
 		}
 		n++
 		out.Want += w.adornWantOf(a)
+		out.Spare += w.adornSpare(a)
 		held := 0
 		for k := range a.carried {
 			if a.carried[k].Kind == FoodTrinket {
@@ -413,6 +487,7 @@ func (w *World) Trinkets() TrinketUse {
 	if n > 0 {
 		out.Holders /= n
 		out.Want /= n
+		out.Spare /= n
 	}
 	if w.trinketMoves > 0 {
 		out.Gained = w.trinketMoveGain / float64(w.trinketMoves)

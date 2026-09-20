@@ -3155,6 +3155,79 @@ var variants = []variant{
 	// the fed, which is why three times the dose turned a quarter of all
 	// decisions into making ornaments.
 	{
+		// The wanting as it stands today, on the map the game is played on
+		// and with the market machinery in (TODO 12). Every arm in this
+		// group is this one plus a rule, and it is not beforeTheFlip: a
+		// taste of one's own and the survival gate have been the default
+		// since 2026-09-15, so an arm that put them back would be measuring
+		// the wanting of a world nobody plays.
+		name:  "adornnow",
+		about: "TODO 12: ornaments as they are wanted today - the base for the arms below",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+		},
+	},
+	{
+		// Stage 89: an ornament satisfies. The ledger fills over about a
+		// year (1/0.002 = 500 ticks) and empties over the same, against a
+		// piece that spoils in 2,000 - so a body that loses one wants
+		// another within the year, which is the recurring demand this world
+		// has never had.
+		name:  "adornsated",
+		about: "89: a body already carrying one wants the next one less",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.AdornSatiety, c.AdornForgetPerTick = 1, 0.002
+		},
+	},
+	{
+		// The dose: the same rule five times as quick to notice and five
+		// times as quick to forget.
+		name:  "adornsatedfast",
+		about: "89 at five times the rate: sated in ten weeks and wanting again in ten",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.AdornSatiety, c.AdornForgetPerTick = 1, 0.01
+		},
+	},
+	{
+		// The far end, which the completion condition asks for: satisfied
+		// once and never again. If the demand never comes back, the whole
+		// of what spoiling was for goes with it - so this arm says how much
+		// of the rule is the satisfying and how much is the forgetting.
+		name:  "adornsatedonce",
+		about: "89's control: one ornament satisfies for life, and the want never returns",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.AdornSatiety, c.AdornForgetPerTick = 1, 0.002
+			c.AdornKeepsSated = true
+		},
+	},
+	{
+		// The same thing on the map the game is played on. It is here to be
+		// read second and not first: measured on 2026-09-20, that map now
+		// ends 42 runs in 100 inside 20,000 ticks with nothing added to it
+		// at all, and 58 with ornaments in it - so a figure taken there is
+		// as much about the collapse as about the rule.
+		name:  "adornnowplay",
+		about: "TODO 12: the same, on the played map (which collapses in half its runs)",
+		apply: func(c *engine.Config) {
+			playedMap(c)
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+		},
+		stores: playedStores,
+	},
+	{
 		name:  "taste",
 		about: "84: the same piece is wanted differently by different bodies",
 		apply: func(c *engine.Config) {
@@ -5747,6 +5820,7 @@ var metricNames = []string{
 	"salePrice", "priceOver1", "coinsPaid",
 	"trinketsMade", "trinketQuality", "trinketHeld", "trinketHolders", "trinketKept", "craftShare",
 	"trinketFit", "trinketFitMade", "trinketSold", "trinketGiven", "adornWant", "trinketGain", "trinketGainSold",
+	"trinketEach", "adornSpare",
 	"makerHeld", "makerReal",
 	"booksWritten", "booksRead", "booksLying", "booksHeld", "bookHolders", "bookFidelity",
 	"lostSight", "missingDir", "lonelyDraw",
@@ -6522,6 +6596,12 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"trinketSold":     float64(trinkets.Sold),
 		"trinketGiven":    float64(trinkets.Given),
 		"adornWant":       trinkets.Want,
+		// How many each body is holding, and how much want it has left
+		// (TODO 12). The pair is the whole of stage 89: the rule is meant to
+		// take the first down, and it can only do that through the second -
+		// an adornSpare that stays at one is a rule that never fired.
+		"trinketEach": perBody(float64(trinkets.Held), end.Population),
+		"adornSpare":  trinkets.Spare,
 		"trinketGain":     trinkets.Gained,
 		"trinketGainSold": trinkets.GainedSold,
 		"coinsPaid":       float64(money.Paid),
@@ -7747,6 +7827,14 @@ func mult(got, floor float64) float64 {
 		return 1
 	}
 	return got / floor
+}
+
+// perBody is a total over the living, or nought where nobody is.
+func perBody(total float64, pop int) float64 {
+	if pop <= 0 {
+		return 0
+	}
+	return total / float64(pop)
 }
 
 func share(part, whole int) float64 {

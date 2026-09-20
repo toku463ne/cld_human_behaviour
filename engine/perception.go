@@ -176,6 +176,11 @@ type SelfView struct {
 	AdornWant    float64
 	CraftDelight float64
 
+	// AdornSpare is how much want for an ornament this body has left, once
+	// what it is already carrying is taken off (TODO 12, stage 89). One
+	// where the world does not have the rule.
+	AdornSpare float64
+
 	// Coins is how much money is in this body's own hands (stage 80). One or
 	// none in every world before a coin stopped taking a hand, and what a
 	// price of more than one has to be met out of.
@@ -790,6 +795,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		CraftQuality:      w.trinketQuality(a),
 		AdornWant:         w.adornWantOf(a),
 		CraftDelight:      w.craftDelight(a),
+		AdornSpare:        w.adornSpare(a),
 		CanCraft:          w.canCraft(a),
 		FedRate:           a.fedRate(&w.cfg, w.tick),
 		HeldMeals:         w.heldMeals(a),

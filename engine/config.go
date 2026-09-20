@@ -1160,6 +1160,28 @@ type Config struct {
 	// a rule.
 	WardShare, WardStrength float64
 
+	// AdornSatiety is how many ornaments in a hand halve the want for
+	// another, AdornForgetPerTick how fast the want comes back, and
+	// AdornKeepsSated the far end of it - a body satisfied once and never
+	// again (TODO 12, stage 89). Zero is every world before this, where the
+	// fourth piece is worth exactly what the first was.
+	//
+	// The shape is the diet's (stage 16) and deliberately so: one decaying
+	// ledger, read where the want is read, saturating rather than linear so
+	// that the twentieth of a thing is no worse than the tenth. What is
+	// counted is what the body is holding rather than what it has just been
+	// given, because the thing being modelled is having and not getting -
+	// and that is also what makes the spoiling (TrinketSpoilTicks) bring the
+	// want back, which is the one recurring demand this world has.
+	//
+	// Counted before it was built (TODO 12): bodies hold 2.71 ornaments each
+	// (4.75 among those holding any) and 43% hold none, so there is room for
+	// this to bite; and a body lives 2,475 ticks against a piece's 2,000, so
+	// the want has time to come back about once in a life.
+	AdornSatiety       float64
+	AdornForgetPerTick float64
+	AdornKeepsSated    bool
+
 	// HidePerBudget is how much of a dead beast's budget makes one hide, and
 	// WardNeedsHide whether a warm thing can be made without one (TODO 8).
 	// Zero and false are the world stage 87a measured, which is the default.
@@ -3528,6 +3550,9 @@ func DefaultConfig() Config {
 		ChillGradient:           false,
 		WardShare:               0,
 		WardStrength:            0,
+		AdornSatiety:            0, // TODO 12: the fourth piece is worth what the first was
+		AdornForgetPerTick:      0,
+		AdornKeepsSated:         false,
 		HidePerBudget:           0, // TODO 8: no material, and every world before it
 		WardNeedsHide:           false,
 		MaxHideItems:            140,
