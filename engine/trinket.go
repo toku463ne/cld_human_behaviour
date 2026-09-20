@@ -524,8 +524,8 @@ func (w *World) Trinkets() TrinketUse {
 	out := TrinketUse{
 		Fancies: w.fancyDraws,
 		Made:    w.trinketsMade,
-		Sold:  w.trinketsSold,
-		Given: w.trinketsGiven,
+		Sold:    w.trinketsSold,
+		Given:   w.trinketsGiven,
 	}
 	if w.trinketsMade > 0 {
 		out.Quality = w.trinketWorthMade / float64(w.trinketsMade)

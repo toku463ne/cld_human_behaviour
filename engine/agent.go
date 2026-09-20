@@ -391,7 +391,7 @@ type Agent struct {
 	fancy     float64
 	fancyTick int
 	adornHeld int
-	dietTick    int
+	dietTick  int
 
 	// regions is what this agent has made of the ground it has been on (stage
 	// 15b, regionlore.go). Allocated on the first look, and never counted
