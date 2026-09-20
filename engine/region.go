@@ -124,7 +124,12 @@ func (w *World) buildRegions() {
 			w.regions[i].Shelter = clamp(w.randRange(1-cfg.ShelterSpread, 1+cfg.ShelterSpread), 0, 2)
 		}
 	}
-	if cfg.FoodSpread > 0 {
+	// What the author painted, if they painted any (rich.go). It replaces the
+	// world's own draw rather than adding to it, and takes nothing from the
+	// random source: the regions are handed the mean of the painting further
+	// down, so that everything reading a region's richness is reading a
+	// summary of the ground plants actually come up on.
+	if w.rich == nil && cfg.FoodSpread > 0 {
 		for i := range w.regions {
 			w.regions[i].Food = clamp(w.randRange(1-cfg.FoodSpread, 1+cfg.FoodSpread), 0, 2)
 		}
@@ -174,8 +179,14 @@ func (w *World) buildRegions() {
 		}
 	}
 
-	w.tieFoodToTheGround()
-	w.tieFoodToTheWater()
+	// A painted world skips both ties: they are ways of working richness out
+	// from the ground, and the author has said it outright instead.
+	if w.rich != nil {
+		w.summariseRich()
+	} else {
+		w.tieFoodToTheGround()
+		w.tieFoodToTheWater()
+	}
 
 	w.tolls = make([]regionToll, len(w.regions))
 	w.foodWeight = 0
@@ -687,6 +698,11 @@ func (w *World) Regions() []RegionView {
 
 // richnessAt is how well this ground grows plants, relative to an equal share.
 func (w *World) richnessAt(x, y float64) float64 {
+	// The painting first, when there is one: it is the ground that actually
+	// grows things, and the region beside it is only a summary of it.
+	if w.rich != nil {
+		return w.rich.valueAt(x, y, w.cfg.Width, w.cfg.Height)
+	}
 	if r := w.regionAt(x, y); r != nil {
 		return r.Food
 	}

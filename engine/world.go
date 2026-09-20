@@ -391,6 +391,11 @@ type World struct {
 	// painted layer, and then every spawn takes the path it always did.
 	spawnCells [numSpawnKinds][]cell
 
+	// How well each cell grows things, when an author painted it (rich.go).
+	// Nil is every world before it: the regions carry their own richness and
+	// nothing reads this.
+	rich *richGrid
+
 	drownDeaths          int
 	// drownTakenSwim is the realised swimming of the bodies the water has
 	// taken, summed (stage 98). Against the swimming of the bodies standing in
@@ -697,6 +702,9 @@ func NewWorld(cfg Config) *World {
 	w.water = waterCells(w.ground)
 	w.buildSpawnCells()
 	w.rubble = stoneCells(w.ground)
+	// Before the regions, because a painted world hands them their richness
+	// instead of drawing it (rich.go).
+	w.rich = buildRich(&w.cfg)
 	w.buildRegions()
 	// The stones are laid out before anybody arrives (stage 45): they are
 	// part of what the ground is, not something the world keeps producing.
@@ -2684,8 +2692,22 @@ func (w *World) spawnFood() {
 	// decides where and never how many: the tick grows exactly as many plants
 	// as it would have, and all of them land on painted ground.
 	if w.paintedFor(spawnKindPlant) {
-		x, y := w.pickPainted(spawnKindPlant, 10)
+		// Weighted by the richness painting when there is one (2026-09-20):
+		// the mask says where a plant may come up, the painting how well it
+		// does there, and the two have to compose or the second is ignored.
+		x, y := w.pickPaintedRich(spawnKindPlant, 10)
 		defended(x, y)
+		return
+	}
+	// Where the author painted that the ground is good (2026-09-20). It takes
+	// the same three numbers from the random source the block draw below does
+	// - one for the cell, two for the spot inside it - and it decides where
+	// and never how many.
+	if w.rich != nil {
+		minX, minY, maxX, maxY := w.rich.pick(w.rng.Float64()*w.rich.total, w.cfg.Width, w.cfg.Height)
+		defended(
+			w.randRange(math.Max(minX, 10), math.Min(maxX, w.cfg.Width-10)),
+			w.randRange(math.Max(minY, 10), math.Min(maxY, w.cfg.Height-10)))
 		return
 	}
 	if w.cfg.FoodSpread <= 0 {

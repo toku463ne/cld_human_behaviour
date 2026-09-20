@@ -903,6 +903,22 @@ var variants = []variant{
 		about: "sweep: the same world cut into 48 small regions rather than 12 big ones",
 		apply: func(c *engine.Config) { c.RegionCols, c.RegionRows = 8, 6 },
 	},
+	// 2026-09-20: richness painted rather than drawn, and painted coarser than
+	// the world cuts it for itself. The counting that led to rich.go says a
+	// block smaller than what a body can see stops being somewhere to go, so
+	// this is the other end of the same sweep as fineregions: two halves of
+	// 400x600 against the default twelve blocks of 200x200, one growing nine
+	// times what the other does.
+	{
+		name:  "paintedrich",
+		about: "sweep: the good ground painted in two halves, far coarser than the world's own blocks",
+		apply: func(c *engine.Config) { c.RichMap = []string{"91"} },
+	},
+	{
+		name:  "paintedflat",
+		about: "control for paintedrich: painted, but even ground everywhere",
+		apply: func(c *engine.Config) { c.RichMap = []string{"5"} },
+	},
 	// Stage 13: sight stops being a circle and becomes the cell an agent is
 	// standing in plus the ring around it. "sightcircle" is the world before
 	// it, and the two are calibrated to cover the same ground so that the

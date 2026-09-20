@@ -4174,6 +4174,10 @@ func main() {
 	soak := flag.Float64("soak", 0, "what a tick in the water takes out of a body in vitality, standing still or not (stage 99; needs -terrain river or country). 0 is the world before this stage, where the water was a toll on movement and nothing to a body standing in it. A body recovers 0.09 a tick, so 0.02 is a fifth of that")
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	noahead100 := flag.Bool("groundunread", false, "put back the world before 2026-09-19: every option priced with the ground underfoot rather than with the ground one cell toward where it would take the node (stage 100)")
+	rich := flag.String("rich", "",
+		"paint how well the ground grows things: one character a cell, rows separated by commas "+
+			"(a digit is that many fifths, so 5 is ordinary; \"91\" is a rich western half and a poor eastern one). "+
+			"Painting it stops the world drawing its own (2026-09-20, engine/rich.go)")
 	tiled := flag.String("tiled", "", "a map drawn in Tiled (.tmj, which is JSON): the tile layer becomes the ground and the object layer's rectangles become the regions. What it reads is in engine/tiled.go")
 	aheadblind := flag.Bool("aheadblind", false, "the control for -ahead: it looks, draws the same numbers, and reads the world's average ground instead of the cell (stage 100)")
 	ally := flag.Float64("ally", 0, "goodwill wanted for its own sake, worth most to a body with nobody near (stage 96; 0 = every world before it)")
@@ -4456,6 +4460,12 @@ func main() {
 		cfg.MoodWeight, cfg.MoodDreadGain, cfg.MoodCheerGain = 0.5, 30, 3
 	} else if *land != "" {
 		log.Fatalf("no such terrain %q: try rough, river, plateau or country", *land)
+	}
+
+	// Painted richness, before the map is read so that a file still has the
+	// last word over a flag.
+	if *rich != "" {
+		cfg.RichMap = strings.Split(*rich, ",")
 	}
 
 	// A map drawn in Tiled, which has the last word over -terrain: whoever

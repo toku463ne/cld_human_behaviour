@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 )
 
@@ -36,6 +37,16 @@ type TiledWorld struct {
 	// to come up, one character per cell (2026-09-19). Nil when the map does
 	// not paint one, and then everything comes up where it always did.
 	Spawn []string
+
+	// Rich is how well each cell grows things, one character per cell
+	// (2026-09-20), in the vocabulary Config.RichMap takes. Nil when no tile
+	// carries a "rich" property, and then the world draws its own richness as
+	// it always did.
+	//
+	// It is read off the same layers as the rest: a tile may say both where
+	// plants may come up and how well they grow there, and one layer painted
+	// with such tiles fills both.
+	Rich []string
 
 	// Cols and Rows are the map's size in tiles, kept for the error messages
 	// and for whoever wants to check a drawing against a world.
@@ -137,6 +148,7 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 	if err != nil {
 		return nil, err
 	}
+	riches, anyRich := tileRiches(f.Tilesets)
 	places := tileRegions(f.Tilesets)
 	for _, l := range f.Layers {
 		switch l.Type {
@@ -152,15 +164,21 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 				out.Terrain = rows
 				continue
 			}
-			// After the ground, a tile layer is whichever of the two it
-			// paints, not whichever comes first (2026-09-20): a map may draw
-			// its regions and no painted layer, or the other way about, and
-			// numbering the layers would have read one as the other.
+			// After the ground, a tile layer is whatever it paints, not
+			// whatever comes first (2026-09-20): a map may draw its regions
+			// and no painted layer, or the other way about, and numbering the
+			// layers would have read one as the other.
+			//
+			// One layer may paint more than one of them, so none of these
+			// three stops the others being tried: a region tile that also
+			// says how well its country grows is one tile saying two true
+			// things, and the first version of this read the region and threw
+			// the richness away.
 			//
 			// The ground is still the first layer rather than the layer that
-			// paints no region and no spawn, because the same tile may say
-			// both what it is and what comes up on it - a water tile that
-			// fish come up on - and then there is nothing to tell apart.
+			// paints nothing else, because the same tile may say both what it
+			// is and what comes up on it - a water tile that fish come up on
+			// - and then there is nothing to tell apart.
 			if out.RegionMap == nil {
 				rows, shapes, err := regionRows(l, f.Width, f.Height, places)
 				if err != nil {
@@ -168,7 +186,6 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 				}
 				if len(shapes) > 0 {
 					out.RegionMap, out.Regions = rows, append(out.Regions, shapes...)
-					continue
 				}
 			}
 			if out.Spawn == nil {
@@ -178,6 +195,17 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 				}
 				if paintedAnything(rows) {
 					out.Spawn = rows
+				}
+			}
+			// And how well the ground grows things, off the same layer if
+			// that is where the author put it: a tile may say both.
+			if out.Rich == nil && anyRich {
+				rows, err := terrainRows(l, f.Width, f.Height, riches)
+				if err != nil {
+					return nil, err
+				}
+				if paintedRichness(rows) {
+					out.Rich = rows
 				}
 			}
 		case "objectgroup":
@@ -197,6 +225,36 @@ func paintedAnything(rows []string) bool {
 	for _, r := range rows {
 		for i := 0; i < len(r); i++ {
 			if len(spawnKindsOf(r[i])) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// tileRiches turns the tilesets into "this tile id grows this much", and says
+// whether any tile carried the property at all - a map that never mentions
+// richness must not end up with a layer of ordinary ground standing in for
+// the world's own weighting.
+func tileRiches(sets []tiledTilset) (map[int]byte, bool) {
+	out, any := map[int]byte{}, false
+	for _, s := range sets {
+		for _, t := range s.Tiles {
+			c, ok := richChar(t.Properties)
+			out[s.FirstGID+t.ID] = c
+			any = any || ok
+		}
+	}
+	return out, any
+}
+
+// paintedRichness says whether a layer read as richness says anything at all.
+// A layer of ordinary ground is not a painting, and treating it as one would
+// quietly switch off the world's own weighting.
+func paintedRichness(rows []string) bool {
+	for _, r := range rows {
+		for i := 0; i < len(r); i++ {
+			if richOf(r[i]) != 1 {
 				return true
 			}
 		}
@@ -236,6 +294,23 @@ func spawnChar(props []tiledProperty) (byte, error) {
 		return spawnNone, nil
 	}
 	return 0, fmt.Errorf("spawn %q is not one of plant, fish, enemy, food, all", kind)
+}
+
+// richChar is the third vocabulary a tile may carry: how well the ground
+// grows things (2026-09-20). The property is a number, and what it means is
+// the multiplier Config.RichMap's digits stand for - so 1 is ordinary ground,
+// 0 grows nothing and 2 is as rich as this world goes.
+//
+// It is rounded to the nearest fifth because RichMap holds one character per
+// cell, which is the form every other painted layer in this engine takes. A
+// map wanting more resolution than that wants a different kind of file.
+func richChar(props []tiledProperty) (byte, bool) {
+	v, ok := propNumberOK(props, "rich")
+	if !ok {
+		return richOrdinary, false
+	}
+	d := int(math.Round(clamp(v, 0, 2) * 5))
+	return byte('0' + clampInt(d, 0, 9)), true
 }
 
 // tileKinds turns the tilesets into "this tile id is this piece of ground".
@@ -489,6 +564,23 @@ func propString(props []tiledProperty, name string) (string, bool) {
 	return "", false
 }
 
+// propNumberOK is propNumber that also says whether the property was there at
+// all, which is how "rich: 0" (bare ground) is told from "no rich property".
+func propNumberOK(props []tiledProperty, name string) (float64, bool) {
+	for _, p := range props {
+		if p.Name != name {
+			continue
+		}
+		switch v := p.Value.(type) {
+		case float64:
+			return v, true
+		case int:
+			return float64(v), true
+		}
+	}
+	return 0, false
+}
+
 func propNumber(props []tiledProperty, name string) float64 {
 	for _, p := range props {
 		if p.Name != name {
@@ -522,6 +614,9 @@ func (t *TiledWorld) Apply(cfg *Config) {
 	cfg.TerrainMap = append([]string(nil), t.Terrain...)
 	if len(t.Spawn) > 0 {
 		cfg.SpawnMap = append([]string(nil), t.Spawn...)
+	}
+	if len(t.Rich) > 0 {
+		cfg.RichMap = append([]string(nil), t.Rich...)
 	}
 	if len(t.Regions) > 0 {
 		cfg.RegionShapes = append([]RegionShape(nil), t.Regions...)

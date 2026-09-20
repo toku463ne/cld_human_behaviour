@@ -127,6 +127,36 @@ type Config struct {
 	// about where the water is without the world having to stop.
 	SpawnMap []string
 
+	// RichMap is how well each cell grows things, painted one character per
+	// cell (2026-09-20): a digit is that many fifths, so '5' is ordinary
+	// ground, '0' grows nothing and '9' grows nearly twice as much. A dot, a
+	// short row and any character nobody knows are ordinary.
+	//
+	// Empty is every world before it, down to the random source: the regions
+	// draw their own richness from FoodSpread and nothing here runs.
+	//
+	// It says where and never how much. FoodSpawnRate still decides how many
+	// plants a tick, so stage 15a's conservation holds inside the painting
+	// rather than over the world's own blocks.
+	//
+	// Painting it replaces the world's own weighting rather than adding to
+	// it: FoodSpread is not drawn, and TerrainFoodCorrelation and
+	// WatersideFood do not run. The author said where the food is, and two
+	// answers to that question would leave neither of them true.
+	//
+	// It is a separate picture from the regions on purpose (PLAN.md P16-2).
+	// A region is what an agent believes about a stretch of country, and that
+	// wants to stay coarse because a memory is small; where a plant comes up
+	// wants to be whatever shape the author drew. The regions keep the mean
+	// of this map, so a belief is still a belief about something true.
+	//
+	// Counted before it was built: finer is worse, not better. Cutting the
+	// world into 48 or 108 blocks instead of 12 halves richGain, and the two
+	// finer arms cannot be told apart - a block smaller than PerceptionRadius
+	// stops being somewhere to go. What this is for is the shape and size of
+	// the good ground, not its resolution.
+	RichMap []string
+
 	// RegionMap paints which cell belongs to which region, one character per
 	// cell, each character being a RegionShape's Key (2026-09-20). A dot, a
 	// short row and a character nobody claimed are "no region painted here".
