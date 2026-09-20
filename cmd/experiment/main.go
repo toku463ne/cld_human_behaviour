@@ -5523,6 +5523,7 @@ var metricNames = []string{
 	"wobble", "sdWobble",
 	"extinct", "collapsed", "fellAt", "peak",
 	"lines", "lineBiggest", "lineRegions", "lineInTwo", "lineInThree",
+	"settled", "settleLines", "settleRegions", "settleInTwo", "settleInThree",
 }
 
 type sample struct {
@@ -5894,6 +5895,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	// than the tail and a body has to be watched for a while before its answer
 	// means anything.
 	visits := engine.NewRegionVisitTracker(engine.DefaultVisitSamples)
+	// Where bodies have settled (2026-09-20). Over the whole run rather than
+	// the tail, because settling takes a window of its own to establish and
+	// a tracker started late would read every body as unsettled.
+	settle := engine.NewSettlementTracker(engine.DefaultSettleWindow, engine.DefaultSettleShare)
 	watchFrom := ticks - max(ticks/5, 1)
 
 	var series []sample
@@ -6068,6 +6073,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		if w.Tick()%engine.DefaultVisitStep == 0 {
 			visits.Observe(w)
 		}
+		if w.Tick()%engine.DefaultSettleStep == 0 {
+			settle.Observe(w)
+		}
 	}
 
 	end := w.Stats()
@@ -6078,6 +6086,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	tail := tailAverage(series)
 	fate := fateOf(series, ticks, deadBelow)
 	lines := w.Lineages()
+	homes := settle.Result(w)
 	mem := member.Result()
 	fr := fights.Result()
 	cen := census.Result()
@@ -6754,6 +6763,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"lineRegions": lines.Regions,
 		"lineInTwo":   lines.InTwo,
 		"lineInThree": lines.InThree,
+		// And the same questions asked of where bodies live rather than where
+		// they happen to be standing (2026-09-20).
+		"settled":       homes.Settled,
+		"settleLines":   float64(homes.Lines),
+		"settleRegions": homes.Regions,
+		"settleInTwo":   homes.InTwo,
+		"settleInThree": homes.InThree,
 	}}
 	for g := 0; g < engine.NumGenes; g++ {
 		r.metrics[shareMetric[g]] = tail.shares[g]
