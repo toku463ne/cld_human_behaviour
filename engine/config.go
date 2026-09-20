@@ -287,6 +287,23 @@ type Config struct {
 	// rule anywhere asks which kind a body is.
 	EnemyKinds []EnemyKind
 
+	// NestInherited makes a newborn's home its parent's nest rather than the
+	// spot it was born on (2026-09-20). Off is every world before it, and off
+	// is what it stayed after being measured.
+	//
+	// It was built to make a map's own weighting last. It does not. Over 24
+	// seeds against the same seeds without it, prowlGain moves -0.00 +/- 0.02
+	// and prowlKept +0.03 +/- 0.32 - nothing - while killShare rises +0.04 **
+	// for reasons this stage did not explain. What erases the weighting is
+	// not birth but wandering: stage 58 measured an enemy ending up 270 from
+	// where it started against a region 200 wide, so the bias is gone inside
+	// one life and there is nothing left for the next one to inherit.
+	//
+	// It is kept because a map that also holds its enemies near their nests -
+	// EnemyHomeCost, which is off by default too - is a different question,
+	// and this is the only way to ask it.
+	NestInherited bool
+
 	// EnemyKindMap says which sort of enemy comes into the world where, one
 	// character a cell, each character being an EnemyKind's Key
 	// (2026-09-20). A dot, a short row and a character nobody claimed are

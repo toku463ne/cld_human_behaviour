@@ -242,6 +242,11 @@ type SelfView struct {
 	HomeX, HomeY float64
 	HomePull     float64
 
+	// HomeRoam is how far from that spot this body goes for nothing, in the
+	// same units the distance is read in - widths of a region (2026-09-20).
+	// Half a region unless its sort says otherwise (EnemyKind.Roam).
+	HomeRoam float64
+
 	// Footing is what standing here does to what this body can do (stage 57),
 	// as a multiplier: the factors on its nine genes, weighted by how much of
 	// itself each of them is. One is ordinary ground, which is the whole of a
@@ -703,6 +708,10 @@ func (w *World) selfView(a *Agent) SelfView {
 	ground := w.terrainAt(a.X, a.Y)
 	chillDX, chillDY := w.chillSlope(a)
 	homeX, homeY, homePull := w.homeFor(a)
+	homeRoam := 0.5
+	if homePull > 0 {
+		homeRoam = w.homeRoamOf(a)
+	}
 	return SelfView{
 		ID:           a.ID,
 		X:            a.X,
@@ -737,6 +746,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		HomeX:             homeX,
 		HomeY:             homeY,
 		HomePull:          homePull,
+		HomeRoam:          homeRoam,
 		PoisonResist:      w.poisonResist(a),
 		Drown:             w.drownFelt(a, ground),
 		Soak:              w.soakFelt(a),

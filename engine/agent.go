@@ -122,6 +122,16 @@ type Agent struct {
 	// being away from it - a region is still not a wall.
 	HomeRegion int
 
+	// HomeX and HomeY are the spot it came into the world at - where it was
+	// put, or its parent's nest if it was born here (2026-09-20). It is the
+	// point EnemyHomeCost is charged from, and it never changes.
+	//
+	// A child is at home where it was born, unless Config.NestInherited says
+	// it takes its parent's nest. Inheriting it was built to make the map's
+	// own weighting last and measured as doing nothing, so it is off - see
+	// the field for the figures.
+	HomeX, HomeY float64
+
 	// Kind is which row of Config.EnemyKinds this body came from (stage 59).
 	// Zero for humans, and zero for every enemy in a world with one kind.
 	//

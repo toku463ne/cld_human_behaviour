@@ -909,6 +909,31 @@ var variants = []variant{
 	// this is the other end of the same sweep as fineregions: two halves of
 	// 400x600 against the default twelve blocks of 200x200, one growing nine
 	// times what the other does.
+	// 2026-09-20: the nest. Both arms have the same arrival weighting and the
+	// same price for being away from home; what differs is where a newborn's
+	// home is - its parent's nest, or the spot it was born on, which is the
+	// world before this and the reason the weighting washed out.
+	{
+		name:  "nests",
+		about: "the nest rides down the lineage: a newborn's home is its parent's, not its birthplace",
+		apply: func(c *engine.Config) {
+			c.EnemySpread, c.EnemyHomeCost, c.NestInherited = 0.6, 0.02, true
+			for i := range c.EnemyKinds {
+				c.EnemyKinds[i].Homely = 1
+			}
+			if len(c.EnemyKinds) == 0 {
+				c.EnemyKinds = []engine.EnemyKind{{Name: "one", Share: 1, Homing: 1, Homely: 1}}
+			}
+		},
+	},
+	{
+		name:  "nestsbirth",
+		about: "control for nests: a newborn is at home where it was born, which is the world before it",
+		apply: func(c *engine.Config) {
+			c.EnemySpread, c.EnemyHomeCost = 0.6, 0.02
+			c.EnemyKinds = []engine.EnemyKind{{Name: "one", Share: 1, Homing: 1, Homely: 1}}
+		},
+	},
 	{
 		name:  "paintedrich",
 		about: "sweep: the good ground painted in two halves, far coarser than the world's own blocks",

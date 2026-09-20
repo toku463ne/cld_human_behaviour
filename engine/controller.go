@@ -115,6 +115,7 @@ type AIController struct {
 	// a region, with the direction and speed needed to charge an option for
 	// where it would take the body.
 	homePull float64
+	homeRoam float64
 
 	// Which way it gets colder from here and how fast this body walks, kept
 	// for the one charge that tells two headings apart (stage 86b).
@@ -207,6 +208,7 @@ func (c *AIController) Decide(p *Perception) Action {
 		if d := math.Hypot(dx, dy); d > 1e-9 {
 			span := max(p.Cfg.Width/float64(max(p.Cfg.RegionCols, 1)), 1)
 			c.homePull = p.Self.HomePull
+			c.homeRoam = p.Self.HomeRoam
 			c.homeAway = d / span
 			c.homeUX, c.homeUY = dx/d, dy/d
 			c.homeSpan = span

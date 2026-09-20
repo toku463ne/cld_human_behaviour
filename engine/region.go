@@ -522,12 +522,7 @@ func (w *World) Roaming() Roaming {
 			continue
 		}
 		enemies++
-		if a.HomeRegion < 0 || a.HomeRegion >= len(w.regions) {
-			continue
-		}
-		minX, minY, maxX, maxY := w.regionBounds(a.HomeRegion)
-		hx, hy := (minX+maxX)/2, (minY+maxY)/2
-		away += math.Hypot(a.X-hx, a.Y-hy) / span
+		away += math.Hypot(a.X-a.HomeX, a.Y-a.HomeY) / span
 		if w.regionIndexAt(a.X, a.Y) == a.HomeRegion {
 			home++
 		}
@@ -981,8 +976,25 @@ func (w *World) homeFor(a *Agent) (x, y, pull float64) {
 	if homely <= 0 {
 		return 0, 0, 0
 	}
-	minX, minY, maxX, maxY := w.regionBounds(a.HomeRegion)
-	return (minX + maxX) / 2, (minY + maxY) / 2, w.cfg.EnemyHomeCost * homely
+	// The nest itself (2026-09-20), not the middle of the block it stands in.
+	// What the block was standing in for is the radius, and that is now the
+	// row's own figure - see EnemyKind.Roam.
+	return a.HomeX, a.HomeY, w.cfg.EnemyHomeCost * homely
+}
+
+// homeRoamOf is how far this body goes from its nest for nothing, in the
+// same units homeAway is measured in - widths of a region.
+//
+// Half a region when the row says nothing, which is the figure the rule was
+// charged from when home was a block: a body that wandered ten paces from
+// where it was born was not away from home, and that has to stay true now
+// that home is a point.
+func (w *World) homeRoamOf(a *Agent) float64 {
+	span := max(w.cfg.Width/float64(max(w.cfg.RegionCols, 1)), 1)
+	if r := w.kindOf(a).Roam; r > 0 {
+		return r / span
+	}
+	return 0.5
 }
 
 // AwayFromHome is how far this body has got from the country it came into the

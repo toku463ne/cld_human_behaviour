@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // carcassConfig is a world with one human and one enemy in it and nothing else
 // moving, so a test can kill the enemy and count what it leaves.
@@ -348,5 +351,106 @@ func TestAFlierIsNeverWorseOffThanAWalker(t *testing.T) {
 	a.X = col(2)
 	if w.canStep(a, a.X, a.Y, col(3), a.Y) {
 		t.Fatal("a low flier climbed four levels off a ramp")
+	}
+}
+
+func TestABodysNestIsWhereItCameIntoTheWorld(t *testing.T) {
+	cfg := quietConfig()
+	cfg.EnemyKinds = []EnemyKind{{Name: "one", Share: 1}}
+	w := NewWorld(cfg)
+	a := enemyOfKind(t, w, 0, 123, 234)
+	if a.HomeX != 123 || a.HomeY != 234 {
+		t.Fatalf("its nest is (%.0f, %.0f), want where it was put", a.HomeX, a.HomeY)
+	}
+}
+
+func TestANewbornTakesItsParentsNestAndNotItsBirthplace(t *testing.T) {
+	cfg := quietConfig()
+	cfg.NestInherited = true
+	cfg.EnemyKinds = []EnemyKind{{Name: "one", Share: 1}}
+	w := NewWorld(cfg)
+	// Built by hand rather than put in the world, the way the inheritance
+	// tests do: what this is about is which nest the child takes, and a birth
+	// has conditions of its own that are not the subject here.
+	pa := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(30),
+		Species: SpeciesEnemy, X: 300, Y: 300, HomeX: 40, HomeY: 50}
+	pb := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(30),
+		Species: SpeciesEnemy, X: 300, Y: 300, HomeX: 40, HomeY: 50}
+	before := len(w.newborns)
+	w.tryBirth(pa, pb)
+	if len(w.newborns) != before+1 {
+		t.Fatal("no child")
+	}
+	child := w.newborns[len(w.newborns)-1]
+	if child.HomeX != 40 || child.HomeY != 50 {
+		t.Fatalf("the child's nest is (%.0f, %.0f), want its parents' (40, 50)",
+			child.HomeX, child.HomeY)
+	}
+}
+
+func TestByDefaultAChildIsAtHomeWhereItWasBorn(t *testing.T) {
+	cfg := quietConfig()
+	cfg.EnemyKinds = []EnemyKind{{Name: "one", Share: 1}}
+	w := NewWorld(cfg)
+	pa := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(30),
+		Species: SpeciesEnemy, X: 300, Y: 300, HomeX: 40, HomeY: 50}
+	pb := &Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(30),
+		Species: SpeciesEnemy, X: 300, Y: 300, HomeX: 40, HomeY: 50}
+	before := len(w.newborns)
+	w.tryBirth(pa, pb)
+	if len(w.newborns) != before+1 {
+		t.Fatal("no child")
+	}
+	child := w.newborns[len(w.newborns)-1]
+	// Not set here: addAgent reads it off the position when it is nought,
+	// which is the old behaviour.
+	if child.HomeX != 0 || child.HomeY != 0 {
+		t.Fatalf("the child carried a nest (%.0f, %.0f) without being asked to",
+			child.HomeX, child.HomeY)
+	}
+}
+
+func TestHowFarASortGoesForNothingIsOnItsRow(t *testing.T) {
+	cfg := quietConfig()
+	cfg.EnemyHomeCost = 0.02
+	cfg.RegionCols, cfg.RegionRows = 4, 3
+	cfg.EnemyKinds = []EnemyKind{
+		{Name: "close", Share: 1, Homely: 1, Roam: 25},
+		{Name: "wide", Share: 1, Homely: 1, Roam: 400},
+		{Name: "unsaid", Share: 1, Homely: 1},
+	}
+	w := NewWorld(cfg)
+	span := cfg.Width / 4
+	for i, want := range []float64{25 / span, 400 / span, 0.5} {
+		a := enemyOfKind(t, w, uint8(i), 100, 100)
+		if got := w.homeRoamOf(a); math.Abs(got-want) > 1e-9 {
+			t.Fatalf("sort %d roams %.4f, want %.4f", i, got, want)
+		}
+	}
+}
+
+func TestBeingFarFromTheNestIsAPriceAndNotALeash(t *testing.T) {
+	// Past its radius the cost rises with the distance and nothing turns it
+	// round: going further has to stay an option a good enough reason buys.
+	cfg := quietConfig()
+	cfg.EnemyHomeCost = 0.02
+	cfg.EnemyKinds = []EnemyKind{{Name: "one", Share: 1, Homely: 1, Roam: 20}}
+	w := NewWorld(cfg)
+	a := enemyOfKind(t, w, 0, 100, 100)
+	a.X, a.Y = 600, 100 // a long way out
+	p := w.perceive(a)
+	if p.Self.HomePull <= 0 {
+		t.Fatal("nothing is charging it for being away")
+	}
+	p.Trace = &DecisionTrace{}
+	(&AIController{}).Decide(p)
+	moves := 0
+	for _, o := range p.Trace.Options {
+		if o.Action.Kind == ActMove {
+			moves++
+		}
+	}
+	if moves == 0 {
+		t.Fatal("a body far from its nest was left with nowhere to go")
 	}
 }

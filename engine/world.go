@@ -2014,8 +2014,19 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	// The coin is only tossed when the parents differ, so a world with one
 	// sort takes nothing from the random source.
 	child.Kind = pa.Kind
+	// The nest comes with the sort (2026-09-20): whichever parent the row
+	// came from, the country came from too. It rides on the coin already
+	// being tossed rather than asking for one of its own - a second draw
+	// here would move every world that has ever had a birth in it, and this
+	// rule is off by default.
+	if w.cfg.NestInherited {
+		child.HomeX, child.HomeY = pa.HomeX, pa.HomeY
+	}
 	if pa.Kind != pb.Kind && w.rng.Float64() < 0.5 {
 		child.Kind = pb.Kind
+		if w.cfg.NestInherited {
+			child.HomeX, child.HomeY = pb.HomeX, pb.HomeY
+		}
 	}
 	child.ParentIDs = [2]int{pa.ID, pb.ID}
 	child.lore = w.inheritLore(pa, pb)
@@ -2529,6 +2540,11 @@ func (w *World) addAgent(a Agent) int {
 	// Where it came into the world (stage 64). Arrivals get where they were
 	// put, the world's own young get where they were born, and it never
 	// changes after this.
+	// The spot itself (2026-09-20), unless it was born and already carries
+	// its parent's nest.
+	if a.HomeX == 0 && a.HomeY == 0 {
+		a.HomeX, a.HomeY = a.X, a.Y
+	}
 	a.HomeRegion = -1
 	if len(w.regions) > 0 {
 		a.HomeRegion = w.regionIndexAt(a.X, a.Y)

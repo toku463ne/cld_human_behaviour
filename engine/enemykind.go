@@ -133,6 +133,23 @@ type EnemyKind struct {
 	// stage 20's line intact: no ground is impassable to everybody.
 	FlyHeight int
 
+	// Roam is how far from its nest this sort goes before EnemyHomeCost
+	// starts charging it, in the world's own units (2026-09-20). Unset is
+	// half the width of a region, which is what the rule was charged from
+	// when the home was a block rather than a point.
+	//
+	// The radius is the whole of what the region was standing in for. Stage
+	// 64 used a block because "the finest thing this world says about a place
+	// is a region, and a body that wandered ten paces from where it was born
+	// is not away from home" - a point on its own would have charged for the
+	// first step. A point with a radius says that better, and says it in the
+	// map author's own figures rather than in the region grid's.
+	//
+	// It is not a leash. Past the radius the cost rises with the distance and
+	// nothing turns the body round, which is the line every stage has kept:
+	// a good enough reason still takes it out of its country.
+	Roam float64
+
 	// Meat is what this sort's carcass is worth, as a multiplier on what a
 	// body of its size would ordinarily leave (2026-09-20). Unset - which is
 	// every world before this - is one, and then every sort leaves
