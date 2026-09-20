@@ -52,6 +52,47 @@ type plantGenes struct {
 	// first time.
 	Poison float64
 	Signal float64
+
+	// Strain is which of Config.PlantKinds this plant came from, plus one,
+	// and zero for a world with one kind of plant - which is every world
+	// before 2026-09-20 (decision #134).
+	//
+	// It is a label rather than a quantity, and it lives among the genes
+	// rather than beside them because a seedling has to keep it:
+	// inheritPlantGenes copies the parent's values, so the tag rides along
+	// for nothing. A kind that dissolved after one generation would make
+	// "this country grows berries" true of the first plant only.
+	Strain uint8
+}
+
+// PlantKind is one sort of plant: a name, how much of the crop is it, and
+// where its four genes start (decision #134, 2026-09-20).
+//
+// A kind is a bundle of starting values and not an axis of its own. That was
+// the decision, and it is what keeps this from being a new concept: the genes
+// already exist, already inherit and already evolve, so a kind is a corner of
+// the space they live in for a lineage to start from and wander away from.
+//
+// It follows that a kind only shows in a world where plants inherit at all.
+// With PlantGenetics and PlantDefence both off - which is the default -
+// drawPlantGenes hands every plant the same figures whatever kind it is, and
+// the table below changes nothing but the tag.
+type PlantKind struct {
+	// Name is for a map to point at and for the tables to print. No rule
+	// reads it.
+	Name string
+
+	// Share is how much of the crop is this kind, relative to the other rows.
+	// They are normalised, so 1 and 3 means a quarter and three quarters, and
+	// a row left at zero never comes up.
+	Share float64
+
+	// Where this kind's genes start. Zero means the world's own figure, so a
+	// row that only wants to be poisonous says nothing about spread.
+	Spread float64
+	Regrow float64
+	Poison float64
+	Signal float64
 }
 
 // drawPlantGenes is what the first plants of a world are. They are drawn around
@@ -61,16 +102,43 @@ type plantGenes struct {
 func (w *World) drawPlantGenes() plantGenes {
 	cfg := &w.cfg
 	g := plantGenes{Spread: cfg.PlantSpread, Regrow: 1}
+	// Which sort this one is, when the map names any (decision #134). It is
+	// drawn first so that the spread below is a spread around this kind's own
+	// figures rather than around the world's, and a world with no kinds takes
+	// nothing from the random source here.
+	if k := w.pickPlantKind(); k >= 0 {
+		row := &cfg.PlantKinds[k]
+		g.Strain = uint8(k + 1)
+		if row.Spread > 0 {
+			g.Spread = row.Spread
+		}
+		if row.Regrow > 0 {
+			g.Regrow = row.Regrow
+		}
+		g.Poison, g.Signal = row.Poison, row.Signal
+	}
 	if cfg.PlantGenetics {
-		g.Spread = clamp(w.randRange(cfg.PlantSpread*0.4, cfg.PlantSpread*1.6), 1, cfg.PlantSpreadMax)
-		g.Regrow = clamp(w.randRange(0.4, 1.6), plantRegrowFloor, plantRegrowMax)
+		g.Spread = clamp(w.randRange(g.Spread*0.4, g.Spread*1.6), 1, cfg.PlantSpreadMax)
+		g.Regrow = clamp(w.randRange(g.Regrow*0.4, g.Regrow*1.6), plantRegrowFloor, plantRegrowMax)
 	}
 	if cfg.PlantDefence {
 		// Drawn independently, which is the whole point: an honest warning
 		// has to be something the world arrives at, not something the world
 		// was built with.
-		g.Poison = clamp(w.rng.Float64(), 0, 1)
-		g.Signal = clamp(w.rng.Float64(), 0, 1)
+		//
+		// A kind may say otherwise (decision #134), and where it does the
+		// draw is skipped - the same "zero means the world's own figure"
+		// the two above use. That does let a map build a liar in, which is
+		// exactly what this rule was written not to do; the answer is that
+		// the default world still arrives at it, and a map that starts a
+		// lineage somewhere has only chosen where it starts, not where it
+		// ends. Both figures go on evolving from there.
+		if g.Poison == 0 {
+			g.Poison = clamp(w.rng.Float64(), 0, 1)
+		}
+		if g.Signal == 0 {
+			g.Signal = clamp(w.rng.Float64(), 0, 1)
+		}
 	}
 	return g
 }
@@ -413,6 +481,58 @@ func (w *World) Plants() PlantLife {
 			}
 		}
 		out.Empty = float64(empty) / float64(len(occupied))
+	}
+	return out
+}
+
+// pickPlantKind draws which sort of plant is coming up, or -1 when the map
+// names none - which is every world before this and takes nothing from the
+// random source.
+//
+// The shape is stage 59's, down to the normalising: a table of rows with a
+// share each, and adding a sort is a row rather than a branch.
+func (w *World) pickPlantKind() int {
+	kinds := w.cfg.PlantKinds
+	if len(kinds) == 0 {
+		return -1
+	}
+	total := 0.0
+	for i := range kinds {
+		if kinds[i].Share > 0 {
+			total += kinds[i].Share
+		}
+	}
+	if total <= 0 {
+		return -1
+	}
+	r := w.rng.Float64() * total
+	for i := range kinds {
+		if kinds[i].Share <= 0 {
+			continue
+		}
+		r -= kinds[i].Share
+		if r <= 0 {
+			return i
+		}
+	}
+	return len(kinds) - 1
+}
+
+// PlantStrains is how many of each sort are standing in the world, by the
+// index of Config.PlantKinds. Read only, and empty in a world with one sort.
+func (w *World) PlantStrains() []int {
+	if len(w.cfg.PlantKinds) == 0 {
+		return nil
+	}
+	out := make([]int, len(w.cfg.PlantKinds))
+	for i := range w.foods {
+		f := &w.foods[i]
+		if f.Kind != FoodPlant || f.Genes.Strain == 0 {
+			continue
+		}
+		if k := int(f.Genes.Strain) - 1; k < len(out) {
+			out[k]++
+		}
 	}
 	return out
 }

@@ -127,6 +127,17 @@ type Config struct {
 	// about where the water is without the world having to stop.
 	SpawnMap []string
 
+	// PlantKinds are the sorts of plant this map grows (decision #134,
+	// plant.go). Empty is every world before it: one sort, and the tag on
+	// each plant stays zero.
+	//
+	// A kind is a bundle of starting values for the four genes a plant
+	// already has, not an axis of its own - so it changes nothing at all in a
+	// world where plants do not inherit (PlantGenetics and PlantDefence are
+	// both off by default). Adding a sort is a row and no code, the way
+	// EnemyKinds is.
+	PlantKinds []PlantKind
+
 	// FishSpawnRate and MaxFishItems give the water its own pool
 	// (2026-09-20). Zero on both is every world before it: a fish comes up
 	// *instead of* a plant at the FishShare rate, and the two share one
