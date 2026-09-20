@@ -461,6 +461,7 @@ go run ./cmd/experiment -list                                   # 用意され�
 go run ./cmd/experiment -variants baseline,nogate               # 既定 12シード x 20000tick
 go run ./cmd/experiment -variants baseline,nogate,gate20 -seeds 24 -ticks 60000
 go run ./cmd/experiment -variants baseline,nogate -csv out.csv  # 推移をCSVに出す
+go run ./cmd/experiment -variants baseline,nogate -ticks 200000  # 世界が保つかを見る（下記）
 ```
 
 | オプション | 意味 |
@@ -473,6 +474,7 @@ go run ./cmd/experiment -variants baseline,nogate -csv out.csv  # 推移をCSV�
 | `-interval <n>` | サンプリング間隔（既定200tick） |
 | `-csv <path>` | 推移の時系列をCSVで書き出す |
 | `-jobs <n>` | 並列実行数（既定CPU数） |
+| `-deadbelow <n>` | **その個体数を下回った世界を「終わった」と読む**（既定10）。`collapsed` / `fellAt` の目盛り |
 
 出力は2つの表です。
 
@@ -483,10 +485,15 @@ go run ./cmd/experiment -variants baseline,nogate -csv out.csv  # 推移をCSV�
 
 **個体数が違う条件どうしを比べるときは、`births` / `deaths` のような累計ではなく `birthRate` / `deathRate` のほうを読んでください。** 個体数が半分の世界は、1人あたりの率がまったく同じでも累計の出生数は半分になります。「累計が減った＝繁殖しなくなった」と読み違えた実例が `HISTORY.md` の 2026-09-02 の項にあります。
 
+**平均個体数の前に `collapsed` を見てください。** **20000tick では世界の運命が見えません**——実際に、20000tick で154体あって健康に見えた世界が、40000〜60000tick で落ちて、そこから69万tick 戻らなかった例があります（`simulation/001_3division.md`）。**「この地図・このルールで世界が保つか」を訊いているときは `-ticks 200000` 以上で回し、平均ではなく崩壊した本数を読みます。** 平均個体数は、半分が150体・半分が4体の群れと、全部が77体の群れを同じ数字で表します。
+
 主な指標:
 
 | 指標 | 意味 |
 | --- | --- |
+| `collapsed` | **その条件で世界が終わった実行の割合**（0〜1）。判定は**末尾2割の平均個体数が `-deadbelow`（既定10）未満**。末尾で読むのは、これらの世界が落ちる途中で上下するため——1点だけ見ると跳ね返りを拾います |
+| `fellAt` | **初めて `-deadbelow` を下回ったtick**。**一度も下回らなければ実行長**が入ります（`geniusYears` と同じ打ち切りで、推定値ではありません）。**`collapsed` と一緒に読みます**——**下回ったのに `collapsed` でない ＝ 落ちて戻ってきた世界** |
+| `peak` | その実行で到達した最大個体数。**`pop` との差が「行き過ぎ」の大きさ**で、崩壊は行き過ぎのあとに来ます |
 | `dPower` / `dRationality` / `dIntelligence` | 平均能力が開始時からどれだけ動いたか＝**その能力への選択圧**。能力値は最後の1tickではなく末尾2割の平均で読む |
 | `budget` / `sdBudget` / `dBudget` | 遺伝子9本の合計＝**その個体が何でできているかの総量**の平均・標準偏差・初期値からの変化。予算は親から継ぐので、**放っておくと世代とともに上がる**（`dBudget` がそれ） |
 | `shSpeed` の注意 | **速さは9本で一番買われている遺伝子**（0.14〜0.15）だが、**何とも取引していない**（「速くて脆い／遅くて頑丈」の並存が現れない）。食料レースの勝率に速さを入れても動かなかったので、残る仮説は「速さが有利な場所と不利な場所が無いこと」＝地形（`PLAN.md`） |

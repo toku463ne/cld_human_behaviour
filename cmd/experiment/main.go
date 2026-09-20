@@ -5446,7 +5446,7 @@ var metricNames = []string{
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"mateWeight", "sdMateWeight",
 	"wobble", "sdWobble",
-	"extinct",
+	"extinct", "collapsed", "fellAt", "peak",
 }
 
 type sample struct {
@@ -5724,7 +5724,7 @@ type sample struct {
 	// move - the ticks that cost nothing before that stage, and the thing it
 	// aims at - and soakTaken the vitality the wet ground has taken over the
 	// run, to be read against what hunger takes.
-	wetStill, soakTaken float64
+	wetStill, soakTaken          float64
 	tolHeld, tolNominal, tolReal float64
 }
 
@@ -5782,7 +5782,7 @@ type run struct {
 // The abilities are averaged over the final fifth of the run rather than read at
 // the last tick: a population is small enough that a couple of deaths move the
 // average by more than a run's worth of selection does.
-func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
+func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBelow float64) run {
 	cfg := engine.DefaultConfig()
 	cfg.Seed = seed
 	v.apply(&cfg)
@@ -6000,6 +6000,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 	// two arms fight different amounts and so answer the question differently.
 	endLore := w.Lore()
 	tail := tailAverage(series)
+	fate := fateOf(series, ticks, deadBelow)
 	mem := member.Result()
 	fr := fights.Result()
 	cen := census.Result()
@@ -6306,15 +6307,15 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		// water is actually doing to the ones in it (stage 97). wetPace above
 		// wetFloor is the skill giving the drag back; the two equal is a rule
 		// that reaches nobody.
-		"swimWet":        tail.swimWet,
-		"wetPace":        tail.wetPace,
-		"wetFloor":       tail.wetFloor,
+		"swimWet":  tail.swimWet,
+		"wetPace":  tail.wetPace,
+		"wetFloor": tail.wetFloor,
 		// What not being able to swim costs (stage 98). drownMult at one is
 		// the world before the stage; above one it is what the bodies in the
 		// water are paying on average, which is what the flat arm is set to.
-		"drownMult":      tail.drownMult,
-		"wetGreen":       tail.wetGreen,
-		"drownTaken":     tail.drownTaken,
+		"drownMult":  tail.drownMult,
+		"wetGreen":   tail.wetGreen,
+		"drownTaken": tail.drownTaken,
 		// What the wet ground takes, and of what it is taken (stage 99).
 		"wetStill":       tail.wetStill,
 		"soakTaken":      tail.soakTaken,
@@ -6662,6 +6663,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool) run {
 		"geniusYears":      years(ticks, end.Geniuses, cfg.TicksPerYear),
 		"greatGeniusYears": years(ticks, end.GreatGeniuses, cfg.TicksPerYear),
 		"extinct":          boolToFloat(end.Population == 0),
+		// How the run ended, as opposed to how big it was (2026-09-20). Averaged
+		// over seeds, collapsed is the share of worlds that stopped working.
+		"collapsed": boolToFloat(fate.collapsed),
+		"fellAt":    float64(fate.fellAt),
+		"peak":      fate.peak,
 	}}
 	for g := 0; g < engine.NumGenes; g++ {
 		r.metrics[shareMetric[g]] = tail.shares[g]
@@ -6690,6 +6696,63 @@ func checkMetricsComplete(m map[string]float64) {
 	if len(missing) > 0 {
 		panic("metrics listed but never filled in: " + strings.Join(missing, ", "))
 	}
+}
+
+// defaultDeadBelow is the population a world is read as finished below
+// (2026-09-20). It is the scale the measurement is taken at and not a rule of
+// the world, so it lives here and never in engine.Config - the same standing
+// the cluster linking distance has, and for the same reason: two runs read at
+// different scales cannot be compared.
+//
+// Ten, because what kills these worlds at the bottom is not starving but
+// failing to meet: below about a dozen bodies spread over a map, births stop
+// and the run never comes back. A world genuinely living on eight will read as
+// collapsed here, which is why peak and fellAt are printed beside it.
+const defaultDeadBelow = 10
+
+// worldFate is what a run came to, as opposed to how many were in it: the
+// height it reached, whether it ended dead, and when it first fell.
+//
+// It exists because a mean population cannot tell the two ends apart. A sweep
+// where half the seeds keep 150 bodies and half fall to 4 prints the same
+// average as one where every seed keeps 77, and those are not the same world.
+type worldFate struct {
+	peak      float64
+	collapsed bool
+	fellAt    int
+}
+
+// fateOf reads the population series.
+//
+// Collapse is judged on the final fifth rather than on the last tick, the same
+// window the abilities are read over: these worlds oscillate on the way down,
+// and a single sample can catch one between a fall and a rebound.
+//
+// fellAt is the first sample below the line, and the length of the run when it
+// never fell - the censoring the half-life already uses, where an interval
+// worked out from no events is not an estimate. Read it with collapsed: fallen
+// but not collapsed is a world that went low and came back.
+func fateOf(series []sample, ticks int, deadBelow float64) worldFate {
+	out := worldFate{fellAt: ticks}
+	fell := false
+	for _, s := range series {
+		if float64(s.pop) > out.peak {
+			out.peak = float64(s.pop)
+		}
+		if !fell && float64(s.pop) < deadBelow {
+			out.fellAt, fell = s.tick, true
+		}
+	}
+	from := max(len(series)-max(len(series)/5, 1), 0)
+	sum, n := 0.0, 0
+	for _, s := range series[from:] {
+		sum += float64(s.pop)
+		n++
+	}
+	if n > 0 {
+		out.collapsed = sum/float64(n) < deadBelow
+	}
+	return out
 }
 
 // tailAverage averages the last fifth of the samples, ignoring ticks where the
@@ -7492,6 +7555,8 @@ func main() {
 	seeds := flag.Int("seeds", 12, "how many seeds each arm is run on")
 	firstSeed := flag.Int64("seed0", 1, "first seed; the arms all use seed0 .. seed0+seeds-1")
 	ticks := flag.Int("ticks", 20000, "ticks per run")
+	deadBelow := flag.Float64("deadbelow", defaultDeadBelow,
+		"the population a world counts as finished below, for the collapsed/fellAt columns")
 	interval := flag.Int("interval", 200, "ticks between samples")
 	csvPath := flag.String("csv", "", "write the sampled time series here")
 	jobs := flag.Int("jobs", runtime.NumCPU(), "runs in parallel")
@@ -7555,7 +7620,7 @@ func main() {
 			defer wg.Done()
 			for idx := range next {
 				j := queue[idx]
-				results[idx] = measure(j.v, j.seed, *ticks, *interval, *csvPath != "")
+				results[idx] = measure(j.v, j.seed, *ticks, *interval, *csvPath != "", *deadBelow)
 			}
 		}()
 	}
