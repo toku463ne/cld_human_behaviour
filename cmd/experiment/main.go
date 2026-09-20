@@ -2859,6 +2859,40 @@ var variants = []variant{
 		},
 	},
 	{
+		// Why the coat is never bought, hypothesis one: there are far too
+		// many of them. coatbite makes 2820 of them for about 92 bodies and
+		// 92% of the ones in hands are worth nothing to their holder, so the
+		// second coat is free to whoever has it and worth everything to
+		// whoever does not - which is the asymmetry a market needs, except
+		// that every body already has one. This makes them rare instead.
+		name:  "coatrare",
+		about: "why no coat is bought (1): the same killing cold, but one ornament in ten wards",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0.1, 1
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// Hypothesis two: giving is free and buying costs a coin, so nobody
+		// ever has to buy. Stage 84d and stage 88 both measured that pricing
+		// the giving makes the exchange vanish rather than turn into sales;
+		// this asks the same question in the one world where the thing being
+		// handed over actually saves lives.
+		name:  "coatpriced",
+		about: "why no coat is bought (2): the same world, and giving one away costs the giver",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.GiftPriced = true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
 		name:  "coatbiteless",
 		about: "coatbite's control: the same world and the same ornaments, warding nothing",
 		apply: func(c *engine.Config) {
@@ -5635,7 +5669,7 @@ var metricNames = []string{
 	"dietVariety", "dietDiscount",
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
 	"onCold", "coldGain", "coldFood", "chillTook", "chillShare",
-	"coats", "wearing", "coatsHanded", "coatsSpare",
+	"coats", "wearing", "coatsHanded", "coatsSold", "coatSoldCold", "coatGivenCold", "coatsSpare",
 	"bankSplit", "crossShare", "crossIndex", "crossDry", "bankGeneGap", "bankCountryGap",
 	"bankMoves", "bankBoth",
 	"speedHigh", "speedLow", "highGap",
@@ -6824,12 +6858,19 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"coats":       float64(weather.Coats),
 		"wearing":     weather.Wearing,
 		"coatsHanded": float64(weather.Handed),
-		"coatsSpare":  weather.Spare,
-		"chillTook":   weather.Taken,
-		"chillShare":  shareOf(weather.Taken, weather.Taken+weather.Starved),
-		"onDear":      tail.onDear,
-		"onHigh":      tail.onHigh,
-		"onWater":     tail.onWater,
+		// Whether the warm thing is bought or given, and whether it reaches
+		// the cold (2026-09-20). Read the two "cold" columns against the
+		// world's own mean cold: at it, the piece landed wherever somebody
+		// happened to be; above it, it landed on somebody who needed it.
+		"coatsSold":     float64(weather.Sold),
+		"coatSoldCold":  weather.SoldWeather,
+		"coatGivenCold": weather.GivenWeather,
+		"coatsSpare":    weather.Spare,
+		"chillTook":     weather.Taken,
+		"chillShare":    shareOf(weather.Taken, weather.Taken+weather.Starved),
+		"onDear":        tail.onDear,
+		"onHigh":        tail.onHigh,
+		"onWater":       tail.onWater,
 		// The two banks (stage 37). crossIndex is not to be read on its own -
 		// agents cluster locally whatever the ground is, so it is low
 		// everywhere; what it is for is the arm against its control.

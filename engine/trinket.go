@@ -341,6 +341,19 @@ func (w *World) noteTrinketMove(from, to *Agent, f *Food, sold bool) {
 	}
 	if f.Ward > 0 {
 		w.coatsHanded++
+		// And where the receiver was standing, in the weather this piece
+		// answers (2026-09-20). It is the question the whole of stage 87 was
+		// built to ask - a warm thing is worth everything in the cold and
+		// nothing in the warm, so whether it reaches the cold, and whether it
+		// reaches it by being bought or by being given, is what says whether
+		// there is a market here or only a habit of sharing.
+		chill := w.weatherAt(to.X, to.Y, f.Wards)
+		if sold {
+			w.coatsSold++
+			w.coatSoldChill += chill
+		} else {
+			w.coatGivenChill += chill
+		}
 	}
 	gain := w.trinketDelight(to, f) - w.trinketDelight(from, f)
 	w.trinketMoves++

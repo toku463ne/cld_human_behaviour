@@ -577,6 +577,9 @@ type World struct {
 	chillTaken       float64
 	coatsMade        int
 	coatsHanded      int
+	coatsSold        int
+	coatSoldChill    float64
+	coatGivenChill   float64
 	hungerTaken      float64
 	trinketSales     int
 	trinketSaleGain  float64

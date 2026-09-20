@@ -523,6 +523,18 @@ type WeatherUse struct {
 	Coats, Handed int
 	Wearing       float64
 
+	// Sold is how many of those hand-overs were sales rather than gifts, and
+	// SoldWeather and GivenWeather how much of the weather it answers the
+	// receiver was standing in when it arrived (2026-09-20). All is the
+	// world's own mean, so a figure above it says the piece reached somebody
+	// who needed it and one at it says it reached whoever happened to be
+	// there.
+	//
+	// This is the pair stage 87 was built to produce and never has: 87a made
+	// 770 coats, 85% of them changed hands, and every one of those was a gift.
+	Sold                      int
+	SoldWeather, GivenWeather float64
+
 	// Spare is the share of the warding pieces in hands that are worth
 	// nothing to whoever is carrying them (stages 87b, 88): the wrong weather
 	// here, no weather here, or one no better than the one already worn. It
@@ -592,7 +604,13 @@ func (w *World) Weather() WeatherUse {
 	if worn > 0 {
 		out.Spare = spare / worn
 	}
-	out.Coats, out.Handed = w.coatsMade, w.coatsHanded
+	out.Coats, out.Handed, out.Sold = w.coatsMade, w.coatsHanded, w.coatsSold
+	if w.coatsSold > 0 {
+		out.SoldWeather = w.coatSoldChill / float64(w.coatsSold)
+	}
+	if given := w.coatsHanded - w.coatsSold; given > 0 {
+		out.GivenWeather = w.coatGivenChill / float64(given)
+	}
 	out.Gain = out.OnCold - out.All
 	return out
 }
