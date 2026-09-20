@@ -137,3 +137,100 @@ func TestALineSurvivesSavingAndLoading(t *testing.T) {
 		}
 	}
 }
+
+func TestALineMayBeHandedDownOneAtATime(t *testing.T) {
+	cfg := quietConfig()
+	cfg.LineageRule = LineageChain
+	w := NewWorld(cfg)
+	motherID := w.addAgent(Agent{
+		Maturity: 1, Vitality: 90, Genome: filledGenome(30), Sex: Female, Lineage: 5})
+	fatherID := w.addAgent(Agent{
+		Maturity: 1, Vitality: 90, Genome: filledGenome(30), Sex: Male})
+
+	// Fetched by ID every time: committing a birth appends to the population
+	// and may move it, so a pointer held across one is somebody else's.
+	born := func() int {
+		t.Helper()
+		mother, father := mustAgent(t, w, motherID), mustAgent(t, w, fatherID)
+		mother.Vitality, father.Vitality = 90, 90
+		before := len(w.newborns)
+		w.tryBirth(mother, father)
+		if len(w.newborns) != before+1 {
+			t.Fatal("no child")
+		}
+		w.commitNewborns()
+		return w.agents[len(w.agents)-1].ID
+	}
+
+	firstID := born()
+	if got := mustAgent(t, w, firstID).Lineage; got != 5 {
+		t.Fatalf("the eldest is line %d, want its mother's 5", got)
+	}
+	secondID := born()
+	if got := mustAgent(t, w, secondID).Lineage; got != 0 {
+		t.Fatalf("a second child took line %d while the eldest was alive", got)
+	}
+	// The eldest dies and the line is free again.
+	w.kill(mustAgent(t, w, firstID))
+	thirdID := born()
+	if got := mustAgent(t, w, thirdID).Lineage; got != 5 {
+		t.Fatalf("with the eldest gone the next is line %d, want 5", got)
+	}
+}
+
+func TestALineMayHaveOneHeirInEachRegion(t *testing.T) {
+	cfg := quietConfig()
+	cfg.LineageRule = LineageRegionChain
+	cfg.RegionCols, cfg.RegionRows = 2, 1
+	w := NewWorld(cfg)
+	west, east := cfg.Width*0.25, cfg.Width*0.75
+	motherID := w.addAgent(Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(30),
+		Sex: Female, Lineage: 5, X: west, Y: cfg.Height / 2})
+	fatherID := w.addAgent(Agent{Maturity: 1, Vitality: 90, Genome: filledGenome(30),
+		Sex: Male, X: west, Y: cfg.Height / 2})
+
+	bornAt := func(x float64) int {
+		t.Helper()
+		mother, father := mustAgent(t, w, motherID), mustAgent(t, w, fatherID)
+		mother.Vitality, father.Vitality = 90, 90
+		mother.X, father.X = x, x
+		mother.Y, father.Y = cfg.Height/2, cfg.Height/2
+		before := len(w.newborns)
+		w.tryBirth(mother, father)
+		if len(w.newborns) != before+1 {
+			t.Fatal("no child")
+		}
+		w.commitNewborns()
+		return w.agents[len(w.agents)-1].ID
+	}
+
+	// Nobody of the line is in the west but the mother, so the first child
+	// born there is the west's heir.
+	firstWest := bornAt(west)
+	if got := mustAgent(t, w, firstWest).Lineage; got != 5 {
+		t.Fatalf("the first child in the west is line %d, want 5", got)
+	}
+	// The second is not: the west has an heir now.
+	secondWest := bornAt(west)
+	if got := mustAgent(t, w, secondWest).Lineage; got != 0 {
+		t.Fatalf("a second child in the west is line %d, want none", got)
+	}
+	// Carried east and born there, it takes the line up - a country with
+	// nobody of the line in it wants an heir, and travelling is how it gets
+	// one.
+	inEast := bornAt(east)
+	if got := mustAgent(t, w, inEast).Lineage; got != 5 {
+		t.Fatalf("a child born where the line has nobody is line %d, want 5", got)
+	}
+	// And the east has its own now.
+	again := bornAt(east)
+	if got := mustAgent(t, w, again).Lineage; got != 0 {
+		t.Fatalf("a second child in the east is line %d, want none", got)
+	}
+	// The west's heir dies and the west wants one again.
+	w.kill(mustAgent(t, w, firstWest))
+	afterDeath := bornAt(west)
+	if got := mustAgent(t, w, afterDeath).Lineage; got != 5 {
+		t.Fatalf("with the west's heir gone the next there is line %d, want 5", got)
+	}
+}

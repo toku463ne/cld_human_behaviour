@@ -287,6 +287,14 @@ type Config struct {
 	// rule anywhere asks which kind a body is.
 	EnemyKinds []EnemyKind
 
+	// LineageRule is how a line of descent is handed down (2026-09-20). It
+	// changes nothing in the world - no rule reads a line - and everything
+	// about what "my people" would mean to a game.
+	//
+	// The three were measured against each other; see HISTORY.md, and the
+	// figures in the constants' own comments.
+	LineageRule LineageRule
+
 	// NestInherited makes a newborn's home its parent's nest rather than the
 	// spot it was born on (2026-09-20). Off is every world before it, and off
 	// is what it stayed after being measured.

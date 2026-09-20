@@ -913,6 +913,20 @@ var variants = []variant{
 	// same price for being away from home; what differs is where a newborn's
 	// home is - its parent's nest, or the spot it was born on, which is the
 	// world before this and the reason the weighting washed out.
+	// 2026-09-20: how a line of descent is handed down. The tree is every
+	// child of a carrier; the chain is one at a time, the eldest, and the
+	// next one when the eldest dies. Nothing in the world reads the tag
+	// either way - what differs is what "my people" would mean to a game.
+	{
+		name:  "lineeldest",
+		about: "a line passes to one child at a time - the eldest, and the next when the eldest dies",
+		apply: func(c *engine.Config) { c.LineageRule = engine.LineageChain },
+	},
+	{
+		name:  "lineregion",
+		about: "a line passes to one child at a time in each region: the rule a travelling dynasty asks for",
+		apply: func(c *engine.Config) { c.LineageRule = engine.LineageRegionChain },
+	},
 	{
 		name:  "nests",
 		about: "the nest rides down the lineage: a newborn's home is its parent's, not its birthplace",
