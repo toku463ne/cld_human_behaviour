@@ -4413,6 +4413,7 @@ func main() {
 	sinkblind := flag.Bool("sinkblind", false, "the control for -sink: the river takes the ones who cannot swim just as often and no body can feel it (stage 98)")
 	soak := flag.Float64("soak", 0, "what a tick in the water takes out of a body in vitality, standing still or not (stage 99; needs -terrain river or country). 0 is the world before this stage, where the water was a toll on movement and nothing to a body standing in it. A body recovers 0.09 a tick, so 0.02 is a fifth of that")
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
+	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
 	noahead100 := flag.Bool("groundunread", false, "put back the world before 2026-09-19: every option priced with the ground underfoot rather than with the ground one cell toward where it would take the node (stage 100)")
 	rich := flag.String("rich", "",
 		"paint how well the ground grows things: one character a cell, rows separated by commas "+
@@ -4525,6 +4526,12 @@ func main() {
 	}
 	if *soakblind {
 		cfg.WaterDrainKnown = false
+	}
+	// Being hit moves a body (#136). Nothing else has to be laid out for it,
+	// but what it does depends on what is behind the one being hit, so it is
+	// worth watching with -terrain country.
+	if *knock > 0 {
+		cfg.KnockbackDist = *knock
 	}
 	// Reading the ground one cell ahead (stage 100), and the control that
 	// looks at the world instead of the cell.

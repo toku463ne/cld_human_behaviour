@@ -2072,6 +2072,34 @@ type Config struct {
 	OpeningTicks int
 	OpeningGuard float64
 
+	// KnockbackDist is how far a blow moves the one it lands on, in world
+	// units, for a blow of AttackDamage against a body of the world's
+	// reference size (knockback.go, #136). Nought is off, and off is the
+	// default: it is the map author's rule as much as the world's, because
+	// what it does depends entirely on what is behind the one being hit.
+	//
+	// The distance scales with the damage that actually landed and inversely
+	// with how big the body is, so everything already priced into a blow is
+	// priced into the push without being named twice.
+	//
+	// The figure to hold it against is CombatRadius (15): a push shorter
+	// than that leaves the two in reach of each other and the fight goes on,
+	// and a longer one breaks the fight off and makes the striker walk back.
+	// A step is about two units, so even a short push is several ticks of
+	// walking undone.
+	KnockbackDist float64
+
+	// KnockbackFall is what one level of drop takes out of a body that was
+	// pushed off an edge. Held against AttackDamage (1.15): a fall worth
+	// several blows turns a cliff from ground into a door, which is the
+	// thing stage 20 refused to build.
+	KnockbackFall float64
+
+	// KnockbackThrown says whether a thrown stone pushes too (stage 46).
+	// False by default: an arm's length blow has a body behind it and a
+	// stone does not.
+	KnockbackThrown bool
+
 	// SkirmishTicks is how long an agent expects a fight to last before one
 	// side gives up. Fights are only settled by a death when neither side
 	// breaks off, so pricing every fight as a fight to the death would make a
@@ -3523,6 +3551,13 @@ func DefaultConfig() Config {
 		OpeningTicks:  3,
 		OpeningGuard:  0.4,
 		SkirmishTicks: 30,
+
+		// Off by default, and the two figures below are what an arm sets
+		// when it is on: a push of a third of CombatRadius (the fight goes
+		// on) and a fall worth about two blows.
+		KnockbackDist:   0,
+		KnockbackFall:   2.3,
+		KnockbackThrown: false,
 
 		JudgementNoise:    40,
 		PriorStrength:     50,

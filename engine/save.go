@@ -142,6 +142,7 @@ type counterSnap struct {
 	Matured, ChildDeaths, Fights                 int
 	MaxGeneration                                int
 	BlowsSeen, BlowsAnswered                     int
+	Knocked, KnockedWet, KnockedFell             int
 	Courtships, CourtshipsAccepted               int
 	Flees, Escapes                               int
 
@@ -344,6 +345,7 @@ func (w *World) Save(out io.Writer) error {
 			Matured:  w.matured, ChildDeaths: w.childDeaths, Fights: w.fights,
 			MaxGeneration: w.maxGeneration,
 			BlowsSeen:     w.blowsSeen, BlowsAnswered: w.blowsAnswered,
+			Knocked: w.knocked, KnockedWet: w.knockedWet, KnockedFell: w.knockedFell,
 			Courtships: w.courtships, CourtshipsAccepted: w.courtshipsAccepted,
 			Flees: w.flees, Escapes: w.escapes,
 			Exchanges: w.exchanges, HintsCopied: w.hintsCopied,
@@ -553,6 +555,7 @@ func Load(in io.Reader) (*World, error) {
 	w.matured, w.childDeaths, w.fights = c.Matured, c.ChildDeaths, c.Fights
 	w.maxGeneration = c.MaxGeneration
 	w.blowsSeen, w.blowsAnswered = c.BlowsSeen, c.BlowsAnswered
+	w.knocked, w.knockedWet, w.knockedFell = c.Knocked, c.KnockedWet, c.KnockedFell
 	w.courtships, w.courtshipsAccepted = c.Courtships, c.CourtshipsAccepted
 	w.flees, w.escapes = c.Flees, c.Escapes
 	w.exchanges, w.hintsCopied = c.Exchanges, c.HintsCopied

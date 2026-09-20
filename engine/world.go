@@ -196,6 +196,14 @@ type Stats struct {
 	Fights        int
 	MaxGeneration int
 
+	// Knocked is how many blows moved the body they landed on (#136),
+	// KnockedWet how many of those put one in water it was not already in,
+	// and KnockedFell how many pushed one off an edge. All three are nought
+	// in a world with the rule off, which is the default.
+	Knocked     int
+	KnockedWet  int
+	KnockedFell int
+
 	// ChoiceGap is how far the winning option won by, averaged over every
 	// decision with more than one option in it, and ChoiceCoin the share of
 	// those where the gap was narrower than the body's own judgement noise -
@@ -426,7 +434,7 @@ type World struct {
 	// (enemykind.go). Nil in every world that paints none.
 	enemyKindCells [][]cell
 
-	drownDeaths          int
+	drownDeaths int
 	// drownTakenSwim is the realised swimming of the bodies the water has
 	// taken, summed (stage 98). Against the swimming of the bodies standing in
 	// the water it says whether the river was already sorting them before any
@@ -445,6 +453,14 @@ type World struct {
 	// somebody else (stage 35). Counted because a rule that hardly ever fires
 	// explains nothing whatever its weight - the lesson of stage 24.
 	drownWitnesses int
+
+	// shoves are the pushes a tick's blows have earned, applied after all of
+	// them are resolved (knockback.go). knocked, knockedWet and knockedFell
+	// are what the rule has done over the run.
+	shoves      []shove
+	knocked     int
+	knockedWet  int
+	knockedFell int
 
 	// The same count for a killing seen (stage 31), split by which way the
 	// sign went: killWitnesses is readings taken of somebody who killed,
@@ -830,13 +846,16 @@ func (w *World) SetController(id int, c Controller) bool {
 // Stats summarises the current population.
 func (w *World) Stats() Stats {
 	s := Stats{
-		Tick:       w.tick,
-		Population: len(w.agents),
-		FoodItems:  len(w.foods),
-		Births:     w.births,
-		Evaded:     w.evaded,
-		Hunts:      w.hunts,
-		JointHunts: w.jointHunts,
+		Tick:        w.tick,
+		Population:  len(w.agents),
+		FoodItems:   len(w.foods),
+		Births:      w.births,
+		Evaded:      w.evaded,
+		Knocked:     w.knocked,
+		KnockedWet:  w.knockedWet,
+		KnockedFell: w.knockedFell,
+		Hunts:       w.hunts,
+		JointHunts:  w.jointHunts,
 
 		FirstSights:     w.firstSights,
 		FirstSightError: w.firstSightError,
@@ -1635,6 +1654,12 @@ func (w *World) resolveAttacks() {
 		damage *= 1 - w.wardAgainst(to, from)
 		to.Vitality -= damage
 
+		// And it gives ground (#136). Filed rather than applied: see
+		// knockback.go for why the pushes wait until the end of the loop.
+		if !at.thrown || w.cfg.KnockbackThrown {
+			w.noteShove(from, to, damage)
+		}
+
 		// The one taking the hits remembers exactly what they cost - and is
 		// shaken by it, which is a different thing (stage 54): the memory is
 		// of one body, and the fright is of the world.
@@ -1667,6 +1692,10 @@ func (w *World) resolveAttacks() {
 			w.exchangeReadings(from, to)
 		}
 	}
+
+	// Everybody that was pushed, now that nothing else is going to ask the
+	// index where anybody is.
+	w.applyShoves()
 }
 
 // exchangeReadings updates what the two fighters and everybody watching believe
@@ -2102,7 +2131,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.chronotype = w.inheritChronotype(pa, pb)
 	child.taste = w.inheritTaste(pa, pb)
 	child.fancy = w.drawFancy(&child) // what it likes just now (stage 90)
-	child.adornWant = 1 // until the next tick prices its hands (stage 84)
+	child.adornWant = 1               // until the next tick prices its hands (stage 84)
 	child.hintSlots, child.hints = slots, hints
 	// What it knows for having been born where it was, merged with what it
 	// inherited by the one comparison there is (skill.go). A genius child

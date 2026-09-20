@@ -1568,6 +1568,40 @@ var variants = []variant{
 			c.SkillAptitude[engine.SkillRough] = engine.GeneVitality
 		},
 	},
+	// Being hit moves a body (#136, knockback.go). The control for all four
+	// is "country": the same map with nobody giving ground. What the count
+	// before the rule said is that the two grounds behind a body are nothing
+	// like the same size - a ledge is behind 6-15% of blows and a river
+	// behind 0.1-2% - so the arms are here to say which of the two, if
+	// either, the world can feel.
+	//
+	// knockfar is past CombatRadius (15), so the fight is broken off by the
+	// push and the striker has to walk back in; knock is a third of it and
+	// leaves the two in reach. knocknofall is the push with the drop made
+	// free, which is the pair that says whether what moved is the shoving or
+	// the falling.
+	{
+		name:  "knock",
+		about: "136: a blow gives ground - a third of arm's length, on the country map",
+		apply: func(c *engine.Config) { c.TerrainMap, c.KnockbackDist = mapCountry, 5 },
+	},
+	{
+		name:  "knockfar",
+		about: "sweep: a push past arm's length, which breaks the fight off",
+		apply: func(c *engine.Config) { c.TerrainMap, c.KnockbackDist = mapCountry, 20 },
+	},
+	{
+		name:  "knocknofall",
+		about: "control: the same push with the drop costing nothing (is it the shove or the fall?)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.KnockbackDist, c.KnockbackFall = mapCountry, 5, 0
+		},
+	},
+	{
+		name:  "knockflat",
+		about: "control: the push with no ground to be pushed into (the flat world)",
+		apply: func(c *engine.Config) { c.KnockbackDist = 5 },
+	},
 	{
 		name:  "countryskill",
 		about: "the whole country with skills (the map a world would be played on)",
@@ -5975,6 +6009,7 @@ var metricNames = []string{
 	"swimHeld", "swimNominal", "swimReal", "swimWet",
 	"wetPace", "wetFloor",
 	"drownMult", "wetGreen", "drownTaken", "wetStill", "soakTaken",
+	"knocked", "knockShare", "knockWet", "knockFell",
 	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"mateWeight", "sdMateWeight",
@@ -6622,8 +6657,19 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		// full has no room for what it just watched.
 		"killLearned": share(end.KillLessons, end.KillWitnesses),
 		"avengeSeen":  ratio(end.AvengeWitnesses, end.Kills),
-		"watchShare":  ratio(end.Observes, end.Decisions),
-		"craftShare":  ratio(end.Crafts, end.Decisions),
+		// What being hit moves (#136). knocked is how many blows shifted the
+		// body they landed on, knockShare the fraction of all blows that is,
+		// and the other two the ones that put somebody in water they were not
+		// in or over an edge. All nought in a world with the rule off, and the
+		// two grounds are counted apart because the count before the rule was
+		// written says they are not the same size: on the played map a ledge is
+		// tens of times more often behind somebody than a river is.
+		"knocked":    float64(end.Knocked),
+		"knockShare": share(end.Knocked, end.Fights),
+		"knockWet":   float64(end.KnockedWet),
+		"knockFell":  float64(end.KnockedFell),
+		"watchShare": ratio(end.Observes, end.Decisions),
+		"craftShare": ratio(end.Crafts, end.Decisions),
 		// Calling others in, and going in on something somebody else has
 		// taken on (stage 32). The second is the one that says whether a call
 		// is answered: a word nobody acts on is not a hunt.
@@ -6697,11 +6743,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		// that found somebody who wanted it. trinketSold and trinketGiven are
 		// the two roads it could have taken, and adornWant is how much of an
 		// ornament's worth the living still expect to be there for.
-		"trinketFit":      trinkets.Fit,
-		"trinketFitMade":  trinkets.FitMade,
-		"trinketSold":     float64(trinkets.Sold),
-		"trinketGiven":    float64(trinkets.Given),
-		"adornWant":       trinkets.Want,
+		"trinketFit":     trinkets.Fit,
+		"trinketFitMade": trinkets.FitMade,
+		"trinketSold":    float64(trinkets.Sold),
+		"trinketGiven":   float64(trinkets.Given),
+		"adornWant":      trinkets.Want,
 		// How many each body is holding, and how much want it has left
 		// (TODO 12). The pair is the whole of stage 89: the rule is meant to
 		// take the first down, and it can only do that through the second -
@@ -6712,7 +6758,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		// per thousand of its own ticks. Read against the 14.5 ticks
 		// between decisions: anything near that is the oscillation of
 		// 2026-09-04 rather than a taste.
-		"fancyRate": perAgentLifetime(trinkets.Fancies, personTicks) / 10,
+		"fancyRate":       perAgentLifetime(trinkets.Fancies, personTicks) / 10,
 		"trinketGain":     trinkets.Gained,
 		"trinketGainSold": trinkets.GainedSold,
 		"coinsPaid":       float64(money.Paid),
@@ -7006,11 +7052,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		// wanted cannot be aimed any better.
 		"giftWorth":    giftsEnd.Worth,
 		"giftsUseless": giftsEnd.Useless,
-		"aimHeld":          tail.aimHeld,
-		"aimReal":          tail.aimReal,
-		"throws":           float64(end.Throws),
-		"throwHitRate":     share(end.ThrowHits, end.Throws),
-		"throwRate":        perAgentLifetime(end.Throws-tailStart.Throws, personTicks),
+		"aimHeld":      tail.aimHeld,
+		"aimReal":      tail.aimReal,
+		"throws":       float64(end.Throws),
+		"throwHitRate": share(end.ThrowHits, end.Throws),
+		"throwRate":    perAgentLifetime(end.Throws-tailStart.Throws, personTicks),
 		// The supply of things to throw (stage 45).
 		"stonesLying":     tail.stonesLying,
 		"stoneSeen":       tail.stoneSeen,
@@ -7197,11 +7243,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"hidesSpare":  skins.Spare,
 		"hidesSold":   float64(skins.Sold),
 		"hidesGiven":  float64(skins.Given),
-		"chillTook":     weather.Taken,
-		"chillShare":    shareOf(weather.Taken, weather.Taken+weather.Starved),
-		"onDear":        tail.onDear,
-		"onHigh":        tail.onHigh,
-		"onWater":       tail.onWater,
+		"chillTook":   weather.Taken,
+		"chillShare":  shareOf(weather.Taken, weather.Taken+weather.Starved),
+		"onDear":      tail.onDear,
+		"onHigh":      tail.onHigh,
+		"onWater":     tail.onWater,
 		// The two banks (stage 37). crossIndex is not to be read on its own -
 		// agents cluster locally whatever the ground is, so it is low
 		// everywhere; what it is for is the arm against its control.
