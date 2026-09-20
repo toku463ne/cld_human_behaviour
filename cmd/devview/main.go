@@ -94,23 +94,26 @@ var (
 	colorCrop       = color.RGBA{0xc8, 0x8a, 0x1e, 0xff}
 	colorStone      = color.RGBA{0x77, 0x77, 0x82, 0xff}
 	colorHide       = color.RGBA{0x9a, 0x6b, 0x3f, 0xff}
-	colorMale       = color.RGBA{0x2a, 0x78, 0xd6, 0xff}
-	colorFemale     = color.RGBA{0xe8, 0x7b, 0xa4, 0xff}
-	colorForage     = color.RGBA{0xc3, 0xc2, 0xb7, 0xff}
-	colorSeekMate   = color.RGBA{0xeb, 0x68, 0x34, 0xff}
-	colorPaired     = color.RGBA{0x0c, 0xa3, 0x0c, 0xff}
-	colorFighting   = color.RGBA{0xd0, 0x1c, 0x1c, 0xff}
-	colorFleeing    = color.RGBA{0x8a, 0x4c, 0xd6, 0xff}
-	colorResting    = color.RGBA{0x6c, 0x9c, 0xc4, 0xff}
-	colorPairLink   = color.RGBA{0x0b, 0x0b, 0x0b, 0x30}
-	colorFightLink  = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
-	colorCourtLink  = color.RGBA{0xf0, 0x8c, 0x00, 0xd0}
-	colorCallLink   = color.RGBA{0x1c, 0x9c, 0x5a, 0xd0}
-	colorWares      = color.RGBA{0xe8, 0xd0, 0x40, 0xd0}
-	colorCooking    = color.RGBA{0xff, 0x8c, 0x30, 0xd0}
-	colorStore      = color.RGBA{0x8a, 0x6a, 0x3a, 0xc0}
-	colorCoin       = color.RGBA{0xf2, 0xc0, 0x30, 0xff}
-	colorStoreFull  = color.RGBA{0xc8, 0x9a, 0x50, 0xd0}
+	// What is left in a body, where the body is a picture and cannot be
+	// drawn half full (TODO 10).
+	colorVitalityBar = color.RGBA{0x3c, 0xa0, 0x5c, 0xff}
+	colorMale        = color.RGBA{0x2a, 0x78, 0xd6, 0xff}
+	colorFemale      = color.RGBA{0xe8, 0x7b, 0xa4, 0xff}
+	colorForage      = color.RGBA{0xc3, 0xc2, 0xb7, 0xff}
+	colorSeekMate    = color.RGBA{0xeb, 0x68, 0x34, 0xff}
+	colorPaired      = color.RGBA{0x0c, 0xa3, 0x0c, 0xff}
+	colorFighting    = color.RGBA{0xd0, 0x1c, 0x1c, 0xff}
+	colorFleeing     = color.RGBA{0x8a, 0x4c, 0xd6, 0xff}
+	colorResting     = color.RGBA{0x6c, 0x9c, 0xc4, 0xff}
+	colorPairLink    = color.RGBA{0x0b, 0x0b, 0x0b, 0x30}
+	colorFightLink   = color.RGBA{0xd0, 0x1c, 0x1c, 0x80}
+	colorCourtLink   = color.RGBA{0xf0, 0x8c, 0x00, 0xd0}
+	colorCallLink    = color.RGBA{0x1c, 0x9c, 0x5a, 0xd0}
+	colorWares       = color.RGBA{0xe8, 0xd0, 0x40, 0xd0}
+	colorCooking     = color.RGBA{0xff, 0x8c, 0x30, 0xd0}
+	colorStore       = color.RGBA{0x8a, 0x6a, 0x3a, 0xc0}
+	colorCoin        = color.RGBA{0xf2, 0xc0, 0x30, 0xff}
+	colorStoreFull   = color.RGBA{0xc8, 0x9a, 0x50, 0xd0}
 	// The ground (stage 20). These are premultiplied, like every colour the
 	// vector calls take: each channel is the colour already faded by its own
 	// alpha, and a channel brighter than the alpha does not draw at all
@@ -269,6 +272,18 @@ type game struct {
 	wasZoom int  // ... and how close the camera was, since the two want
 	//              different things: an editor wants the whole map in view
 	//              and a game wants to be near the body being played
+
+	// The pictures the bodies are drawn with (TODO 10), and nil where there
+	// are none: a viewer with no sheet draws the circles it always did,
+	// which is what -circles is for and what a half-written sheet falls back
+	// to on its own.
+	tiles *tileset
+
+	// How much there was to draw last frame, and how much of it was on the
+	// screen (TODO 10). Counted, not reckoned: nothing here culls anything
+	// yet, so the two apart are what culling would be worth.
+	drawnAll  int
+	drawnSeen int
 
 	// One finger's worth of input (TODO 9): where the press is, what the
 	// gesture layer has made of it, and the menu a hold puts up. The keys and
@@ -2416,7 +2431,16 @@ func clamp(v, lo, hi float64) float64 {
 	return v
 }
 
+// onCamera says whether a point in the world is inside what the screen shows,
+// with a margin for a body drawn bigger than its point.
+func (g *game) onCamera(wx, wy float64) bool {
+	x, y := g.onScreen(wx, wy)
+	const margin = 24
+	return x > -margin && x < worldWidth+margin && y > -margin && y < worldHeight+margin
+}
+
 func (g *game) drawWorld(screen *ebiten.Image) {
+	g.drawnAll, g.drawnSeen = 0, 0
 	// Regions first, terrain over them: one is what the ground provides and
 	// the other is what it costs to cross, and the second is the structural
 	// one - a river you cannot see is worse than a rich patch you cannot see.
@@ -2447,6 +2471,15 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	}
 
 	for _, f := range g.world.Foods() {
+		g.drawnAll++
+		// Nothing off the edge is drawn (TODO 10). At the zoom the game is
+		// played at, most of the world is off the edge - the counter in the
+		// corner is what says how much, and it is the cheapest thing in this
+		// file by a wide margin.
+		if !g.onCamera(f.X, f.Y) {
+			continue
+		}
+		g.drawnSeen++
 		fx, fy := g.onScreen(f.X, f.Y)
 		// Fish are a paler blue-green (stage 42): they are in the water, and
 		// on a map with a river a green dot on blue ground is the one thing
@@ -2469,7 +2502,9 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			// wants to be able to see is where it went.
 			c = colorCoin
 		}
-		vector.DrawFilledCircle(screen, fx, fy, g.long(3), c, true)
+		if !g.drawItem(screen, f.Kind, fx, fy, c) {
+			vector.DrawFilledCircle(screen, fx, fy, g.long(3), c, true)
+		}
 		// The awkward crop (stage 44) gets a ring: it is food that has to be
 		// known to be got, and a player watching a node fail at one three
 		// times over would otherwise be watching it do nothing.
@@ -2523,6 +2558,11 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	cfg := g.world.Config()
 	for i := range agents {
 		a := &agents[i]
+		g.drawnAll++
+		if !g.onCamera(a.X, a.Y) {
+			continue
+		}
+		g.drawnSeen++
 		// The circle is the body: how wide it is, is what the agent spent on
 		// being big, and how much of it is filled in is how much vitality it
 		// has left in there. Drawing the radius from the vitality itself, as
@@ -2576,7 +2616,18 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// enemy" is the first question anybody asks of this screen. The shape
 		// is free: it carries no other meaning, where every ring around the
 		// body already carries one.
-		if a.Species == engine.SpeciesEnemy {
+		if g.drawBody(screen, a, x, y, radius, bodyTint(a, fill)) {
+			// The picture is the body; how much of it is left is the bar
+			// under it, because a sprite cannot be half filled in the way a
+			// circle can (TODO 10). Everything else around it - the ring
+			// that says what it is doing, the wares, the cooking, the hunger
+			// - is the same drawing it always was.
+			if capacity > 0 {
+				left := float32(clamp01(a.Vitality / capacity))
+				bar := g.long(12)
+				vector.StrokeLine(screen, x-bar/2, y+radius+1, x-bar/2+bar*left, y+radius+1, 2, colorVitalityBar, true)
+			}
+		} else if a.Species == engine.SpeciesEnemy {
 			vector.DrawFilledRect(screen, x-filled, y-filled, filled*2, filled*2, fill, true)
 		} else {
 			vector.DrawFilledCircle(screen, x, y, filled, fill, true)
@@ -2598,7 +2649,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		}
 		if hunger := float32(a.Hunger / 100); hunger > 0.01 {
 			bar := g.long(12)
-			vector.StrokeLine(screen, x-bar/2, y+radius+3, x-bar/2+bar*hunger, y+radius+3, 2, colorHungerBar, true)
+			vector.StrokeLine(screen, x-bar/2, y+radius+4, x-bar/2+bar*hunger, y+radius+4, 2, colorHungerBar, true)
 		}
 		if a.ID == g.selected {
 			vector.StrokeCircle(screen, x, y, radius+5, 1.5, colorSelected, true)
@@ -3053,7 +3104,16 @@ func (g *game) overlay() string {
 		s.Tick, g.world.Hour(), s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, drowned, s.MaxGeneration, state)
 	fmt.Fprintf(&b, "avg power %.1f  rationality %.1f  intelligence %.1f  vitality %.1f  hunger %.1f\n",
 		s.AvgPower, s.AvgRationality, s.AvgIntelligence, s.AvgVitality, s.AvgHunger)
-	b.WriteString("body: round = human, square = enemy (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
+	// What the screen is costing, which is the figure TODO 10 turns on: how
+	// many things there are to draw, how many of them are actually in front
+	// of the camera, and what the machine is managing. It is counted while
+	// drawing rather than reckoned here, so it is what really happened.
+	fmt.Fprintf(&b, "drawing %d of %d things  %.0f fps\n", g.drawnSeen, g.drawnAll, ebiten.ActualFPS())
+	if g.tiles != nil {
+		b.WriteString("body: the upright one is a person, the four-legged one a beast (drawn as big as its body), green bar = vitality, orange = hunger, ring width = attack, tail = speed\n")
+	} else {
+		b.WriteString("body: round = human, square = enemy (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
+	}
 	b.WriteString("lifted off the ground with a shadow under it = in the air (a flying sort; it comes down to eat and to strike)\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
 	b.WriteString("a line between two: red = one is coming for the other, orange = one is courting the other, green = calling others in on it, faint = a pair\n")
@@ -4337,6 +4397,7 @@ func main() {
 	noahead := flag.Bool("noahead", false, "put back the world before 2026-09-13: one planning window rather than two (stages 67, 72, 73, 74)")
 	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
 	trinkets := flag.Bool("trinkets", false, "bodies can make things worth looking at, wanted for nothing but themselves and each body wanting a different one (stages 82 and 84; brings -lighthands with it)")
+	circles := flag.Bool("circles", false, "draw the bodies as circles rather than as pictures (TODO 10; the circles are what every screenshot before 2026-09-20 was taken of)")
 	hides := flag.Bool("hides", false, "beasts leave skins and a warm thing can only be worked out of one, in a cold that kills (TODO 8; brings the coat, the money and the prices with it)")
 	cold := flag.Float64("cold", 0, "lay a cold half over the world and charge that much vitality a tick for standing in the coldest of it (stage 85; 0 = the ordinary world)")
 	notaste := flag.Bool("notaste", false, "put back the world stage 82 measured: every body wants the same ornament, and wants it whatever is about to happen to it")
@@ -4734,6 +4795,21 @@ func main() {
 		g.toggleControl() // the first press is the asked mode
 		if *play {
 			g.toggleControl() // and the second takes the reins
+		}
+	}
+
+	// The pictures, before anything is drawn (TODO 10). A world that starts
+	// without them is a world of holes for as long as they take to arrive,
+	// so the game is not handed to ebiten until they are in hand - and a
+	// viewer that cannot find them says so once and draws the circles it
+	// always did, because a missing picture must never stop the development
+	// tool this also is.
+	if !*circles {
+		tiles, err := loadTiles()
+		if err != nil {
+			log.Printf("drawing circles: %v", err)
+		} else {
+			g.tiles = tiles
 		}
 	}
 
