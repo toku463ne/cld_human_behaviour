@@ -380,7 +380,10 @@ func (w *World) canStep(a *Agent, fromX, fromY, toX, toY float64) bool {
 	// not a door.
 	if a != nil && a.Species == SpeciesEnemy {
 		k := w.kindOf(a)
-		if k.Flies {
+		// How high it flies, when its row says (2026-09-20). Above its
+		// ceiling it is turned back and falls through to the ground's own
+		// rules below: a flier is never worse off than a walker.
+		if k.Flies && (k.FlyHeight <= 0 || int(to.Height) <= k.FlyHeight) {
 			return true
 		}
 		if k.Climbs {

@@ -116,6 +116,23 @@ type EnemyKind struct {
 	Flies   bool
 	FlyCost float64
 
+	// FlyHeight is how high this sort flies, in the levels the map's tiles
+	// are drawn with (2026-09-20): it passes over ground up to that height
+	// and is turned back by anything above it. Unset is no ceiling at all,
+	// which is what the rule was when it was first written.
+	//
+	// The two halves live where they belong (decision #133). The map says
+	// how high its country is - that is the tiles' own "height", 1 to 9,
+	// which terrain.go has read since stage 20 - and the row says how high
+	// the sort gets. Neither carries the other's number.
+	//
+	// A ceiling never makes a flier worse than a walker: where it is too low
+	// to fly over something, it may still take the ground's own way round -
+	// a ramp, a level step - exactly as anything else does. Flight is an
+	// extra way through and never a lesser one, which is also what keeps
+	// stage 20's line intact: no ground is impassable to everybody.
+	FlyHeight int
+
 	// Meat is what this sort's carcass is worth, as a multiplier on what a
 	// body of its size would ordinarily leave (2026-09-20). Unset - which is
 	// every world before this - is one, and then every sort leaves

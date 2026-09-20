@@ -298,3 +298,55 @@ func TestAMapMayNameTheBeastsItsCountryHolds(t *testing.T) {
 		t.Fatalf("lurker is %+v", cfg.EnemyKinds[1])
 	}
 }
+
+func TestHowHighASortFliesIsOnItsRow(t *testing.T) {
+	// Ground drawn 1, 2 and 5 levels up, with no ramp anywhere: what gets
+	// over each of them is the row's own ceiling against the tile's height.
+	cfg := quietConfig()
+	cfg.TerrainMap = []string{"..125", "..125", "..125", "..125"}
+	cfg.EnemyKinds = []EnemyKind{
+		{Name: "low", Share: 1, Flies: true, FlyHeight: 2},
+		{Name: "high", Share: 1, Flies: true, FlyHeight: 9},
+		{Name: "unbounded", Share: 1, Flies: true},
+	}
+	w := NewWorld(cfg)
+	// The columns of the map, as positions.
+	col := func(i int) float64 { return (float64(i) + 0.5) * cfg.Width / 5 }
+	for _, c := range []struct {
+		kind uint8
+		to   int
+		want bool
+		what string
+	}{
+		{0, 2, true, "a low flier over one level"},
+		{0, 3, true, "a low flier over two levels"},
+		{0, 4, false, "a low flier over five levels"},
+		{1, 4, true, "a high flier over five levels"},
+		{2, 4, true, "an unbounded flier over five levels"},
+	} {
+		a := enemyOfKind(t, w, c.kind, col(0), cfg.Height/2)
+		if got := w.canStep(a, a.X, a.Y, col(c.to), a.Y); got != c.want {
+			t.Fatalf("%s: got %v, want %v", c.what, got, c.want)
+		}
+	}
+}
+
+func TestAFlierIsNeverWorseOffThanAWalker(t *testing.T) {
+	// Too low to fly over the plateau, but the ramp is still a ramp.
+	cfg := quietConfig()
+	cfg.TerrainMap = []string{"..A5", "..A5", "..A5", "..A5"}
+	cfg.EnemyKinds = []EnemyKind{{Name: "low", Share: 1, Flies: true, FlyHeight: 1}}
+	w := NewWorld(cfg)
+	col := func(i int) float64 { return (float64(i) + 0.5) * cfg.Width / 4 }
+	a := enemyOfKind(t, w, 0, col(1), cfg.Height/2)
+	// The ramp is one level up, which its ceiling covers anyway...
+	if !w.canStep(a, a.X, a.Y, col(2), a.Y) {
+		t.Fatal("a low flier could not reach the ramp")
+	}
+	// ... and the five-level ground beyond is out of reach by air and by
+	// ground alike, which is the map being a map and not the rule failing.
+	a.X = col(2)
+	if w.canStep(a, a.X, a.Y, col(3), a.Y) {
+		t.Fatal("a low flier climbed four levels off a ramp")
+	}
+}
