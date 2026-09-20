@@ -1240,6 +1240,13 @@ func (w *World) perform(a *Agent) {
 			a.requestDecision(TriggerTargetLost)
 			return
 		}
+		// What is in the air is not there to be hit (aloft.go). The blow is
+		// not merely missed: the body is asked to think again, because what
+		// it was doing has stopped being possible.
+		if w.aloft(o) {
+			a.requestDecision(TriggerTargetLost)
+			return
+		}
 		if dist2(a.X, a.Y, o.X, o.Y) > w.cfg.CombatRadius*w.cfg.CombatRadius {
 			w.moveToward(a, o.X, o.Y, a.Action.Effort)
 			return

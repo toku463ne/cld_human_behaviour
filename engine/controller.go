@@ -1142,12 +1142,19 @@ func (c *AIController) addAgents(p *Perception, maxDepth int) {
 		c.feats.readTarget(p, o)
 
 		if maxDepth >= depthReactive {
-			c.addAttack(p, o)
+			// Nothing on the ground reaches what is in the air (aloft.go).
+			// It is a gate and not a penalty for the reason stage 25 drew:
+			// what a body cannot do is not scored, and what is merely a bad
+			// idea is left to the comparison. The thrown stone below is the
+			// ground's one answer, so it is not gated.
+			if !o.Aloft {
+				c.addAttack(p, o)
+			}
 			c.addThrow(p, o)
 			c.addGive(p, o)
 			c.addGoToOffer(p, o)
 			c.addBuy(p, o)
-			if o.Prey && o.Meat >= 1 {
+			if o.Prey && o.Meat >= 1 && !o.Aloft {
 				c.addInvite(p, o)
 			}
 			if o.AttackingMe {

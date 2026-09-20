@@ -472,6 +472,12 @@ type AgentView struct {
 	// hidden: what something is is written on the outside of it.
 	Species Species
 
+	// Aloft says this one is in the air (2026-09-20): nothing on the ground
+	// reaches it and it reaches nothing on the ground. It is not hidden -
+	// what a body is doing is written on the outside of it, the same way its
+	// species is.
+	Aloft bool
+
 	// Prey says this one is worth killing for what is left of it: a creature
 	// of a kind this agent eats, and Meat is roughly how many mouthfuls its
 	// carcass would leave. Both are what the observer can judge by looking -
@@ -994,6 +1000,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Dist:        math.Sqrt(d2),
 			Sex:         o.Sex,
 			Species:     o.Species,
+			Aloft:       w.aloft(o),
 			Prey:        o.Species != a.Species && eatsMeat(a.Species),
 			Meat:        w.meatFrom(o),
 			Ward:        w.wardAgainst(a, o),
