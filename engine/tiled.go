@@ -6,6 +6,8 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // Reading a map drawn in Tiled (.tmj, which is JSON).
@@ -494,7 +496,17 @@ func tileKinds(sets []tiledTilset) (ground, spawn map[int]byte, err error) {
 // is, as the character Config.TerrainMap uses (stage 20).
 func groundChar(props []tiledProperty) (byte, error) {
 	kind, _ := propString(props, "kind")
-	height := int(propNumber(props, "height"))
+	h, ok := propNumberOK(props, "height")
+	if ok && h == 0 {
+		// There and nought: either the author wrote nought, which means
+		// nothing here, or they wrote something that is not a number. Both
+		// are worth saying out loud, because the silent version of this made
+		// a map drawn three levels high come out flat.
+		if s, isText := propStringRaw(props, "height"); isText {
+			return 0, fmt.Errorf("height %q is not a number", s)
+		}
+	}
+	height := int(h)
 	switch kind {
 	case "", "flat", "open":
 		if height > 0 {
@@ -705,6 +717,18 @@ func regionShapes(l tiledLayer, f tiledFile) []RegionShape {
 	return out
 }
 
+// propStringRaw says whether this property is there and is text, for the
+// messages that want to quote what the author actually wrote.
+func propStringRaw(props []tiledProperty, name string) (string, bool) {
+	for _, p := range props {
+		if p.Name == name {
+			s, ok := p.Value.(string)
+			return s, ok
+		}
+	}
+	return "", false
+}
+
 func propString(props []tiledProperty, name string) (string, bool) {
 	for _, p := range props {
 		if p.Name != name {
@@ -719,6 +743,14 @@ func propString(props []tiledProperty, name string) (string, bool) {
 
 // propNumberOK is propNumber that also says whether the property was there at
 // all, which is how "rich: 0" (bare ground) is told from "no rich property".
+//
+// A number typed as a string is read as a number (2026-09-20). Tiled lets an
+// author pick the type of a custom property, and picking "string" for a
+// figure is an easy thing to do and an invisible thing to have done: the
+// engine used to read it as nought, so a tile drawn as height 3 became
+// height 1 and the map looked flat for no stated reason. Whether the string
+// is a number at all is the caller's business - groundChar refuses one that
+// is not, rather than quietly rounding it to nought.
 func propNumberOK(props []tiledProperty, name string) (float64, bool) {
 	for _, p := range props {
 		if p.Name != name {
@@ -729,6 +761,11 @@ func propNumberOK(props []tiledProperty, name string) (float64, bool) {
 			return v, true
 		case int:
 			return float64(v), true
+		case string:
+			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+				return f, true
+			}
+			return 0, true // there, and not a number: the caller decides
 		}
 	}
 	return 0, false
@@ -739,19 +776,15 @@ func propNumber(props []tiledProperty, name string) float64 {
 		if p.Name != name {
 			continue
 		}
-		switch v := p.Value.(type) {
-		case float64:
-			return v
-		case int:
-			return float64(v)
-		case bool:
-			if v {
+		if b, ok := p.Value.(bool); ok {
+			if b {
 				return 1
 			}
 			return 0
 		}
 	}
-	return 0
+	v, _ := propNumberOK(props, name)
+	return v
 }
 
 // Apply lays the drawing into a Config: the ground, and the regions if the

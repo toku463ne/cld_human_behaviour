@@ -48,3 +48,8 @@ func (w *World) aloft(a *Agent) bool {
 	}
 	return true
 }
+
+// Aloft says this body is in the air, for whoever is drawing the world or
+// counting who is where. Read only, and false in every world with no flying
+// sort in it.
+func (w *World) Aloft(a Agent) bool { return w.aloft(&a) }

@@ -124,11 +124,13 @@ var (
 	colorTarget     = color.RGBA{0x11, 0x11, 0x11, 0x60}
 	colorHungerBar  = color.RGBA{0xc9, 0x8a, 0x20, 0xff}
 	colorTail       = color.RGBA{0x44, 0x44, 0x77, 0xb0}
-	colorPlayed     = color.RGBA{0xd9, 0x9a, 0x00, 0xff}
-	colorBubble     = color.RGBA{0x1a, 0x1a, 0x22, 0xe0}
-	colorKin        = color.RGBA{0xd9, 0x9a, 0x00, 0x90}
-	colorMark       = color.RGBA{0xd9, 0x9a, 0x00, 0xc0}
-	colorHeir       = color.RGBA{0x0c, 0xa3, 0x0c, 0xc0}
+	// What a body in the air is standing over, left on the ground under it.
+	colorShadow = color.RGBA{0x00, 0x00, 0x00, 0x40}
+	colorPlayed = color.RGBA{0xd9, 0x9a, 0x00, 0xff}
+	colorBubble = color.RGBA{0x1a, 0x1a, 0x22, 0xe0}
+	colorKin    = color.RGBA{0xd9, 0x9a, 0x00, 0x90}
+	colorMark   = color.RGBA{0xd9, 0x9a, 0x00, 0xc0}
+	colorHeir   = color.RGBA{0x0c, 0xa3, 0x0c, 0xc0}
 )
 
 // panelMode is what the right hand panel shows about the selected node.
@@ -2508,7 +2510,29 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			}
 		}
 
-		vector.DrawFilledCircle(screen, x, y, filled, fill, true)
+		// In the air (2026-09-20): drawn lifted off its own position, with
+		// what it is standing over left behind as a shadow. Nothing else on
+		// the screen moves a body away from where the engine says it is, so
+		// the lift is the whole signal - and the shadow is what says where it
+		// really is, which is what matters when it comes down.
+		if g.world.Aloft(*a) {
+			lift := g.long(14)
+			vector.DrawFilledCircle(screen, x, y, radius*0.55, colorShadow, true)
+			vector.StrokeLine(screen, x, y, x, y-lift, 1, colorShadow, true)
+			y -= lift
+		}
+
+		// Humans are drawn round and enemies square (2026-09-20). Until now
+		// the only thing separating them was the fill, which is the sex, so
+		// the two species were the same picture - and "which of these is an
+		// enemy" is the first question anybody asks of this screen. The shape
+		// is free: it carries no other meaning, where every ring around the
+		// body already carries one.
+		if a.Species == engine.SpeciesEnemy {
+			vector.DrawFilledRect(screen, x-filled, y-filled, filled*2, filled*2, fill, true)
+		} else {
+			vector.DrawFilledCircle(screen, x, y, filled, fill, true)
+		}
 		vector.StrokeCircle(screen, x, y, radius, ringWidth, stateColor(a.State), true)
 
 		// A body crying its wares (stage 49). It is drawn because it is a
@@ -2887,7 +2911,8 @@ func (g *game) overlay() string {
 		s.Tick, g.world.Hour(), s.Population, s.Males, s.Females, s.FoodItems, s.Births, s.Deaths, s.Kills, drowned, s.MaxGeneration, state)
 	fmt.Fprintf(&b, "avg power %.1f  rationality %.1f  intelligence %.1f  vitality %.1f  hunger %.1f\n",
 		s.AvgPower, s.AvgRationality, s.AvgIntelligence, s.AvgVitality, s.AvgHunger)
-	b.WriteString("circle = body (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
+	b.WriteString("body: round = human, square = enemy (outline its size, fill what is left in it), tail = speed, ring width = attack, bar = hunger\n")
+	b.WriteString("lifted off the ground with a shadow under it = in the air (a flying sort; it comes down to eat and to strike)\n")
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
 	b.WriteString("a line between two: red = one is coming for the other, orange = one is courting the other, green = calling others in on it, faint = a pair\n")
 	if cols, _, _, _ := g.world.TerrainSize(); cols > 0 {
@@ -4152,6 +4177,9 @@ func main() {
 	homebound := flag.Float64("homebound", 0, "what being away from the country it came into the world in costs an enemy, per region width per tick (stage 64; 0 = the default world)")
 	nursing := flag.Float64("nursing", 0, "how fast a mother goes while a child of hers is at her heel, as a share of her own speed (stage 66; 0 or 1 = the default world)")
 	lurkers := flag.Bool("lurkers", false, "something lives in the river and hunts (stage 63; needs -terrain river or country)")
+	beasts := flag.Bool("beasts", false,
+		"the four sorts tiled/samples/001_3division.tmj names: brute, stray, flyer and lurker. "+
+			"The map says where each comes in; this says what each is like (2026-09-20)")
 	kinds := flag.Bool("kinds", false, "two sorts of enemy: light ones anywhere, heavy ones in the bad country (stage 59)")
 	prowl := flag.Float64("prowl", 0, "how unevenly the world's enemies arrive across the regions (stage 58; 0 = everywhere alike, which is the default world)")
 	favour := flag.Float64("favour", 0, "how far apart the regions are in which genes they favour, averaging to one (stage 57c; 0 = no region has a taste in builds)")
@@ -4348,6 +4376,24 @@ func main() {
 		cfg.EnemyKinds = []engine.EnemyKind{
 			{Name: "brute", Share: 2, Homing: 1, Homely: 1},
 			{Name: "lurker", Share: 1, Homing: 1, Homely: 1, Water: true},
+		}
+	}
+	// The four sorts tiled/samples/001_3division.tmj names (2026-09-20). The
+	// map brings the names and where each one comes in; this brings what each
+	// one is like, which is the division decision #133 drew.
+	if *beasts {
+		cfg.EnemyKinds = []engine.EnemyKind{
+			{Name: "brute", Share: 2, BudgetMean: 700, BudgetStd: 90, Homing: 1, Homely: 1, Meat: 1.4},
+			{Name: "stray", Share: 3, BudgetMean: 380, BudgetStd: 60, Homing: 0},
+			// Light, weak and hard to reach: it is over the ground except
+			// while it eats or strikes, and it clears two levels, so the
+			// three-level ground on this map turns it back.
+			{Name: "flyer", Share: 2, BudgetMean: 260, BudgetStd: 40,
+				Flies: true, FlyHeight: 2, FlyCost: 1.2, Meat: 0.6},
+			{Name: "lurker", Share: 1, BudgetMean: 450, BudgetStd: 60, Water: true},
+		}
+		if cfg.EnemySpread == 0 {
+			cfg.EnemySpread = 0.6
 		}
 	}
 	if *kinds {
