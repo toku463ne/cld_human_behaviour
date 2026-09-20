@@ -553,3 +553,28 @@ func (w *World) paintedSpotFor(kind int) (float64, float64, bool) {
 	y := clamp(c.y+w.randRange(-c.h/2, c.h/2), 20, w.cfg.Height-20)
 	return x, y, true
 }
+
+// NestView is one square a map painted for a sort of enemy: where it is, how
+// big the cell is, and which row it belongs to. Read only, for whoever is
+// drawing the world - the engine itself never asks.
+type NestView struct {
+	X, Y, W, H float64
+	Kind       int
+	Name       string
+}
+
+// EnemyNests is every square the map painted for every sort. Empty in a world
+// whose map painted none, which is every world before 2026-09-20.
+func (w *World) EnemyNests() []NestView {
+	var out []NestView
+	for kind, cells := range w.enemyKindCells {
+		name := ""
+		if kind < len(w.cfg.EnemyKinds) {
+			name = w.cfg.EnemyKinds[kind].Name
+		}
+		for _, c := range cells {
+			out = append(out, NestView{X: c.x, Y: c.y, W: c.w, H: c.h, Kind: kind, Name: name})
+		}
+	}
+	return out
+}

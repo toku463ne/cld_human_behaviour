@@ -126,6 +126,9 @@ var (
 	colorTail       = color.RGBA{0x44, 0x44, 0x77, 0xb0}
 	// What a body in the air is standing over, left on the ground under it.
 	colorShadow = color.RGBA{0x00, 0x00, 0x00, 0x40}
+	// The squares a map painted for a sort of enemy, and the ring round one
+	// that has just come out of a square.
+	colorNest   = color.RGBA{0x99, 0x22, 0x44, 0xcc}
 	colorPlayed = color.RGBA{0xd9, 0x9a, 0x00, 0xff}
 	colorBubble = color.RGBA{0x1a, 0x1a, 0x22, 0xe0}
 	colorKin    = color.RGBA{0xd9, 0x9a, 0x00, 0x90}
@@ -146,6 +149,12 @@ const (
 
 type game struct {
 	world *engine.World
+
+	// Which enemies this viewer has already seen, and when each of the newest
+	// turned up, so that an arrival can be drawn as a moment (drawNests).
+	// Viewer-side only: the engine keeps no such thing.
+	knownEnemies map[int]bool
+	arrived      map[int]int
 
 	paused bool
 	speed  int
@@ -2385,6 +2394,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	g.drawRegions(screen)
 	g.drawTerrain(screen)
 	g.drawSight(screen)
+	g.drawNests(screen)
 
 	// The caches (stage 50), under the food so that what is in one is drawn on
 	// top of it. A square, because everything else in this world is a circle
@@ -2626,6 +2636,65 @@ func clamp01(v float64) float64 {
 // like the regions above it - the viewer sees the map, the bodies feel the
 // cell they are standing on. A world with no map draws nothing at all, which
 // is what every measurement before stage 20 ran on.
+// drawNests marks the squares a map painted for each sort of enemy
+// (2026-09-20). Without them the arrivals look like they come from nowhere:
+// the map decides where each sort comes into the world, and that is a fact
+// about the ground, so it is drawn on the ground.
+//
+// A body that has just arrived gets a ring for a moment, so that the moment
+// itself is visible and not only the place. The ring is the viewer's own
+// memory - the engine keeps no such thing - and it fades by tick count, so a
+// paused world holds it.
+func (g *game) drawNests(screen *ebiten.Image) {
+	nests := g.world.EnemyNests()
+	for _, n := range nests {
+		x0, y0 := g.onScreen(n.X-n.W/2, n.Y-n.H/2)
+		x1, y1 := g.onScreen(n.X+n.W/2, n.Y+n.H/2)
+		vector.StrokeRect(screen, x0, y0, x1-x0, y1-y0, 1, colorNest, true)
+		cx, cy := g.onScreen(n.X, n.Y)
+		vector.DrawFilledRect(screen, cx-2, cy-2, 4, 4, colorNest, true)
+	}
+	if len(nests) == 0 {
+		return
+	}
+	// Who has turned up since the last frame, and how long ago.
+	if g.arrived == nil {
+		g.arrived = map[int]int{}
+	}
+	tick := g.world.Tick()
+	for _, a := range g.world.Agents() {
+		if a.Species != engine.SpeciesEnemy {
+			continue
+		}
+		if _, seen := g.knownEnemies[a.ID]; !seen {
+			if g.knownEnemies == nil {
+				g.knownEnemies = map[int]bool{}
+			}
+			g.knownEnemies[a.ID] = true
+			g.arrived[a.ID] = tick
+		}
+	}
+	for id, at := range g.arrived {
+		age := tick - at
+		if age > arrivalFlashTicks || age < 0 {
+			delete(g.arrived, id)
+			continue
+		}
+		a, ok := g.world.AgentByID(id)
+		if !ok {
+			delete(g.arrived, id)
+			continue
+		}
+		x, y := g.onScreen(a.X, a.Y)
+		r := g.long(8 + float64(age)/arrivalFlashTicks*22)
+		vector.StrokeCircle(screen, x, y, r, 1.5, colorNest, true)
+	}
+}
+
+// arrivalFlashTicks is how long the ring round a newly arrived enemy lasts.
+// Long enough to catch at full speed, short enough not to clutter.
+const arrivalFlashTicks = 150
+
 func (g *game) drawTerrain(screen *ebiten.Image) {
 	cols, rows, cw, ch := g.world.TerrainSize()
 	if cols == 0 {
