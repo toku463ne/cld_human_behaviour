@@ -2733,6 +2733,21 @@ var variants = []variant{
 		},
 	},
 	{
+		// The dose at its ceiling (2026-09-20): every ornament wards, and
+		// wards the whole of the cold. If survival does not move here it
+		// cannot be the size of the relief, and what is left is the path -
+		// how many bodies are carrying one when it matters.
+		name:  "coatfull",
+		about: "87a at the ceiling: every ornament keeps off the whole of the cold",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.02
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
 		// The control: the same ornaments, made at the same rate, answering
 		// nothing. Everything about the world is the same except that the
 		// cold cannot be kept off.
