@@ -317,6 +317,32 @@ func shareOf(a, b float64) float64 {
 	return a / b
 }
 
+// rampClimate is a picture of the weather that gets colder from west to east,
+// drawn at whatever grain is asked for (#135).
+//
+// The same ramp at two resolutions is the pair that says what the grain is
+// worth: it runs from 1 to 9 either way, so the mean cold - and therefore the
+// dose the population pays - is the same, and the only difference is how many
+// steps it takes to cross it.
+func rampClimate(cols int) []string {
+	row := make([]byte, cols)
+	for i := range row {
+		v := 1.0
+		if cols > 1 {
+			v = 1 + 8*float64(i)/float64(cols-1)
+		}
+		n := int(math.Round(v))
+		if n < 1 {
+			n = 1
+		}
+		if n > 9 {
+			n = 9
+		}
+		row[i] = byte('0' + n)
+	}
+	return []string{string(row), string(row), string(row)}
+}
+
 func feedTheCold(w *engine.World, factor float64) {
 	for i, r := range w.Regions() {
 		food := r.Food
@@ -2661,6 +2687,75 @@ var variants = []variant{
 			c.ChillDrain = 0.02
 		},
 		stores: func(w *engine.World) { feedTheCold(w, 0.4) },
+	},
+	// 2026-09-20, #135: the weather came off the region and onto a map of its
+	// own, at whatever grain its author draws it. These three say what that
+	// bought. The ramp runs from 1 to 9 in every one of them, so the cold
+	// costs the same in all three and the only differences are how many steps
+	// it takes to cross and whether a body reads the step ahead of it.
+	{
+		name:  "chillcoarse",
+		about: "#135: the cold slopes across the world in four steps, the grain a region had",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = rampClimate(4)
+			c.ChillDrain = 0.05
+		},
+	},
+	{
+		// And the grain in between, because the trade is not one-sided: a
+		// finer picture puts more steps in a body's way, but each step is a
+		// smaller difference, and what an option is scored on is the step.
+		// Four columns is 200 wide, so most of the world reads the same cell
+		// in both directions and feels nothing; forty is 20 wide, which is
+		// about what one decision carries, but each step is a thirty-ninth of
+		// the range.
+		name:  "chillstep",
+		about: "#135: the same slope and dose again, at ten steps",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = rampClimate(10)
+			c.ChillDrain = 0.05
+		},
+	},
+	{
+		name:  "chillfine",
+		about: "#135: the same slope and the same dose, drawn ten times finer",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = rampClimate(40)
+			c.ChillDrain = 0.05
+		},
+	},
+	{
+		// A control per grain, because the first reading of this had one
+		// control for three pictures and therefore said nothing: the arms
+		// differed in the picture AND in the reading at once, and the picture
+		// turned out to be the larger of the two by a long way.
+		name:  "chillcoarseblind",
+		about: "#135's control at four steps: the same picture, read only underfoot",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = rampClimate(4)
+			c.ChillDrain, c.ChillAheadSeen = 0.05, false
+		},
+	},
+	{
+		name:  "chillstepblind",
+		about: "#135's control at ten steps: the same picture, read only underfoot",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = rampClimate(10)
+			c.ChillDrain, c.ChillAheadSeen = 0.05, false
+		},
+	},
+	{
+		// The control that decides whether the grain is worth anything: the
+		// same fine picture, taking exactly as much, read only underfoot.
+		// Stage 86 named the reason the cold moved nobody - what a body reads
+		// is the cold it is standing in, which lifts every option alike - and
+		// this is that world with the fine picture in it.
+		name:  "chillfineblind",
+		about: "#135's control: the same fine slope, read only where the body already stands",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = rampClimate(40)
+			c.ChillDrain, c.ChillAheadSeen = 0.05, false
+		},
 	},
 	{
 		// Stage 86b: the same tax on a world that slopes, and a body that can

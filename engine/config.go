@@ -1099,15 +1099,46 @@ type Config struct {
 	// a world that lost a third of its population into one that loses none.
 	AdornNeedsSurvival bool
 
-	// ClimateMap is the map's picture of its weather, read at the middle of
-	// each region (stage 85). Empty is the world as it was, which is the
-	// default: a world that says nothing about its weather has none.
+	// ClimateMap is the map's picture of its weather, laid over the world at
+	// its own grain (stage 85, #135). Empty is the world as it was, which is
+	// the default: a world that says nothing about its weather has none.
+	//
+	// One line per row and one rune per cell, the way TerrainMap is written -
+	// '.' for the ordinary world, '1'-'9' for that much cold, 'a'-'i' for that
+	// much heat - and the size of a cell comes from the picture, so a three by
+	// three picture is three by three blocks of weather and a forty by thirty
+	// one is forty by thirty.
 	//
 	// It is a separate picture from TerrainMap on purpose. The ground and the
 	// weather are two different things about a place - a cold river and a
 	// warm one are both rivers - and stage 22 already settled that the terrain
 	// and the regions are separate maps for the same reason.
+	//
+	// Until #135 it was read at the middle of each region instead, which tied
+	// how finely an author could draw the weather to how many regions the
+	// world was cut into - and the region count is a difficulty dial, so an
+	// easy first map could hold three temperatures. Nothing learns or passes
+	// on the weather (stage 86 measured that the three beliefs a body keeps
+	// about a region are richness, going and danger), so the region had no
+	// claim on it.
 	ClimateMap []string
+
+	// ChillAheadSeen is whether a body reads the weather one cell along the
+	// way it reads the ground (#135). True in the ordinary world, and nought
+	// either way in a world with no weather in it.
+	//
+	// It is the half of #135 that can move anybody. Stage 86 found that the
+	// cold takes more vitality than hunger does and moves nobody, and named
+	// the reason: what a body reads is the cold underfoot, so it lifts every
+	// candidate alike and cancels out of the comparison. Stage 100 reads the
+	// cell ahead and is the one rule in this project that moved where bodies
+	// live. This puts the weather on that path - the difference between the
+	// weather here and the weather a step away, charged over the ticks the
+	// option takes, in the same place and the same unit as stage 99's drain.
+	//
+	// Off is the control: the same weather, taking exactly as much, read only
+	// where the body already is.
+	ChillAheadSeen bool
 
 	// WardShare is how many of the ornaments a body makes come out answering
 	// the weather, and WardStrength how much of it a perfect one keeps off
@@ -3457,6 +3488,7 @@ func DefaultConfig() Config {
 		TrinketStyleAimed:       false,
 		AdornNeedsSurvival:      true,
 		ClimateMap:              nil,
+		ChillAheadSeen:          true,
 		ChillDrain:              0,
 		HeatDrain:               0,
 		SeasonTicks:             0,

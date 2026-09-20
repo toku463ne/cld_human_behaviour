@@ -12,16 +12,22 @@ import "math"
 //
 // Three decisions are made here, and they are the whole of the stage.
 //
-// Where it lives: on the region, not on the cell. A region already carries
-// everything that varies by place (how sheltered the resting is, how well the
-// plants grow, how much of the awkward crop comes up, what the ground does to
-// a body, where the enemies arrive), and, more to the point, this world
-// already knows how to learn and pass on what a region is like - stage 15b
-// learns it by standing there, 15c tells somebody, stage 29 folds the going
-// underfoot into the same record and stage 35 does the same for what kills.
-// A climate on the cells would be a second map about the same thing with none
-// of that machinery, and stage 29 measured the ceiling anyway: twelve blocks,
-// because the controller has no route finding and cannot use anything finer.
+// Where it lives: on a map of its own, at whatever grain its author drew it
+// (2026-09-20, #135). It was on the region until then, for a reason that did
+// not survive being measured - that everything this world learns and passes on
+// about a place is on the region - because stage 86 found that nothing learns
+// or passes on the weather at all: the three beliefs a body keeps about a
+// region are how rich it is, how hard it is to cross and what killed somebody
+// there, and the weather is none of them. What broke the old arrangement was
+// the region count becoming a difficulty dial: a first stage with three
+// regions in it could hold three temperatures.
+//
+// And a grain of its own is what lets the weather be read the way the ground
+// is. Stage 100 reads the cell one step ahead of a body and is the only rule
+// in this project that moved where anybody lives; stage 86's cold moved
+// nobody, and named its own reason - what a body reads is the cold underfoot,
+// which lifts every candidate alike and cancels out of the comparison. A
+// weather that changes from one cell to the next does not cancel.
 //
 // What it costs: vitality, per tick, through the drain. That is the one
 // decision that makes everything else free. The utility formula prices staying
@@ -60,17 +66,93 @@ const (
 	NumWeathers
 )
 
-// buildClimate reads the map's picture of its weather into the regions.
+// climateGrid is the weather laid over the world: cells of equal size, at the
+// grain of the picture its author drew (#135).
 //
-// The picture is written the way the terrain's is - one line per row of the
-// world, stretched to fit - except that it is read at the middle of each
-// region, because that is the grain a region is. A world that says nothing
-// about its weather gets nothing, which is the default.
+// The size of a cell comes from the picture, the way the terrain's does, so
+// the same file describes the same country whatever the world's dimensions
+// are - and so that an author can draw the weather finely over a world cut
+// into three regions, which is the whole point of taking it off the region.
+type climateGrid struct {
+	cols, rows   int
+	cellW, cellH float64
+	cells        [][NumWeathers]float64
+
+	// shift is how far round the year the picture has been slid, in columns
+	// (stage 87b). It is a whole number of cells rather than a fraction so
+	// that a season is exactly reproducible from the tick.
+	shift int
+}
+
+// at is how much of one weather this spot has. Nought everywhere in a world
+// that was given no picture, and nought off the top and bottom of one.
+func (g *climateGrid) at(x, y float64, kind Weather) float64 {
+	if g == nil || g.cols == 0 || g.rows == 0 {
+		return 0
+	}
+	cy := int(math.Floor(y / g.cellH))
+	if cy < 0 || cy >= g.rows {
+		return 0
+	}
+	// Round the world rather than off its edge, so that the season slides the
+	// picture without leaving a seam behind it.
+	cx := int(math.Floor(x / g.cellW))
+	cx = ((cx+g.shift)%g.cols + g.cols) % g.cols
+	return g.cells[cy*g.cols+cx][kind]
+}
+
+// makeClimate reads the map's picture of its weather into a grid. Each string
+// is a row and each rune a cell, the way the terrain map is written:
 //
 //	.       the ordinary world
 //	1 - 9   that much cold
 //	a - i   that much heat (stage 88)
+//
+// A world that says nothing about its weather gets none, which is the default,
+// and nothing here draws a random number - the picture is the author's.
+func makeClimate(cfg *Config) *climateGrid {
+	rows := cfg.ClimateMap
+	if len(rows) == 0 {
+		return nil
+	}
+	cols := 0
+	for _, r := range rows {
+		if n := len([]rune(r)); n > cols {
+			cols = n
+		}
+	}
+	if cols == 0 {
+		return nil
+	}
+	g := &climateGrid{
+		cols: cols, rows: len(rows),
+		cellW: cfg.Width / float64(cols), cellH: cfg.Height / float64(len(rows)),
+		cells: make([][NumWeathers]float64, cols*len(rows)),
+	}
+	for y, row := range rows {
+		runes := []rune(row)
+		for x := 0; x < cols; x++ {
+			c := '.'
+			if x < len(runes) {
+				c = runes[x]
+			}
+			switch {
+			case c >= '1' && c <= '9':
+				g.cells[y*cols+x][WeatherChill] = float64(c-'0') / 9
+			case c >= 'a' && c <= 'i':
+				// The letters are the second weather (stage 88), written the
+				// way the terrain map writes its slopes.
+				g.cells[y*cols+x][WeatherHeat] = float64(c-'a'+1) / 9
+			}
+		}
+	}
+	return g
+}
+
+// buildClimate lays the picture over the world, at whatever phase of the year
+// the clock is at.
 func (w *World) buildClimate() {
+	w.climate = makeClimate(&w.cfg)
 	w.layClimate(w.seasonPhase())
 }
 
@@ -94,16 +176,16 @@ func (w *World) seasonPhase() float64 {
 // it. It draws nothing: the picture is the author's and the phase is the
 // clock's, so a season is as reproducible as the map it turns.
 func (w *World) turnSeason() {
-	if w.cfg.SeasonTicks <= 0 || len(w.cfg.ClimateMap) == 0 {
+	if w.cfg.SeasonTicks <= 0 || w.climate == nil {
 		return
 	}
 	w.layClimate(w.seasonPhase())
 }
 
-// layClimate reads the picture into the regions at one phase of the year. At
-// phase nought it is the picture as drawn; further round, the same picture
-// slid sideways - so what was the cold end of the world becomes the warm one
-// and back, and a body that has not moved finds the weather has.
+// layClimate slides the picture to one phase of the year. At phase nought it
+// is the picture as drawn; further round, the same picture moved sideways - so
+// what was the cold end of the world becomes the warm one and back, and a body
+// that has not moved finds the weather has.
 //
 // Sliding it rather than deepening it is the whole point (#117): a winter that
 // only got colder everywhere would make everybody want a coat at once, which
@@ -111,63 +193,16 @@ func (w *World) turnSeason() {
 // the supply is not, over and over, which is the one structure this world has
 // never had (#115).
 func (w *World) layClimate(phase float64) {
-	if len(w.regions) == 0 {
+	if w.climate == nil {
 		return
 	}
-	// Cleared first, so that an editor redrawing the picture takes the old
-	// weather away rather than leaving it under the new one.
-	for i := range w.regions {
-		w.regions[i].Weather = [NumWeathers]float64{}
-	}
-	// Cleared first, so that an editor redrawing the picture takes the old
-	// weather away rather than leaving it under the new one.
-	for i := range w.regions {
-		w.regions[i].Weather = [NumWeathers]float64{}
-	}
-	rows := w.cfg.ClimateMap
-	if len(rows) == 0 {
-		return
-	}
-	cols := 0
-	for _, r := range rows {
-		if n := len([]rune(r)); n > cols {
-			cols = n
-		}
-	}
-	if cols == 0 {
-		return
-	}
-	rcols, rrows := max(w.cfg.RegionCols, 1), max(w.cfg.RegionRows, 1)
-	for i := range w.regions {
-		// The middle of this block, as a share of the world, read off the
-		// picture.
-		cx := (float64(i%rcols) + 0.5) / float64(rcols)
-		cx += phase
-		cx -= math.Floor(cx) // round the year, and round the world
-		cy := (float64(i/rcols) + 0.5) / float64(rrows)
-		row := []rune(rows[clampInt(int(cy*float64(len(rows))), 0, len(rows)-1)])
-		c := '.'
-		if x := clampInt(int(cx*float64(cols)), 0, cols-1); x < len(row) {
-			c = row[x]
-		}
-		switch {
-		case c >= '1' && c <= '9':
-			w.regions[i].Weather[WeatherChill] = float64(c-'0') / 9
-		case c >= 'a' && c <= 'i':
-			// The letters are the second weather (stage 88), written the way
-			// the terrain map writes its slopes.
-			w.regions[i].Weather[WeatherHeat] = float64(c-'a'+1) / 9
-		}
-	}
+	w.climate.shift = int(phase * float64(w.climate.cols))
 }
 
 // weatherAt is how much of one weather this spot has, and nought everywhere in
 // a world that was given none.
 func (w *World) weatherAt(x, y float64, kind Weather) float64 {
-	if r := w.regionAt(x, y); r != nil {
-		return r.Weather[kind]
-	}
-	return 0
+	return w.climate.at(x, y, kind)
 }
 
 // drainFor is what the worst of one weather costs a body per tick. One line
@@ -195,13 +230,20 @@ func (w *World) chillOf(a *Agent) float64 {
 
 // weatherTax is that sum, with or without what the body is carrying.
 func (w *World) weatherTax(a *Agent, warded bool) float64 {
+	return w.weatherTaxAt(a, a.X, a.Y, warded)
+}
+
+// weatherTaxAt is the same sum at a place the body is not standing in, which
+// is what reading the weather one cell ahead needs (#135). What the body
+// carries goes with it, so the warding is the same wherever it is asked about.
+func (w *World) weatherTaxAt(a *Agent, x, y float64, warded bool) float64 {
 	total := 0.0
 	for kind := Weather(0); kind < NumWeathers; kind++ {
 		drain := w.drainFor(kind)
 		if drain <= 0 {
 			continue
 		}
-		here := w.weatherAt(a.X, a.Y, kind)
+		here := w.weatherAt(x, y, kind)
 		if here <= 0 {
 			continue
 		}
@@ -283,21 +325,35 @@ func (w *World) chillFelt(a *Agent) float64 {
 	return w.chillOf(a)
 }
 
+// chillAheadFelt is what the weather one cell away would take from this body,
+// as it reads it (#135). It is the weather's half of stage 100: the ground one
+// step ahead is read for what crossing it costs and what standing on it takes,
+// and this is the same question asked of the map the weather is on.
+//
+// Nought where the body cannot feel the weather at all (stage 86's control),
+// because a body that cannot feel the cold it is standing in cannot read the
+// cold it is walking into either.
+func (w *World) chillAheadFelt(a *Agent, x, y float64) float64 {
+	if !w.cfg.ChillKnown {
+		return 0
+	}
+	return w.weatherTaxAt(a, x, y, true)
+}
+
 // chillSlope is which way it gets colder from here, and by how much per unit
 // of distance, in the same vitality-per-tick the chill itself is in
 // (stage 86b).
 //
-// It is read off the ground a region's width away in each direction, because
-// that is the grain the weather has: a finer step would read the same region
-// twice and say the world is flat. Nothing is remembered and nothing is told -
-// this is what a body feels where it stands, and it is gone the moment it
-// moves.
+// It is read one cell of the weather's own map away in each direction, which
+// is the grain the weather has (#135; until then it was a region's width,
+// because that was). A step finer than the picture reads the same cell twice
+// and says the world is flat. Nothing is remembered and nothing is told - this
+// is what a body feels where it stands, and it is gone the moment it moves.
 func (w *World) chillSlope(a *Agent) (dx, dy float64) {
-	if !w.cfg.ChillGradient || !w.cfg.ChillKnown {
+	if !w.cfg.ChillGradient || !w.cfg.ChillKnown || w.climate == nil {
 		return 0, 0
 	}
-	cols, rows := max(w.cfg.RegionCols, 1), max(w.cfg.RegionRows, 1)
-	spanX, spanY := w.cfg.Width/float64(cols), w.cfg.Height/float64(rows)
+	spanX, spanY := w.climate.cellW, w.climate.cellH
 	if spanX <= 0 || spanY <= 0 {
 		return 0, 0
 	}
@@ -381,7 +437,64 @@ func (w *World) wardMade() (float64, Weather) {
 	return clamp(w.cfg.WardStrength, 0, 1), kind
 }
 
+// regionChill is how cold each region is on average, and how cold the world is
+// (#135). Every cell of the weather's map counts once, towards the region its
+// middle falls in.
+//
+// No rule reads either figure. It is here because the food weights are per
+// region and something has to be the same shape as them to be read against,
+// and because an editor that shows a region wants one number for it. What a
+// body pays is read off the cell it is standing in and never off this.
+func (w *World) regionChill() (means []float64, all float64) {
+	means = make([]float64, len(w.regions))
+	if w.climate == nil || len(w.regions) == 0 {
+		return means, 0
+	}
+	count := make([]float64, len(w.regions))
+	cells := 0.0
+	for cy := 0; cy < w.climate.rows; cy++ {
+		for cx := 0; cx < w.climate.cols; cx++ {
+			x := (float64(cx) + 0.5) * w.climate.cellW
+			y := (float64(cy) + 0.5) * w.climate.cellH
+			c := w.climate.at(x, y, WeatherChill)
+			all += c
+			cells++
+			i := w.regionIndexAt(x, y)
+			means[i] += c
+			count[i]++
+		}
+	}
+	for i := range means {
+		if count[i] > 0 {
+			means[i] /= count[i]
+		}
+	}
+	if cells > 0 {
+		all /= cells
+	}
+	return means, all
+}
+
 // --- reading it out ---------------------------------------------------------
+
+// ClimateSize is the shape of the weather's map, for a viewer to draw it by.
+// All zeroes in a world that was given no weather.
+func (w *World) ClimateSize() (cols, rows int, cellW, cellH float64) {
+	if w.climate == nil {
+		return 0, 0, 0, 0
+	}
+	return w.climate.cols, w.climate.rows, w.climate.cellW, w.climate.cellH
+}
+
+// ClimateAt is how much of each weather this spot has, as a share of the worst
+// in the world. Read only, and nought everywhere in a world with no weather.
+//
+// It is the share and not what it costs, for the reason the map is drawn that
+// way (decision #133): the dose lives in Config and the picture does not, so
+// the same drawing is a mild winter or a killing one depending on the world.
+func (w *World) ClimateAt(x, y float64) (chill, heat float64) {
+	return w.weatherAt(x, y, WeatherChill), w.weatherAt(x, y, WeatherHeat)
+}
 
 // WeatherUse is what the weather came to (stage 86). Read only.
 type WeatherUse struct {
@@ -430,13 +543,15 @@ func (w *World) Weather() WeatherUse {
 	if len(w.regions) == 0 {
 		return out
 	}
+	means, all := w.regionChill()
+	out.All = all
 	cold, food, coldFood := 0.0, 0.0, 0.0
 	for i := range w.regions {
-		cold += w.regions[i].Weather[WeatherChill]
+		c := means[i]
+		cold += c
 		food += w.regions[i].Food
-		coldFood += w.regions[i].Weather[WeatherChill] * w.regions[i].Food
+		coldFood += c * w.regions[i].Food
 	}
-	out.All = cold / float64(len(w.regions))
 	if cold > 0 && food > 0 {
 		// The food on the cold ground, as a share of an equal share: the mean
 		// food weight of the regions, weighted by how cold each one is.

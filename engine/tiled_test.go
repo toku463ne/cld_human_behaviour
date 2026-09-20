@@ -668,3 +668,62 @@ func TestAWorldWithNoPaintedRegionsIsUnchanged(t *testing.T) {
 		t.Fatalf("a blank painting ran to %+v and no painting to %+v", blank, plain)
 	}
 }
+
+// The weather is painted on a layer of its own (#135): tiles that say how
+// cold or how hot they are, over a ground layer that says nothing about it.
+func TestTheWeatherIsPaintedOnItsOwnLayer(t *testing.T) {
+	m, err := ParseTiled([]byte(`{"width":4,"height":2,"tilewidth":8,"tileheight":8,
+	 "tilesets":[
+	   {"firstgid":1,"tiles":[{"id":0,"properties":[{"name":"kind","value":"flat"}]}]},
+	   {"firstgid":10,"tiles":[
+	     {"id":0,"properties":[{"name":"chill","value":9}]},
+	     {"id":1,"properties":[{"name":"chill","value":4}]},
+	     {"id":2,"properties":[{"name":"heat","value":3}]}]}],
+	 "layers":[
+	  {"type":"tilelayer","name":"ground","width":4,"height":2,"data":[1,1,1,1, 1,1,1,1]},
+	  {"type":"tilelayer","name":"weather","width":4,"height":2,"data":[10,11,0,12, 10,11,0,12]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"94.c", "94.c"}
+	if got := strings.Join(m.Climate, "|"); got != strings.Join(want, "|") {
+		t.Fatalf("the weather reads %q, want %q", got, want)
+	}
+	// The ground is untouched by it: the two are separate maps over the same
+	// country, which is the reason the weather has a grain of its own.
+	if got := strings.Join(m.Terrain, "|"); got != "....|...." {
+		t.Fatalf("the ground reads %q", got)
+	}
+	// And it lands in the Config the way the rest of the drawing does.
+	cfg := testConfig()
+	m.Apply(&cfg)
+	cfg.ChillDrain = 0.5
+	w := NewWorld(cfg)
+	cold := w.weatherAt(cfg.Width*0.1, cfg.Height*0.5, WeatherChill)
+	mild := w.weatherAt(cfg.Width*0.35, cfg.Height*0.5, WeatherChill)
+	none := w.weatherAt(cfg.Width*0.6, cfg.Height*0.5, WeatherChill)
+	if !(cold > mild && mild > 0 && none == 0) {
+		t.Fatalf("the four columns came out at %v, %v, %v", cold, mild, none)
+	}
+	if got := w.weatherAt(cfg.Width*0.9, cfg.Height*0.5, WeatherHeat); got <= 0 {
+		t.Fatalf("the hot column came out at %v heat", got)
+	}
+}
+
+// A map that says nothing about the weather has none, which is the default -
+// so every map drawn before this reads exactly as it did.
+func TestAMapWithNoWeatherHasNone(t *testing.T) {
+	m, err := ParseTiled([]byte(tiledSample))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Climate != nil {
+		t.Fatalf("a map with no weather on it came out with %q", m.Climate)
+	}
+	cfg := testConfig()
+	cfg.ClimateMap = []string{"9999"}
+	m.Apply(&cfg)
+	if got := strings.Join(cfg.ClimateMap, "|"); got != "9999" {
+		t.Fatalf("applying it overwrote the world's own weather with %q", got)
+	}
+}

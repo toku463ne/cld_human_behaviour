@@ -406,7 +406,11 @@ func (w *World) canStep(a *Agent, fromX, fromY, toX, toY float64) bool {
 // GroundRead is what a body makes of a piece of ground it has not reached:
 // what crossing it would multiply the cost by, and what standing on it would
 // drain per tick (stage 100). Both carry the reader's own error.
-type GroundRead struct{ Cost, Drain float64 }
+// Chill is the weather one cell along, on the map the weather is on (#135),
+// after whatever the body is carrying answers it. It is beside Drain rather
+// than added into it because the two are different facts on different maps -
+// the ground is wet, the place is cold - and an author sets them separately.
+type GroundRead struct{ Cost, Drain, Chill float64 }
 
 type GroundView struct {
 	Kind   Ground
@@ -589,16 +593,33 @@ var aroundDirs = [8][2]float64{
 // Nothing is drawn and nothing is written when the rule is off, which is what
 // keeps every world before this one consuming the random source as it did.
 func (w *World) readAround(a *Agent, s *SelfView) {
-	if !w.cfg.GroundAheadSeen || w.ground == nil {
+	// A world with neither a ground map nor a weather map has nothing one cell
+	// away that is not underfoot, so it reads nothing and draws nothing - which
+	// is what keeps every flat world running as it did.
+	if !w.cfg.GroundAheadSeen || (w.ground == nil && w.climate == nil) {
 		s.AroundSeen = false
 		return
 	}
 	s.AroundSeen = true
 	scale := w.judgementScale(a)
-	cw, ch := w.ground.cellW, w.ground.cellH
+	cw, ch := w.cfg.Width, w.cfg.Height
+	if w.ground != nil {
+		cw, ch = w.ground.cellW, w.ground.cellH
+	}
 	meanCost, meanDrain := 0.0, 0.0
 	if w.cfg.GroundAheadBlind {
 		meanCost, meanDrain = w.groundMean()
+	}
+	// What the weather is doing where the body stands, so that a direction
+	// with the same weather as here reads as no change at all (#135). The
+	// whole of the ahead reading is differences.
+	chillHere := w.chillFelt(a)
+	cwx, chy := cw, ch
+	if w.climate != nil {
+		// A step of the weather's own map, which may be coarser or finer than
+		// the ground's: a step shorter than a cell reads the same cell twice
+		// and says the weather is flat.
+		cwx, chy = w.climate.cellW, w.climate.cellH
 	}
 	for i, d := range aroundDirs {
 		cost, drain := meanCost, meanDrain
@@ -606,10 +627,19 @@ func (w *World) readAround(a *Agent, s *SelfView) {
 			t := w.terrainAt(a.X+d[0]*cw, a.Y+d[1]*ch)
 			cost, drain = t.Cost, t.Drain
 		}
+		chill := chillHere
+		if w.cfg.ChillAheadSeen && !w.cfg.GroundAheadBlind {
+			chill = w.chillAheadFelt(a,
+				clamp(a.X+d[0]*cwx, 0, w.cfg.Width-1e-9),
+				clamp(a.Y+d[1]*chy, 0, w.cfg.Height-1e-9))
+		}
 		e := w.noise(scale, w.cfg.GroundAheadNoise)
 		s.Around[i] = GroundRead{
 			Cost:  math.Max(0.1, cost+e),
 			Drain: math.Max(0, drain*(1+e)),
+			// The same one draw, for the same reason: a body that misreads a
+			// piece of country misreads it in one way rather than in three.
+			Chill: math.Max(0, chill*(1+e)),
 		}
 	}
 }

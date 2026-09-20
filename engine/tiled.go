@@ -64,6 +64,17 @@ type TiledWorld struct {
 	// with such tiles fills both.
 	Rich []string
 
+	// Climate is what the weather is like in each cell, one character per
+	// cell (#135), in the vocabulary Config.ClimateMap takes. Nil when no
+	// tile carries a "chill" or a "heat" property, and then the world has no
+	// weather, which is the default.
+	//
+	// It is read off a layer of its own in practice - an author paints the
+	// weather over the ground rather than into it - but nothing here requires
+	// that: as with the richness, a tile may say both what it is and how cold
+	// it is, and one layer painted with such tiles fills both.
+	Climate []string
+
 	// Cols and Rows are the map's size in tiles, kept for the error messages
 	// and for whoever wants to check a drawing against a world.
 	Cols, Rows int
@@ -165,6 +176,7 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 		return nil, err
 	}
 	riches, anyRich := tileRiches(f.Tilesets)
+	climates, anyClimate := tileClimates(f.Tilesets)
 	plants := tilePlantKinds(f.Tilesets)
 	beasts := tileNamed(f.Tilesets, "enemy")
 	places := tileRegions(f.Tilesets)
@@ -237,6 +249,19 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 				}
 				if len(kinds) > 0 {
 					out.PlantKindMap, out.PlantKinds = rows, kinds
+				}
+			}
+			// And what the weather is like here (#135), which an author
+			// paints on a layer of its own: the weather is a map over the
+			// same ground rather than a property of it, so that a world cut
+			// into three regions can still have its cold drawn finely.
+			if out.Climate == nil && anyClimate {
+				rows, err := terrainRows(l, f.Width, f.Height, climates)
+				if err != nil {
+					return nil, err
+				}
+				if paintedClimate(rows) {
+					out.Climate = rows
 				}
 			}
 			// And how well the ground grows things, off the same layer if
@@ -466,6 +491,68 @@ func richChar(props []tiledProperty) (byte, bool) {
 	}
 	d := int(math.Round(clamp(v, 0, 2) * 5))
 	return byte('0' + clampInt(d, 0, 9)), true
+}
+
+// tileClimates turns the tilesets into "this tile id is this much weather", as
+// the character Config.ClimateMap takes, and says whether any tile carried one
+// at all.
+//
+// Two properties, one per weather, because that is what a weather is here: a
+// tile that is both cold and hot is neither, and the last one read wins rather
+// than the two being summed - summing them would make a character that means
+// something else entirely.
+func tileClimates(sets []tiledTilset) (map[int]byte, bool) {
+	out, any := map[int]byte{}, false
+	for _, s := range sets {
+		for _, t := range s.Tiles {
+			c, ok := climateChar(t.Properties)
+			out[s.FirstGID+t.ID] = c
+			any = any || ok
+		}
+	}
+	return out, any
+}
+
+// climateChar is the whole of the weather's vocabulary: '1'-'9' for that much
+// cold, 'a'-'i' for that much heat, '.' for the ordinary world.
+//
+// The scale is the share, not the dose. What the coldest place in the world
+// costs a body is Config.ChillDrain and it is not on the map, because a map
+// carries names and places and never figures (decision #133) - so the same
+// drawing is a mild winter or a killing one depending on the world it is put
+// in, and the author of a first stage can turn it down without redrawing.
+func climateChar(props []tiledProperty) (byte, bool) {
+	if v, ok := propNumberOK(props, "chill"); ok {
+		if n := clampInt(int(math.Round(v)), 0, 9); n > 0 {
+			return byte('0' + n), true
+		}
+		return climateOrdinary, true
+	}
+	if v, ok := propNumberOK(props, "heat"); ok {
+		if n := clampInt(int(math.Round(v)), 0, 9); n > 0 {
+			return byte('a' + n - 1), true
+		}
+		return climateOrdinary, true
+	}
+	return climateOrdinary, false
+}
+
+// climateOrdinary is a cell the author said nothing about the weather in.
+const climateOrdinary = '.'
+
+// paintedClimate says whether a layer puts any weather anywhere. A layer of
+// tiles that say nothing about the weather is not a weather map, and taking it
+// for one would give the world a climate of nothing at every grain - which is
+// the same as none, but would stop the layer that does carry one being read.
+func paintedClimate(rows []string) bool {
+	for _, r := range rows {
+		for i := 0; i < len(r); i++ {
+			if r[i] != climateOrdinary {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // tileKinds turns the tilesets into "this tile id is this piece of ground".
@@ -803,6 +890,9 @@ func (t *TiledWorld) Apply(cfg *Config) {
 	}
 	if len(t.Rich) > 0 {
 		cfg.RichMap = append([]string(nil), t.Rich...)
+	}
+	if len(t.Climate) > 0 {
+		cfg.ClimateMap = append([]string(nil), t.Climate...)
 	}
 	t.applyPlantKinds(cfg)
 	t.applyEnemyKinds(cfg)

@@ -275,6 +275,10 @@ type World struct {
 	// simulation: agents cross it, nothing reshapes it.
 	ground *terrainGrid
 
+	// climate is the weather laid over the world, on a map of its own and at
+	// its own grain (#135). Nil in a world whose author drew no weather.
+	climate *climateGrid
+
 	// water is every cell of the map that is water, worked out once when the
 	// world is built (stage 42). Fish go in one of these, drawn uniformly,
 	// which is what makes how many a region has follow from how much of it is
@@ -725,6 +729,10 @@ func NewWorld(cfg Config) *World {
 	// Before anybody is put in it, because what the ground is like is not
 	// something the population decides.
 	w.ground = buildTerrain(&w.cfg)
+	// The weather is a second map over the same ground, at whatever grain its
+	// author drew it (#135). Like the terrain it draws nothing, so a world
+	// with no weather in it consumes the random source exactly as it did.
+	w.buildClimate()
 	w.water = waterCells(w.ground)
 	w.buildSpawnCells()
 	w.rubble = stoneCells(w.ground)

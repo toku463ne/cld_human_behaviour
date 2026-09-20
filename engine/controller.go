@@ -543,7 +543,12 @@ func moveCostDir(cfg *Config, s *SelfView, effort, dx, dy float64) float64 {
 	// The same unit as the cost above - vitality per tick of this option - so
 	// every caller that multiplies by a duration charges both over the same
 	// ticks, and no caller had to learn a second thing.
-	return moveCostAt(cfg, effort)*g*b + (s.Around[i].Drain - s.Soak)
+	// And the weather over there, the same way (#135). This is the one place
+	// the cold stops cancelling: stage 86 measured that the cold underfoot
+	// lifts every option alike and therefore decides nothing, and a
+	// difference between two headings is exactly what it is not.
+	return moveCostAt(cfg, effort)*g*b + (s.Around[i].Drain - s.Soak) +
+		(s.Around[i].Chill - s.Chill)
 }
 
 // aroundIndex is which of the eight readings a direction falls in. It matches

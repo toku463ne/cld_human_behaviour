@@ -504,6 +504,7 @@ func Load(in io.Reader) (*World, error) {
 	// standing the terrain below has.
 	w.buildRegionShapes()
 	w.ground = buildTerrain(&w.cfg)
+	w.buildClimate()
 	w.water = waterCells(w.ground)
 	// And where the author painted that things may come up (2026-09-19),
 	// derived from the Config the file carries rather than saved.

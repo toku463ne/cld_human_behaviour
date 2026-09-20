@@ -156,6 +156,11 @@ type game struct {
 	knownEnemies map[int]bool
 	arrived      map[int]int
 
+	// Whether to wash the world with its weather (#135). Off unless asked
+	// for: the weather lies under everything and a permanent wash would make
+	// every other colour on the map a lie.
+	showWeather bool
+
 	paused bool
 	speed  int
 	// zoom is an index into zoomLevels. The camera follows the played node
@@ -2393,6 +2398,9 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	// one - a river you cannot see is worse than a rich patch you cannot see.
 	g.drawRegions(screen)
 	g.drawTerrain(screen)
+	if g.showWeather {
+		g.drawWeather(screen)
+	}
 	g.drawSight(screen)
 	g.drawNests(screen)
 
@@ -2694,6 +2702,41 @@ func (g *game) drawNests(screen *ebiten.Image) {
 // arrivalFlashTicks is how long the ring round a newly arrived enemy lasts.
 // Long enough to catch at full speed, short enough not to clutter.
 const arrivalFlashTicks = 150
+
+// drawWeather washes the world with what the weather is like (#135), when the
+// viewer asks for it. Blue for the cold, amber for the heat, at the grain the
+// map's author drew it in - which since #135 is a grain of its own and not the
+// region's.
+//
+// It is off unless asked for, because the weather is under everything and a
+// permanent wash over the whole world makes every other colour a lie.
+func (g *game) drawWeather(screen *ebiten.Image) {
+	cols, rows, cw, ch := g.world.ClimateSize()
+	if cols == 0 {
+		return
+	}
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			x, y := (float64(col)+0.5)*cw, (float64(row)+0.5)*ch
+			chill, heat := g.world.ClimateAt(x, y)
+			if chill <= 0 && heat <= 0 {
+				continue
+			}
+			sx, sy := g.onScreen(float64(col)*cw, float64(row)*ch)
+			w, h := g.long(cw), g.long(ch)
+			if chill > 0 {
+				a := uint8(min(int(chill*120), 120))
+				vector.DrawFilledRect(screen, sx, sy, w, h,
+					color.RGBA{uint8(0x66 * int(a) / 255), uint8(0x99 * int(a) / 255), a, a}, false)
+			}
+			if heat > 0 {
+				a := uint8(min(int(heat*120), 120))
+				vector.DrawFilledRect(screen, sx, sy, w, h,
+					color.RGBA{a, uint8(0x88 * int(a) / 255), uint8(0x33 * int(a) / 255), a}, false)
+			}
+		}
+	}
+}
 
 func (g *game) drawTerrain(screen *ebiten.Image) {
 	cols, rows, cw, ch := g.world.TerrainSize()
@@ -4246,6 +4289,14 @@ func main() {
 	homebound := flag.Float64("homebound", 0, "what being away from the country it came into the world in costs an enemy, per region width per tick (stage 64; 0 = the default world)")
 	nursing := flag.Float64("nursing", 0, "how fast a mother goes while a child of hers is at her heel, as a share of her own speed (stage 66; 0 or 1 = the default world)")
 	lurkers := flag.Bool("lurkers", false, "something lives in the river and hunts (stage 63; needs -terrain river or country)")
+	weather := flag.Bool("weather", false,
+		"wash the world with what the weather is like: blue for cold, amber for heat, "+
+			"at the grain the map drew it in (#135). Needs a map with weather on it - "+
+			"-climate, or a Tiled layer whose tiles carry chill or heat")
+	climate := flag.String("climate", "",
+		"paint the weather: one character a cell, rows separated by commas "+
+			"('.' ordinary, '1'-'9' that much cold, 'a'-'i' that much heat). "+
+			"Its own grain, not the region's (#135). See also -cold for what the worst of it costs")
 	beasts := flag.Bool("beasts", false,
 		"the four sorts tiled/samples/001_3division.tmj names: brute, stray, flyer and lurker. "+
 			"The map says where each comes in; this says what each is like (2026-09-20)")
@@ -4582,6 +4633,11 @@ func main() {
 	if *rich != "" {
 		cfg.RichMap = strings.Split(*rich, ",")
 	}
+	// The weather, on its own map and at its own grain (#135). After -cold so
+	// that a painted picture has the last word over the half-and-half one.
+	if *climate != "" {
+		cfg.ClimateMap = strings.Split(*climate, ",")
+	}
 
 	// A map drawn in Tiled, which has the last word over -terrain: whoever
 	// passed a file meant the file. The engine never touches it - reading the
@@ -4617,6 +4673,7 @@ func main() {
 	}
 	g := &game{world: world, speed: normalSpeed, effort: 1.0, padKey: noKey}
 	g.boost = *boost
+	g.showWeather = *weather
 	if *slow {
 		g.speed = 1
 	}

@@ -2,12 +2,13 @@ package engine
 
 import (
 	"bytes"
+	"math"
 	"testing"
 )
 
-// climateConfig is a world with a cold half (stage 85). The picture is read at
-// the middle of each region, so this is four columns of regions: the left two
-// ordinary, the right two cold.
+// climateConfig is a world with a cold half (stage 85). The picture is laid
+// over the world at its own grain (#135), so this is four columns of cells:
+// the left two ordinary, the right two cold.
 func climateConfig() Config {
 	cfg := testConfig()
 	cfg.ClimateMap = []string{
@@ -23,10 +24,11 @@ func climateConfig() Config {
 // anybody.
 func TestAWorldWithNoClimateHasNone(t *testing.T) {
 	w := NewWorld(testConfig())
-	for i := range w.regions {
-		if got := w.regions[i].Weather[WeatherChill]; got != 0 {
-			t.Fatalf("region %d is at %v cold in a world with no weather", i, got)
-		}
+	if w.climate != nil {
+		t.Fatalf("a world with no weather was given a map of it")
+	}
+	if got := w.weatherAt(100, 100, WeatherChill); got != 0 {
+		t.Fatalf("somewhere in it is at %v cold", got)
 	}
 	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
 		Genome: genomeOf(50, 50, 50)}))
@@ -35,7 +37,7 @@ func TestAWorldWithNoClimateHasNone(t *testing.T) {
 	}
 }
 
-// The picture puts the cold where it is drawn, at the grain of a region.
+// The picture puts the cold where it is drawn, at the grain of the picture.
 func TestTheWeatherIsWhereThePictureSaysItIs(t *testing.T) {
 	cfg := climateConfig()
 	w := NewWorld(cfg)
@@ -148,9 +150,15 @@ func TestTheWeatherSurvivesASave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	for i := range w.regions {
-		if got, want := back.regions[i].Weather, w.regions[i].Weather; got != want {
-			t.Fatalf("region %d came back at %v instead of %v", i, got, want)
+	for cy := 0; cy < w.climate.rows; cy++ {
+		for cx := 0; cx < w.climate.cols; cx++ {
+			x := (float64(cx) + 0.5) * w.climate.cellW
+			y := (float64(cy) + 0.5) * w.climate.cellH
+			got := back.weatherAt(x, y, WeatherChill)
+			want := w.weatherAt(x, y, WeatherChill)
+			if got != want {
+				t.Fatalf("the cell at %v,%v came back at %v instead of %v", x, y, got, want)
+			}
 		}
 	}
 	if got := back.weatherAt(cfg.Width*0.9, cfg.Height*0.5, WeatherChill); got <= 0 {
@@ -387,5 +395,123 @@ func TestASecondWeatherIsOneRow(t *testing.T) {
 	hot.carried = append(hot.carried, coat, shade)
 	if w.chillOf(hot) >= w.weatherTax(hot, false) {
 		t.Fatal("carrying the right thing kept nothing off")
+	}
+}
+
+// The weather is drawn at its own grain, not at the region's (#135). A world
+// cut into four regions can hold a picture of twelve, which is the whole point
+// of taking the weather off the region: the region count is a difficulty dial
+// and an easy map has few of them.
+func TestTheWeatherIsFinerThanTheRegions(t *testing.T) {
+	cfg := testConfig()
+	cfg.RegionCols, cfg.RegionRows = 2, 2
+	// Twelve columns of it, alternating, so that no two neighbouring cells
+	// are alike and nothing at the grain of a region could tell them apart.
+	cfg.ClimateMap = []string{"1.2.3.4.5.6."}
+	cfg.ChillDrain = 0.5
+	w := NewWorld(cfg)
+	seen := map[float64]bool{}
+	for i := 0; i < 12; i++ {
+		x := (float64(i) + 0.5) / 12 * cfg.Width
+		seen[w.weatherAt(x, cfg.Height*0.5, WeatherChill)] = true
+	}
+	if len(seen) < 7 {
+		t.Fatalf("a twelve-column picture came out as %d different temperatures", len(seen))
+	}
+	// And the region summary is still one number per region, which is all it
+	// ever was: a tracker, not something a rule reads.
+	if got := len(w.Regions()); got != 4 {
+		t.Fatalf("the world came out in %d regions", got)
+	}
+}
+
+// A body reads the weather one cell along the way it reads the ground
+// (#135). This is the half of the change that can move anybody: the cold
+// underfoot lifts every option alike and cancels, and a difference between two
+// headings does not.
+func TestABodyReadsTheWeatherOneCellAhead(t *testing.T) {
+	cfg := testConfig()
+	cfg.ClimateMap = []string{"..99"}
+	cfg.ChillDrain = 0.5
+	cfg.GroundAheadNoise = 0 // the reading itself, with no misjudging in it
+	w := NewWorld(cfg)
+	// Standing in the warm, one cell short of the cold: east is the cold.
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, Vitality: 90,
+		X: cfg.Width * 0.45, Y: cfg.Height * 0.5, Genome: genomeOf(50, 50, 50)}))
+	s := w.selfView(a)
+	w.readAround(a, &s)
+	if !s.AroundSeen {
+		t.Fatal("a body in a world with weather in it read nothing around it")
+	}
+	east, west := s.Around[0].Chill, s.Around[4].Chill
+	if east <= s.Chill {
+		t.Fatalf("the cold one cell east reads %v, no more than the %v underfoot", east, s.Chill)
+	}
+	if west != s.Chill {
+		t.Fatalf("the warm one cell west reads %v against the %v underfoot", west, s.Chill)
+	}
+	// And the option that heads into it costs more than the one that does not,
+	// by exactly the difference - charged in the same place and the same unit
+	// as the ground's own drain.
+	into := moveCostDir(&cfg, &s, 1, 1, 0)
+	away := moveCostDir(&cfg, &s, 1, -1, 0)
+	if into <= away {
+		t.Fatalf("heading into the cold costs %v and heading away %v", into, away)
+	}
+	if got, want := into-away, east-west; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("the difference is %v where the weather's is %v", got, want)
+	}
+}
+
+// And it can be taken away without sparing the body anything, which is the
+// control the measurement needs: the same weather, taking exactly as much,
+// read only where the body already is.
+func TestTheWeatherAheadCanBeUnreadable(t *testing.T) {
+	cfg := testConfig()
+	cfg.ClimateMap = []string{"..99"}
+	cfg.ChillDrain = 0.5
+	cfg.ChillAheadSeen = false
+	w := NewWorld(cfg)
+	a := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, Vitality: 90,
+		X: cfg.Width * 0.45, Y: cfg.Height * 0.5, Genome: genomeOf(50, 50, 50)}))
+	s := w.selfView(a)
+	w.readAround(a, &s)
+	for i := range s.Around {
+		if s.Around[i].Chill != s.Chill {
+			t.Fatalf("direction %d reads %v where the body stands in %v",
+				i, s.Around[i].Chill, s.Chill)
+		}
+	}
+	// It is still paying for the cold it walks into; it simply cannot see it
+	// coming.
+	cold := mustAgent(t, w, w.addAgent(Agent{Maturity: 1, Vitality: 90,
+		X: cfg.Width * 0.9, Y: cfg.Height * 0.5, Genome: genomeOf(50, 50, 50)}))
+	if got := w.chillOf(cold); got <= 0 {
+		t.Fatalf("standing in the cold costs %v", got)
+	}
+}
+
+// The season slides the picture at the grain the picture has, so a body that
+// has not moved finds the weather has (stage 87b, on the new map).
+func TestTheSeasonSlidesTheWeatherAtItsOwnGrain(t *testing.T) {
+	cfg := testConfig()
+	cfg.ClimateMap = []string{"..99"}
+	cfg.ChillDrain = 0.5
+	cfg.SeasonTicks = 400
+	w := NewWorld(cfg)
+	at := func() float64 { return w.weatherAt(cfg.Width*0.1, cfg.Height*0.5, WeatherChill) }
+	if got := at(); got != 0 {
+		t.Fatalf("the west starts at %v cold", got)
+	}
+	moved := false
+	for i := 0; i < cfg.SeasonTicks; i++ {
+		w.Step()
+		if at() > 0 {
+			moved = true
+			break
+		}
+	}
+	if !moved {
+		t.Fatal("a whole year went by and the cold never reached the west")
 	}
 }
