@@ -5524,6 +5524,7 @@ var metricNames = []string{
 	"extinct", "collapsed", "fellAt", "peak",
 	"lines", "lineBiggest", "lineRegions", "lineInTwo", "lineInThree",
 	"settled", "settleLines", "settleRegions", "settleInTwo", "settleInThree",
+	"choiceGap", "choiceCoin",
 }
 
 type sample struct {
@@ -6770,6 +6771,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"settleRegions": homes.Regions,
 		"settleInTwo":   homes.InTwo,
 		"settleInThree": homes.InThree,
+		// How far a decision was won by, and how often the body could not
+		// really tell its two best options apart (2026-09-20).
+		"choiceGap":  end.ChoiceGap,
+		"choiceCoin": end.ChoiceCoin,
 	}}
 	for g := 0; g < engine.NumGenes; g++ {
 		r.metrics[shareMetric[g]] = tail.shares[g]

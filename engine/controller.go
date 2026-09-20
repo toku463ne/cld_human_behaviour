@@ -117,6 +117,13 @@ type AIController struct {
 	homePull float64
 	homeRoam float64
 
+	// What the last comparison came to: how far the winner won by, how many
+	// options there were, and how wide this body's own noise was (2026-09-20).
+	// Read by whoever is counting, never by the controller.
+	ChoiceGap     float64
+	ChoiceOpts    int
+	ChoiceNoiseSd float64
+
 	// Which way it gets colder from here and how fast this body walks, kept
 	// for the one charge that tells two headings apart (stage 86b).
 	chillDX, chillDY, chillSpeed float64
@@ -2546,6 +2553,10 @@ func (c *AIController) pick(p *Perception) Action {
 	// has nothing for a hunch to move.
 	noise := (MaxAbility - p.Self.Intelligence) / MaxAbility * p.Cfg.ChoiceNoise * p.Self.NoiseWeight
 	best, bestScore := 0, math.Inf(-1)
+	// How far the winner won by, kept so that somebody can ask how often this
+	// body could tell its options apart at all (2026-09-20). It is a reading
+	// and nothing reads it back: a tie is still broken exactly as it was.
+	second := math.Inf(-1)
 	for i := range c.opts {
 		misjudged := 0.0
 		if noise > 0 && p.Rand != nil {
@@ -2553,7 +2564,9 @@ func (c *AIController) pick(p *Perception) Action {
 		}
 		score := c.opts[i].util + misjudged
 		if score > bestScore {
-			bestScore, best = score, i
+			second, bestScore, best = bestScore, score, i
+		} else if score > second {
+			second = score
 		}
 		// Recording the whole comparison, and not merely its winner, is what
 		// makes a decision reviewable: it shows the runners up and by how much
@@ -2570,6 +2583,12 @@ func (c *AIController) pick(p *Perception) Action {
 	if p.Trace != nil {
 		p.Trace.Chosen = best
 	}
+	c.ChoiceGap = 0
+	if !math.IsInf(second, -1) {
+		c.ChoiceGap = bestScore - second
+	}
+	c.ChoiceOpts = len(c.opts)
+	c.ChoiceNoiseSd = noise
 	c.ChoseBetterGround = best == c.betterGroundOpt
 	c.ChoseMissing = best == c.lonelyOpt
 	c.ChoseHome = best == c.homeOpt

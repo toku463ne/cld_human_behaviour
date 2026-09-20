@@ -196,6 +196,14 @@ type Stats struct {
 	Fights        int
 	MaxGeneration int
 
+	// ChoiceGap is how far the winning option won by, averaged over every
+	// decision with more than one option in it, and ChoiceCoin the share of
+	// those where the gap was narrower than the body's own judgement noise -
+	// decisions the body could not really tell apart, and so made as good as
+	// by a coin (2026-09-20). Measurement only; nothing reads them back.
+	ChoiceGap  float64
+	ChoiceCoin float64
+
 	// Flees is how many times an agent decided to run from somebody, and
 	// Escapes how many of those ended with the pursuer out of sight. The
 	// share of the two is what says whether running away works, which is what
@@ -390,6 +398,11 @@ type World struct {
 	// may come up (2026-09-19). All three are empty in a world with no
 	// painted layer, and then every spawn takes the path it always did.
 	spawnCells [numSpawnKinds][]cell
+
+	// How far decisions were won by (controller.go). Measurement only.
+	choiceDecisions int
+	choiceGapSum    float64
+	choiceCoinFlips int
 
 	// How well each cell grows things, when an author painted it (rich.go).
 	// Nil is every world before it: the regions carry their own richness and
@@ -863,6 +876,8 @@ func (w *World) Stats() Stats {
 		ChildDeaths:            w.childDeaths,
 		Fights:                 w.fights,
 		MaxGeneration:          w.maxGeneration,
+		ChoiceGap:              divOr0(w.choiceGapSum, float64(w.choiceDecisions)),
+		ChoiceCoin:             divOr0(float64(w.choiceCoinFlips), float64(w.choiceDecisions)),
 		Flees:                  w.flees,
 		Escapes:                w.escapes,
 		Exchanges:              w.exchanges,
@@ -1077,6 +1092,18 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 		w.crafts++
 	}
 	if ai, ok := c.(*AIController); ok {
+		// How far the winner won by, and how wide this body's own noise was
+		// (2026-09-20). A gap much narrower than the noise means the body
+		// could not really tell its two best options apart and what it did
+		// was as good as a coin - worth knowing before anything is built on
+		// how ties are broken.
+		if ai.ChoiceOpts > 1 {
+			w.choiceDecisions++
+			w.choiceGapSum += ai.ChoiceGap
+			if ai.ChoiceNoiseSd > 0 && ai.ChoiceGap < ai.ChoiceNoiseSd {
+				w.choiceCoinFlips++
+			}
+		}
 		if ai.ChoseBetterGround {
 			w.regionDraws++
 		}
@@ -2899,4 +2926,12 @@ func dist2(ax, ay, bx, by float64) float64 {
 
 func clamp(v, lo, hi float64) float64 {
 	return math.Min(hi, math.Max(lo, v))
+}
+
+// divOr0 is a/b, and nought when there is nothing to divide by.
+func divOr0(a, b float64) float64 {
+	if b == 0 {
+		return 0
+	}
+	return a / b
 }
