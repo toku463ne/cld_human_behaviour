@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // giftConfig is a still world where hands can hold one thing and a gift is
 // worth the ordinary goodwill.
@@ -122,4 +125,93 @@ func offered(t *testing.T, w *World, a *Agent) bool {
 		}
 	}
 	return false
+}
+
+// --- what a gift is worth to whoever gets it (stage 89b) --------------------
+
+// giftWorthConfig is giftConfig with a metabolism, because what a meal is
+// worth is a difference between two chances of dying and a body that cannot
+// starve values nothing at all. (The quiet world is right for testing that a
+// thing changed hands; it is the wrong world for testing what it was worth.)
+func giftWorthConfig() Config {
+	cfg := testConfig()
+	cfg.CarryCapacity = 1
+	cfg.AffinityGift = 6
+	return cfg
+}
+
+// The goodwill a gift earns is scaled by what the thing was worth to the body
+// receiving it. Which bodies value a plant most is the world's business and
+// not this rule's - what is tested here is that the two move together, and
+// that the goodwill is the ordinary figure times that share.
+func TestAGiftEarnsWhatItWasWorthToWhoeverGotIt(t *testing.T) {
+	cfg := giftWorthConfig()
+	cfg.GiftWorthScaled = true
+	w := NewWorld(cfg)
+
+	thanks := func(hunger float64) (float64, float64) {
+		giverID := holding(t, w, 100, 100)
+		takerID := w.addAgent(Agent{Maturity: 1, X: 104, Y: 100, Vitality: 90,
+			Hunger: hunger, Genome: genomeOf(50, 50, 50)})
+		giver, taker := mustAgent(t, w, giverID), mustAgent(t, w, takerID)
+		meal := giver.carried[0]
+		want := w.giftWorthShare(taker, &meal)
+		giver.Action = Action{Kind: ActGive, TargetID: taker.ID, Effort: 1}
+		w.perform(giver)
+		if taker.CarriedCount() != 1 {
+			t.Fatal("nothing changed hands")
+		}
+		return want, w.Opinions(taker.ID)[giver.ID].Affinity
+	}
+
+	wantA, gotA := thanks(5)
+	wantB, gotB := thanks(90)
+	if wantA == wantB {
+		t.Fatalf("both bodies valued the same plant at %v, so there is nothing to tell apart", wantA)
+	}
+	for _, c := range []struct{ want, got float64 }{{wantA, gotA}, {wantB, gotB}} {
+		if diff := math.Abs(c.got - cfg.AffinityGift*c.want); diff > 1e-9 {
+			t.Fatalf("a gift worth %v of the standard earned %v, want %v",
+				c.want, c.got, cfg.AffinityGift*c.want)
+		}
+	}
+	if (wantA > wantB) != (gotA > gotB) {
+		t.Fatalf("worth %v/%v earned %v/%v: the two do not move together",
+			wantA, wantB, gotA, gotB)
+	}
+}
+
+// Without the rule it is the same goodwill whoever gets it, which is every
+// world before this one.
+func TestWithoutTheRuleEveryGiftEarnsTheSame(t *testing.T) {
+	cfg := giftWorthConfig()
+	w := NewWorld(cfg)
+
+	thanks := func(hunger float64) float64 {
+		giverID := holding(t, w, 100, 100)
+		takerID := w.addAgent(Agent{Maturity: 1, X: 104, Y: 100, Vitality: 90,
+			Hunger: hunger, Genome: genomeOf(50, 50, 50)})
+		giver, taker := mustAgent(t, w, giverID), mustAgent(t, w, takerID)
+		giver.Action = Action{Kind: ActGive, TargetID: taker.ID, Effort: 1}
+		w.perform(giver)
+		return w.Opinions(taker.ID)[giver.ID].Affinity
+	}
+	if full, starving := thanks(5), thanks(90); full != starving {
+		t.Fatalf("a full body thanked %v and a starving one %v", full, starving)
+	}
+}
+
+// And what the measurement says it is worth is capped, so that one enormous
+// gift cannot buy a lifetime of goodwill.
+func TestWhatAGiftIsWorthToItsReceiverIsCapped(t *testing.T) {
+	cfg := giftWorthConfig()
+	cfg.CoinValue = 0.001 // a standard so small that anything dwarfs it
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 20,
+		Hunger: 95, Genome: genomeOf(50, 50, 50)})
+	a := mustAgent(t, w, id)
+	meal := Food{Kind: FoodPlant}
+	if got := w.giftWorthShare(a, &meal); got != 2 {
+		t.Fatalf("an enormous gift is worth %v of the standard, and the cap is 2", got)
+	}
 }

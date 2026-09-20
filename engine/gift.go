@@ -54,6 +54,16 @@ func (w *World) giveItem(from, to *Agent) bool {
 	if !w.canCarry(to, &item) {
 		return false
 	}
+	// What it is worth to the one receiving it (TODO 12, stage 89b),
+	// measured before the rule that uses it exists: the question the whole
+	// stage turns on is whether gifts already land on bodies that wanted
+	// them, and if they do, scaling the goodwill by it would change nothing.
+	share := w.giftWorthShare(to, &item)
+	w.giftWorth += share
+	if share <= 0 {
+		w.giftsUseless++
+	}
+
 	w.removeCarried(from, at)
 	item.PricePaid = 0 // a gift cost its new holder nothing (stage 83)
 	to.carried = append(to.carried, item)
@@ -87,9 +97,20 @@ func (w *World) giveItem(from, to *Agent) bool {
 
 	// What it earns, both ways, and through the ordinary machinery: the same
 	// call the shared kill makes.
+	//
+	// Since stage 89b it can be scaled by what the thing was actually worth
+	// to whoever received it (#119): a gift that hits is worth more goodwill
+	// than a gift that misses. The giver does not aim at this - it reckons
+	// on the standard, like the legs of stage 49 and the price of stage 80 -
+	// so what is being rewarded is the outcome and not the intent, which is
+	// the only shape this world has ever managed to learn from.
 	if w.cfg.AffinityGift > 0 {
-		w.rememberAffinity(to, from.ID, w.cfg.AffinityGift)
-		w.rememberAffinity(from, to.ID, w.cfg.AffinityGift)
+		earned := w.cfg.AffinityGift
+		if w.cfg.GiftWorthScaled {
+			earned *= share
+		}
+		w.rememberAffinity(to, from.ID, earned)
+		w.rememberAffinity(from, to.ID, earned)
 	}
 	// And who it went to, for the measurement this stage exists for: the
 	// question is whether anything is ever handed to somebody who is not
@@ -118,6 +139,17 @@ type GiftUse struct {
 	// Stones is the share of gifts that were something to throw rather than
 	// something to eat.
 	Stones float64
+
+	// Worth is what the average gift was worth to whoever received it, as a
+	// share of what a coin claims - this world's own unit of one meal - and
+	// Useless the share that were worth nothing at all to them (TODO 12,
+	// stage 89b).
+	//
+	// The pair is what says whether the rule below is needed: gifts that
+	// already land where they are wanted cannot be improved by paying more
+	// goodwill for landing there.
+	Worth   float64
+	Useless float64
 }
 
 // Gifts reports what has been handed over.
@@ -131,5 +163,27 @@ func (w *World) Gifts() GiftUse {
 	out.ToMates = float64(w.giftsToMates) / n
 	out.ToStrange = float64(w.giftsToStrangers) / n
 	out.Stones = float64(w.giftStones) / n
+	out.Worth = w.giftWorth / n
+	out.Useless = float64(w.giftsUseless) / n
 	return out
+}
+
+// giftWorthShare is what one thing is worth to the body receiving it, as a
+// share of what a coin claims.
+//
+// The coin is the unit because it is the only standard this world has: what
+// CoinValue claims is "one meal", which is what stage 80's price is quoted
+// in and what stage 81 measured the ceiling of. Anything else would be a new
+// number, and the one thing this rule must not do is invent a scale for
+// generosity.
+//
+// Capped at twice the standard so that one enormous gift cannot buy a
+// lifetime of goodwill: the same clamp the quality of a made thing has.
+func (w *World) giftWorthShare(to *Agent, item *Food) float64 {
+	standard := w.cfg.CoinValue * w.cfg.LifeValue
+	if standard <= 0 {
+		return 1
+	}
+	s := w.selfView(to)
+	return clamp(w.wareValue(to, &s, item)/standard, 0, 2)
 }

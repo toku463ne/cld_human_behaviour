@@ -587,6 +587,10 @@ type World struct {
 	// How many times a body has drawn a new fancy (stage 90).
 	fancyDraws int
 
+	// What the gifts were worth to the bodies that got them (stage 89b).
+	giftWorth    float64
+	giftsUseless int
+
 	// And the material a warm thing is worked from (TODO 8).
 	hidesDropped int
 	hidesWorked  int

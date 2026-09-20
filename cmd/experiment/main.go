@@ -3212,6 +3212,70 @@ var variants = []variant{
 		},
 	},
 	{
+		// Stage 89b (#119): a gift earns goodwill in proportion to what it
+		// was worth to whoever got it. The giver cannot aim at it - it
+		// reckons on the standard - so what is rewarded is where the thing
+		// landed rather than what was meant by it.
+		name:  "giftworth",
+		about: "89b: a gift that hits buys more goodwill than one that misses",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+		},
+	},
+	{
+		// The control that decides what stage 89b's arm actually did. The
+		// average gift is worth 0.28 of what a coin claims, so scaling the
+		// goodwill by the worth also cuts the goodwill to roughly a third -
+		// and a rule that is mostly a cut has to be read against the cut.
+		// This is that cut with no aiming in it at all: every gift earns
+		// 0.28 of what it earns today, whoever gets it and whatever it is.
+		//
+		// Stage 54 needed the same control and for the same reason (is it
+		// the structure, or is it the average?), and there the flat version
+		// accounted for most of what the structured one did.
+		name:  "giftflatlow",
+		about: "89b's control: every gift earns a third as much, with no aim in it",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.AffinityGift = 6 * 0.28 // the measured mean share of the standard
+		},
+	},
+	{
+		// The same rule in the world it was proposed for: two weathers, two
+		// things that answer them, and a maker who cannot aim at either
+		// (stage 88 measured the share of bodies protected falling from 0.45
+		// to 0.34 when the second weather went in - #119 says this is what
+		// should bring it back).
+		name:  "giftworthweather",
+		about: "89b in stage 88's world: two weathers, and gifts paid by where they land",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"99aa", "99aa", "99aa"}
+			c.ChillDrain, c.HeatDrain = 0.05, 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.GiftWorthScaled = true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// Its pair: the same two weathers with a gift worth the same
+		// whoever gets it.
+		name:  "giftflatweather",
+		about: "89b's control: stage 88's world, and every gift earns the same",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"99aa", "99aa", "99aa"}
+			c.ChillDrain, c.HeatDrain = 0.05, 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
 		// Stage 90: what a body likes moves. The interval is a year, and
 		// the hand changing draws a new one too, so in practice it is the
 		// hand that does it - counted beforehand at about six times in a
@@ -5861,7 +5925,7 @@ var metricNames = []string{
 	"salePrice", "priceOver1", "coinsPaid",
 	"trinketsMade", "trinketQuality", "trinketHeld", "trinketHolders", "trinketKept", "craftShare",
 	"trinketFit", "trinketFitMade", "trinketSold", "trinketGiven", "adornWant", "trinketGain", "trinketGainSold",
-	"trinketEach", "adornSpare", "fancyRate",
+	"trinketEach", "adornSpare", "fancyRate", "giftWorth", "giftsUseless",
 	"makerHeld", "makerReal",
 	"booksWritten", "booksRead", "booksLying", "booksHeld", "bookHolders", "bookFidelity",
 	"lostSight", "missingDir", "lonelyDraw",
@@ -6494,6 +6558,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	kitchen := w.Cooking()
 	trade := w.Trade()
 	weather := w.Weather()
+	giftsEnd := w.Gifts()
 	skins := w.Hides()
 	fedEnd := w.Feeding()
 	feeling := w.Mood()
@@ -6934,6 +6999,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"giftsToMates":     tail.giftsToMates,
 		"giftsToStrangers": tail.giftsToStrangers,
 		"giftStones":       tail.giftStones,
+		// What a gift was worth to whoever got it, as a share of what a coin
+		// claims, and how many were worth nothing to them at all (stage
+		// 89b). The pair is what says whether paying goodwill by the worth
+		// could change anything: gifts that already land where they are
+		// wanted cannot be aimed any better.
+		"giftWorth":    giftsEnd.Worth,
+		"giftsUseless": giftsEnd.Useless,
 		"aimHeld":          tail.aimHeld,
 		"aimReal":          tail.aimReal,
 		"throws":           float64(end.Throws),

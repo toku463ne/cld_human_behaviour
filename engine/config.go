@@ -1160,6 +1160,21 @@ type Config struct {
 	// a rule.
 	WardShare, WardStrength float64
 
+	// GiftWorthScaled is whether the goodwill a gift earns is scaled by what
+	// the thing was worth to whoever received it (TODO 12, stage 89b, #119).
+	// False is every world before this, where a gift buys the same goodwill
+	// whatever it was and whoever got it.
+	//
+	// The giver cannot aim at this. It reckons on the standard, the way the
+	// legs of stage 49 and the price of stage 80 do, so what is rewarded is
+	// the outcome rather than the intent - which is the only shape this
+	// world has ever managed to learn anything from.
+	//
+	// The scale is what a coin claims (CoinValue x LifeValue), because that
+	// is the only standard here and inventing a second one for generosity
+	// is exactly the sort of number this project does not add.
+	GiftWorthScaled bool
+
 	// TrinketFancyTicks is how often a body draws a new "what I like just
 	// now", and TrinketFancySpread how far that strays from the taste it
 	// inherited (TODO 12, stage 90). Zero is every world before this, where
@@ -3575,7 +3590,8 @@ func DefaultConfig() Config {
 		ChillGradient:           false,
 		WardShare:               0,
 		WardStrength:            0,
-		TrinketFancyTicks:       0, // TODO 12: a taste is what a body was born with
+		GiftWorthScaled:         false, // TODO 12: a gift earns the same whoever gets it
+		TrinketFancyTicks:       0,     // TODO 12: a taste is what a body was born with
 		TrinketFancySpread:      0,
 		AdornSatiety:            0, // TODO 12: the fourth piece is worth what the first was
 		AdornForgetPerTick:      0,
