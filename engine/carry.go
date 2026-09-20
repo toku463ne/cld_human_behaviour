@@ -242,7 +242,7 @@ func (a *Agent) carrySlots(cfg *Config) int {
 // 45) there is no such question - it is not food, nobody's kill and nobody's
 // kind - so anything may pick one up.
 func (w *World) canCarry(a *Agent, f *Food) bool {
-	if f.Kind == FoodStone || weightless(f.Kind) {
+	if f.Kind == FoodStone || f.Kind == FoodHide || weightless(f.Kind) {
 		return true
 	}
 	return w.canEat(a, f)
@@ -402,6 +402,8 @@ func forSale(cfg *Config, kind FoodKind) bool {
 		return cfg.Books
 	case kind == FoodTrinket:
 		return cfg.Trinkets
+	case kind == FoodHide:
+		return cfg.HidePerBudget > 0
 	}
 	return false
 }
@@ -454,10 +456,11 @@ func (w *World) handView(a *Agent, f *Food) FoodView {
 	case FoodTrinket:
 		v.Worth = w.trinketWorth(a, f)
 		v.Ward = w.wardValue(a, f)
-	case FoodCoin, FoodStone:
-		// Neither is worth anything as a meal, and what each is worth
+	case FoodCoin, FoodStone, FoodHide:
+		// None of them is worth anything as a meal, and what each is worth
 		// instead the controller works out for itself: a coin from what
-		// it will buy, a stone from what throwing it would do.
+		// it will buy, a stone from what throwing it would do, a hide from
+		// what it could be made into.
 	default:
 		v.Nutrition = w.mealValues(a)[f.Kind]
 		v.Heal = w.itemHealKnown(a, f)

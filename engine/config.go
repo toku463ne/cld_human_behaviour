@@ -1160,6 +1160,38 @@ type Config struct {
 	// a rule.
 	WardShare, WardStrength float64
 
+	// HidePerBudget is how much of a dead beast's budget makes one hide, and
+	// WardNeedsHide whether a warm thing can be made without one (TODO 8).
+	// Zero and false are the world stage 87a measured, which is the default.
+	//
+	// The pair is the two halves of "materials and working them". The first
+	// is a supply: hides come off the beasts and off nothing else, so how
+	// many there are is set by how much hunting the world does rather than
+	// by how much anybody wants one. The second is what turns that supply
+	// into a shortage - with it on, a piece comes out warding only where the
+	// maker had a hide, and making it uses the hide up.
+	//
+	// Counted before it was built (TODO 8's "count first"): 59.4 beasts die
+	// in a 20,000-tick run and a human was among the attackers for 22.1 of
+	// them, against 3,104 coats made. So the material cuts the supply by a
+	// factor of ten or more whatever the dose, and the dose is the figure
+	// here rather than a constant: what is being asked is whether the
+	// shortage moves the trade, and a shortage that kills everybody answers
+	// nothing (coatrare took the population from 92.0 to 52.9).
+	//
+	// Hides are not a new kind of ownership (#72, the stone's rule). They
+	// lie where the carcass fell and whoever picks one up has it; the body
+	// that made the kill is standing on it, which is all the advantage it
+	// needs. The claim machinery that shares out meat is about eating, and
+	// nothing here eats.
+	HidePerBudget float64
+	WardNeedsHide bool
+
+	// MaxHideItems is the ceiling on how many are lying about, the safety net
+	// MaxMeatItems is. Hides do not go off - a skin keeps - so without a
+	// ceiling a world where nobody wants them would fill up with them.
+	MaxHideItems int
+
 	// ChillGradient is whether a body can feel which way it gets warmer
 	// (stage 86b). Off by default, which is the world stage 86 measured.
 	//
@@ -3496,6 +3528,9 @@ func DefaultConfig() Config {
 		ChillGradient:           false,
 		WardShare:               0,
 		WardStrength:            0,
+		HidePerBudget:           0, // TODO 8: no material, and every world before it
+		WardNeedsHide:           false,
+		MaxHideItems:            140,
 		SaleAnchor:              0,
 		CoinBuysWarding:         false,
 		CoinBuysOnlyMeals:       false,

@@ -92,6 +92,7 @@ var (
 	colorFish       = color.RGBA{0x2f, 0xc8, 0xd8, 0xff}
 	colorCrop       = color.RGBA{0xc8, 0x8a, 0x1e, 0xff}
 	colorStone      = color.RGBA{0x77, 0x77, 0x82, 0xff}
+	colorHide       = color.RGBA{0x9a, 0x6b, 0x3f, 0xff}
 	colorMale       = color.RGBA{0x2a, 0x78, 0xd6, 0xff}
 	colorFemale     = color.RGBA{0xe8, 0x7b, 0xa4, 0xff}
 	colorForage     = color.RGBA{0xc3, 0xc2, 0xb7, 0xff}
@@ -2433,6 +2434,12 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			c = colorFish
 		case engine.FoodStone:
 			c = colorStone
+		case engine.FoodHide:
+			// The material (TODO 8). Brown, and told apart from the caches
+			// by being a dot rather than a square: what a player wants to
+			// see at a glance is whether the skins are piling up where the
+			// beasts died or being carried off.
+			c = colorHide
 		case engine.FoodCoin:
 			// Money (stage 51). It is drawn small and bright: there is not
 			// much of it, it does not grow back, and the one thing a player
@@ -4307,6 +4314,7 @@ func main() {
 	noahead := flag.Bool("noahead", false, "put back the world before 2026-09-13: one planning window rather than two (stages 67, 72, 73, 74)")
 	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
 	trinkets := flag.Bool("trinkets", false, "bodies can make things worth looking at, wanted for nothing but themselves and each body wanting a different one (stages 82 and 84; brings -lighthands with it)")
+	hides := flag.Bool("hides", false, "beasts leave skins and a warm thing can only be worked out of one, in a cold that kills (TODO 8; brings the coat, the money and the prices with it)")
 	cold := flag.Float64("cold", 0, "lay a cold half over the world and charge that much vitality a tick for standing in the coldest of it (stage 85; 0 = the ordinary world)")
 	notaste := flag.Bool("notaste", false, "put back the world stage 82 measured: every body wants the same ornament, and wants it whatever is about to happen to it")
 	prices := flag.Bool("prices", false, "a sale costs as many coins as it takes to leave the seller better off (stage 80; brings -lighthands with it)")
@@ -4376,6 +4384,21 @@ func main() {
 	// with it too.
 	if *trinkets {
 		cfg.CarrySlotsWeigh, cfg.Trinkets = true, true
+	}
+	// A warm thing that has to be worked out of a skin off a dead beast
+	// (TODO 8). It is the whole arm rather than one switch, because the
+	// material means nothing without a cold that kills: a coat answers a
+	// problem, and where the problem is not there the screen shows nothing
+	// at all (which is what 2026-09-20 spent three arms finding out).
+	if *hides {
+		cfg.Trinkets = true
+		cfg.WardShare, cfg.WardStrength = 1, 1
+		cfg.HidePerBudget, cfg.WardNeedsHide = 130, true
+		cfg.CarrySlotsWeigh, cfg.CoinPrices, cfg.OfferTicks, cfg.Coins = true, true, 30, 60
+		if *cold <= 0 {
+			cfg.ChillDrain = 0.05
+			cfg.ClimateMap = []string{"..99", "..99", "..99"}
+		}
 	}
 	// The fourth preference (stage 94): what a child is worth, which until
 	// this was a constant every body shared.

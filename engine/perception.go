@@ -152,6 +152,14 @@ type SelfView struct {
 	CarryRoom     bool
 	CarryCapacity float64
 
+	// HoldsHide says this body has the material for a warm thing, and
+	// WardGain what one more of them would take off the weather where it
+	// stands (TODO 8). The pair is what turns a making into a coat: with a
+	// material in the world, whether a body can have one is not luck but
+	// whether it has been where the beasts are.
+	HoldsHide bool
+	WardGain  float64
+
 	// CraftQuality is what a thing this body made would be worth, before the
 	// luck of the piece (stage 82), and CanCraft whether it could make one at
 	// all. Both are what a body knows about its own hands.
@@ -645,6 +653,11 @@ type Perception struct {
 	// was last in sight all count what is edible, and a stone is not.
 	Stones []FoodView
 
+	// Hides is the material lying about (TODO 8), in its own list for the
+	// reason the stones are: it is not food, and what it is worth is not a
+	// thing the meal columns can say.
+	Hides []FoodView
+
 	// Stores is the caches in sight that this agent knows about (stage 50).
 	// Kept apart from Foods for the reason the stones are: a cache is not a
 	// meal, and none of the figures that count what is edible should count
@@ -712,7 +725,7 @@ func (w *World) selfView(a *Agent) SelfView {
 	if homePull > 0 {
 		homeRoam = w.homeRoamOf(a)
 	}
-	return SelfView{
+	s := SelfView{
 		ID:           a.ID,
 		X:            a.X,
 		Y:            a.Y,
@@ -782,6 +795,13 @@ func (w *World) selfView(a *Agent) SelfView {
 		HeldMeals:         w.heldMeals(a),
 		CarriedHeavy:      a.heavyCarried(),
 	}
+	// What this body has to work with, where the world asks for a material
+	// (TODO 8). Behind the question because both halves cost something and
+	// a view is built for every decision.
+	if w.asksForHides() {
+		s.HoldsHide, s.WardGain = a.holdsHide(), w.wardGap(a)
+	}
+	return s
 }
 
 // perceive fills the world's reusable perception buffer for one agent.
@@ -793,6 +813,7 @@ func (w *World) perceive(a *Agent) *Perception {
 	p.Rand = w.rng
 	p.Foods = p.Foods[:0]
 	p.Stones = p.Stones[:0]
+	p.Hides = p.Hides[:0]
 	p.Stores = p.Stores[:0]
 	p.Coins = p.Coins[:0]
 	p.Books = p.Books[:0]
@@ -836,6 +857,19 @@ func (w *World) perceive(a *Agent) *Perception {
 				ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
 				RivalDist: math.Inf(1),
 			})
+			continue
+		}
+		// And a skin off a beast, in its own list again (TODO 8). What it
+		// is worth is the same for every one of them - a hide is a hide -
+		// so the controller works it out once rather than carrying it here
+		// per piece, which is how the stones are handled.
+		if f.Kind == FoodHide {
+			if w.hidesDrop() {
+				p.Hides = append(p.Hides, FoodView{
+					ID: f.ID, X: f.X, Y: f.Y, Dist: math.Sqrt(d2), Kind: f.Kind,
+					RivalDist: math.Inf(1),
+				})
+			}
 			continue
 		}
 		// And money, in its own list for the same reason (stage 51).
@@ -986,6 +1020,14 @@ func (w *World) perceive(a *Agent) *Perception {
 			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
 			offerWorth = w.trinketWorth(a, item)
 			offerWard = w.wardValue(a, item)
+			w.sawOffer = true
+		} else if item != nil && item.Kind == FoodHide && w.hidesDrop() {
+			// A material held up (TODO 8). Worth what this looker could make
+			// of it, which is the first thing in this world whose worth to
+			// the buyer and to the seller differ for a reason either of them
+			// could point at: one of them is standing in the cold.
+			offering, offerKind, offerLeft = true, item.Kind, w.offerLeft(o)
+			offerWorth = hideWorth(&w.cfg, &p.Self)
 			w.sawOffer = true
 		} else if item != nil && item.Kind == FoodBook && w.cfg.Books {
 			// A book held up is worth what it would tell this looker, which

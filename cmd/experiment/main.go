@@ -2892,6 +2892,111 @@ var variants = []variant{
 			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
 		},
 	},
+	// TODO 8: the material. Everything about these is coatbite - the same
+	// killing cold, the same ornaments, the same hands, the same money - and
+	// the one difference is that a warm thing now has to be worked out of a
+	// skin off a dead beast, and nobody can make a skin.
+	//
+	// It is the last of the three levers #115 named. Scarcity (coatrare) and
+	// charging for the giving (coatpriced) have both been tried and both made
+	// the exchange smaller. What is left is self-sufficiency: in every world
+	// measured so far, anybody who wanted a coat could sit down and make one.
+	//
+	// Counted before it was built: 59.4 beasts die in a run and a human was
+	// among the attackers for 22.1 of them, against 3,104 coats made. So the
+	// dose is what decides whether this is a shortage or a famine, and it is
+	// three arms rather than one - coatrare is what one wrong dose looks
+	// like (the population went from 92.0 to 52.9 and the sales to 0.04).
+	{
+		name:  "coathide",
+		about: "TODO 8: a coat has to be worked out of a hide, and hides come off the beasts",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 130, true // about four skins a carcass
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		name:  "coathiderich",
+		about: "TODO 8 at four times the material: enough skins that a hunter cannot use them all",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 33, true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		name:  "coathidelean",
+		about: "TODO 8 at one skin a carcass: the dose where the material is properly scarce",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 520, true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// The first reading said the surplus was there (0.89 of the skins in
+		// hands are held by bodies that would gain nothing by wearing what
+		// they would make) and that none of it was sold. Before that can be
+		// read as a fact about the world it has to be read as a fact about
+		// what goes on the counter: a body offers the first thing it is
+		// holding, and since 60% of them hold an ornament, the skin is
+		// almost never what is held up. HandOverCheapest (stage 84) makes it
+		// offer the thing it minds least, which is the spare skin.
+		name:  "coathidespare",
+		about: "TODO 8 with the seller offering what it minds least: does the spare skin sell",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 33, true
+			c.HandOverCheapest = true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// Its control: the same rule about what goes on the counter, in the
+		// world with no material in it. Without this pair the rule and the
+		// material are changed together.
+		name:  "coatbitespare",
+		about: "coatbite with the seller offering what it minds least",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HandOverCheapest = true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		// And the material without the shortage: the skins drop and anybody
+		// can still make a coat without one. It separates "there are hides in
+		// this world" from "a coat needs one", which is the only way to read
+		// the arms above - a hide in a hand is a hand full, and that alone
+		// moves things (stage 51a filled two thirds of the hands with money
+		// and the giving stopped).
+		name:  "coathidefree",
+		about: "TODO 8's control: the skins drop, and a coat can be made without one",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 130, false
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
 	{
 		name:  "coatbiteless",
 		about: "coatbite's control: the same world and the same ornaments, warding nothing",
@@ -5663,6 +5768,7 @@ var metricNames = []string{
 	"enemyAway", "enemyAtHome", "homeShare",
 	"plantRate", "foodMean",
 	"humanKillShare", "enemyKillShare", "humansByEnemy", "plantsToEnemy", "plantSeenByEnemy",
+	"enemyDied", "enemyKilled", "enemyByHuman",
 	"wardHeld", "wardReal", "wardGap",
 	"enemiesWet", "humansWet",
 	"regionKnown", "regionTold", "regionRank", "regionSpread", "regionCostRank",
@@ -5670,6 +5776,8 @@ var metricNames = []string{
 	"speedOpen", "speedDear", "speedGap", "onDear", "onHigh",
 	"onCold", "coldGain", "coldFood", "chillTook", "chillShare",
 	"coats", "wearing", "coatsHanded", "coatsSold", "coatSoldCold", "coatGivenCold", "coatsSpare",
+	"hides", "hidesWorked", "hidesLying", "hidesHeld", "hideHolders", "hidesSpare",
+	"hidesSold", "hidesGiven",
 	"bankSplit", "crossShare", "crossIndex", "crossDry", "bankGeneGap", "bankCountryGap",
 	"bankMoves", "bankBoth",
 	"speedHigh", "speedLow", "highGap",
@@ -6271,6 +6379,8 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	kitchen := w.Cooking()
 	trade := w.Trade()
 	weather := w.Weather()
+	skins := w.Hides()
+	fedEnd := w.Feeding()
 	feeling := w.Mood()
 	rearing := w.Rearing()
 	apart := w.Loneliness()
@@ -6818,6 +6928,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"humansByEnemy":    tail.humansByEnemy,
 		"plantsToEnemy":    tail.plantsToEnemy,
 		"plantSeenByEnemy": tail.plantSeenByEnemy,
+		// How many carcasses the beasts leave over a run, and how many of
+		// them a human was standing over (2026-09-20). Counted before the
+		// material of TODO 8 is built: a hide dropped by something nobody
+		// kills is a supply of nothing, and the share columns above cannot
+		// say how many there are.
+		"enemyDied":    fedEnd.EnemyDeaths,
+		"enemyKilled":  fedEnd.EnemyKills,
+		"enemyByHuman": fedEnd.EnemyKillsByHuman,
 		// The lore about the beasts (stage 62): how many hold it, what it is
 		// worth once the body's defence has capped it, and whether the ones
 		// who hold it are standing where the beasts are.
@@ -6866,6 +6984,21 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"coatSoldCold":  weather.SoldWeather,
 		"coatGivenCold": weather.GivenWeather,
 		"coatsSpare":    weather.Spare,
+		// The material (TODO 8). hides is how many came off the beasts and
+		// hidesWorked how many were made into something: the gap between
+		// them is the slack there is to trade, and a material that is worked
+		// the moment it is picked up has none. hidesSpare is the share of
+		// the ones in hand whose holder would gain nothing by wearing what
+		// it would make - the surplus, which stage 68 says is the half of a
+		// market this world has never had.
+		"hides":       float64(skins.Dropped),
+		"hidesWorked": float64(skins.Worked),
+		"hidesLying":  float64(skins.Lying),
+		"hidesHeld":   float64(skins.Held),
+		"hideHolders": skins.Holders,
+		"hidesSpare":  skins.Spare,
+		"hidesSold":   float64(skins.Sold),
+		"hidesGiven":  float64(skins.Given),
 		"chillTook":     weather.Taken,
 		"chillShare":    shareOf(weather.Taken, weather.Taken+weather.Starved),
 		"onDear":        tail.onDear,

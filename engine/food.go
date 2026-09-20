@@ -90,11 +90,36 @@ const (
 	// like meat (so that holding one for ever is not free).
 	FoodTrinket = NumEdibleKinds + 3
 
+	// FoodHide is what a beast leaves behind that is not worth eating (TODO
+	// 8), and it is the fifth thing on this list nobody eats.
+	//
+	// It is the first material in this world: a thing that is worth nothing
+	// in itself and something only for what it can be turned into, which is
+	// the shape the stone has ("a throw that has not happened yet") one step
+	// further along - a stone is thrown as it is, and a hide has to be worked
+	// first.
+	//
+	// Why it exists is a market and not a wardrobe. Four measurements say the
+	// coat of stage 87a is never bought: 2,820 of them are made in a run and
+	// 2,491 change hands, and 1.79 of those are sales. Making them scarce
+	// (coatrare) and charging for the giving (coatpriced) were both tried and
+	// both made the exchange smaller rather than dearer. What is left is the
+	// one thing those arms never touched - that anybody who wants a coat can
+	// sit down and make one (#115(b)). A material nobody can make, that turns
+	// up where the beasts are and nowhere else, is the first thing in this
+	// world a body can want and be unable to produce.
+	//
+	// It weighs, deliberately. A coin, a book and an ornament are weightless
+	// and so cost their holder nothing to keep; a hide takes a hand, which is
+	// what makes a hunter standing over its third carcass have a reason to
+	// part with one.
+	FoodHide = NumEdibleKinds + 4
+
 	// NumFoodKinds is how many there are, for the code that keeps one figure
 	// per kind (the diet rule of stage 16). It is not a kind, and it is
 	// spelled out rather than left to iota: the line above ends the run, and
 	// a bare name here would repeat it rather than carry on.
-	NumFoodKinds = FoodTrinket + 1
+	NumFoodKinds = FoodHide + 1
 )
 
 func (k FoodKind) String() string {
@@ -111,6 +136,8 @@ func (k FoodKind) String() string {
 		return "coin"
 	case FoodBook:
 		return "book"
+	case FoodHide:
+		return "hide"
 	}
 	return "plant"
 }

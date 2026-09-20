@@ -169,6 +169,15 @@ type EnemyKind struct {
 	// to how much of the map it is).
 	Meat float64
 
+	// Hide is the same for what it leaves that nobody eats (TODO 8): a
+	// multiplier on Bulk / HidePerBudget, and unset is one.
+	//
+	// It is a second field rather than a share of Meat because the two are
+	// facts about different things - how much of a beast is worth eating and
+	// how much of it is worth working - and a sort that is all meat and no
+	// skin is a row, not a special case.
+	Hide float64
+
 	// Homely is how much of EnemyHomeCost this kind pays (stage 64): one is
 	// a sort that keeps to the country it came into the world in, zero one
 	// that goes wherever it likes. An unset row is zero - a kind that was
@@ -429,6 +438,20 @@ type Feeding struct {
 	EnemiesByHuman float64 // ... and the other way round
 	PlantsToEnemy  float64 // plants eaten by enemies, over the run
 
+	// EnemyDeaths is how many of them died over the run, EnemyKills how many
+	// of those were killed, and EnemyKillsByHuman how many of the kills had a
+	// human among the attackers (2026-09-20).
+	//
+	// The three shares above cannot answer how much of anything a carcass
+	// could supply: a share says what fraction of the dying was violent, and
+	// what a material dropped by the dead would amount to is a count. It is
+	// the supply side of TODO 8, counted before the material is built, in the
+	// habit stage 45 set - a thing nobody can find is a rule that never
+	// fires.
+	EnemyDeaths       float64
+	EnemyKills        float64
+	EnemyKillsByHuman float64
+
 	// EnemiesOnWater is how many of the enemies are standing in the water
 	// (stage 63), and HumansOnWater the same for the humans - the figure
 	// three stages running have failed to move, now that there is something
@@ -447,6 +470,7 @@ type Feeding struct {
 func (w *World) Feeding() Feeding {
 	out := Feeding{PlantsToEnemy: w.plantsToEnemies}
 	h, e := &w.tollOf[0], &w.tollOf[1]
+	out.EnemyDeaths, out.EnemyKills, out.EnemyKillsByHuman = e.deaths, e.kills, e.byOther
 	if h.deaths > 0 {
 		out.HumanKillShare = h.kills / h.deaths
 	}

@@ -74,6 +74,9 @@ func (w *World) giveItem(from, to *Agent) bool {
 	if item.Kind == FoodStone {
 		w.giftStones++
 	}
+	if item.Kind == FoodHide {
+		w.noteHideMove(&item, false)
+	}
 	if item.Cooked > 0 {
 		w.cookedHanded++
 		w.noteCookedHandOver(to, &item, false)

@@ -287,6 +287,13 @@ func (w *World) wareValue(a *Agent, s *SelfView, item *Food) float64 {
 	if item.Kind == FoodTrinket {
 		return w.trinketWorth(a, item) // what it is worth to this one (stage 84)
 	}
+	if item.Kind == FoodHide {
+		// A material is worth what this one could make of it (TODO 8), which
+		// is a figure that differs between two bodies standing side by side:
+		// the one in the cold would be making a coat and the one beside it
+		// an ornament.
+		return hideWorth(&w.cfg, s)
+	}
 	nutrition, heal := s.Nutrition[item.Kind], w.itemHealKnown(a, item)
 	meal := mealValue(cfg, s, 0, nutrition, heal)
 	if kept := keepValue(cfg, s, 0, nutrition, heal,
@@ -417,6 +424,9 @@ func (w *World) sell(buyer, seller *Agent) bool {
 		w.trinketsSold++
 		w.noteTrinketMove(seller, buyer, &f, true)
 	}
+	if f.Kind == FoodHide {
+		w.noteHideMove(&f, true)
+	}
 	if price > 1 {
 		w.salesOverOne++
 	}
@@ -542,7 +552,17 @@ func (a *Agent) firstForSale(cfg *Config) int {
 	// comes after the dinner: a body should offer what it can most afford to
 	// lose, and a read book is worth nothing to its owner while a trinket is
 	// worth what it is worth to anybody.
-	return a.carriedIndex2(FoodTrinket)
+	if i := a.carriedIndex2(FoodTrinket); i >= 0 {
+		return i
+	}
+	// The material comes after the thing made of it (TODO 8), on the same
+	// argument one step along: what a body can most afford to part with is
+	// the piece it has already got the good out of, not the one it has not
+	// worked yet.
+	if w := a.carriedIndex2(FoodHide); w >= 0 && cfg.HidePerBudget > 0 {
+		return w
+	}
+	return -1
 }
 
 // CoinUse is what the money came to. Read only.

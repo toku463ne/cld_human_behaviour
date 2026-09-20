@@ -584,6 +584,12 @@ type World struct {
 	trinketSales     int
 	trinketSaleGain  float64
 
+	// And the material a warm thing is worked from (TODO 8).
+	hidesDropped int
+	hidesWorked  int
+	hidesSold    int
+	hidesGiven   int
+
 	// What was written down and what was read (stage 69).
 	booksWritten int
 	booksRead    int
@@ -2167,6 +2173,8 @@ func (w *World) kill(a *Agent) {
 		w.childDeaths++
 	}
 	w.dropMeat(a)
+	// And the skin, which is not food and is not shared out (TODO 8).
+	w.dropHide(a)
 	// A body the river took is the river's, even if somebody had been hitting
 	// it a moment before. The buckets have to stay exclusive: what is read as
 	// starvation is everything the other counters do not claim.
@@ -2727,8 +2735,11 @@ func (w *World) spawnFood() {
 	// Fish come off this line too once the water has a ceiling of its own
 	// (2026-09-20), because otherwise the two pools would still be one: a
 	// lake full of fish would stop the land growing.
+	// ... and a fifth name, for the same reason (TODO 8): a hide is a thing
+	// lying about that nobody eats, and a world where the beasts have been
+	// busy would otherwise stop growing plants.
 	held := len(w.foods) - w.countKind(FoodStone) - w.countKind(FoodCoin) -
-		w.countKind(FoodBook) - w.countKind(FoodTrinket)
+		w.countKind(FoodBook) - w.countKind(FoodTrinket) - w.countKind(FoodHide)
 	if w.cfg.MaxFishItems > 0 {
 		held -= w.countKind(FoodFish)
 	}

@@ -71,6 +71,14 @@ func (w *World) canCraft(a *Agent) bool {
 	if !w.cfg.Trinkets || w.cfg.CraftTicks <= 0 || w.cfg.TrinketValue <= 0 {
 		return false
 	}
+	if w.cfg.WardNeedsHide && a.holdsHide() {
+		// The material leaves the hand as the piece goes into it (TODO 8),
+		// so there is room by construction. Asked the ordinary way, a body
+		// with one hand and a skin in it could never work the skin - a
+		// deadlock, and one that only shows up in the worlds where a hand
+		// costs something.
+		return true
+	}
 	return a.canCarryKind(&w.cfg, FoodTrinket)
 }
 
@@ -107,7 +115,7 @@ func (w *World) craft(a *Agent) {
 		X: a.X, Y: a.Y, Kind: FoodTrinket, Made: clamp(made, 0, 2),
 		Style: w.drawStyle(a),
 	}
-	item.Ward, item.Wards = w.wardMade()
+	item.Ward, item.Wards = w.wardMadeBy(a)
 	w.trinketFitMade += w.trinketDelight(a, &item)
 	w.trinketFitN++
 	if w.cfg.TrinketSpoilTicks > 0 {

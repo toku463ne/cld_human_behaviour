@@ -420,21 +420,43 @@ func (w *World) wardMade() (float64, Weather) {
 	if w.rng.Float64() >= clamp(w.cfg.WardShare, 0, 1) {
 		return 0, WeatherChill
 	}
-	// And which weather it answers, where the world has more than one
-	// (stage 88). Drawn rather than chosen, for the reason the style is: a
-	// maker that could aim would have no reason to want anybody else's.
-	kind := WeatherChill
+	return clamp(w.cfg.WardStrength, 0, 1), w.wardKind()
+}
+
+// wardKind is which weather a piece answers, where the world has more than
+// one (stage 88). Drawn rather than chosen, for the reason the style is: a
+// maker that could aim would have no reason to want anybody else's.
+func (w *World) wardKind() Weather {
 	kinds := 0
 	for k := Weather(0); k < NumWeathers; k++ {
 		if w.drainFor(k) > 0 {
 			kinds++
 		}
 	}
-	if kinds > 1 {
-		n := int(w.rng.Float64() * float64(NumWeathers))
-		kind = Weather(clampInt(n, 0, int(NumWeathers)-1))
+	if kinds <= 1 {
+		return WeatherChill
 	}
-	return clamp(w.cfg.WardStrength, 0, 1), kind
+	n := int(w.rng.Float64() * float64(NumWeathers))
+	return Weather(clampInt(n, 0, int(NumWeathers)-1))
+}
+
+// wardMadeBy is the same question where the world asks for a material (TODO
+// 8): a piece comes out warding if this body had a hide, and the hide is used
+// up in it.
+//
+// WardShare is not consulted here and no die is rolled. That is the whole
+// difference the material makes: what decides whether this is a coat is not
+// luck but whether the maker had been where the beasts are, which is a thing
+// a body can go and do something about - and a thing somebody else can sell
+// it.
+func (w *World) wardMadeBy(a *Agent) (float64, Weather) {
+	if !w.cfg.WardNeedsHide {
+		return w.wardMade()
+	}
+	if w.cfg.WardStrength <= 0 || !w.takeHide(a) {
+		return 0, WeatherChill
+	}
+	return clamp(w.cfg.WardStrength, 0, 1), w.wardKind()
 }
 
 // regionChill is how cold each region is on average, and how cold the world is

@@ -241,6 +241,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.addOffer(p)
 	c.addBooks(p)
 	c.addCraft(p)
+	c.addHides(p)
 	c.addTrinkets(p)
 	c.addDrop(p) // last: what a hand is worth depends on what was scored for it
 
@@ -1449,9 +1450,11 @@ func (c *AIController) addGoToOffer(p *Perception, o *AgentView) {
 		}
 		if o.OfferWorth > 0 {
 			u.Life = Goal{}
-			if o.OfferKind == FoodTrinket {
+			if o.OfferKind == FoodTrinket || o.OfferKind == FoodHide {
 				// An ornament is worth what it is worth, and it is its own
 				// goal (stage 82): not another day and not knowing anything.
+				// A material goes in the same column, because what it is
+				// worth is the thing it would be made into (TODO 8).
 				u.Adorn = Goal{Value: o.OfferWorth, Chance: chance}
 			} else {
 				u.Lore = Goal{Value: cfg.BookValue * o.OfferWorth, Chance: chance}
@@ -1778,6 +1781,11 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 		meal = o.OfferWorth // already what it is worth, to anybody (stage 82)
 		meal += warmthValue(cfg, s, c.incomingDmg, o.OfferWard)
 	}
+	if o.OfferKind == FoodHide {
+		// And a material is worth what the buyer could make of it (TODO 8),
+		// which the view has already worked out in the buyer's own terms.
+		meal = o.OfferWorth
+	}
 	if o.OfferValue > 0 || o.OfferHeal > 0 {
 		meal = mealValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal)
 		if kept := keepValue(cfg, s, c.incomingDmg, o.OfferValue, o.OfferHeal,
@@ -1841,23 +1849,99 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 // uses. That price is the point rather than an inconvenience: a want that
 // arrives free runs to the ceiling (stage 17b), and a maker that can make them
 // freely is a supply with no shortage in it.
-func (c *AIController) addCraft(p *Perception) {
-	cfg, s := p.Cfg, &p.Self
-	if !s.CanCraft {
-		return
-	}
-	// What it expects to end up with: its own hands, the luck of the piece it
-	// cannot know in advance (CraftDelight), and whether it will be there to
-	// enjoy the thing at all (stage 84). The last is the whole difference
-	// between this and going to eat: a meal is worth more to a body that is
-	// running out, and an ornament is worth less.
+// craftWant is what a body expects to get out of making something: its own
+// hands, the luck of the piece it cannot know in advance (CraftDelight), and
+// whether it will be there to enjoy the thing at all (stage 84). The last is
+// the whole difference between this and going to eat: a meal is worth more to
+// a body that is running out, and an ornament is worth less.
+//
+// One function because two things ask it (stage 77's rule): the option to sit
+// down and make one, and what the material for one is worth. When those two
+// answers drift, a body pays for a hide it will not use or throws away one it
+// would have.
+func craftWant(cfg *Config, s *SelfView, incoming float64) float64 {
 	want := cfg.TrinketValue * cfg.LifeValue * s.CraftQuality * s.CraftDelight * s.AdornWant
 	// And what it might keep off the weather (stages 87a, 88). A maker cannot
 	// aim - not at how good it comes out, not at what it answers - so it
 	// reckons on how often one comes out answering at all, and on the weather
 	// where it is standing, which is the only one it can price.
-	want += clamp(cfg.WardShare, 0, 1) *
-		warmthValue(cfg, s, c.incomingDmg, clamp(cfg.WardStrength, 0, 1)*s.ChillRaw)
+	share := clamp(cfg.WardShare, 0, 1)
+	warm := warmthValue(cfg, s, incoming, clamp(cfg.WardStrength, 0, 1)*s.ChillRaw)
+	if cfg.WardNeedsHide {
+		// Where the world asks for a material, luck does not come into it
+		// (TODO 8): a body with a hide is making a coat and a body without
+		// one is not, and what the coat is worth is what it would add to
+		// what this body already wards - nought for one that has a coat
+		// already, which is what stops a hunter turning every skin it finds
+		// into a second one it does not need.
+		share = 0
+		if s.HoldsHide {
+			share = 1
+		}
+		warm = warmthValue(cfg, s, incoming, s.WardGain)
+	}
+	return want + share*warm
+}
+
+// hideWorth is what having the material is worth: what this body could make
+// of it, discounted by the same CarryValue a meal kept for later is, because
+// that is what it is - a thing in the hand for the sake of what comes of it.
+//
+// It is nought in a world that does not ask for a material, and nought to a
+// body that could not make anything anyway. Nothing else about it is special:
+// picking one up, holding on to one, selling one, buying one and being given
+// one all read this line.
+func hideWorth(cfg *Config, s *SelfView) float64 {
+	if !cfg.WardNeedsHide || cfg.CarryValue <= 0 || !s.CanCraft {
+		return 0
+	}
+	// As the body it would be once it had one: the whole point of a hide is
+	// that it is the thing that turns a making into a coat.
+	with := *s
+	with.HoldsHide = true
+	return cfg.CarryValue * craftWant(cfg, &with, 0)
+}
+
+// addHides scores walking over to a skin lying on the ground (TODO 8).
+//
+// It is the stone's option with the want changed (stage 46): something lying
+// about that is worth nothing in itself and something for what it can be made
+// into. What it is raced for is the same race anything lying about is.
+func (c *AIController) addHides(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if len(p.Hides) == 0 || !s.CarryRoom {
+		return
+	}
+	want := hideWorth(cfg, s)
+	if want <= 0 {
+		return
+	}
+	for i := range p.Hides {
+		if i >= maxFoodOptions {
+			break
+		}
+		f := &p.Hides[i]
+		chance := raceChance(cfg, s, f.Dist, f.RivalDist)
+		for _, effort := range effortLevels {
+			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
+			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * ticks
+			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
+				Adorn:        Goal{Value: want, Chance: chance},
+				Vitality:     cost,
+				Ticks:        ticks,
+				VitalityCost: cost * cfg.VitalityWeight,
+				TimeCost:     ticks * cfg.TimeCost,
+			})
+		}
+	}
+}
+
+func (c *AIController) addCraft(p *Perception) {
+	cfg, s := p.Cfg, &p.Self
+	if !s.CanCraft {
+		return
+	}
+	want := craftWant(cfg, s, c.incomingDmg)
 	if want <= 0 {
 		return
 	}
@@ -1999,6 +2083,8 @@ func handWorth(cfg *Config, s *SelfView, h *FoodView) float64 {
 		return h.Worth + warmthValue(cfg, s, 0, h.Ward)
 	case FoodStone:
 		return stoneWorth(cfg, s)
+	case FoodHide:
+		return hideWorth(cfg, s)
 	}
 	v := mealValue(cfg, s, 0, h.Nutrition, h.Heal)
 	if kept := keepValue(cfg, s, 0, h.Nutrition, h.Heal, otherMeals(s, h.Nutrition),
