@@ -914,6 +914,26 @@ var variants = []variant{
 		about: "sweep: the good ground painted in two halves, far coarser than the world's own blocks",
 		apply: func(c *engine.Config) { c.RichMap = []string{"91"} },
 	},
+	// 2026-09-20: the water with a pool of its own. Both arms have the same
+	// amount of fish in them; what differs is whether it came out of the
+	// land's share. The plain "fish" arm is the world stage 42 measured.
+	{
+		name:  "fishshare",
+		about: "a quarter of the one crop comes up wet, taking a plant's place (stage 42)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = riverMapForFish()
+			c.FishShare = 0.25
+		},
+	},
+	{
+		name:  "fishpool",
+		about: "the water grows its own crop beside the land's, against its own ceiling",
+		apply: func(c *engine.Config) {
+			c.TerrainMap = riverMapForFish()
+			c.FishSpawnRate = 0.05 // a quarter of FoodSpawnRate, but extra
+			c.MaxFishItems = 30
+		},
+	},
 	{
 		name:  "paintedflat",
 		about: "control for paintedrich: painted, but even ground everywhere",
@@ -7668,4 +7688,14 @@ func main() {
 		}
 		fmt.Printf("\ntime series written to %s\n", *csvPath)
 	}
+}
+
+// riverMapForFish is a river down the middle, the smallest map that has any
+// water in it at all: without water the fish arms are the flat world twice.
+func riverMapForFish() []string {
+	out := make([]string, 12)
+	for i := range out {
+		out[i] = "......~~......"
+	}
+	return out
 }

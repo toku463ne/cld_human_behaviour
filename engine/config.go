@@ -127,6 +127,39 @@ type Config struct {
 	// about where the water is without the world having to stop.
 	SpawnMap []string
 
+	// FishSpawnRate and MaxFishItems give the water its own pool
+	// (2026-09-20). Zero on both is every world before it: a fish comes up
+	// *instead of* a plant at the FishShare rate, and the two share one
+	// allowance, so FoodSpawnRate alone says how much the world grows.
+	//
+	// Above zero, fish come up on their own schedule and against their own
+	// ceiling, and FishShare is not read at all. The world then grows more
+	// food than FoodSpawnRate says, which is a deliberate loosening of stage
+	// 15a's conservation and the reason both default to zero: conservation
+	// holds inside each pool rather than over the two together.
+	//
+	// It means every figure recorded for stages 42, 43 and 36 was taken in a
+	// world where the water took food from the land. Turning this on does not
+	// make those numbers wrong; it makes them numbers about a different
+	// world, and they have to be read again before being quoted.
+	FishSpawnRate float64
+	MaxFishItems  int
+
+	// FishRichMap is how well each cell of water grows fish, painted the way
+	// RichMap is (2026-09-20). Empty is every world before it: a fish is put
+	// in a water cell drawn evenly, so region by region there is exactly as
+	// much fish as there is water.
+	//
+	// It is a separate painting from RichMap because the two answer different
+	// questions about different ground, and one map saying both would make a
+	// rich shore mean "more plants here" and "more fish here" at once with no
+	// way to say only one of them.
+	//
+	// Painted onto dry land it does nothing: the draw is over water cells, so
+	// a richness away from the water is never read. That is the same
+	// forgiveness SpawnMap gives a fish drawn on a hillside.
+	FishRichMap []string
+
 	// RichMap is how well each cell grows things, painted one character per
 	// cell (2026-09-20): a digit is that many fifths, so '5' is ordinary
 	// ground, '0' grows nothing and '9' grows nearly twice as much. A dot, a

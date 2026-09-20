@@ -396,6 +396,11 @@ type World struct {
 	// nothing reads this.
 	rich *richGrid
 
+	// The same for the water, and the running count of fish owed when the
+	// water has a pool of its own (fish.go). Both are inert by default.
+	fishRich  *richGrid
+	fishAccum float64
+
 	drownDeaths          int
 	// drownTakenSwim is the realised swimming of the bodies the water has
 	// taken, summed (stage 98). Against the swimming of the bodies standing in
@@ -705,6 +710,7 @@ func NewWorld(cfg Config) *World {
 	// Before the regions, because a painted world hands them their richness
 	// instead of drawing it (rich.go).
 	w.rich = buildRich(&w.cfg)
+	w.fishRich = buildRichMap(w.cfg.FishRichMap)
 	w.buildRegions()
 	// The stones are laid out before anybody arrives (stage 45): they are
 	// part of what the ground is, not something the world keeps producing.
@@ -891,6 +897,7 @@ func (w *World) Step() {
 	w.tick++
 	w.clearSpoiled()
 	w.spawnFoodOfTick()
+	w.spawnFishOfTick()
 	w.spawnEnemyOfTick()
 
 	// What the ground under each body is worth to it this tick (stage 57),
@@ -2628,8 +2635,15 @@ func (w *World) spawnFood() {
 	// are meant to be separate (see MaxMeatItems) - but it is the world every
 	// figure in HISTORY.md was measured in, so it stays until it is changed
 	// on purpose and measured.
-	if len(w.foods)-w.countKind(FoodStone)-w.countKind(FoodCoin)-
-		w.countKind(FoodBook)-w.countKind(FoodTrinket) >= w.cfg.MaxFoodItems {
+	// Fish come off this line too once the water has a ceiling of its own
+	// (2026-09-20), because otherwise the two pools would still be one: a
+	// lake full of fish would stop the land growing.
+	held := len(w.foods) - w.countKind(FoodStone) - w.countKind(FoodCoin) -
+		w.countKind(FoodBook) - w.countKind(FoodTrinket)
+	if w.cfg.MaxFishItems > 0 {
+		held -= w.countKind(FoodFish)
+	}
+	if held >= w.cfg.MaxFoodItems {
 		return
 	}
 	// One of them comes up in the water instead (stage 42). It is asked first

@@ -67,6 +67,12 @@ type cell struct{ x, y, w, h float64 }
 // one that has not been given any fish, says no without touching the random
 // source, so its runs are the runs it always had.
 func (w *World) spawnFish() bool {
+	// Once the water has a pool of its own, a fish no longer takes a plant's
+	// place: it comes up on its own schedule instead (spawnFishOfTick), and
+	// FishShare is not read at all.
+	if w.cfg.FishSpawnRate > 0 {
+		return false
+	}
 	if w.cfg.FishShare <= 0 || len(w.water) == 0 {
 		return false
 	}
@@ -77,21 +83,84 @@ func (w *World) spawnFish() bool {
 	// the painted squares that are actually water - a fish drawn onto dry
 	// land is ignored, because "fish are grown in water" is stage 42's
 	// invariant and a drawing does not get to break it.
+	x, y := w.pickFishSpot()
+	return w.addFish(x, y) != 0
+}
+
+// pickFishSpot draws a spot in the water: over the painted squares if the map
+// paints any, weighted by the water's own richness if the map paints that.
+//
+// It takes the same three numbers from the random source either way, so a
+// world with no richness painted draws exactly what it drew before.
+func (w *World) pickFishSpot() (float64, float64) {
 	pool := w.water
 	if painted := w.paintedWater(); len(painted) > 0 {
 		pool = painted
 	}
-	c := pool[w.rng.Intn(len(pool))]
-	x := clamp(c.x+w.randRange(-c.w/2, c.w/2), 10, w.cfg.Width-10)
-	y := clamp(c.y+w.randRange(-c.h/2, c.h/2), 10, w.cfg.Height-10)
-	return w.addFish(x, y) != 0
+	pick := pool[0]
+	if w.fishRich == nil {
+		pick = pool[w.rng.Intn(len(pool))]
+	} else {
+		total := 0.0
+		for _, c := range pool {
+			total += w.fishRich.valueAt(c.x, c.y, w.cfg.Width, w.cfg.Height)
+		}
+		if total <= 0 {
+			// Every cell of water painted bare. The water is still water, so
+			// it is drawn between evenly rather than the world growing no
+			// fish because one drawing said nothing grows.
+			pick = pool[w.rng.Intn(len(pool))]
+		} else {
+			r := w.rng.Float64() * total
+			pick = pool[len(pool)-1]
+			for _, c := range pool {
+				r -= w.fishRich.valueAt(c.x, c.y, w.cfg.Width, w.cfg.Height)
+				if r <= 0 {
+					pick = c
+					break
+				}
+			}
+		}
+	}
+	x := clamp(pick.x+w.randRange(-pick.w/2, pick.w/2), 10, w.cfg.Width-10)
+	y := clamp(pick.y+w.randRange(-pick.h/2, pick.h/2), 10, w.cfg.Height-10)
+	return x, y
+}
+
+// spawnFishOfTick grows the water's own crop, when the water has one
+// (2026-09-20). It is the twin of spawnFoodOfTick and carries the fractional
+// part over the same way.
+//
+// The two pools are deliberately separate rather than one split in two: a
+// world where the fish take the plants' places is a world where a lake is a
+// cost to the land, and the whole point of giving the water its own rate is
+// to be able to ask what a lake is worth on its own. That is a loosening of
+// stage 15a's conservation, which is why it does nothing at all unless a map
+// asks for it.
+func (w *World) spawnFishOfTick() {
+	if w.cfg.FishSpawnRate <= 0 || len(w.water) == 0 {
+		return
+	}
+	w.fishAccum += w.cfg.FishSpawnRate
+	for w.fishAccum >= 1 {
+		x, y := w.pickFishSpot()
+		w.addFish(x, y)
+		w.fishAccum--
+	}
 }
 
 // addFish puts one in the world. Fish and plants share one allowance, because
 // a fish is a plant that did not come up: two allowances would let the world
 // hold more food than FoodSpawnRate ever said it could.
 func (w *World) addFish(x, y float64) int {
-	if w.growingFood() >= w.cfg.MaxFoodItems {
+	// The water's own ceiling when it has one, and the shared one otherwise -
+	// the same division meat already has (kindAllowance), and for the same
+	// reason: one allowance means a good spell of one crop stops the other.
+	if w.cfg.MaxFishItems > 0 {
+		if w.countKind(FoodFish) >= w.cfg.MaxFishItems {
+			return 0
+		}
+	} else if w.growingFood() >= w.cfg.MaxFoodItems {
 		return 0
 	}
 	return w.putFood(Food{X: x, Y: y, Kind: FoodFish})

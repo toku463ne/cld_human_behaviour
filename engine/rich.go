@@ -58,8 +58,11 @@ type richGrid struct {
 // buildRich reads Config.RichMap, and returns nil when there is nothing
 // painted - which is what keeps every world before this one identical, down
 // to the random source, because nil takes this rule out of the run entirely.
-func buildRich(cfg *Config) *richGrid {
-	rows := cfg.RichMap
+func buildRich(cfg *Config) *richGrid { return buildRichMap(cfg.RichMap) }
+
+// buildRichMap is the same from the rows themselves, for the second painting
+// the water has (fish.go).
+func buildRichMap(rows []string) *richGrid {
 	if len(rows) == 0 {
 		return nil
 	}
