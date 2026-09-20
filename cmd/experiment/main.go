@@ -2747,6 +2747,33 @@ var variants = []variant{
 			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
 		},
 	},
+	// 2026-09-20: the coat against a cold that actually kills. The arms above
+	// use ChillDrain 0.02, where the cold costs vitality and takes few lives;
+	// coldhard's 0.05 is the dose measured to cost 50 bodies of 123. Warding
+	// something that was not killing anybody cannot show, so this is the pair
+	// that can.
+	{
+		name:  "coatbite",
+		about: "87a's coat against the cold that kills: every ornament wards, at coldhard's dose",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
+	{
+		name:  "coatbiteless",
+		about: "coatbite's control: the same world and the same ornaments, warding nothing",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 0, 0
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+		},
+	},
 	{
 		// The control: the same ornaments, made at the same rate, answering
 		// nothing. Everything about the world is the same except that the
