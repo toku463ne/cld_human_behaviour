@@ -138,6 +138,21 @@ type Config struct {
 	// EnemyKinds is.
 	PlantKinds []PlantKind
 
+	// PlantKindMap says which sort grows where, one character a cell, each
+	// character being a PlantKind's Key (2026-09-20). A dot, a short row and
+	// a character nobody claimed are "nothing painted here", and there the
+	// sort is drawn by Share as it always was.
+	//
+	// The painting wins over the draw where there is one, the same order the
+	// spawn mask and the richness are read in: it is the more particular
+	// thing the author said about that cell.
+	//
+	// It only decides what comes up out of the ground. A seedling keeps its
+	// parent's sort wherever it lands, because the tag rides with the genes -
+	// otherwise a lineage would change sort by walking, which is not what a
+	// kind means.
+	PlantKindMap []string
+
 	// FishSpawnRate and MaxFishItems give the water its own pool
 	// (2026-09-20). Zero on both is every world before it: a fish comes up
 	// *instead of* a plant at the FishShare rate, and the two share one

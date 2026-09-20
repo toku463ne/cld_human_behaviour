@@ -38,6 +38,13 @@ type TiledWorld struct {
 	// not paint one, and then everything comes up where it always did.
 	Spawn []string
 
+	// PlantKindMap says which sort of plant grows where, one character per
+	// cell (2026-09-20), and PlantKinds are the sorts it names - names only,
+	// because a map names a row and never carries its figures (decision
+	// #133). Nil when no tile carries a "plant" property.
+	PlantKindMap []string
+	PlantKinds   []PlantKind
+
 	// Rich is how well each cell grows things, one character per cell
 	// (2026-09-20), in the vocabulary Config.RichMap takes. Nil when no tile
 	// carries a "rich" property, and then the world draws its own richness as
@@ -149,6 +156,7 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 		return nil, err
 	}
 	riches, anyRich := tileRiches(f.Tilesets)
+	plants := tilePlantKinds(f.Tilesets)
 	places := tileRegions(f.Tilesets)
 	for _, l := range f.Layers {
 		switch l.Type {
@@ -195,6 +203,18 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 				}
 				if paintedAnything(rows) {
 					out.Spawn = rows
+				}
+			}
+			// And which sort of plant grows here, off the same layer again:
+			// the tile that says plants may come up is the natural one to
+			// say which sort they are.
+			if out.PlantKindMap == nil {
+				rows, kinds, err := plantKindRows(l, f.Width, f.Height, plants)
+				if err != nil {
+					return nil, err
+				}
+				if len(kinds) > 0 {
+					out.PlantKindMap, out.PlantKinds = rows, kinds
 				}
 			}
 			// And how well the ground grows things, off the same layer if
@@ -247,6 +267,76 @@ func tileRiches(sets []tiledTilset) (map[int]byte, bool) {
 	}
 	return out, any
 }
+
+// tilePlantKinds turns the tilesets into "this tile id grows this sort", by
+// name. The figures are not here and never will be: a map names a row of
+// Config.PlantKinds and the row carries what the sort is like (decision
+// #133), so that the same number never lives in two places.
+func tilePlantKinds(sets []tiledTilset) map[int]string {
+	out := map[int]string{}
+	for _, s := range sets {
+		for _, t := range s.Tiles {
+			if name, ok := propString(t.Properties, "plant"); ok && name != "" {
+				out[s.FirstGID+t.ID] = name
+			}
+		}
+	}
+	return out
+}
+
+// plantKindRows reads a tile layer as "which sort grows where": the rows
+// saying which cell grows what, and the sorts themselves, named only.
+//
+// Sorts are numbered in the order they are first met reading the layer top to
+// bottom, left to right - the same rule the regions use, so that the drawing
+// and not the drawing program decides.
+func plantKindRows(l tiledLayer, cols, rows int, named map[int]string) ([]string, []PlantKind, error) {
+	if len(named) == 0 {
+		return nil, nil, nil
+	}
+	keys := map[int]byte{}
+	byName := map[string]byte{}
+	var kinds []PlantKind
+	tooMany := false
+	take := func(gid int) byte {
+		if k, ok := keys[gid]; ok {
+			return k
+		}
+		name, ok := named[gid]
+		if !ok {
+			keys[gid] = plantKindUnpainted
+			return plantKindUnpainted
+		}
+		if k, ok := byName[name]; ok {
+			keys[gid] = k
+			return k
+		}
+		if len(kinds) >= len(regionKeys) {
+			tooMany = true
+			keys[gid] = plantKindUnpainted
+			return plantKindUnpainted
+		}
+		k := regionKeys[len(kinds)]
+		kinds = append(kinds, PlantKind{Name: name, Key: k})
+		keys[gid], byName[name] = k, k
+		return k
+	}
+	painted, err := terrainRowsFunc(l, cols, rows, take)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(kinds) == 0 {
+		return nil, nil, nil
+	}
+	if tooMany {
+		return nil, nil, fmt.Errorf("tiled: the layer %q names more than %d sorts of plant",
+			l.Name, len(regionKeys))
+	}
+	return painted, kinds, nil
+}
+
+// plantKindUnpainted is the character for a cell no sort was painted on.
+const plantKindUnpainted = '.'
 
 // paintedRichness says whether a layer read as richness says anything at all.
 // A layer of ordinary ground is not a painting, and treating it as one would
@@ -618,10 +708,38 @@ func (t *TiledWorld) Apply(cfg *Config) {
 	if len(t.Rich) > 0 {
 		cfg.RichMap = append([]string(nil), t.Rich...)
 	}
+	t.applyPlantKinds(cfg)
 	if len(t.Regions) > 0 {
 		cfg.RegionShapes = append([]RegionShape(nil), t.Regions...)
 	}
 	if len(t.RegionMap) > 0 {
 		cfg.RegionMap = append([]string(nil), t.RegionMap...)
 	}
+}
+
+// applyPlantKinds merges what the map named into the table the Config brought.
+//
+// The two halves meet here and nowhere else: the map knows the names and
+// where they are, the table knows what each sort is like, and a name in both
+// is one sort (decision #133). A name the table has never heard of still
+// becomes a row, so that a map may paint a country that grows something
+// without the world having to be told in advance what it is - it comes up as
+// an ordinary plant wearing that name, which is exactly what an unfilled row
+// means anyway.
+func (t *TiledWorld) applyPlantKinds(cfg *Config) {
+	if len(t.PlantKinds) == 0 {
+		return
+	}
+	at := map[string]int{}
+	for i := range cfg.PlantKinds {
+		at[cfg.PlantKinds[i].Name] = i
+	}
+	for _, k := range t.PlantKinds {
+		if i, ok := at[k.Name]; ok {
+			cfg.PlantKinds[i].Key = k.Key
+			continue
+		}
+		cfg.PlantKinds = append(cfg.PlantKinds, k)
+	}
+	cfg.PlantKindMap = append([]string(nil), t.PlantKindMap...)
 }

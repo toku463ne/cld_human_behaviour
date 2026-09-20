@@ -401,6 +401,10 @@ type World struct {
 	fishRich  *richGrid
 	fishAccum float64
 
+	// Which character of Config.PlantKindMap means which row of
+	// Config.PlantKinds (plant.go). Nil in a world whose map paints none.
+	plantKindKeys map[byte]int
+
 	drownDeaths          int
 	// drownTakenSwim is the realised swimming of the bodies the water has
 	// taken, summed (stage 98). Against the swimming of the bodies standing in
@@ -711,6 +715,7 @@ func NewWorld(cfg Config) *World {
 	// instead of drawing it (rich.go).
 	w.rich = buildRich(&w.cfg)
 	w.fishRich = buildRichMap(w.cfg.FishRichMap)
+	w.buildPlantKinds()
 	w.buildRegions()
 	// The stones are laid out before anybody arrives (stage 45): they are
 	// part of what the ground is, not something the world keeps producing.
@@ -2667,7 +2672,7 @@ func (w *World) spawnFood() {
 	// parent is drawn uniformly from what is still standing, so staying
 	// uneaten is the only way to be picked more often (stage 17b).
 	defended := func(x, y float64) {
-		genes := w.drawPlantGenes()
+		genes := w.drawPlantGenesAt(x, y)
 		if w.cfg.PlantDefence {
 			if parent, ok := w.defenceParent(); ok {
 				inherited := w.inheritPlantGenes(parent)

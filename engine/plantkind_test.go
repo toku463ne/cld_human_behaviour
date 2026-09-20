@@ -120,3 +120,137 @@ func TestTheSpreadIsAroundTheKindsOwnFigures(t *testing.T) {
 		t.Fatalf("mean spread %.0f, want it scattered around the kind's 200", mean)
 	}
 }
+
+func TestThePaintingSaysWhichSortGrowsWhere(t *testing.T) {
+	cfg := kindConfig()
+	cfg.PlantKinds = []PlantKind{
+		{Name: "berry", Share: 1, Key: 'a'},
+		{Name: "root", Share: 1, Key: 'b'},
+	}
+	cfg.PlantKindMap = []string{"ab"} // berries west, roots east
+	w := grow(cfg, 1000)
+	for _, f := range w.Foods() {
+		if f.Kind != FoodPlant {
+			continue
+		}
+		want := uint8(1)
+		if f.X >= cfg.Width/2 {
+			want = 2
+		}
+		if f.Genes.Strain != want {
+			t.Fatalf("a plant at x=%.0f is kind %d, want %d", f.X, f.Genes.Strain, want)
+		}
+	}
+	got := w.PlantStrains()
+	if got[0] == 0 || got[1] == 0 {
+		t.Fatalf("one half grew nothing: %v", got)
+	}
+}
+
+func TestAnUnpaintedCellStillDrawsByShare(t *testing.T) {
+	// A map may name the country it cares about and leave the rest to the
+	// table: painting the western half only still leaves the east drawing.
+	cfg := kindConfig()
+	cfg.PlantKinds = []PlantKind{
+		{Name: "berry", Share: 0, Key: 'a'}, // never drawn, only painted
+		{Name: "root", Share: 1},
+	}
+	cfg.PlantKindMap = []string{"a."}
+	w := grow(cfg, 1000)
+	west, east := 0, 0
+	for _, f := range w.Foods() {
+		if f.Kind != FoodPlant {
+			continue
+		}
+		if f.X < cfg.Width/2 {
+			if f.Genes.Strain != 1 {
+				t.Fatalf("the painted half grew kind %d", f.Genes.Strain)
+			}
+			west++
+		} else {
+			if f.Genes.Strain != 2 {
+				t.Fatalf("the unpainted half grew kind %d, want the drawn one", f.Genes.Strain)
+			}
+			east++
+		}
+	}
+	if west == 0 || east == 0 {
+		t.Fatalf("west %d east %d", west, east)
+	}
+}
+
+func TestASeedlingKeepsItsSortWhereverItLands(t *testing.T) {
+	// The painting decides what comes out of the ground, not what a lineage
+	// turns into by walking.
+	cfg := kindConfig()
+	cfg.PlantGenetics = true
+	cfg.PlantKinds = []PlantKind{{Name: "berry", Share: 1, Key: 'a'}}
+	cfg.PlantKindMap = []string{"a."}
+	w := NewWorld(cfg)
+	child := w.inheritPlantGenes(plantGenes{Spread: 10, Regrow: 1, Strain: 1})
+	if child.Strain != 1 {
+		t.Fatalf("the seedling is kind %d, want 1", child.Strain)
+	}
+}
+
+func TestAMapMaySayWhichSortGrowsWhere(t *testing.T) {
+	data := []byte(`{"width":2,"height":1,"tilewidth":32,"tileheight":32,
+	 "layers":[
+	  {"type":"tilelayer","name":"ground","width":2,"height":1,"data":[1,1]},
+	  {"type":"tilelayer","name":"crops","width":2,"height":1,"data":[2,3]}],
+	 "tilesets":[{"firstgid":1,"name":"t","tiles":[
+	   {"id":0,"properties":[{"name":"kind","type":"string","value":"flat"}]},
+	   {"id":1,"properties":[{"name":"spawn","type":"string","value":"plant"},
+	                         {"name":"plant","type":"string","value":"berry"}]},
+	   {"id":2,"properties":[{"name":"spawn","type":"string","value":"plant"},
+	                         {"name":"plant","type":"string","value":"root"}]}]}]}`)
+	m, err := ParseTiled(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.PlantKindMap) != 1 || m.PlantKindMap[0] != "ab" {
+		t.Fatalf("the painting is %q, want [\"ab\"]", m.PlantKindMap)
+	}
+	if len(m.PlantKinds) != 2 || m.PlantKinds[0].Name != "berry" || m.PlantKinds[1].Name != "root" {
+		t.Fatalf("the sorts are %+v", m.PlantKinds)
+	}
+	// The map brings names and where they are; it never brings figures.
+	if m.PlantKinds[0].Share != 0 || m.PlantKinds[0].Poison != 0 {
+		t.Fatalf("the map carried figures: %+v", m.PlantKinds[0])
+	}
+
+	// A table that already knows one of them keeps its figures and gains the
+	// key; one it has never heard of becomes a row of its own.
+	cfg := kindConfig()
+	cfg.PlantKinds = []PlantKind{{Name: "berry", Share: 2, Poison: 0.5}}
+	m.Apply(&cfg)
+	if len(cfg.PlantKinds) != 2 {
+		t.Fatalf("%d rows, want 2", len(cfg.PlantKinds))
+	}
+	if cfg.PlantKinds[0].Poison != 0.5 || cfg.PlantKinds[0].Key != 'a' {
+		t.Fatalf("berry is %+v, want its figures kept and key 'a'", cfg.PlantKinds[0])
+	}
+	if cfg.PlantKinds[1].Name != "root" || cfg.PlantKinds[1].Key != 'b' {
+		t.Fatalf("root is %+v", cfg.PlantKinds[1])
+	}
+	if len(cfg.PlantKindMap) != 1 || cfg.PlantKindMap[0] != "ab" {
+		t.Fatalf("Config.PlantKindMap is %q", cfg.PlantKindMap)
+	}
+}
+
+func TestAMapThatNamesNoPlantsPaintsNone(t *testing.T) {
+	data := []byte(`{"width":2,"height":1,"tilewidth":32,"tileheight":32,
+	 "layers":[
+	  {"type":"tilelayer","name":"ground","width":2,"height":1,"data":[1,1]},
+	  {"type":"tilelayer","name":"spawn","width":2,"height":1,"data":[2,2]}],
+	 "tilesets":[{"firstgid":1,"name":"t","tiles":[
+	   {"id":0,"properties":[{"name":"kind","type":"string","value":"flat"}]},
+	   {"id":1,"properties":[{"name":"spawn","type":"string","value":"plant"}]}]}]}`)
+	m, err := ParseTiled(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.PlantKindMap != nil || m.PlantKinds != nil {
+		t.Fatalf("painted %q / %+v with nothing named", m.PlantKindMap, m.PlantKinds)
+	}
+}

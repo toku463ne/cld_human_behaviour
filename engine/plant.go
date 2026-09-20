@@ -93,20 +93,38 @@ type PlantKind struct {
 	Regrow float64
 	Poison float64
 	Signal float64
+
+	// Key is the character that stands for this kind in Config.PlantKindMap,
+	// for a world where a map says which country grows which sort
+	// (2026-09-20). Nought means this kind is not painted anywhere and comes
+	// up by its Share, as every kind did before the map could name one.
+	//
+	// It is the same arrangement RegionShape.Key has, and for the same
+	// reason: the painting is one character a cell, so the legend has to live
+	// on the thing being painted. A map brings the names and where they are;
+	// the table here brings the figures, and neither carries the other's job
+	// (decision #133).
+	Key byte
 }
 
 // drawPlantGenes is what the first plants of a world are. They are drawn around
 // the world's figures with a spread, for the reason the founders' preferences
 // are (lore.go): a population whose members are all identical has nothing for
 // selection to work on.
-func (w *World) drawPlantGenes() plantGenes {
+func (w *World) drawPlantGenes() plantGenes { return w.drawPlantGenesAt(-1, -1) }
+
+// drawPlantGenesAt is the same for a plant whose whereabouts are already
+// known, so that a map painted with kinds can say which sort grows there
+// (2026-09-20). A negative position means "nowhere in particular", which is
+// what the callers that have not chosen a spot yet pass.
+func (w *World) drawPlantGenesAt(x, y float64) plantGenes {
 	cfg := &w.cfg
 	g := plantGenes{Spread: cfg.PlantSpread, Regrow: 1}
 	// Which sort this one is, when the map names any (decision #134). It is
 	// drawn first so that the spread below is a spread around this kind's own
 	// figures rather than around the world's, and a world with no kinds takes
 	// nothing from the random source here.
-	if k := w.pickPlantKind(); k >= 0 {
+	if k := w.plantKindFor(x, y); k >= 0 {
 		row := &cfg.PlantKinds[k]
 		g.Strain = uint8(k + 1)
 		if row.Spread > 0 {
@@ -535,4 +553,56 @@ func (w *World) PlantStrains() []int {
 		}
 	}
 	return out
+}
+
+// plantKindFor is which sort of plant comes up here: what the map painted on
+// this cell if it painted anything, and otherwise a draw by Share.
+//
+// The painting wins over the draw because it is the more particular thing the
+// author said - the same order the spawn mask and the richness are read in.
+// A cell nobody painted still draws, so a map may name the country it cares
+// about and leave the rest of the world to the table.
+func (w *World) plantKindFor(x, y float64) int {
+	if len(w.plantKindKeys) > 0 && x >= 0 && y >= 0 {
+		if k := w.plantKindAt(x, y); k >= 0 {
+			return k
+		}
+	}
+	return w.pickPlantKind()
+}
+
+// plantKindAt reads the painted map, or -1 where nothing is painted.
+func (w *World) plantKindAt(x, y float64) int {
+	rows := w.cfg.PlantKindMap
+	if len(rows) == 0 {
+		return -1
+	}
+	r := clampInt(int(y/w.cfg.Height*float64(len(rows))), 0, len(rows)-1)
+	row := rows[r]
+	if len(row) == 0 {
+		return -1
+	}
+	c := clampInt(int(x/w.cfg.Width*float64(len(row))), 0, len(row)-1)
+	k, ok := w.plantKindKeys[row[c]]
+	if !ok {
+		return -1
+	}
+	return k
+}
+
+// buildPlantKinds is the legend: which character stands for which row. Built
+// once, because Config does not change while a world is running.
+func (w *World) buildPlantKinds() {
+	if len(w.cfg.PlantKindMap) == 0 || len(w.cfg.PlantKinds) == 0 {
+		return
+	}
+	w.plantKindKeys = map[byte]int{}
+	for i := range w.cfg.PlantKinds {
+		if k := w.cfg.PlantKinds[i].Key; k != 0 {
+			w.plantKindKeys[k] = i
+		}
+	}
+	if len(w.plantKindKeys) == 0 {
+		w.plantKindKeys = nil
+	}
 }
