@@ -153,14 +153,14 @@ func TestHighGroundIsReachedOnlyByTheRamp(t *testing.T) {
 func TestALevelAtATime(t *testing.T) {
 	cfg := terrainConfig()
 	w := NewWorld(cfg)
-	if w.canStep(550, 300, 750, 300) {
+	if w.canStep(nil, 550, 300, 750, 300) {
 		t.Fatal("stepped from the ramp at level 1 straight onto level 2")
 	}
-	if w.canStep(650, 300, 750, 300) {
+	if w.canStep(nil, 650, 300, 750, 300) {
 		t.Fatal("climbed from level 1 to level 2 with no ramp on either side")
 	}
 	// Down the way it came up, though: a ramp is a way in and a way out.
-	if !w.canStep(550, 300, 450, 300) {
+	if !w.canStep(nil, 550, 300, 450, 300) {
 		t.Fatal("could not come back down the ramp")
 	}
 }
@@ -213,7 +213,7 @@ func TestAnAgentFeelsTheGroundItStandsOn(t *testing.T) {
 func TestNoMapMeansNothingChanged(t *testing.T) {
 	cfg := quietConfig()
 	w := NewWorld(cfg)
-	if !w.canStep(0, 0, 799, 599) {
+	if !w.canStep(nil, 0, 0, 799, 599) {
 		t.Fatal("a flat world refused a step")
 	}
 	if got := w.perceive(mustAgent(t, w, w.addAgent(Agent{Maturity: 1, X: 100, Y: 100,

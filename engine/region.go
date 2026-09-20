@@ -417,6 +417,14 @@ func (w *World) spawnSpot(species Species) (float64, float64) {
 // and another does not would make the arms depend on the order the sorts
 // happened to arrive in.
 func (w *World) spawnSpotFor(species Species, kind int) (float64, float64) {
+	// Where the map said this sort comes in, if it said anywhere
+	// (2026-09-20). It is read before the weighting for the reason every
+	// painting is: it is the more particular thing the author said.
+	if species == SpeciesEnemy {
+		if x, y, ok := w.paintedSpotFor(kind); ok {
+			return x, y
+		}
+	}
 	if species != SpeciesEnemy || len(w.regions) == 0 {
 		x := w.randRange(20, w.cfg.Width-20)
 		y := w.randRange(20, w.cfg.Height-20)

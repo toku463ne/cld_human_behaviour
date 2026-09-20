@@ -198,7 +198,7 @@ func (w *World) dropMeat(a *Agent) {
 	if w.cfg.MeatPerBudget <= 0 {
 		return
 	}
-	items := int(a.Bulk(&w.cfg) / w.cfg.MeatPerBudget)
+	items := int(w.meatOf(a) / w.cfg.MeatPerBudget)
 	if items <= 0 {
 		return
 	}
@@ -348,7 +348,24 @@ func (w *World) meatFrom(a *Agent) float64 {
 	if w.cfg.MeatPerBudget <= 0 {
 		return 0
 	}
-	return a.Bulk(&w.cfg) / w.cfg.MeatPerBudget
+	return w.meatOf(a) / w.cfg.MeatPerBudget
+}
+
+// meatOf is how much a carcass is worth before it is cut into items: the
+// body's bulk, times whatever its sort is made of (2026-09-20).
+//
+// One for everything that is not an enemy of a named sort, and for every
+// world whose sorts leave Meat unset - which is what keeps every figure
+// recorded before this one about the same carcasses.
+func (w *World) meatOf(a *Agent) float64 {
+	bulk := a.Bulk(&w.cfg)
+	if a.Species != SpeciesEnemy {
+		return bulk
+	}
+	if k := w.kindOf(a); k.Meat > 0 {
+		return bulk * k.Meat
+	}
+	return bulk
 }
 
 // spoilsIn is how long this item has before it goes off, in ticks, and zero

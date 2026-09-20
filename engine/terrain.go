@@ -220,6 +220,16 @@ func (w *World) moveCostOn(a *Agent, x, y, effort float64) float64 {
 // the rule off, gets the terrain's figure unchanged, which is why a world
 // without skills runs exactly as it did.
 func (w *World) groundCostFor(a *Agent, t terrain) float64 {
+	// A flier pays its own price instead of the ground's, whatever the ground
+	// is (2026-09-20). Not nothing: no ground is impassable and none is free.
+	if a != nil && a.Species == SpeciesEnemy {
+		if k := w.kindOf(a); k.Flies {
+			if k.FlyCost > 0 {
+				return k.FlyCost
+			}
+			return 1
+		}
+	}
 	if t.Cost <= 1 || w.cfg.SkillRoughRelief <= 0 || a == nil {
 		return t.Cost
 	}
@@ -237,6 +247,10 @@ func (w *World) groundCostFor(a *Agent, t terrain) float64 {
 // same reason: a skill takes the ground's penalty off, it does not add a
 // factor of its own to the agent.
 func (w *World) groundSpeedFor(a *Agent, t terrain) float64 {
+	// Nothing on the ground drags a flier (2026-09-20).
+	if a != nil && a.Species == SpeciesEnemy && w.kindOf(a).Flies {
+		return 1
+	}
 	slow := t.Slow
 	if slow <= 0 || slow >= 1 {
 		return 1
@@ -352,13 +366,27 @@ func (w *World) Wading() Wading {
 // more than one level at a time anywhere at all. That one rule gives high
 // ground its edge (there are only so many ways in), gives slopes their job,
 // and stacks: getting to the third level means finding a ramp on the second.
-func (w *World) canStep(fromX, fromY, toX, toY float64) bool {
+func (w *World) canStep(a *Agent, fromX, fromY, toX, toY float64) bool {
 	if w.ground == nil {
 		return true
 	}
 	from, to := w.terrainAt(fromX, fromY), w.terrainAt(toX, toY)
 	if from.Height == to.Height {
 		return true
+	}
+	// How this body gets about (2026-09-20). A flier is over the ground and
+	// a level is nothing to it; a climber goes up and down a cliff but still
+	// one level at a time, which is what keeps a stack of them a route and
+	// not a door.
+	if a != nil && a.Species == SpeciesEnemy {
+		k := w.kindOf(a)
+		if k.Flies {
+			return true
+		}
+		if k.Climbs {
+			diff := int(from.Height) - int(to.Height)
+			return diff <= 1 && diff >= -1
+		}
 	}
 	if diff := int(from.Height) - int(to.Height); diff > 1 || diff < -1 {
 		return false
@@ -428,7 +456,7 @@ func (w *World) drownChanceFor(a *Agent, t terrain) float64 {
 	// A creature of the water is not at risk in the water (stage 63). It is
 	// the same flag that puts it there: what lives in the river is not
 	// something the river takes.
-	if a.Species == SpeciesEnemy && w.kindOf(a).Water {
+	if k := w.kindOf(a); a.Species == SpeciesEnemy && (k.Water || k.Flies) {
 		return 0
 	}
 	chance := t.Drown * w.drownFactorFor(a)
@@ -614,7 +642,7 @@ func (w *World) soakOf(a *Agent) float64 {
 	if a == nil || w.ground == nil || w.cfg.WaterDrain <= 0 {
 		return 0
 	}
-	if a.Species == SpeciesEnemy && w.kindOf(a).Water {
+	if k := w.kindOf(a); a.Species == SpeciesEnemy && (k.Water || k.Flies) {
 		return 0
 	}
 	return w.terrainAt(a.X, a.Y).Drain

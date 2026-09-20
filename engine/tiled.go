@@ -45,6 +45,13 @@ type TiledWorld struct {
 	PlantKindMap []string
 	PlantKinds   []PlantKind
 
+	// EnemyKindMap says which sort of enemy comes into the world where, one
+	// character per cell, and EnemyKinds are the sorts it names - names only,
+	// for the reason the plants' are (decision #133). Nil when no tile
+	// carries an "enemy" property.
+	EnemyKindMap []string
+	EnemyKinds   []EnemyKind
+
 	// Rich is how well each cell grows things, one character per cell
 	// (2026-09-20), in the vocabulary Config.RichMap takes. Nil when no tile
 	// carries a "rich" property, and then the world draws its own richness as
@@ -157,6 +164,7 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 	}
 	riches, anyRich := tileRiches(f.Tilesets)
 	plants := tilePlantKinds(f.Tilesets)
+	beasts := tileNamed(f.Tilesets, "enemy")
 	places := tileRegions(f.Tilesets)
 	for _, l := range f.Layers {
 		switch l.Type {
@@ -203,6 +211,18 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 				}
 				if paintedAnything(rows) {
 					out.Spawn = rows
+				}
+			}
+			// And which sort of enemy comes in here, off the same layer
+			// again - the tile that says enemies may arrive is the natural
+			// one to say which sort they are.
+			if out.EnemyKindMap == nil {
+				rows, kinds, err := enemyKindRows(l, f.Width, f.Height, beasts)
+				if err != nil {
+					return nil, err
+				}
+				if len(kinds) > 0 {
+					out.EnemyKindMap, out.EnemyKinds = rows, kinds
 				}
 			}
 			// And which sort of plant grows here, off the same layer again:
@@ -272,11 +292,15 @@ func tileRiches(sets []tiledTilset) (map[int]byte, bool) {
 // name. The figures are not here and never will be: a map names a row of
 // Config.PlantKinds and the row carries what the sort is like (decision
 // #133), so that the same number never lives in two places.
-func tilePlantKinds(sets []tiledTilset) map[int]string {
+func tilePlantKinds(sets []tiledTilset) map[int]string { return tileNamed(sets, "plant") }
+
+// tileNamed turns the tilesets into "this tile id names this thing", for the
+// properties whose value is a name pointing at a row of a table in Config.
+func tileNamed(sets []tiledTilset, prop string) map[int]string {
 	out := map[int]string{}
 	for _, s := range sets {
 		for _, t := range s.Tiles {
-			if name, ok := propString(t.Properties, "plant"); ok && name != "" {
+			if name, ok := propString(t.Properties, prop); ok && name != "" {
 				out[s.FirstGID+t.ID] = name
 			}
 		}
@@ -291,12 +315,54 @@ func tilePlantKinds(sets []tiledTilset) map[int]string {
 // bottom, left to right - the same rule the regions use, so that the drawing
 // and not the drawing program decides.
 func plantKindRows(l tiledLayer, cols, rows int, named map[int]string) ([]string, []PlantKind, error) {
+	painted, kinds, err := namedRows(l, cols, rows, named)
+	if err != nil || len(kinds) == 0 {
+		return nil, nil, err
+	}
+	out := make([]PlantKind, len(kinds))
+	for i, k := range kinds {
+		out[i] = PlantKind{Name: k.name, Key: k.key}
+	}
+	return painted, out, nil
+}
+
+// plantKindUnpainted is the character for a cell no sort was painted on.
+const plantKindUnpainted = '.'
+
+// enemyKindRows is plantKindRows for the beasts. Two readers rather than one
+// generic one, because the two tables are different types and Go would want
+// an interface to join them - which would cost more than the twenty lines it
+// saved.
+func enemyKindRows(l tiledLayer, cols, rows int, named map[int]string) ([]string, []EnemyKind, error) {
+	painted, kinds, err := namedRows(l, cols, rows, named)
+	if err != nil || len(kinds) == 0 {
+		return nil, nil, err
+	}
+	out := make([]EnemyKind, len(kinds))
+	for i, k := range kinds {
+		out[i] = EnemyKind{Name: k.name, Key: k.key}
+	}
+	return painted, out, nil
+}
+
+// namedThing is one row a layer named: what it is called and the character it
+// is painted with.
+type namedThing struct {
+	name string
+	key  byte
+}
+
+// namedRows is the walk both readers share: which cell names which thing, and
+// the things in the order they are first met reading top to bottom, left to
+// right - the rule the regions use, so the drawing and not the drawing
+// program decides.
+func namedRows(l tiledLayer, cols, rows int, named map[int]string) ([]string, []namedThing, error) {
 	if len(named) == 0 {
 		return nil, nil, nil
 	}
 	keys := map[int]byte{}
 	byName := map[string]byte{}
-	var kinds []PlantKind
+	var things []namedThing
 	tooMany := false
 	take := func(gid int) byte {
 		if k, ok := keys[gid]; ok {
@@ -311,13 +377,13 @@ func plantKindRows(l tiledLayer, cols, rows int, named map[int]string) ([]string
 			keys[gid] = k
 			return k
 		}
-		if len(kinds) >= len(regionKeys) {
+		if len(things) >= len(regionKeys) {
 			tooMany = true
 			keys[gid] = plantKindUnpainted
 			return plantKindUnpainted
 		}
-		k := regionKeys[len(kinds)]
-		kinds = append(kinds, PlantKind{Name: name, Key: k})
+		k := regionKeys[len(things)]
+		things = append(things, namedThing{name: name, key: k})
 		keys[gid], byName[name] = k, k
 		return k
 	}
@@ -325,18 +391,15 @@ func plantKindRows(l tiledLayer, cols, rows int, named map[int]string) ([]string
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(kinds) == 0 {
+	if len(things) == 0 {
 		return nil, nil, nil
 	}
 	if tooMany {
-		return nil, nil, fmt.Errorf("tiled: the layer %q names more than %d sorts of plant",
+		return nil, nil, fmt.Errorf("tiled: the layer %q names more than %d sorts",
 			l.Name, len(regionKeys))
 	}
-	return painted, kinds, nil
+	return painted, things, nil
 }
-
-// plantKindUnpainted is the character for a cell no sort was painted on.
-const plantKindUnpainted = '.'
 
 // paintedRichness says whether a layer read as richness says anything at all.
 // A layer of ordinary ground is not a painting, and treating it as one would
@@ -709,6 +772,7 @@ func (t *TiledWorld) Apply(cfg *Config) {
 		cfg.RichMap = append([]string(nil), t.Rich...)
 	}
 	t.applyPlantKinds(cfg)
+	t.applyEnemyKinds(cfg)
 	if len(t.Regions) > 0 {
 		cfg.RegionShapes = append([]RegionShape(nil), t.Regions...)
 	}
@@ -742,4 +806,29 @@ func (t *TiledWorld) applyPlantKinds(cfg *Config) {
 		cfg.PlantKinds = append(cfg.PlantKinds, k)
 	}
 	cfg.PlantKindMap = append([]string(nil), t.PlantKindMap...)
+}
+
+// applyEnemyKinds is applyPlantKinds for the beasts, and merges the same way:
+// a name the table already has keeps its figures and gains the character it is
+// painted with, and one it has never heard of becomes a row of its own.
+func (t *TiledWorld) applyEnemyKinds(cfg *Config) {
+	if len(t.EnemyKinds) == 0 {
+		return
+	}
+	at := map[string]int{}
+	for i := range cfg.EnemyKinds {
+		at[cfg.EnemyKinds[i].Name] = i
+	}
+	for _, k := range t.EnemyKinds {
+		if i, ok := at[k.Name]; ok {
+			cfg.EnemyKinds[i].Key = k.Key
+			continue
+		}
+		// A sort nobody described still needs a reason to arrive at all, and
+		// a row with no Share never does. One, so that a map may name a
+		// country's beast without also having to say how common it is.
+		k.Share = 1
+		cfg.EnemyKinds = append(cfg.EnemyKinds, k)
+	}
+	cfg.EnemyKindMap = append([]string(nil), t.EnemyKindMap...)
 }

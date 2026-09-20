@@ -405,6 +405,10 @@ type World struct {
 	// Config.PlantKinds (plant.go). Nil in a world whose map paints none.
 	plantKindKeys map[byte]int
 
+	// Where each sort of enemy comes into the world, when a map painted it
+	// (enemykind.go). Nil in every world that paints none.
+	enemyKindCells [][]cell
+
 	drownDeaths          int
 	// drownTakenSwim is the realised swimming of the bodies the water has
 	// taken, summed (stage 98). Against the swimming of the bodies standing in
@@ -716,6 +720,7 @@ func NewWorld(cfg Config) *World {
 	w.rich = buildRich(&w.cfg)
 	w.fishRich = buildRichMap(w.cfg.FishRichMap)
 	w.buildPlantKinds()
+	w.buildEnemyKindCells()
 	w.buildRegions()
 	// The stones are laid out before anybody arrives (stage 45): they are
 	// part of what the ground is, not something the world keeps producing.
@@ -2361,11 +2366,11 @@ func (w *World) moveDir(a *Agent, dx, dy, effort float64) {
 	// happening (terrain.go).
 	moved := false
 	switch {
-	case w.canStep(a.X, a.Y, a.X+stepX, a.Y+stepY):
+	case w.canStep(a, a.X, a.Y, a.X+stepX, a.Y+stepY):
 		a.X, a.Y, moved = a.X+stepX, a.Y+stepY, true
-	case stepX != 0 && w.canStep(a.X, a.Y, a.X+stepX, a.Y):
+	case stepX != 0 && w.canStep(a, a.X, a.Y, a.X+stepX, a.Y):
 		a.X, moved = a.X+stepX, true
-	case stepY != 0 && w.canStep(a.X, a.Y, a.X, a.Y+stepY):
+	case stepY != 0 && w.canStep(a, a.X, a.Y, a.X, a.Y+stepY):
 		a.Y, moved = a.Y+stepY, true
 	}
 	if !moved {

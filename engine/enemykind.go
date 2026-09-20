@@ -81,6 +81,60 @@ type EnemyKind struct {
 	// pointing at the same skill.
 	Ward SkillKind
 
+	// Key is the character that stands for this sort in Config.EnemyKindMap,
+	// for a map that says which country a sort comes into the world in
+	// (2026-09-20). Nought is a sort the map paints nowhere, and then it
+	// arrives the way it always did - by Homing and the region weighting.
+	//
+	// It is the same arrangement RegionShape.Key and PlantKind.Key have, and
+	// the same division of labour: the map brings the name and the place, the
+	// row brings what the sort is like (decision #133).
+	Key byte
+
+	// Climbs and Flies are how this sort gets about, and what each of them
+	// ignores about the ground is spelled out rather than bundled
+	// (2026-09-20). A piece of ground does four separate things - it costs
+	// (stage 20), it drowns (stage 34), it drags (stage 97) and it drains
+	// (stage 99) - plus it stops a step between levels, and a flag that meant
+	// "ignores water" would quietly mean all five. Water above is the one
+	// that already exists and it says what it bundles and why.
+	//
+	// Climbs: level changes only. A climber steps up or down a cliff without
+	// a ramp and pays the ground's price for everything else exactly as a
+	// walker does - cost, drowning, drag and drain all unchanged.
+	//
+	// Flies: over the ground rather than on it. It steps between any levels,
+	// runs no risk of drowning, is not dragged and is not drained - and pays
+	// FlyCost a tick for the crossing instead of the ground's own figure.
+	//
+	// FlyCost is what flying costs, as a multiplier on ordinary open ground,
+	// and unset is one. It is deliberately not zero: stage 20 says no ground
+	// is impassable, and its mirror is that no ground is free. A flier that
+	// crossed a gorge for nothing would make the gorge stop being country and
+	// start being scenery, which is the line PLAN.md P16-3 asked to keep.
+	Climbs  bool
+	Flies   bool
+	FlyCost float64
+
+	// Meat is what this sort's carcass is worth, as a multiplier on what a
+	// body of its size would ordinarily leave (2026-09-20). Unset - which is
+	// every world before this - is one, and then every sort leaves
+	// Bulk / MeatPerBudget as it always did.
+	//
+	// It is on the row rather than worked out from the body because "what is
+	// this thing made of" is a fact about the sort and not about its size: a
+	// lean fast thing and a fat slow one of the same bulk are two rows, and
+	// this is the field that lets them be.
+	//
+	// Counted before it was built (PLAN.md P16-3): meat is 0.16 of every
+	// mouthful over 20,000 ticks and 0.30 over 200,000, and 0.67 to 0.80 of
+	// what is dropped gets eaten. So the target is real and the meat is not
+	// already going to waste - which is what makes this worth a field, where
+	// the movement flags beside it are not yet (terrain does not confine
+	// anybody today: bodies stand on high ground and in water in proportion
+	// to how much of the map it is).
+	Meat float64
+
 	// Homely is how much of EnemyHomeCost this kind pays (stage 64): one is
 	// a sort that keeps to the country it came into the world in, zero one
 	// that goes wherever it likes. An unset row is zero - a kind that was
@@ -409,4 +463,59 @@ func (w *World) Feeding() Feeding {
 		out.HumansOnWater = wetHumans / humans
 	}
 	return out
+}
+
+// buildEnemyKindCells reads Config.EnemyKindMap into one list of cells per
+// sort, once, because Config does not change while a world runs.
+func (w *World) buildEnemyKindCells() {
+	rows := w.cfg.EnemyKindMap
+	kinds := w.cfg.EnemyKinds
+	if len(rows) == 0 || len(kinds) == 0 {
+		return
+	}
+	at := map[byte]int{}
+	for i := range kinds {
+		if k := kinds[i].Key; k != 0 && k != '.' {
+			at[k] = i
+		}
+	}
+	if len(at) == 0 {
+		return
+	}
+	cells := make([][]cell, len(kinds))
+	for r, row := range rows {
+		h := w.cfg.Height / float64(len(rows))
+		y := (float64(r) + 0.5) * h
+		for c := 0; c < len(row); c++ {
+			i, ok := at[row[c]]
+			if !ok {
+				continue
+			}
+			cw := w.cfg.Width / float64(len(row))
+			cells[i] = append(cells[i], cell{x: (float64(c) + 0.5) * cw, y: y, w: cw, h: h})
+		}
+	}
+	for i := range cells {
+		if len(cells[i]) > 0 {
+			w.enemyKindCells = cells
+			return
+		}
+	}
+}
+
+// paintedSpotFor draws where this sort comes into the world, when the map
+// painted anywhere for it. The second return is false when it painted none,
+// and then the arrival is the one it always was.
+func (w *World) paintedSpotFor(kind int) (float64, float64, bool) {
+	if kind < 0 || kind >= len(w.enemyKindCells) {
+		return 0, 0, false
+	}
+	cells := w.enemyKindCells[kind]
+	if len(cells) == 0 {
+		return 0, 0, false
+	}
+	c := cells[w.rng.Intn(len(cells))]
+	x := clamp(c.x+w.randRange(-c.w/2, c.w/2), 20, w.cfg.Width-20)
+	y := clamp(c.y+w.randRange(-c.h/2, c.h/2), 20, w.cfg.Height-20)
+	return x, y, true
 }

@@ -287,6 +287,21 @@ type Config struct {
 	// rule anywhere asks which kind a body is.
 	EnemyKinds []EnemyKind
 
+	// EnemyKindMap says which sort of enemy comes into the world where, one
+	// character a cell, each character being an EnemyKind's Key
+	// (2026-09-20). A dot, a short row and a character nobody claimed are
+	// "nothing painted here".
+	//
+	// It decides where a sort arrives and never how many of it there are:
+	// which sort is coming is still its Share, and only then is the place
+	// drawn from what the map painted for it. A sort the map paints nowhere
+	// arrives the way it always did.
+	//
+	// It is the per-cell form of what EnemySpread and Homing already do with
+	// whole regions, and it wins over them where it is painted - the same
+	// order every other painting is read in.
+	EnemyKindMap []string
+
 	// EnemyHomeCost is what being far from where it came into the world costs
 	// an enemy (stage 64), per region's width of distance and per tick spent
 	// out there. Zero is the world before this rule, and the default.
