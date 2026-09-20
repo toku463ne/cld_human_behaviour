@@ -18,6 +18,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -269,6 +270,13 @@ type game struct {
 	//              different things: an editor wants the whole map in view
 	//              and a game wants to be near the body being played
 
+	// One finger's worth of input (TODO 9): where the press is, what the
+	// gesture layer has made of it, and the menu a hold puts up. The keys and
+	// the mouse are untouched - this is a second way in, not a replacement.
+	pointer pointer
+	menu    *menu
+	touches []ebiten.TouchID
+
 	// What the protagonist has been through since the last frame, and the
 	// short lines it is saying about it. Bubbles are for the played node only:
 	// one node's news is legible, sixty nodes' news is the panel again.
@@ -482,7 +490,9 @@ func (g *game) handleInput() {
 	case g.succession == nil && inpututil.IsKeyJustPressed(ebiten.KeyEscape):
 		// While a node is being played the click is an aim rather than a
 		// selection, so escape drops the aim first and the node second.
-		if g.mark.kind != markNone {
+		if g.menu != nil {
+			g.menu = nil
+		} else if g.mark.kind != markNone {
 			g.mark = mark{}
 		} else {
 			g.selectAgent(0)
@@ -491,18 +501,16 @@ func (g *game) handleInput() {
 
 	g.handlePlayInput()
 
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		mx, my := ebiten.CursorPosition()
-		if mx < worldWidth {
-			// Only the driven mode has an aim: answering a question is
-			// choosing between things the node already picked out, so a click
-			// goes back to being what it is everywhere else.
-			if g.play == playDriven {
-				g.aimAt(mx, my)
-			} else {
-				g.selectAgent(g.nodeAt(mx, my))
-			}
-		}
+	// And the same input a finger gives (TODO 9). A mouse button comes
+	// through the same gesture layer, so the two cannot drift apart - the
+	// only difference is that a click used to land when the button went down
+	// and now lands when it comes up, which is what a tap is.
+	down, px, py := g.pressedAt()
+	switch gest, gx, gy := g.pointer.update(down, px, py, time.Now()); gest {
+	case gestureTap:
+		g.tap(gx, gy)
+	case gestureHold:
+		g.hold(gx, gy)
 	}
 }
 
@@ -774,6 +782,20 @@ func (g *game) cycleDifficulty() {
 
 // handlePlayInput reads the keys that only mean something to a player.
 func (g *game) handlePlayInput() {
+	// A menu on the screen takes the number keys while it is up (TODO 9), so
+	// that what a finger picks a keyboard can pick too. It is read before
+	// everything else because those keys mean something else underneath.
+	if g.menu != nil {
+		for i, key := range choiceKeys {
+			if i < len(g.menu.items) && inpututil.IsKeyJustPressed(key) {
+				it := g.menu.items[i]
+				g.menu = nil
+				it.do()
+				return
+			}
+		}
+		return
+	}
 	if g.answerProposal() {
 		return
 	}
@@ -1983,6 +2005,7 @@ func (g *game) Draw(screen *ebiten.Image) {
 	screen.Fill(colorBackground)
 	g.drawWorld(screen)
 	g.drawBubbles(screen)
+	g.drawMenu(screen)
 
 	vector.DrawFilledRect(screen, panelX, 0, panelWidth, screenHeight, colorPanel, false)
 	vector.StrokeLine(screen, panelX, 0, panelX, screenHeight, 1, colorPanelEdge, false)
