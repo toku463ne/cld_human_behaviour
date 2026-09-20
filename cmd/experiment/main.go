@@ -3212,6 +3212,47 @@ var variants = []variant{
 		},
 	},
 	{
+		// Stage 90: what a body likes moves. The interval is a year, and
+		// the hand changing draws a new one too, so in practice it is the
+		// hand that does it - counted beforehand at about six times in a
+		// life, one every 400 ticks, which is 27 decisions apart.
+		name:  "fancy",
+		about: "90: a body's taste is what it likes just now, drawn from what it was born with",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.TrinketFancyTicks, c.TrinketFancySpread = 500, 0.25
+		},
+	},
+	{
+		// The arm that should break, and the reason the interval is the
+		// whole of this rule: 2026-09-04 measured a world where something
+		// was drawn afresh every time a thing was seen and the population
+		// nearly halved. Ten ticks is faster than a body decides.
+		name:  "fancyfast",
+		about: "90's danger: a new fancy every ten ticks, which is faster than it decides",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.TrinketFancyTicks, c.TrinketFancySpread = 10, 0.25
+		},
+	},
+	{
+		// And the same rule with the clock taken out of it: a new fancy
+		// only when the hand changes. It is the version the plan asked for,
+		// and it says how much of the rule is the passing of time.
+		name:  "fancyevents",
+		about: "90 without a clock: a new fancy only when a piece is got or lost",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.TrinketFancyTicks, c.TrinketFancySpread = 1000000, 0.25
+		},
+	},
+	{
 		// The same thing on the map the game is played on. It is here to be
 		// read second and not first: measured on 2026-09-20, that map now
 		// ends 42 runs in 100 inside 20,000 ticks with nothing added to it
@@ -5820,7 +5861,7 @@ var metricNames = []string{
 	"salePrice", "priceOver1", "coinsPaid",
 	"trinketsMade", "trinketQuality", "trinketHeld", "trinketHolders", "trinketKept", "craftShare",
 	"trinketFit", "trinketFitMade", "trinketSold", "trinketGiven", "adornWant", "trinketGain", "trinketGainSold",
-	"trinketEach", "adornSpare",
+	"trinketEach", "adornSpare", "fancyRate",
 	"makerHeld", "makerReal",
 	"booksWritten", "booksRead", "booksLying", "booksHeld", "bookHolders", "bookFidelity",
 	"lostSight", "missingDir", "lonelyDraw",
@@ -6602,6 +6643,11 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		// an adornSpare that stays at one is a rule that never fired.
 		"trinketEach": perBody(float64(trinkets.Held), end.Population),
 		"adornSpare":  trinkets.Spare,
+		// How often a body draws a new "what I like just now" (stage 90),
+		// per thousand of its own ticks. Read against the 14.5 ticks
+		// between decisions: anything near that is the oscillation of
+		// 2026-09-04 rather than a taste.
+		"fancyRate": perAgentLifetime(trinkets.Fancies, personTicks) / 10,
 		"trinketGain":     trinkets.Gained,
 		"trinketGainSold": trinkets.GainedSold,
 		"coinsPaid":       float64(money.Paid),

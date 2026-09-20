@@ -584,6 +584,9 @@ type World struct {
 	trinketSales     int
 	trinketSaleGain  float64
 
+	// How many times a body has drawn a new fancy (stage 90).
+	fancyDraws int
+
 	// And the material a warm thing is worked from (TODO 8).
 	hidesDropped int
 	hidesWorked  int
@@ -2094,6 +2097,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.lore = w.inheritLore(pa, pb)
 	child.chronotype = w.inheritChronotype(pa, pb)
 	child.taste = w.inheritTaste(pa, pb)
+	child.fancy = w.drawFancy(&child) // what it likes just now (stage 90)
 	child.adornWant = 1 // until the next tick prices its hands (stage 84)
 	child.hintSlots, child.hints = slots, hints
 	// What it knows for having been born where it was, merged with what it
@@ -2545,6 +2549,7 @@ func (w *World) randomAgent(species Species) Agent {
 	a.lore = w.newLore()
 	a.chronotype = w.drawChronotype()
 	a.taste = w.drawTaste()
+	a.fancy = w.drawFancy(&a) // what it likes just now (stage 90)
 	// Until the tick's own pass has priced its hands (stage 84), a body wants
 	// an ornament the way a whole one does. Nought would mean "wants none",
 	// and nothing has asked this body anything yet.

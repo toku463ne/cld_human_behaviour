@@ -129,6 +129,17 @@ func (w *World) craft(a *Agent) {
 	a.requestDecision(TriggerGoalReached)
 }
 
+// heldTrinkets is how many ornaments are in this body's hands.
+func heldTrinkets(a *Agent) int {
+	n := 0
+	for i := range a.carried {
+		if a.carried[i].Kind == FoodTrinket {
+			n++
+		}
+	}
+	return n
+}
+
 // noteAdorned moves the ledger of how adorned this body has been lately one
 // tick on (TODO 12, stage 89).
 //
@@ -145,17 +156,12 @@ func (w *World) craft(a *Agent) {
 // still recently adorned and does not want another this minute, and one that
 // has carried three for a year is thoroughly sated. Without the lag this
 // would be a second way of counting the hand.
-func (w *World) noteAdorned(a *Agent) {
+func (w *World) noteAdorned(a *Agent, n int) {
 	rate := clamp(w.cfg.AdornForgetPerTick, 0, 1)
 	if rate <= 0 {
 		return
 	}
-	held := 0.0
-	for i := range a.carried {
-		if a.carried[i].Kind == FoodTrinket {
-			held++
-		}
-	}
+	held := float64(n)
 	if w.cfg.AdornKeepsSated {
 		// The far end of the rule, for the control arm: satisfied once and
 		// never again, so the want never comes back and the demand never
@@ -237,7 +243,7 @@ func (w *World) trinketDelight(a *Agent, f *Food) float64 {
 	if t <= 0 {
 		return 1
 	}
-	d := math.Abs(f.Style - a.taste)
+	d := math.Abs(f.Style - w.tasteOf(a))
 	if d > 0.5 {
 		d = 1 - d
 	}
@@ -264,9 +270,62 @@ func (w *World) drawStyle(a *Agent) float64 {
 		return 0
 	}
 	if w.cfg.TrinketStyleAimed {
-		return a.taste
+		return w.tasteOf(a)
 	}
 	return w.rng.Float64()
+}
+
+// tasteOf is what this body likes, which is what it was born with in every
+// world before stage 90 and what it happens to like just now in a world that
+// has the fancy switched on.
+//
+// One accessor rather than a field read, because three things ask (what a
+// piece is worth to it, what it expects of the piece it is about to make,
+// and what a maker who can aim turns out) and all three have to mean the
+// same "likes".
+func (w *World) tasteOf(a *Agent) float64 {
+	if w.cfg.TrinketFancyTicks > 0 {
+		return a.fancy
+	}
+	return a.taste
+}
+
+// drawFancy is a new "what I like just now": the inherited taste, strayed
+// from by TrinketFancySpread and wrapped round the circle.
+//
+// Drawn from the taste rather than freely, so that heredity still means
+// something - a body's fancies wander around what it is like, and a spread
+// wide enough makes the two independent, which is the dose at one end.
+func (w *World) drawFancy(a *Agent) float64 {
+	if w.cfg.TrinketFancyTicks <= 0 {
+		return a.taste
+	}
+	f := a.taste
+	if w.cfg.TrinketFancySpread > 0 {
+		f += w.rng.NormFloat64() * w.cfg.TrinketFancySpread
+	}
+	return f - math.Floor(f)
+}
+
+// refreshFancy draws a new one when something has happened or enough time
+// has passed (stage 90).
+//
+// "Something has happened" is the number of ornaments in the hand changing,
+// which covers making one, being given one, buying one, picking one up,
+// selling one, handing one over and having one go off - seven sites, none of
+// which has to know about this. The alternative was a hook in each, and the
+// last time this project put the same fact in several places the two answers
+// drifted (stage 77).
+func (w *World) refreshFancy(a *Agent, held int) {
+	if w.cfg.TrinketFancyTicks <= 0 {
+		return
+	}
+	if held != a.adornHeld || w.tick-a.fancyTick >= w.cfg.TrinketFancyTicks {
+		a.fancy = w.drawFancy(a)
+		a.fancyTick = w.tick
+		w.fancyDraws++
+	}
+	a.adornHeld = held
 }
 
 // drawTaste is the ornament a founder likes, and inheritTaste the one a child
@@ -315,7 +374,8 @@ func (w *World) priceHands() {
 	adorn := w.cfg.Trinkets && w.cfg.AdornNeedsSurvival
 	spare := w.cfg.HandOverCheapest
 	sated := w.cfg.Trinkets && w.cfg.AdornSatiety > 0
-	if !adorn && !spare && !sated {
+	fancy := w.cfg.Trinkets && w.cfg.TrinketFancyTicks > 0
+	if !adorn && !spare && !sated && !fancy {
 		return // never written, never read
 	}
 	for i := range w.agents {
@@ -323,9 +383,16 @@ func (w *World) priceHands() {
 		if !a.Alive {
 			continue
 		}
-		// Before the views below are built, because they read it (TODO 12).
-		if sated {
-			w.noteAdorned(a)
+		// Before the views below are built, because they read both (TODO
+		// 12). The hand is counted once and the two rules share the count.
+		if sated || fancy {
+			held := heldTrinkets(a)
+			if sated {
+				w.noteAdorned(a, held)
+			}
+			if fancy {
+				w.refreshFancy(a, held)
+			}
 		}
 		if !adorn && !spare {
 			continue
@@ -388,6 +455,13 @@ type TrinketUse struct {
 	Given int
 	Want  float64
 
+	// Fancies is how many times a body has drawn a new "what I like just
+	// now" (stage 90), over the whole run. Read against the interval
+	// between decisions (14.5 ticks): a fancy redrawn faster than a body
+	// can carry anything out is the oscillation of 2026-09-04, and this is
+	// the column that says whether an arm is in it.
+	Fancies int
+
 	// Spare is the mean share of the want that is left once what a body is
 	// already carrying is taken off (TODO 12, stage 89): one where nobody is
 	// sated, and the rule's own firing rate everywhere else. It is the first
@@ -448,7 +522,8 @@ func (w *World) noteTrinketMove(from, to *Agent, f *Food, sold bool) {
 // Trinkets reports what they came to.
 func (w *World) Trinkets() TrinketUse {
 	out := TrinketUse{
-		Made:  w.trinketsMade,
+		Fancies: w.fancyDraws,
+		Made:    w.trinketsMade,
 		Sold:  w.trinketsSold,
 		Given: w.trinketsGiven,
 	}

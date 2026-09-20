@@ -382,6 +382,15 @@ type Agent struct {
 	// is what says whether it wants another. It is bookkeeping of the same
 	// sort as recentFood above, and like it, it is no new state axis.
 	recentAdorn float64
+
+	// fancy is what this body likes just now, drawn from the taste it was
+	// born with, and fancyTick when it was last drawn (stage 90). adornHeld
+	// is how many ornaments were in its hands when that was last looked at,
+	// which is how "it got one" and "it lost one" are noticed without a
+	// hook in the six places a hand changes.
+	fancy     float64
+	fancyTick int
+	adornHeld int
 	dietTick    int
 
 	// regions is what this agent has made of the ground it has been on (stage

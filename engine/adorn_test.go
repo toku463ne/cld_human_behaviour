@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // satedConfig is the ornament world where carrying one satisfies (stage 89).
 func satedConfig() Config {
@@ -148,3 +151,117 @@ func TestASatedBodyIsWorseOffMakingAnother(t *testing.T) {
 }
 
 func ptr(s SelfView) *SelfView { return &s }
+
+// --- what a body likes just now (stage 90) ---------------------------------
+
+// fancyConfig is the ornament world where a taste moves.
+func fancyConfig() Config {
+	cfg := trinketConfig()
+	cfg.TrinketTaste = 1 // a taste to move, which stage 82's world had none of
+	cfg.TrinketFancyTicks, cfg.TrinketFancySpread = 200, 0.25
+	return cfg
+}
+
+// A world that does not ask for it never draws one, and what a body likes is
+// what it was born with.
+func TestWithoutTheRuleATasteIsWhatItWasBornWith(t *testing.T) {
+	cfg := trinketConfig()
+	cfg.TrinketTaste = 1
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)})
+	a := mustAgent(t, w, id)
+	a.taste = 0.3
+	for i := 0; i < 500; i++ {
+		w.priceHands()
+	}
+	if got := w.tasteOf(a); got != 0.3 {
+		t.Fatalf("what it likes is %v, and it was born liking 0.3", got)
+	}
+}
+
+// With it on, the fancy is drawn from the taste rather than instead of it:
+// heredity still says what a body is like, and the fancy says what it wants
+// this week.
+func TestTheFancyIsDrawnFromTheInheritedTaste(t *testing.T) {
+	cfg := fancyConfig()
+	w := NewWorld(cfg)
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)})
+	a := mustAgent(t, w, id)
+	a.taste = 0.5
+
+	near, drawn := 0, 0
+	for i := 0; i < 4000; i++ {
+		before := a.fancy
+		w.tick = i
+		w.priceHands()
+		if a.fancy != before {
+			drawn++
+			d := math.Abs(a.fancy - 0.5)
+			if d > 0.5 {
+				d = 1 - d
+			}
+			if d < 2*cfg.TrinketFancySpread {
+				near++
+			}
+		}
+	}
+	if drawn < 10 {
+		t.Fatalf("the fancy was drawn %d times in 4000 ticks", drawn)
+	}
+	if float64(near)/float64(drawn) < 0.8 {
+		t.Fatalf("only %d of %d fancies were anywhere near what it was born liking", near, drawn)
+	}
+}
+
+// And it is drawn again when the hand changes, which is how making, buying,
+// being given, selling, handing over and losing one to time are all noticed
+// without a hook in any of them.
+func TestGettingOrLosingOneDrawsANewFancy(t *testing.T) {
+	w := NewWorld(fancyConfig())
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)})
+	a := mustAgent(t, w, id)
+	w.priceHands()
+	was := a.fancy
+
+	a.carried = append(a.carried, Food{Kind: FoodTrinket, Made: 1})
+	w.heldKind[FoodTrinket]++
+	w.priceHands()
+	if a.fancy == was {
+		t.Fatal("getting one did not move what it likes")
+	}
+	got := a.fancy
+	w.priceHands() // nothing happened this tick
+	if a.fancy != got {
+		t.Fatal("a quiet tick drew a new fancy")
+	}
+	w.removeCarried(a, 0)
+	w.priceHands()
+	if a.fancy == got {
+		t.Fatal("losing one did not move what it likes")
+	}
+}
+
+// What the fancy is for: the same piece is wanted differently by the same
+// body at different times. Nothing else in this world does that - until now
+// a taste was a fact about a body, like its build.
+func TestTheSameBodyWantsTheSamePieceDifferentlyOverTime(t *testing.T) {
+	w := NewWorld(fancyConfig())
+	id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Vitality: 90,
+		Genome: genomeOf(50, 50, 50)})
+	a := mustAgent(t, w, id)
+	a.taste = 0.5
+	piece := Food{Kind: FoodTrinket, Made: 1, Style: 0.5}
+
+	seen := map[float64]bool{}
+	for i := 0; i < 2000; i++ {
+		w.tick = i
+		w.priceHands()
+		seen[w.trinketDelight(a, &piece)] = true
+	}
+	if len(seen) < 5 {
+		t.Fatalf("the same piece was worth %d different things over 2000 ticks", len(seen))
+	}
+}

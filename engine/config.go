@@ -1160,6 +1160,31 @@ type Config struct {
 	// a rule.
 	WardShare, WardStrength float64
 
+	// TrinketFancyTicks is how often a body draws a new "what I like just
+	// now", and TrinketFancySpread how far that strays from the taste it
+	// inherited (TODO 12, stage 90). Zero is every world before this, where
+	// a body's taste is what it was born with and never moves.
+	//
+	// Two things kept apart on purpose. The inherited taste stays exactly
+	// what it was - a disposition, on the circle, carried whole from one
+	// parent with a drift (stage 84) - and the fancy is drawn from it. So
+	// nothing about heredity changes and the fancy costs no budget: it is
+	// the difference between what a body is like and what it happens to
+	// want this week.
+	//
+	// The interval is the whole of the risk. A body decides every 14.5
+	// ticks, and 2026-09-04 measured what happens when something is drawn
+	// afresh every time a thing is seen: the population nearly halved,
+	// because the judgement noise is bigger than the gap between the top
+	// two options and a body that re-draws faster than it can carry
+	// anything out does nothing at all. Counted before this was built: an
+	// event-driven redraw (a piece made, a piece lost) would fire about six
+	// times in a life, one every 400 ticks or so - 27 decisions apart, well
+	// clear of that. A tick figure below about a hundred is asking for the
+	// oscillation back, and the arm that does it is in cmd/experiment.
+	TrinketFancyTicks  int
+	TrinketFancySpread float64
+
 	// AdornSatiety is how many ornaments in a hand halve the want for
 	// another, AdornForgetPerTick how fast the want comes back, and
 	// AdornKeepsSated the far end of it - a body satisfied once and never
@@ -3550,6 +3575,8 @@ func DefaultConfig() Config {
 		ChillGradient:           false,
 		WardShare:               0,
 		WardStrength:            0,
+		TrinketFancyTicks:       0, // TODO 12: a taste is what a body was born with
+		TrinketFancySpread:      0,
 		AdornSatiety:            0, // TODO 12: the fourth piece is worth what the first was
 		AdornForgetPerTick:      0,
 		AdornKeepsSated:         false,
