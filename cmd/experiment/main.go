@@ -5508,6 +5508,7 @@ var metricNames = []string{
 	"mateWeight", "sdMateWeight",
 	"wobble", "sdWobble",
 	"extinct", "collapsed", "fellAt", "peak",
+	"lines", "lineBiggest", "lineRegions", "lineInTwo", "lineInThree",
 }
 
 type sample struct {
@@ -6062,6 +6063,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	endLore := w.Lore()
 	tail := tailAverage(series)
 	fate := fateOf(series, ticks, deadBelow)
+	lines := w.Lineages()
 	mem := member.Result()
 	fr := fights.Result()
 	cen := census.Result()
@@ -6729,6 +6731,15 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"collapsed": boolToFloat(fate.collapsed),
 		"fellAt":    float64(fate.fellAt),
 		"peak":      fate.peak,
+		// The lines of descent (2026-09-20). Read at the end rather than over
+		// the tail: how many places a line stands in is a fact about this
+		// moment, and averaging it over a window would blur a line that
+		// gathered with one that never spread.
+		"lines":       float64(lines.Living),
+		"lineBiggest": lines.Biggest,
+		"lineRegions": lines.Regions,
+		"lineInTwo":   lines.InTwo,
+		"lineInThree": lines.InThree,
 	}}
 	for g := 0; g < engine.NumGenes; g++ {
 		r.metrics[shareMetric[g]] = tail.shares[g]

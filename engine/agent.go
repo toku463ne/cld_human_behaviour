@@ -122,6 +122,17 @@ type Agent struct {
 	// being away from it - a region is still not a wall.
 	HomeRegion int
 
+	// Lineage is which of the world's founding lines this body belongs to,
+	// and nought for anything outside them (2026-09-20). It is inherited and
+	// never changes.
+	//
+	// It is here rather than in the game layer because it is a fact about the
+	// body and not about who is holding the controls: stage 19 put the player
+	// outside the engine, and this has to go on working whether anybody is
+	// playing or not. What a game does with it - calling one line "mine" and
+	// asking whether it lives in several places at once - is the game's.
+	Lineage uint16
+
 	// HomeX and HomeY are the spot it came into the world at - where it was
 	// put, or its parent's nest if it was born here (2026-09-20). It is the
 	// point EnemyHomeCost is charged from, and it never changes.

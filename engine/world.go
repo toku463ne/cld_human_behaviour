@@ -727,7 +727,12 @@ func NewWorld(cfg Config) *World {
 	w.scatterStones()
 	w.scatterCoins()
 	for i := 0; i < cfg.InitialPopulation; i++ {
-		w.addAgent(w.randomAgent(SpeciesHuman))
+		// Each founder starts a line of its own (2026-09-20). Nothing in the
+		// engine reads the tag; it is here so that a game can ask where one
+		// line has got to, and so that the asking costs nothing at the time.
+		a := w.randomAgent(SpeciesHuman)
+		a.Lineage = uint16(i + 1)
+		w.addAgent(a)
 	}
 	for i := 0; i < cfg.InitialEnemies; i++ {
 		w.addAgent(w.randomAgent(SpeciesEnemy))
@@ -2019,6 +2024,16 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	// being tossed rather than asking for one of its own - a second draw
 	// here would move every world that has ever had a birth in it, and this
 	// rule is off by default.
+	// Which line it belongs to: its mother's (2026-09-20). Down one side
+	// rather than by a coin, because a coin here would take a number from the
+	// random source in every birth this world has ever had, and the tag
+	// changes nothing that could pay for that. The mother is also who the
+	// child is already tied to elsewhere (GuardianIsMother, stage 53a).
+	mother := pa
+	if pb.Sex == Female {
+		mother = pb
+	}
+	child.Lineage = mother.Lineage
 	if w.cfg.NestInherited {
 		child.HomeX, child.HomeY = pa.HomeX, pa.HomeY
 	}
