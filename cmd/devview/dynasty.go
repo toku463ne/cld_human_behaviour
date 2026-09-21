@@ -56,16 +56,26 @@ import (
 // Settling is the instrument stage TODO-5 built for exactly this: most of a
 // body's recent past spent in one block.
 //
-// The wait is not decoration. Ten years of the world running without you is
-// what makes leaving descendants somewhere a decision rather than a detail:
-// the count says a line grows by a fifth over that span, but where it grows
-// is not up to you once you are dead.
+// The wait is not decoration. A year of the world running without you is what
+// makes leaving descendants somewhere a decision rather than a detail: where
+// the line grows is not up to you once you are dead. It was ten years until
+// it was measured, and ten years was not a price, it was the whole game -
+// 0.92 of runs were over before the player had done anything.
 
 const (
 	// dynastyWaitTicks is how long the world runs after the played body dies
-	// before the line is picked up again. Five thousand ticks is ten years of
+	// before the line is picked up again. Five hundred ticks is one year of
 	// world time (TicksPerYear 500).
-	dynastyWaitTicks = 5000
+	//
+	// It was ten years to begin with, to sit beside GeniusRate's "one genius
+	// in ten years" - a transfer is marked by a genius birth, so the two were
+	// kept from treading on each other. That was dropped on 2026-09-21 (the
+	// user's call: a genius is the player's, or placed on purpose), which
+	// left the length free, and the measurement said to spend it. Ten years
+	// of nobody at the wheel ended 0.92 of runs in an extinct line before the
+	// player had done anything; at one year it is 0.56 to 0.75, and the
+	// number of lifetimes a run gets rises from about 2 to about 3.5.
+	dynastyWaitTicks = 500
 
 	// dynastyWaitSpeed is how many ticks of that wait are run per frame. The
 	// wait is meant to be felt and not sat through: at this rate ten years

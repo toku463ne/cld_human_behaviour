@@ -959,10 +959,28 @@ func (w *World) Suits() Suits {
 // (#53), and a body that wandered ten paces from where it was born is not
 // away from home.
 func (w *World) homeFor(a *Agent) (x, y, pull float64) {
-	if w.cfg.EnemyHomeCost <= 0 || a.Species != SpeciesEnemy {
+	if a.HomeRegion < 0 || a.HomeRegion >= len(w.regions) {
 		return 0, 0, 0
 	}
-	if a.HomeRegion < 0 || a.HomeRegion >= len(w.regions) {
+	// A person is tied to where it was born too, where the world asks for it
+	// (TODO 6, #130). Stage 64 wrote this for enemies because the question
+	// then was why a beast does not wander off its map; the question now is
+	// the opposite one, and it is about people: with nothing holding anybody
+	// anywhere, an ordinary life already crosses seven of the world's twelve
+	// blocks, so a player setting out for a country nobody has been to is
+	// doing what every body does anyway. A home range is what makes going
+	// somewhere new a thing somebody decided.
+	//
+	// No row and no kind: a person's home is the spot it was born on and the
+	// pull is the world's one figure. Whether people should differ in how
+	// far they will go is a gene, and a gene is a different stage.
+	if a.Species != SpeciesEnemy {
+		if w.cfg.HumanHomeCost <= 0 {
+			return 0, 0, 0
+		}
+		return a.HomeX, a.HomeY, w.cfg.HumanHomeCost
+	}
+	if w.cfg.EnemyHomeCost <= 0 {
 		return 0, 0, 0
 	}
 	homely := w.kindOf(a).Homely

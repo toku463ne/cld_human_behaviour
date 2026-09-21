@@ -4472,6 +4472,7 @@ func main() {
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
 	playDynasty := flag.Bool("dynasty", false, "play the dynasty (TODO 6, #130): win by settling your line in every goal block the map marks at once, and pay for each death with ten years the world runs without you. Needs a map with goal blocks (-tiled, or -terrain with goals painted). Brings -play with it")
+	settleHome := flag.Float64("settle", 0, "what leaving the place it was born costs a person, per region's width and per tick out there (TODO 6, #130; 0 = every world before it). The same rule stage 64 gave the beasts, and the same shape: a price, not a leash. Without it an ordinary life crosses seven of the twelve blocks, so travelling somewhere new is not something a player can be seen to have decided")
 	shove := flag.Float64("shove", 0, "how far a body throws another one when it spends the tick pushing instead of hitting, in world units (#139; 0 = every world before it). A fourth stance, scored beside the other three: it gives up most of the blow and buys the ticks the other one spends walking back in. 20 is past arm's length and actually breaks the fight off")
 	lessons := flag.Int("lessons", 0, "how many things a body may learn from watching others die (#137; 0 = every world before it). A room of its own, bought out of the same budget the genes are: a body that learns two things is measurably smaller than one that learns none. What it learns is which move not to make in the situation it watched somebody stop in, and it takes two deaths of a kind to learn it")
 	sides := flag.Float64("sides", 0, "let goodwill decide who fights whom (#138): the amount, in affinity, that swinging at somebody costs, that taking a side is worth, and that being beaten to your meal costs the one who got there first. 0 = every world before it")
@@ -4601,6 +4602,12 @@ func main() {
 	// about whether pushing works.
 	if *shove > 0 {
 		cfg.ShovePush = *shove
+	}
+	// And what leaving home costs a person (#130). Worth watching with
+	// -dynasty: it is what makes the journey to a new country a decision
+	// rather than the thing every body does anyway.
+	if *settleHome > 0 {
+		cfg.HumanHomeCost = *settleHome
 	}
 	// And learning from watching bodies stop (#137). Worth watching with
 	// -slow on a crowded spot: the right panel grows a "learnt:" list under

@@ -172,3 +172,53 @@ func TestTheHeirPassesDownWithoutWaitingForABirth(t *testing.T) {
 		t.Fatalf("LineHeirs = %v with nobody of the line alive", got)
 	}
 }
+
+func TestAPersonIsTiedToWhereItWasBornOnlyWhenAskedFor(t *testing.T) {
+	// Off by default, so no world before this one moves.
+	if got := DefaultConfig().HumanHomeCost; got != 0 {
+		t.Fatalf("HumanHomeCost default = %v, want 0", got)
+	}
+	pull := func(cost float64) float64 {
+		cfg := DefaultConfig()
+		cfg.InitialPopulation, cfg.InitialFoodItems, cfg.FoodSpawnRate = 0, 0, 0
+		cfg.EnemySpawnTicks = 0
+		cfg.HumanHomeCost = cost
+		w := NewWorld(cfg)
+		mid := make([]float64, NumGenes)
+		for i := range mid {
+			mid[i] = midAbility
+		}
+		a := mustAgent(t, w, w.addAgent(w.newAgent(100, 100, Male, mid, 0, 1)))
+		return w.perceive(a).Self.HomePull
+	}
+	if got := pull(0); got != 0 {
+		t.Fatalf("a person feels a pull of %v with the rule off", got)
+	}
+	if got := pull(2); got != 2 {
+		t.Fatalf("a person feels a pull of %v, want the world's figure 2", got)
+	}
+}
+
+func TestTheBeastsKeepTheirOwnHomeRule(t *testing.T) {
+	// Widening the rule to people must not change what it does to a beast:
+	// theirs is scaled by the row's Homely and gated on EnemyHomeCost.
+	cfg := DefaultConfig()
+	cfg.InitialPopulation, cfg.InitialFoodItems, cfg.FoodSpawnRate = 0, 0, 0
+	cfg.EnemySpawnTicks = 0
+	cfg.HumanHomeCost, cfg.EnemyHomeCost = 5, 0 // people tied, beasts not
+	w := NewWorld(cfg)
+	mid := make([]float64, NumGenes)
+	for i := range mid {
+		mid[i] = midAbility
+	}
+	beast := w.newAgent(100, 100, Male, append([]float64(nil), mid...), 0, 1)
+	beast.Species = SpeciesEnemy
+	b := mustAgent(t, w, w.addAgent(beast))
+	if got := w.perceive(b).Self.HomePull; got != 0 {
+		t.Fatalf("a beast felt a pull of %v with EnemyHomeCost at nought", got)
+	}
+	person := mustAgent(t, w, w.addAgent(w.newAgent(120, 100, Male, append([]float64(nil), mid...), 0, 1)))
+	if got := w.perceive(person).Self.HomePull; got != 5 {
+		t.Fatalf("a person felt a pull of %v, want 5", got)
+	}
+}

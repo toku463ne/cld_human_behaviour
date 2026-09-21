@@ -327,6 +327,23 @@ type Config struct {
 	// order every other painting is read in.
 	EnemyKindMap []string
 
+	// HumanHomeCost is the same for a person (TODO 6, #130), and zero - the
+	// default - is every world before it.
+	//
+	// Stage 64 gave a home range to enemies only, because the question then
+	// was why a beast does not wander off the map it belongs to. The question
+	// the dynasty asks is the opposite and it is about people: measured, an
+	// ordinary life already crosses seven of the twelve blocks, so "travel to
+	// a country nobody of your line has been to" is what every body does
+	// without being asked, and a player doing it is indistinguishable from a
+	// player doing nothing. A pull towards where you were born is what makes
+	// leaving a decision.
+	//
+	// It is charged exactly as the enemies' is - per region's width, per tick
+	// out there, scored against everything else - so it is a cost and not a
+	// leash, and no threshold comes with it.
+	HumanHomeCost float64
+
 	// EnemyHomeCost is what being far from where it came into the world costs
 	// an enemy (stage 64), per region's width of distance and per tick spent
 	// out there. Zero is the world before this rule, and the default.
