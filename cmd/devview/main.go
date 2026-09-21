@@ -3292,6 +3292,14 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 		as := a.Assumes()
 		t.line("assumes: hit back %.2f (%.0f seen)   courted %.2f (%.0f seen)",
 			as.Retaliation, as.RetaliationSeen, as.Accept, as.AcceptSeen)
+		// And what it makes of pushing (#139), on the line below because it
+		// is the only one of the three that moves by default: it has a
+		// learning rate of its own, so a body that has shoved anybody has
+		// been told something by the world.
+		if cfg.ShovePush > 0 {
+			t.line("         a push gets me clear %.2f (%.0f seen)",
+				as.ShoveWorks, as.ShoveWorksSeen)
+		}
 		t.line("wants:   risk x%.2f   rival %.3f   empty %.2f   a child %.1f",
 			as.RiskWeight, as.Competition, as.ShockRisk, as.MateWeight)
 		// And how far it strays from its own ranking (stage 95). One is the
@@ -4414,6 +4422,7 @@ func main() {
 	soak := flag.Float64("soak", 0, "what a tick in the water takes out of a body in vitality, standing still or not (stage 99; needs -terrain river or country). 0 is the world before this stage, where the water was a toll on movement and nothing to a body standing in it. A body recovers 0.09 a tick, so 0.02 is a fifth of that")
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
+	shove := flag.Float64("shove", 0, "how far a body throws another one when it spends the tick pushing instead of hitting, in world units (#139; 0 = every world before it). A fourth stance, scored beside the other three: it gives up most of the blow and buys the ticks the other one spends walking back in. 20 is past arm's length and actually breaks the fight off")
 	sides := flag.Float64("sides", 0, "let goodwill decide who fights whom (#138): the amount, in affinity, that swinging at somebody costs, that taking a side is worth, and that being beaten to your meal costs the one who got there first. 0 = every world before it")
 	noahead100 := flag.Bool("groundunread", false, "put back the world before 2026-09-19: every option priced with the ground underfoot rather than with the ground one cell toward where it would take the node (stage 100)")
 	rich := flag.String("rich", "",
@@ -4533,6 +4542,14 @@ func main() {
 	// worth watching with -terrain country.
 	if *knock > 0 {
 		cfg.KnockbackDist = *knock
+	}
+	// And choosing to push (#139): the fourth stance. Worth watching with
+	// -terrain country and -slow, on a fight near the edge of the plateau -
+	// the bodies step backwards as they are pushed, and the right panel
+	// shows "shoving" as the stance and what that body has come to believe
+	// about whether pushing works.
+	if *shove > 0 {
+		cfg.ShovePush = *shove
 	}
 	// Goodwill deciding who fights whom (#138). The six rules are switched on
 	// together at one figure, since measuring them apart is what the arms in

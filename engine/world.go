@@ -229,6 +229,20 @@ type Stats struct {
 	SnatchLooks    int
 	SnatchForgiven int
 
+	// What a chosen push has to aim at, and what it did (shove.go, #139).
+	// ShoveLooks is (decision x body in sight) pairs, ShoveLedge and
+	// ShoveWater how many of those had a drop or a river a push away behind
+	// the one being looked at, and the Near three the same over the bodies
+	// already within arm's reach. All four are taken whether or not the rule
+	// is on.
+	//
+	// ShovesMade is how many pushes were actually thrown, ShovesBroke how
+	// many of those put the two out of each other's reach, and ShovesHeld the
+	// rest. Nought with the rule off.
+	ShoveLooks, ShoveLedge, ShoveWater        int
+	ShoveNear, ShoveNearLedge, ShoveNearWater int
+	ShovesMade, ShovesBroke, ShovesHeld       int
+
 	// ClaimContests is how many times two bodies in sight had chosen the same
 	// item, ClaimKept how many of those swapped which of them the observer was
 	// shown, and ClaimWakes how many bodies were asked to think again because
@@ -519,6 +533,20 @@ type World struct {
 	knockedWet  int
 	knockedFell int
 
+	// What a chosen push would have to aim at, and what it did (shove.go,
+	// #139). The first six are taken whether or not the rule is on - a count
+	// of how often something could fire is the ceiling on what it can explain
+	// (stage 24) - and the last three are what the rule managed.
+	shoveLooks, shoveLedge, shoveWater        int
+	shoveNear, shoveNearLedge, shoveNearWater int
+	shovesMade, shovesBroke, shovesHeld       int
+
+	// And how long a pair a push separated actually took to be back within
+	// reach of each other: the ticks a chosen push buys, which is the figure
+	// the design would not pick a dose without.
+	shoveWaits   []shoveWait
+	shoveRejoins int
+	shoveWaitSum int
 	// The same count for a killing seen (stage 31), split by which way the
 	// sign went: killWitnesses is readings taken of somebody who killed,
 	// avengeWitnesses is onlookers who thought better of one of their own for
@@ -946,6 +974,10 @@ func (w *World) Stats() Stats {
 		FoodsClaimed:      w.foodsClaimed,
 		FoodsClaimedLiked: w.foodsClaimedLiked,
 
+		ShoveLooks: w.shoveLooks, ShoveLedge: w.shoveLedge, ShoveWater: w.shoveWater,
+		ShoveNear: w.shoveNear, ShoveNearLedge: w.shoveNearLedge, ShoveNearWater: w.shoveNearWater,
+		ShovesMade: w.shovesMade, ShovesBroke: w.shovesBroke, ShovesHeld: w.shovesHeld,
+
 		KnockedWet:  w.knockedWet,
 		KnockedFell: w.knockedFell,
 		Hunts:       w.hunts,
@@ -1122,6 +1154,10 @@ func (w *World) Step() {
 		w.keepInBounds(a)
 	}
 
+	// How long the pairs a push separated are taking to be back within reach
+	// of each other (#139). Read only, and checked before this tick's blows
+	// so that a push filed last tick is given a tick to have worked.
+	w.trackShoveWaits()
 	w.resolveAttacks()
 	w.metabolise()
 
@@ -1205,6 +1241,10 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	// What the unwritten rule of #140 would have to work with: how much of
 	// the food in sight somebody else has already chosen. Read only.
 	w.noteClaimsSeen(a, p)
+	// And what a chosen push would have to aim at: how often the ground just
+	// behind somebody in sight is a drop or a river (shove.go, #139). Read
+	// only, and taken whether or not the rule is on.
+	w.noteShoveGround(a, p)
 	// Only an agent somebody asked to follow records anything. The controller
 	// fills in the options it compared; the world fills in the rest, so that a
 	// controller which ignores the trace still leaves a usable record.
@@ -1762,7 +1802,8 @@ func (w *World) resolveAttacks() {
 			}
 			continue
 		}
-		damage *= 1 - to.defence(&w.cfg)*composure
+		guard := 1 - to.defence(&w.cfg)*composure
+		damage *= guard
 		// And what knowing this sort of beast keeps off (stage 62). It is
 		// separate from defence on purpose: defence is what a body is, and
 		// this is what it has learnt about one particular attacker.
@@ -1773,6 +1814,13 @@ func (w *World) resolveAttacks() {
 		// knockback.go for why the pushes wait until the end of the loop.
 		if !at.thrown || w.cfg.KnockbackThrown {
 			w.noteShove(from, to, damage)
+		}
+		// And what the one swinging chose to spend on moving it rather than
+		// on hurting it (#139). A thrown stone pushes nothing here whatever
+		// KnockbackThrown says: a stance is something a body does with its
+		// weight, and there is no weight behind a stone.
+		if !at.thrown {
+			w.noteChosenShove(from, to, at.effort*from.mix().Shove, guard)
 		}
 
 		// The one taking the hits remembers exactly what they cost - and is

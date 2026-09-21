@@ -2100,6 +2100,75 @@ type Config struct {
 	// stone does not.
 	KnockbackThrown bool
 
+	// --- choosing to push (shove.go, #139) -----------------------------
+	//
+	// ShovePush is how far a body throws another one when it spends a tick
+	// pushing instead of hitting, for a body of the world's reference size.
+	// Nought is off, and off is the default: the fourth stance is not even
+	// scored, so a world without the rule draws the random numbers it always
+	// did.
+	//
+	// It is kept apart from KnockbackDist on purpose. That one is what a blow
+	// does to a body whatever either of them wanted; this one is a move
+	// somebody chose, priced and learnt about. Sharing a figure would have
+	// meant turning on the older rule to measure the newer one, and stage
+	// 13's default is off.
+	//
+	// The figure to hold it against is CombatRadius (15), the same as
+	// KnockbackDist's: a push shorter than the slack between two bodies
+	// leaves them in reach of each other and buys nothing at all, which is
+	// what the belief below is for finding out.
+	ShovePush float64
+
+	// ShoveCost is what a tick of pushing at full effort takes out of the one
+	// pushing, beside AttackCost (0.30) and DefenceCost (0.12). It is about
+	// what swinging costs: a heave is exertion, and what the stance gives up
+	// is the blow rather than the price.
+	ShoveCost float64
+
+	// ShoveWorks is what a body starts life believing about a push: how often
+	// one puts the other out of reach. It is a fact in lore.go's sense - the
+	// world has a right answer and a body finds it out by pushing - so this
+	// is only where the finding out starts from.
+	ShoveWorks float64
+
+	// ShoveLearnBoth says both sides of a push learn from it: the one who
+	// pushed, and the one who was pushed. True by default, because the event
+	// is one event and both of them were there.
+	//
+	// It is switchable because this is the first belief in the world with two
+	// doors into it, and a belief that fills twice as fast is not the same
+	// belief. The arm with it false is the control that says which of the two
+	// is doing the work.
+	ShoveLearnBoth bool
+
+	// ShoveLearnRate is how far one push moves that belief, and it is a
+	// figure of its own rather than the world's LearningRate. Nought stops
+	// everybody learning it and stops it being traded, which is the control
+	// for "is it the pushing or the knowing about pushing" that this project
+	// has needed five times before (stages 31, 35, 49, 100).
+	//
+	// It is separate because LearningRate is off by default and the reason it
+	// is off is about retaliation and nothing else: the 0.7 the controller
+	// assumes about being hit back is a deterrent holding the world together
+	// rather than a fact, and bodies that find out the truth brawl and starve
+	// (see its own comment). Nothing of the sort is true of pushing - there
+	// is no figure here that is quietly doing a second job - so tying the two
+	// together would have meant a rule that can only be measured inside a
+	// world already known to be broken.
+	ShoveLearnRate float64
+
+	// ShoveGroundSeen says a body reads the ground just behind the one in
+	// front of it - the drop or the river a push would put it in. True by
+	// default where the rule is on at all; false is the arm where pushing
+	// works exactly as well and nobody can see what it would push anybody
+	// into.
+	//
+	// Nothing is read and no random number is drawn unless ShovePush is set,
+	// which is what keeps every world before this one consuming the random
+	// source as it did.
+	ShoveGroundSeen bool
+
 	// SkirmishTicks is how long an agent expects a fight to last before one
 	// side gives up. Fights are only settled by a death when neither side
 	// breaks off, so pricing every fight as a fight to the death would make a
@@ -3685,6 +3754,17 @@ func DefaultConfig() Config {
 		KnockbackDist:   0,
 		KnockbackFall:   2.3,
 		KnockbackThrown: false,
+
+		// Off by default for the same reason knocking back is: what a push
+		// is worth depends entirely on what is behind the one being pushed,
+		// which is the map author's business. The figures below are what an
+		// arm sets when it is on.
+		ShovePush:       0,
+		ShoveCost:       0.20,
+		ShoveWorks:      0.5,
+		ShoveLearnBoth:  true,
+		ShoveLearnRate:  1,
+		ShoveGroundSeen: true,
 
 		JudgementNoise:    40,
 		PriorStrength:     50,

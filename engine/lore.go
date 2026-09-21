@@ -52,6 +52,22 @@ type lore struct {
 	retaliation belief // how often the one you hit hits back
 	accept      belief // how often a courtship is accepted
 
+	// And how often a push puts the other one out of reach (#139). The third
+	// fact, and the first with two doors into it: the one who pushed and the
+	// one who was pushed learn the same thing from the same event, unless
+	// ShoveLearnBoth says otherwise.
+	//
+	// It is a fact and not a preference for the usual reason - the world has
+	// an answer, and a body that believes pushing works when it does not is
+	// simply wrong. What makes it worth having is that the answer depends on
+	// how big the other one was, and how big the other one is cannot be seen:
+	// a body finds out that shoving works on some and not on others, and all
+	// it can keep is the average.
+	//
+	// Frozen at the world's own figure in a world with no pushing in it, so
+	// nothing is learnt, nothing is traded and nothing moves.
+	shoveWorks belief
+
 	riskWeight        float64 // how much what somebody once cost you puts you off
 	competitionWeight float64 // what removing a future rival for food is worth
 	shockRisk         float64 // how dangerous being low on vitality feels
@@ -96,6 +112,7 @@ func (w *World) newLore() lore {
 	return lore{
 		retaliation:       belief{mean: cfg.Retaliation, n: cfg.LorePriorCount},
 		accept:            belief{mean: cfg.AcceptChance, n: cfg.LorePriorCount},
+		shoveWorks:        belief{mean: cfg.ShoveWorks, n: cfg.LorePriorCount},
 		riskWeight:        w.spreadAround(cfg.RiskWeight, cfg.LoreInitSpread),
 		competitionWeight: w.spreadAround(cfg.CompetitionWeight, cfg.LoreInitSpread),
 		shockRisk:         w.spreadAround(cfg.ShockRisk, cfg.LoreInitSpread),
@@ -113,6 +130,7 @@ func (w *World) plainLore() lore {
 	return lore{
 		retaliation:       belief{mean: cfg.Retaliation, n: cfg.LorePriorCount},
 		accept:            belief{mean: cfg.AcceptChance, n: cfg.LorePriorCount},
+		shoveWorks:        belief{mean: cfg.ShoveWorks, n: cfg.LorePriorCount},
 		riskWeight:        cfg.RiskWeight,
 		competitionWeight: cfg.CompetitionWeight,
 		shockRisk:         cfg.ShockRisk,
@@ -210,6 +228,15 @@ func (w *World) inheritLore(pa, pb *Agent) lore {
 	}
 	out.retaliation = learned(pa.lore.retaliation, pb.lore.retaliation, cfg.Retaliation)
 	out.accept = learned(pa.lore.accept, pb.lore.accept, cfg.AcceptChance)
+	// And what its parents made of pushing (#139), on the same terms - but
+	// only where there is any pushing to have made anything of. learned draws
+	// a random number to pick a parent when the Lamarckian rate is above
+	// nought, and a world with no fourth stance in it must draw exactly the
+	// numbers it always did.
+	out.shoveWorks = belief{mean: cfg.ShoveWorks, n: cfg.LorePriorCount}
+	if cfg.ShovePush > 0 {
+		out.shoveWorks = learned(pa.lore.shoveWorks, pb.lore.shoveWorks, cfg.ShoveWorks)
+	}
 	return out
 }
 
@@ -285,6 +312,14 @@ func (w *World) exchangeLore(a, o *Agent) {
 	// surer of anything than you were.
 	meet(&a.lore.retaliation.mean, &o.lore.retaliation.mean, cfg.Retaliation)
 	meet(&a.lore.accept.mean, &o.lore.accept.mean, cfg.AcceptChance)
+	// And what either of them has found out about pushing (#139). Where
+	// nobody has pushed anybody there is no gap to close, so this line moves
+	// nothing in a world without the rule; where the belief is frozen it is
+	// not traded either, which is what makes that arm "the pushing without
+	// the knowing".
+	if cfg.ShoveLearnRate > 0 {
+		meet(&a.lore.shoveWorks.mean, &o.lore.shoveWorks.mean, cfg.ShoveWorks)
+	}
 	meet(&a.lore.riskWeight, &o.lore.riskWeight, cfg.RiskWeight)
 	meet(&a.lore.competitionWeight, &o.lore.competitionWeight, cfg.CompetitionWeight)
 	meet(&a.lore.shockRisk, &o.lore.shockRisk, cfg.ShockRisk)
@@ -378,6 +413,8 @@ type Assumptions struct {
 	RetaliationSeen float64
 	Accept          float64
 	AcceptSeen      float64
+	ShoveWorks      float64
+	ShoveWorksSeen  float64
 
 	RiskWeight  float64
 	Competition float64
@@ -393,6 +430,8 @@ func (a *Agent) Assumes() Assumptions {
 		RetaliationSeen: a.lore.retaliation.n,
 		Accept:          a.lore.accept.mean,
 		AcceptSeen:      a.lore.accept.n,
+		ShoveWorks:      a.lore.shoveWorks.mean,
+		ShoveWorksSeen:  a.lore.shoveWorks.n,
 		RiskWeight:      a.lore.riskWeight,
 		Competition:     a.lore.competitionWeight,
 		ShockRisk:       a.lore.shockRisk,
@@ -457,6 +496,7 @@ func (w *World) Teaching() Teaching {
 type LoreView struct {
 	Retaliation float64 // mean of what agents believe about hitting back
 	Accept      float64 // ... and about courtship being accepted
+	ShoveWorks  float64 // ... and about a push putting somebody out of reach
 	RiskWeight  float64
 	Competition float64
 	ShockRisk   float64
@@ -472,10 +512,12 @@ type LoreView struct {
 	SdNoiseWeight float64
 
 	// What the world actually does, over the whole run: how often somebody who
-	// was hit hit back, and how often a courtship was accepted. These are what
-	// the two beliefs above are trying to find out, and nothing reads them.
+	// was hit hit back, how often a courtship was accepted, and how often a
+	// push opened the gap. These are what the three beliefs above are trying
+	// to find out, and nothing reads them.
 	TrueRetaliation float64
 	TrueAccept      float64
+	TrueShove       float64
 }
 
 // Lore reports what the living population assumes on average, and what the
@@ -490,6 +532,7 @@ func (w *World) Lore() LoreView {
 		a := &w.agents[i]
 		out.Retaliation += a.lore.retaliation.mean
 		out.Accept += a.lore.accept.mean
+		out.ShoveWorks += a.lore.shoveWorks.mean
 		out.RiskWeight += a.lore.riskWeight
 		out.Competition += a.lore.competitionWeight
 		out.ShockRisk += a.lore.shockRisk
@@ -499,6 +542,7 @@ func (w *World) Lore() LoreView {
 	}
 	out.Retaliation /= n
 	out.Accept /= n
+	out.ShoveWorks /= n
 	out.RiskWeight /= n
 	out.Competition /= n
 	out.ShockRisk /= n
@@ -524,6 +568,9 @@ func (w *World) Lore() LoreView {
 	}
 	if w.courtships > 0 {
 		out.TrueAccept = float64(w.courtshipsAccepted) / float64(w.courtships)
+	}
+	if w.shovesMade > 0 {
+		out.TrueShove = float64(w.shovesBroke) / float64(w.shovesMade)
 	}
 	return out
 }

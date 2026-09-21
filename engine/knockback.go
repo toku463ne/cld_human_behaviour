@@ -21,6 +21,12 @@ import "math"
 // in is the ordinary Hazard term reading the ground under its feet on the
 // next decision, which already exists and needed no line.
 //
+// That is still true of this rule after #139 put a chosen push beside it
+// (shove.go). The choosing is all on the pushing side: the fourth stance is
+// scored like the other three, and being pushed is exactly what it was - a
+// thing that happens to you. The two share the machinery below and nothing
+// else, and either can be run without the other.
+//
 // The push is collected and applied after all the blows, not as each lands.
 // resolveAttacks asks the spatial index questions inside its loop (the
 // readings onlookers take, every spectateInterval ticks), and moving a body
@@ -37,8 +43,10 @@ import "math"
 // edge, and it pays for the drop. The way back is still the ramp.
 type shove struct {
 	id     int
+	fromID int     // who did it, for the chosen push that learns from the result
 	dx, dy float64 // unit vector, striker -> struck
 	dist   float64
+	chosen bool // a push somebody picked (#139) rather than one a blow gave
 }
 
 // noteShove works out where a blow would put the one it landed on, and files
@@ -69,11 +77,57 @@ func (w *World) noteShove(from, to *Agent, damage float64) {
 		return
 	}
 	w.shoves = append(w.shoves, shove{
-		id:   to.ID,
-		dx:   dx / d,
-		dy:   dy / d,
-		dist: cfg.KnockbackDist * (damage / cfg.AttackDamage) * (cfg.MaxVitality / mass),
+		id:     to.ID,
+		fromID: from.ID,
+		dx:     dx / d,
+		dy:     dy / d,
+		dist:   cfg.KnockbackDist * (damage / cfg.AttackDamage) * (cfg.MaxVitality / mass),
 	})
+}
+
+// noteChosenShove is the same filing for a push somebody picked (#139): the
+// fourth stance, where the tick's effort went into moving the other one
+// instead of into hurting it.
+//
+// It is the passive push's arithmetic with the shove channel in place of the
+// attack channel, which is what lets the two go opposite ways: the stance that
+// pushes hardest is the one that hits least. Everything else is the same, on
+// purpose - the force comes off the same gene, so there is no gene for
+// pushing, and it is divided by the same mass, so a heavy body gives less
+// ground.
+//
+// guard is what the one being pushed turned aside, already worked out for the
+// blow: a body with its guard up is moved less. Getting out of the way is not
+// in here because it has already had its say - a shove that was dodged never
+// reaches this function, for the same reason a blow that was dodged does no
+// damage.
+func (w *World) noteChosenShove(from, to *Agent, use, guard float64) {
+	cfg := &w.cfg
+	if cfg.ShovePush <= 0 || use <= 0 || cfg.AttackDamage <= 0 {
+		return
+	}
+	force := damagePerTick(cfg, from.Attack(cfg), use) * guard
+	if force <= 0 {
+		return
+	}
+	mass := to.MaxVitality(cfg)
+	if mass <= 0 {
+		return
+	}
+	dx, dy := to.X-from.X, to.Y-from.Y
+	d := math.Hypot(dx, dy)
+	if d < 1e-9 {
+		return
+	}
+	w.shoves = append(w.shoves, shove{
+		id:     to.ID,
+		fromID: from.ID,
+		dx:     dx / d,
+		dy:     dy / d,
+		dist:   cfg.ShovePush * (force / cfg.AttackDamage) * (cfg.MaxVitality / mass),
+		chosen: true,
+	})
+	w.shovesMade++
 }
 
 // applyShoves moves everybody that was pushed this tick, in the order the
@@ -84,6 +138,9 @@ func (w *World) applyShoves() {
 		s := &w.shoves[i]
 		if a := w.agentByID(s.id); a != nil && a.Alive {
 			w.pushBody(a, s.dx, s.dy, s.dist)
+			if s.chosen {
+				w.noteShoveOutcome(s.fromID, a)
+			}
 		}
 	}
 	w.shoves = w.shoves[:0]

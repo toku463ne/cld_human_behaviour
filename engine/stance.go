@@ -1,7 +1,8 @@
 package engine
 
-// This file splits the effort an agent pours into a fight across three
-// channels: hitting, guarding, and getting out of the way.
+// This file splits the effort an agent pours into a fight across four
+// channels: hitting, guarding, getting out of the way, and - since #139 -
+// moving the other one.
 //
 // Before it, effort was one number, and a fight was decided by who could pour
 // more of it into hitting. That made attack the only gene worth buying (see
@@ -9,11 +10,13 @@ package engine
 // fell by two thirds), because there was nothing else to spend a body on that
 // paid off in a fight.
 //
-// The three channels are offered as three ready mixes rather than as free
-// numbers. An agent choosing its own split across three channels would be
-// scoring a cube of options every time it looked at somebody; three stances
-// cover the shapes that matter - go at them, guard, keep away - and the cost
-// of thinking stays where it was.
+// The channels are offered as ready mixes rather than as free numbers. An
+// agent choosing its own split would be scoring a cube of options every time
+// it looked at somebody; the stances cover the shapes that matter - go at
+// them, guard, keep away, shove - and the cost of thinking stays where it was.
+//
+// The fourth is only on the list where the world has ShovePush set. Every
+// other world scores three, as it always did.
 //
 // The vitality a stance costs is the sum over the channels of what each one is
 // used at, priced separately, which is PLAN.md's "max x usage x unit price".
@@ -33,6 +36,15 @@ const (
 	// when it lands.
 	StanceEvasive
 
+	// StanceShoving gives up most of the blow for moving the other one
+	// (#139). It is the fourth mix rather than a word of its own because
+	// nothing outside a fight needs to name it, and because the twentieth
+	// action would have widened what a rule of thumb can be about in every
+	// world, including the ones that have never heard of pushing.
+	//
+	// It is only offered where the world has the rule: see numStances.
+	StanceShoving
+
 	NumStances = int(iota)
 )
 
@@ -42,14 +54,34 @@ func (s Stance) String() string {
 		return "guarded"
 	case StanceEvasive:
 		return "evasive"
+	case StanceShoving:
+		return "shoving"
 	}
 	return "aggressive"
 }
 
-// channels is how much of each is being used, from 0 to 1.
-type channels struct{ Attack, Defence, Evasion float64 }
+// numStances is how many mixes are on offer in this world. The fourth is only
+// scored where ShovePush is set, because pick draws one random number per
+// candidate: scoring a move nobody can take would move the random source in
+// every world, and a change that is supposed to do nothing must do nothing.
+func numStances(cfg *Config) int {
+	if cfg.ShovePush > 0 {
+		return NumStances
+	}
+	return NumStances - 1
+}
 
-// The three mixes. They deliberately do not add up to the same total: guarding
+// channels is how much of each is being used, from 0 to 1.
+//
+// Shove is the fourth (#139), and it is a channel of its own rather than a
+// share of Attack because the push has to be able to go the other way from
+// the damage. A stance that pushes hard hits softly, and reading the distance
+// off the damage - which is what the passive knockback does, correctly, since
+// there the push is the blow - would have made the pushing stance the one that
+// pushes least.
+type channels struct{ Attack, Defence, Evasion, Shove float64 }
+
+// The mixes. They deliberately do not add up to the same total: guarding
 // costs less than swinging, and an agent that gives up on hitting is spending
 // less overall, which is what makes standing off a real option for something
 // that cannot win.
@@ -57,6 +89,12 @@ var stanceMix = [NumStances]channels{
 	StanceAggressive: {Attack: 1.0, Defence: 0.1, Evasion: 0.0},
 	StanceGuarded:    {Attack: 0.5, Defence: 0.9, Evasion: 0.1},
 	StanceEvasive:    {Attack: 0.15, Defence: 0.3, Evasion: 0.9},
+	// Throwing your weight at somebody still lands something, keeps a
+	// middling guard - a body braced against another one is not open - and
+	// can hardly dodge, since both hands are busy. The other three push
+	// nothing at all, which is what keeps the chosen push and stage 13's
+	// passive one two rules rather than one.
+	StanceShoving: {Attack: 0.2, Defence: 0.3, Evasion: 0.1, Shove: 1.0},
 }
 
 // mix is the channels an agent is using right now. Only the fighting actions
@@ -146,7 +184,8 @@ func (w *World) cover(defender, attacker *Agent) float64 {
 // spent on moving: each channel at what it is used at, priced separately.
 func stanceCost(cfg *Config, s Stance) float64 {
 	m := stanceMix[s%Stance(NumStances)]
-	return cfg.AttackCost*m.Attack + cfg.DefenceCost*m.Defence + cfg.EvasionCost*m.Evasion
+	return cfg.AttackCost*m.Attack + cfg.DefenceCost*m.Defence +
+		cfg.EvasionCost*m.Evasion + cfg.ShoveCost*m.Shove
 }
 
 // coveredFromAttacker says whether the one currently hitting this agent is

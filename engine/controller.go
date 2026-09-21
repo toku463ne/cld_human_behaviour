@@ -2369,9 +2369,10 @@ func (c *AIController) hoped(p *Perception, prey *AgentView) allyForce {
 // is what the formula decides.
 func (c *AIController) addAttack(p *Perception, o *AgentView) {
 	help := c.help(o.ID)
-	// Three ready mixes rather than two levels of one number: how hard to
-	// swing is now inseparable from how much guard to keep up.
-	for stance := Stance(0); int(stance) < NumStances; stance++ {
+	// Ready mixes rather than two levels of one number: how hard to swing is
+	// now inseparable from how much guard to keep up - and, where the world
+	// has the fourth one, from whether the effort goes into the blow at all.
+	for stance := Stance(0); int(stance) < numStances(p.Cfg); stance++ {
 		c.scoreFight(p, o, help, ActAttack, stance, 0)
 	}
 }
@@ -2396,7 +2397,7 @@ func (c *AIController) addInvite(p *Perception, o *AgentView) {
 	if hope.backers == 0 {
 		return
 	}
-	for stance := Stance(0); int(stance) < NumStances; stance++ {
+	for stance := Stance(0); int(stance) < numStances(cfg); stance++ {
 		c.scoreFight(p, o, hope, ActInvite, stance, cfg.CallTicks)
 	}
 }
@@ -2448,6 +2449,53 @@ func (c *AIController) scoreFight(p *Perception, o *AgentView, help allyForce, k
 	theirs := damagePerTick(cfg, o.EstStrength, s.Retaliation) *
 		(1 - s.Defence*m.Defence) * (1 - s.Evasion*m.Evasion)
 
+	// What pushing buys, where the stance pushes (#139): the share of the
+	// exchange the other one spends walking back in rather than swinging.
+	//
+	// Nothing here is a threshold and nothing here is new machinery. Per
+	// tick, the push throws the other one est away and it has to walk that
+	// back at its own pace, so it is out of reach for est/v of every tick of
+	// pushing - and how much of that actually happens is exactly what the
+	// belief has been finding out. A body that has pushed a lot of people who
+	// did not go anywhere believes little of it, and the term goes to nought
+	// on its own.
+	//
+	// It comes off both sides. The other one is not hitting while it walks
+	// back, and neither is this one, so the fight takes longer and costs less
+	// per tick. That is the whole of "shove to get away": the option wins
+	// exactly when the incoming damage is what matters and the exchange is
+	// not going to be won, and loses whenever there is a fight worth
+	// finishing.
+	if m.Shove > 0 {
+		// How far it reckons on throwing somebody. Of ordinary size, because
+		// how much there is of the one in front of it is not visible: this is
+		// the figure it is wrong about.
+		est := shoveReachFor(cfg, s.Attack)
+		// And how fast the other one comes back. Also not visible, so it
+		// assumes the other one moves as it does.
+		v := speedAt(s.MaxSpeed, effort)
+		if away := clamp(s.ShoveWorks*est/(v+est), 0, 1); away > 0 {
+			mine *= 1 - away
+			theirs *= 1 - away
+		}
+	}
+
+	// And what the ground behind them is worth, where the stance pushes: a
+	// body shoved off a ledge pays the fall, and one shoved into a river
+	// stands a chance of not coming out.
+	//
+	// It is taken off what there is of them to get through rather than added
+	// to the blows, because a body falls off an edge once. The river is in
+	// the same figure at its honest size - the chance per tick, over the
+	// length of a scuffle, of the rest of that life - which on today's
+	// numbers is a fraction of a percent, and that is the right answer
+	// (stage 13 pushed bodies into water 250 times for half a death).
+	theirVitality := o.Vitality
+	if m.Shove > 0 {
+		harm := o.BehindFall + clamp(o.BehindDrown*cfg.SkirmishTicks, 0, 1)*o.Vitality
+		theirVitality = math.Max(o.Vitality-harm, 0)
+	}
+
 	// Either they go down, or one side breaks off first. A weakened
 	// target is cheap to finish, which is what makes hitting somebody who
 	// is already hurt the best value there is.
@@ -2456,7 +2504,7 @@ func (c *AIController) scoreFight(p *Perception, o *AgentView, help allyForce, k
 	// becomes worth taking on: alone the exchange runs out at
 	// SkirmishTicks with the thing still standing, and with two of you it
 	// does not.
-	exchange := math.Min(o.Vitality/math.Max(mine+help.damage, 1e-9), cfg.SkirmishTicks)
+	exchange := math.Min(theirVitality/math.Max(mine+help.damage, 1e-9), cfg.SkirmishTicks)
 	travel := o.Dist / speedAt(s.MaxSpeed, effort)
 	ticks := exchange + travel + float64(extraTicks)
 

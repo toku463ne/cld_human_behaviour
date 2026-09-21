@@ -1602,6 +1602,64 @@ var variants = []variant{
 		about: "control: the push with no ground to be pushed into (the flat world)",
 		apply: func(c *engine.Config) { c.KnockbackDist = 5 },
 	},
+	// Choosing to push (#139, shove.go). The fourth stance, where the tick's
+	// effort goes into moving the other one rather than into hurting it.
+	//
+	// The control for all of them is "countryskill": the same played map with
+	// nobody able to push. Stage 13's rule is off in every one of these, so
+	// what is measured is the chosen push on its own and not the two of them
+	// together.
+	//
+	// The count before the rule says where the room is: of the bodies in
+	// sight when somebody decides, 5.4-5.9% have a ledge a push away behind
+	// them on the played map and 0.14-0.32% have a river. That is the same
+	// size as stage 13's per-blow figure rather than larger, which says the
+	// ledge cannot be the main line: nothing in this world walks round
+	// somebody to get the angle. So the arms are built to read the distance
+	// first and the ground second.
+	{
+		name:  "shove",
+		about: "139: a fourth stance that pushes instead of hitting - a third of arm's length, on the played map",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.ShovePush = mapCountry, 0.5, 5
+		},
+	},
+	{
+		name:  "shovefar",
+		about: "sweep: a push past arm's length, which actually breaks the fight off",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.ShovePush = mapCountry, 0.5, 20
+		},
+	},
+	{
+		name:  "shoveflat",
+		about: "control: the push with no ground to push anybody into (is it the distance or the ledge?)",
+		apply: func(c *engine.Config) { c.ShovePush = 20 },
+	},
+	{
+		name:  "shovefixed",
+		about: "control: the same pushing, and nobody ever learns or tells whether it works",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.ShovePush = mapCountry, 0.5, 20
+			c.ShoveLearnRate = 0
+		},
+	},
+	{
+		name:  "shoveone",
+		about: "control: only the one who pushed learns from it, not the one who was pushed",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.ShovePush = mapCountry, 0.5, 20
+			c.ShoveLearnBoth = false
+		},
+	},
+	{
+		name:  "shoveblind",
+		about: "control: pushing works exactly as well and nobody can see the ledge behind anybody",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.ShovePush = mapCountry, 0.5, 20
+			c.ShoveGroundSeen = false
+		},
+	},
 	// Whose side a body is on (TODO 14, #138, sides.go). Five figures, and
 	// the arms are built so that each can be read on its own and the pair
 	// that must go together can be read together.
@@ -6164,6 +6222,8 @@ var metricNames = []string{
 	"wetPace", "wetFloor",
 	"drownMult", "wetGreen", "drownTaken", "wetStill", "soakTaken",
 	"knocked", "knockShare", "knockWet", "knockFell",
+	"shoveLedge", "shoveWater", "shoveNearLedge", "shoveNearWater",
+	"shoved", "shoveBroke", "shoveWorks", "shoveErr", "shoveWait",
 	"friendFightShare", "snatched", "snatchRate", "snatchFriend",
 	"snatchBite", "sideTaken", "fightChoice", "fightLiked", "mourned",
 	"claimSeen", "claimLiked",
@@ -6228,7 +6288,7 @@ type sample struct {
 	// three that are preferences rather than claims about the world. The
 	// spread is the one that matters - a mean says which way a population
 	// leans, only a spread says whether there is anything left to select on.
-	retal, accept                        float64
+	retal, accept, shoveBelief           float64
 	riskWeight, competition, shock       float64
 	sdRiskWeight, sdCompetition, sdShock float64
 
@@ -6679,7 +6739,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 			skillGap:  skills.Dear - skills.Open,
 			hintSlots: hints.Slots, hintsHeld: hints.Held,
 			hintKinds: hints.Kinds, hintEntropy: hints.Entropy,
-			retal: lore.Retaliation, accept: lore.Accept,
+			retal: lore.Retaliation, accept: lore.Accept, shoveBelief: lore.ShoveWorks,
 			riskWeight: lore.RiskWeight, competition: lore.Competition, shock: lore.ShockRisk,
 			mateWeight: lore.MateWeight, sdMateWeight: lore.SdMateWeight,
 			wobble: lore.NoiseWeight, sdWobble: lore.SdNoiseWeight,
@@ -6738,6 +6798,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	// beliefs above are trying to find out. It is not a property of the arm:
 	// two arms fight different amounts and so answer the question differently.
 	endLore := w.Lore()
+	// And what the chosen push managed (#139), which is the answer to the
+	// same kind of question: what the belief above is about.
+	endShove := w.Shoving()
 	tail := tailAverage(series)
 	fate := fateOf(series, ticks, deadBelow)
 	lines := w.Lineages()
@@ -6829,6 +6892,32 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"knockShare": share(end.Knocked, end.Fights),
 		"knockWet":   float64(end.KnockedWet),
 		"knockFell":  float64(end.KnockedFell),
+		// And what a chosen push (#139) has to aim at, counted before the
+		// rule was written and taken whether or not it is on: of the bodies
+		// in sight when somebody decides, the share with a drop or a river
+		// a push away behind them. The Near pair is the same over the ones
+		// already within arm's reach, which is where a push can be thrown at
+		// all - the other pair is what a body could aim for if it ever walked
+		// round to get the angle, which nothing in this world does yet.
+		"shoveLedge":     share(end.ShoveLedge, end.ShoveLooks),
+		"shoveWater":     share(end.ShoveWater, end.ShoveLooks),
+		"shoveNearLedge": share(end.ShoveNearLedge, end.ShoveNear),
+		"shoveNearWater": share(end.ShoveNearWater, end.ShoveNear),
+		// And what the rule managed: how many pushes were thrown, and the
+		// share of them that put the two out of each other's reach - which is
+		// the thing the belief below is trying to find out.
+		"shoved":     float64(end.ShovesMade),
+		"shoveBroke": share(end.ShovesBroke, end.ShovesMade),
+		// What the population came to believe about it, and how far that is
+		// from what the world actually did. shoveErr is the figure to read:
+		// a belief earns its place only by being nearer the truth than the
+		// constant it replaced.
+		"shoveWorks": tail.shoveBelief,
+		"shoveErr":   math.Abs(tail.shoveBelief - endLore.TrueShove),
+		// And how long a pair a push separated actually took to be back
+		// within reach: the ticks a push buys, which is the whole of what the
+		// fourth stance is for.
+		"shoveWait": endShove.Wait,
 		// What the two unwritten rules of TODO 14 have to work with, counted
 		// before either is written (sides.go). friendFightShare is the share
 		// of decisions taken in front of a friend fighting somebody the body
@@ -7672,6 +7761,7 @@ func tailAverage(series []sample) sample {
 		out.worstAff += s.worstAff
 		out.retal += s.retal
 		out.accept += s.accept
+		out.shoveBelief += s.shoveBelief
 		out.riskWeight += s.riskWeight
 		out.competition += s.competition
 		out.shock += s.shock
@@ -7864,6 +7954,7 @@ func tailAverage(series []sample) sample {
 	out.worstAff /= d
 	out.retal /= d
 	out.accept /= d
+	out.shoveBelief /= d
 	out.riskWeight /= d
 	out.competition /= d
 	out.shock /= d

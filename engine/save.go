@@ -143,6 +143,9 @@ type counterSnap struct {
 	MaxGeneration                                int
 	BlowsSeen, BlowsAnswered                     int
 	Knocked, KnockedWet, KnockedFell             int
+	ShoveLooks, ShoveLedge, ShoveWater           int
+	ShoveNear, ShoveNearLedge, ShoveNearWater    int
+	ShovesMade, ShovesBroke, ShovesHeld          int
 	FriendFights, Snatched, SnatchedFriend       int
 	SnatchBites, SidesTaken                      int
 	FightChoices, FightLiked                     int
@@ -278,6 +281,7 @@ type agentSnap struct {
 type loreSnap struct {
 	RetaliationMean, RetaliationN float64
 	AcceptMean, AcceptN           float64
+	ShoveMean, ShoveN             float64
 	RiskWeight                    float64
 	CompetitionWeight             float64
 	ShockRisk                     float64
@@ -353,6 +357,9 @@ func (w *World) Save(out io.Writer) error {
 			MaxGeneration: w.maxGeneration,
 			BlowsSeen:     w.blowsSeen, BlowsAnswered: w.blowsAnswered,
 			Knocked: w.knocked, KnockedWet: w.knockedWet, KnockedFell: w.knockedFell,
+			ShoveLooks: w.shoveLooks, ShoveLedge: w.shoveLedge, ShoveWater: w.shoveWater,
+			ShoveNear: w.shoveNear, ShoveNearLedge: w.shoveNearLedge, ShoveNearWater: w.shoveNearWater,
+			ShovesMade: w.shovesMade, ShovesBroke: w.shovesBroke, ShovesHeld: w.shovesHeld,
 			FriendFights: w.friendFights, Snatched: w.snatched, SnatchedFriend: w.snatchedFriend,
 			SnatchBites: w.snatchBites, SidesTaken: w.sidesTaken,
 			FightChoices: w.fightChoices, FightLiked: w.fightLiked,
@@ -428,6 +435,7 @@ func snapAgent(a *Agent) agentSnap {
 		Lore: loreSnap{
 			RetaliationMean: a.lore.retaliation.mean, RetaliationN: a.lore.retaliation.n,
 			AcceptMean: a.lore.accept.mean, AcceptN: a.lore.accept.n,
+			ShoveMean: a.lore.shoveWorks.mean, ShoveN: a.lore.shoveWorks.n,
 			RiskWeight:        a.lore.riskWeight,
 			CompetitionWeight: a.lore.competitionWeight,
 			ShockRisk:         a.lore.shockRisk,
@@ -570,6 +578,9 @@ func Load(in io.Reader) (*World, error) {
 	w.maxGeneration = c.MaxGeneration
 	w.blowsSeen, w.blowsAnswered = c.BlowsSeen, c.BlowsAnswered
 	w.knocked, w.knockedWet, w.knockedFell = c.Knocked, c.KnockedWet, c.KnockedFell
+	w.shoveLooks, w.shoveLedge, w.shoveWater = c.ShoveLooks, c.ShoveLedge, c.ShoveWater
+	w.shoveNear, w.shoveNearLedge, w.shoveNearWater = c.ShoveNear, c.ShoveNearLedge, c.ShoveNearWater
+	w.shovesMade, w.shovesBroke, w.shovesHeld = c.ShovesMade, c.ShovesBroke, c.ShovesHeld
 	w.friendFights, w.snatched, w.snatchedFriend = c.FriendFights, c.Snatched, c.SnatchedFriend
 	w.snatchBites, w.sidesTaken = c.SnatchBites, c.SidesTaken
 	w.fightChoices, w.fightLiked = c.FightChoices, c.FightLiked
@@ -628,6 +639,7 @@ func loadAgent(s *agentSnap, cfg *Config) Agent {
 	a.lore = lore{
 		retaliation:       belief{mean: s.Lore.RetaliationMean, n: s.Lore.RetaliationN},
 		accept:            belief{mean: s.Lore.AcceptMean, n: s.Lore.AcceptN},
+		shoveWorks:        belief{mean: s.Lore.ShoveMean, n: s.Lore.ShoveN},
 		riskWeight:        s.Lore.RiskWeight,
 		competitionWeight: s.Lore.CompetitionWeight,
 		shockRisk:         s.Lore.ShockRisk,
@@ -648,6 +660,13 @@ func loadAgent(s *agentSnap, cfg *Config) Agent {
 	// sharper animal than anything the world has ever built.
 	if a.lore.noiseWeight <= 0 {
 		a.lore.noiseWeight = cfg.NoiseWeight
+	}
+	// And the same for what it makes of pushing (#139). No evidence behind it
+	// is the marker of a file written before the rule, and a body that starts
+	// at nought would be one that believes pushing never works and never
+	// pushes anybody to find out.
+	if a.lore.shoveWorks.n <= 0 {
+		a.lore.shoveWorks = belief{mean: cfg.ShoveWorks, n: cfg.LorePriorCount}
 	}
 	a.hints = s.Hints
 	a.hintSlots = s.HintSlots
@@ -751,6 +770,7 @@ func (w *World) Nodes() []Node {
 			Lore: loreSnap{
 				RetaliationMean: a.lore.retaliation.mean, RetaliationN: a.lore.retaliation.n,
 				AcceptMean: a.lore.accept.mean, AcceptN: a.lore.accept.n,
+				ShoveMean: a.lore.shoveWorks.mean, ShoveN: a.lore.shoveWorks.n,
 				RiskWeight:        a.lore.riskWeight,
 				CompetitionWeight: a.lore.competitionWeight,
 				ShockRisk:         a.lore.shockRisk,
@@ -816,6 +836,7 @@ func (w *World) Repopulate(nodes []Node) int {
 		a.lore = lore{
 			retaliation:       belief{mean: n.Lore.RetaliationMean, n: n.Lore.RetaliationN},
 			accept:            belief{mean: n.Lore.AcceptMean, n: n.Lore.AcceptN},
+			shoveWorks:        belief{mean: n.Lore.ShoveMean, n: n.Lore.ShoveN},
 			riskWeight:        n.Lore.RiskWeight,
 			competitionWeight: n.Lore.CompetitionWeight,
 			shockRisk:         n.Lore.ShockRisk,
@@ -824,6 +845,9 @@ func (w *World) Repopulate(nodes []Node) int {
 		}
 		if a.lore.mateWeight <= 0 { // a file from before stage 94; see loadAgent
 			a.lore.mateWeight = w.cfg.OffspringValue
+		}
+		if a.lore.shoveWorks.n <= 0 { // a file from before #139; see loadAgent
+			a.lore.shoveWorks = belief{mean: w.cfg.ShoveWorks, n: w.cfg.LorePriorCount}
 		}
 		if a.lore.noiseWeight <= 0 { // ... and from before stage 95
 			a.lore.noiseWeight = w.cfg.NoiseWeight

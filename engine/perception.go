@@ -60,6 +60,11 @@ type SelfView struct {
 	Retaliation  float64
 	AcceptChance float64
 
+	// And how often this body believes a push puts the other one out of
+	// reach (#139). It is the world's own figure everywhere the fourth
+	// stance is not on offer, so nothing reads anything different.
+	ShoveWorks float64
+
 	RiskWeight        float64
 	CompetitionWeight float64
 	ShockRisk         float64
@@ -624,6 +629,28 @@ type AgentView struct {
 	// depends on where both bodies are - and it is visible in the plainest
 	// sense: an animal can see that the one in front of it is up a bank.
 	Uphill bool
+
+	// BehindFall is the vitality the ground just behind this one would take
+	// out of it if it were pushed into it, and BehindDrown the chance per
+	// tick of the water there (#139). Both nought where there is no drop and
+	// no river a push away, and both nought in every world without the fourth
+	// stance in it.
+	//
+	// It is the second thing in this perception that depends on where both
+	// bodies are, and for the same reason as the first: which way a push goes
+	// is the line between them, so what is behind somebody is behind them
+	// from here and not from anywhere else. Like everything else read off the
+	// ground it carries this body's own error (stage 100), and unlike
+	// Uphill - which is a step either side of a bank, and plain - a body can
+	// be quite wrong about what a push would cost the one in front of it.
+	//
+	// What is not in here is how much there is of the other body, which is
+	// what says whether a push of this size would reach the drop at all. That
+	// stays hidden, and being wrong about it is the whole of what the belief
+	// in lore.go has to learn.
+	BehindFall  float64
+	BehindDrown float64
+
 	// Rejected is set for a candidate this agent recently walked away from and
 	// is not interested in comparing again just yet.
 	Rejected bool
@@ -769,6 +796,7 @@ func (w *World) selfView(a *Agent) SelfView {
 
 		Retaliation:       a.lore.retaliation.mean,
 		AcceptChance:      a.lore.accept.mean,
+		ShoveWorks:        a.lore.shoveWorks.mean,
 		RiskWeight:        a.lore.riskWeight,
 		CompetitionWeight: a.lore.competitionWeight,
 		ShockRisk:         w.shockRiskFelt(a),
@@ -957,6 +985,10 @@ func (w *World) perceive(a *Agent) *Perception {
 	// How badly this one reads anything, worked out once for the whole crowd.
 	unit := w.judgementScale(a)
 
+	// Whether anybody in this world looks at the ground behind the one in
+	// front of them (#139), asked once rather than per body in sight.
+	readsBehind := w.readsBehind()
+
 	// And who, of the ones it can see, it thinks best of (stage 55a). It is
 	// filled in as the crowd is walked and settled at the end: seeing them is
 	// what clears a direction, and not seeing them is what writes one.
@@ -1090,6 +1122,14 @@ func (w *World) perceive(a *Agent) *Perception {
 			dearest, dearX, dearY, dearest0 = o.ID, o.X, o.Y, affinity
 		}
 
+		// What a push would put this one into (#139): read before the blur so
+		// that the draws a look makes stay in one order, and not read at all
+		// where nobody can push anybody.
+		behindFall, behindDrown := 0.0, 0.0
+		if readsBehind {
+			behindFall, behindDrown = w.groundBehind(a, o, unit)
+		}
+
 		blur := w.noise(unit, w.cfg.JudgementNoise)
 		p.Others = append(p.Others, AgentView{
 			ID:          o.ID,
@@ -1124,6 +1164,8 @@ func (w *World) perceive(a *Agent) *Perception {
 			OfferSpoils: offerSpoils,
 			OfferWard:   offerWard,
 			Uphill:      w.terrainAt(o.X, o.Y).Height > w.terrainAt(a.X, a.Y).Height,
+			BehindFall:  behindFall,
+			BehindDrown: behindDrown,
 			EstStrength: clamp(est+blur, MinAbility, MaxAbility),
 			Uncertainty: variance,
 			Risk:        risk,
