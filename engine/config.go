@@ -2158,6 +2158,46 @@ type Config struct {
 	// world already known to be broken.
 	ShoveLearnRate float64
 
+	// --- learning how bodies die (lesson.go, #137) ---------------------
+	//
+	// LessonSlots is the most room for lessons a body may buy, and nought -
+	// the default - is a world where nobody learns anything from watching
+	// anybody die. It is the ceiling on the draw and on the inheritance, the
+	// way HintSlots is for rules of thumb.
+	//
+	// The default has to be nought rather than a number, because room is paid
+	// for out of the budget the genes are fitted to: a world that bought two
+	// slots would be a world of slightly smaller bodies, and every figure
+	// ever measured would move.
+	LessonSlots int
+
+	// LessonSlotCost is what one of those slots takes out of that budget.
+	// The figure to hold it against is HintSlotCost, which buys the other
+	// kind of room.
+	LessonSlotCost float64
+
+	// LessonWeight is how hard one lesson pushes against the move it is
+	// about. It is a magnitude: a lesson is always a mark against, because
+	// what it was learnt from is a body that stopped.
+	//
+	// Nought is the control this project has needed five times over: the
+	// slots are still bought, the deaths are still watched, the patterns
+	// still ripen and take room, and none of it reaches a decision. That is
+	// "the knowing without the acting", and it is the only way to tell the
+	// rule apart from the budget it costs.
+	LessonWeight float64
+
+	// LessonRipeTwice says a pattern has to be seen twice before it takes a
+	// slot. True by default: one death of a kind is an accident. False
+	// promotes on the first, which is the arm that says whether the second
+	// sighting is what the rule is waiting for.
+	LessonRipeTwice bool
+
+	// LessonsSpread says a lesson can be copied from one body to another on
+	// the back of watching somebody, the way a rule of thumb is. True by
+	// default, and the arm with it false is "learnt but never taught".
+	LessonsSpread bool
+
 	// ShoveGroundSeen says a body reads the ground just behind the one in
 	// front of it - the drop or the river a push would put it in. True by
 	// default where the rule is on at all; false is the arm where pushing
@@ -3765,6 +3805,17 @@ func DefaultConfig() Config {
 		ShoveLearnBoth:  true,
 		ShoveLearnRate:  1,
 		ShoveGroundSeen: true,
+
+		// Off by default because room costs budget: see LessonSlots. The
+		// figures below are what an arm sets when it is on - two slots at
+		// half what a rule of thumb's room costs, since a lesson is one
+		// pair rather than a pair and a weight, and a push of about a
+		// tenth of what a meal is worth.
+		LessonSlots:     0,
+		LessonSlotCost:  2.5,
+		LessonWeight:    3,
+		LessonRipeTwice: true,
+		LessonsSpread:   true,
 
 		JudgementNoise:    40,
 		PriorStrength:     50,

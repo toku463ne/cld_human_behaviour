@@ -84,6 +84,11 @@ type SelfView struct {
 	// Perception, and all they can do is add to an option's score.
 	Hints []Hint
 
+	// Lessons are what it has learnt from watching bodies stop (#137). Same
+	// standing as the hints above - read only, and they can only ever add to
+	// a score - and empty in every world that has not bought room for them.
+	Lessons []Lesson
+
 	// Nutrition is what one of each kind of food is worth to this agent right
 	// now, as a share of what it would be worth to one that had not been
 	// living on it (stage 16). Deliberately not hidden: an animal knows when
@@ -803,6 +808,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		MateWeight:        a.lore.mateWeight,
 		NoiseWeight:       a.lore.noiseWeight,
 		Hints:             a.hints,
+		Lessons:           a.lessons,
 		Shelter:           w.shelterAt(a.X, a.Y),
 		Ground:            w.groundCostFor(a, ground),
 		Footing:           weighted(a, func(g Gene) float64 { return a.groundFactor(g) }),

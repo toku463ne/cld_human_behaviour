@@ -298,6 +298,19 @@ type Agent struct {
 	hints     []Hint
 	hintSlots int
 
+	// lessons are what this agent has learnt from watching bodies stop
+	// (#137, lesson.go), and lessonSlots the room it paid budget for - a
+	// second kind of room, kept apart from the one above because what goes
+	// in it comes from somewhere else entirely.
+	//
+	// seenDeaths is one bit per (situation, move) pair it has watched
+	// somebody die in. It is the whole of the memory this rule needs: a
+	// pattern is a thing seen twice, and the bit is what says the first time
+	// happened. Nothing about when, where or who.
+	lessons     []Lesson
+	lessonSlots int
+	seenDeaths  deathMarks
+
 	// sawFood and sawMate are what was in sight when this agent was last
 	// asked whether anything had turned up, so that "something came into
 	// view" can be told from "something is in view". Without them the two

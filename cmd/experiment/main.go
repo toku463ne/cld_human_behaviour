@@ -1660,6 +1660,58 @@ var variants = []variant{
 			c.ShoveGroundSeen = false
 		},
 	},
+	// Learning how bodies die (#137, lesson.go). A slot of its own, bought
+	// out of the same budget the genes are, holding what this body watched
+	// happen rather than what its lineage was born believing.
+	//
+	// The count before any of it says the target is not small: 99-100% of
+	// deaths have somebody there to see them, the average death is watched
+	// by 11 to 18 bodies, and the second sighting of a pattern - the event
+	// the rule turns on - happens 1287 to 3775 times a run. What the count
+	// also said is that the key is the cause of death and nothing else,
+	// which is why there are four features rather than six.
+	//
+	// lessonblind is the one that matters: the same slots bought out of the
+	// same budget, the same deaths watched, the same patterns ripening into
+	// the same slots, and not one of them reaching a decision. Anything the
+	// rule appears to do that this arm also does is the budget talking.
+	{
+		name:  "lesson",
+		about: "137: a body learns from watching others die - two slots, bought out of the genes' budget",
+		apply: func(c *engine.Config) { c.LessonSlots = 2 },
+	},
+	{
+		name:  "lessonplay",
+		about: "137 on the map a world would be played on (where bodies also drown)",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.LessonSlots = mapCountry, 0.5, 2
+		},
+	},
+	{
+		name:  "lessonblind",
+		about: "control: the room is bought and filled exactly as it would be, and no lesson touches a decision",
+		apply: func(c *engine.Config) { c.LessonSlots, c.LessonWeight = 2, 0 },
+	},
+	{
+		name:  "lessonquiet",
+		about: "control: learnt but never taught (no lesson is copied from one body to another)",
+		apply: func(c *engine.Config) { c.LessonSlots, c.LessonsSpread = 2, false },
+	},
+	{
+		name:  "lessononce",
+		about: "sweep: one death of a kind is enough, rather than two (is the second sighting what it waits for?)",
+		apply: func(c *engine.Config) { c.LessonSlots, c.LessonRipeTwice = 2, false },
+	},
+	{
+		name:  "lessonwide",
+		about: "sweep: four slots rather than two, which costs twice as much body",
+		apply: func(c *engine.Config) { c.LessonSlots = 4 },
+	},
+	{
+		name:  "lessonhard",
+		about: "sweep: the same two slots, pushing three times as hard",
+		apply: func(c *engine.Config) { c.LessonSlots, c.LessonWeight = 2, 9 },
+	},
 	// Whose side a body is on (TODO 14, #138, sides.go). Five figures, and
 	// the arms are built so that each can be read on its own and the pair
 	// that must go together can be read together.
@@ -6224,6 +6276,8 @@ var metricNames = []string{
 	"knocked", "knockShare", "knockWet", "knockFell",
 	"shoveLedge", "shoveWater", "shoveNearLedge", "shoveNearWater",
 	"shoved", "shoveBroke", "shoveWorks", "shoveErr", "shoveWait",
+	"deathSeen", "deathWatched", "lessonRipe", "lessonTaken", "lessonCopied",
+	"lessonSlots", "lessonHeld", "lessonKinds",
 	"friendFightShare", "snatched", "snatchRate", "snatchFriend",
 	"snatchBite", "sideTaken", "fightChoice", "fightLiked", "mourned",
 	"claimSeen", "claimLiked",
@@ -6801,6 +6855,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	// And what the chosen push managed (#139), which is the answer to the
 	// same kind of question: what the belief above is about.
 	endShove := w.Shoving()
+	// And what watching bodies stop could teach (#137), on the same terms:
+	// the ceiling is a figure of the run, not of the arm.
+	endLesson := w.LessonUse()
 	tail := tailAverage(series)
 	fate := fateOf(series, ticks, deadBelow)
 	lines := w.Lineages()
@@ -6918,6 +6975,26 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		// within reach: the ticks a push buys, which is the whole of what the
 		// fourth stance is for.
 		"shoveWait": endShove.Wait,
+		// What watching a body stop could teach, and what it did (#137).
+		// The first two are the ceiling and are taken whether or not anybody
+		// can hold a lesson: deathWatched is the share of deaths somebody was
+		// there to see, deathSeen the (death x onlooker) pairs per death.
+		// lessonRipe is how many of those pairs were the second of their kind
+		// for that onlooker - the event the whole rule turns on - lessonTaken
+		// how many of those found a slot, and lessonCopied how many were
+		// handed on afterwards.
+		"deathWatched": share(endLesson.Watched, endLesson.Watched+endLesson.Unseen),
+		"deathSeen":    ratio(endLesson.Seen, endLesson.Watched+endLesson.Unseen),
+		"lessonRipe":   float64(endLesson.Ripe),
+		"lessonTaken":  float64(endLesson.Taken),
+		"lessonCopied": float64(endLesson.Copied),
+		// And what the living are carrying: the room they bought, what is in
+		// it, and how many distinct patterns are alive in the population at
+		// all. Held against Slots the way the rules of thumb are - a body
+		// that bought room it cannot fill paid for nothing.
+		"lessonSlots": endLesson.Slots,
+		"lessonHeld":  endLesson.Held,
+		"lessonKinds": endLesson.Kinds,
 		// What the two unwritten rules of TODO 14 have to work with, counted
 		// before either is written (sides.go). friendFightShare is the share
 		// of decisions taken in front of a friend fighting somebody the body

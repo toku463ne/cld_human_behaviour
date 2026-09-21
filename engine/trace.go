@@ -117,6 +117,13 @@ type Utility struct {
 	// win the same comparison.
 	Hint float64
 
+	// Lesson is what it has learnt from watching bodies stop (#137). Same
+	// standing as Hint above and the same one rule - it is added and it
+	// decides nothing - and it is always a mark against, because a lesson is
+	// learnt from a body that did this and stopped. Zero in every world that
+	// has bought no room for lessons.
+	Lesson float64
+
 	// Hazard is what the ground this option would be spent on may do to the
 	// body (stage 34), priced the way everything else that ends a life is:
 	// the chance of it, times what a life is worth.
@@ -161,7 +168,7 @@ func (u Utility) Total() float64 {
 	return u.Life.Score() + u.Stake.Score() + u.Rival.Score() +
 		u.Offspring.Score() + u.Info.Score() + u.Explore.Score() + u.Lore.Score() +
 		u.Adorn.Score() +
-		u.Hint - u.Risk - u.Hazard - u.Roam - u.Weather - u.VitalityCost - u.TimeCost
+		u.Hint + u.Lesson - u.Risk - u.Hazard - u.Roam - u.Weather - u.VitalityCost - u.TimeCost
 }
 
 // NamedGoal is a goal together with the name it goes by, for display.

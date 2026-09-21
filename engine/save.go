@@ -146,6 +146,8 @@ type counterSnap struct {
 	ShoveLooks, ShoveLedge, ShoveWater           int
 	ShoveNear, ShoveNearLedge, ShoveNearWater    int
 	ShovesMade, ShovesBroke, ShovesHeld          int
+	DeathsWatched, DeathsUnseen, DeathsSeen      int
+	LessonsRipe, LessonsTaken, LessonsCopied     int
 	FriendFights, Snatched, SnatchedFriend       int
 	SnatchBites, SidesTaken                      int
 	FightChoices, FightLiked                     int
@@ -228,6 +230,12 @@ type agentSnap struct {
 	Lore      loreSnap
 	Hints     []Hint
 	HintSlots int
+
+	// What it learnt from watching bodies stop, the room it paid for, and
+	// which patterns it has already seen once (#137).
+	Lessons     []Lesson `json:",omitempty"`
+	LessonSlots int
+	SeenDeaths  deathMarks
 
 	SawFood, SawMate bool
 	Chronotype       float64
@@ -360,6 +368,8 @@ func (w *World) Save(out io.Writer) error {
 			ShoveLooks: w.shoveLooks, ShoveLedge: w.shoveLedge, ShoveWater: w.shoveWater,
 			ShoveNear: w.shoveNear, ShoveNearLedge: w.shoveNearLedge, ShoveNearWater: w.shoveNearWater,
 			ShovesMade: w.shovesMade, ShovesBroke: w.shovesBroke, ShovesHeld: w.shovesHeld,
+			DeathsWatched: w.deathsWatched, DeathsUnseen: w.deathsUnseen, DeathsSeen: w.deathsSeen,
+			LessonsRipe: w.lessonsRipe, LessonsTaken: w.lessonsTaken, LessonsCopied: w.lessonsCopied,
 			FriendFights: w.friendFights, Snatched: w.snatched, SnatchedFriend: w.snatchedFriend,
 			SnatchBites: w.snatchBites, SidesTaken: w.sidesTaken,
 			FightChoices: w.fightChoices, FightLiked: w.fightLiked,
@@ -444,6 +454,9 @@ func snapAgent(a *Agent) agentSnap {
 		},
 		Hints:       a.hints,
 		HintSlots:   a.hintSlots,
+		Lessons:     a.lessons,
+		LessonSlots: a.lessonSlots,
+		SeenDeaths:  a.seenDeaths,
 		SawFood:     a.sawFood,
 		SawMate:     a.sawMate,
 		Chronotype:  a.chronotype,
@@ -581,6 +594,8 @@ func Load(in io.Reader) (*World, error) {
 	w.shoveLooks, w.shoveLedge, w.shoveWater = c.ShoveLooks, c.ShoveLedge, c.ShoveWater
 	w.shoveNear, w.shoveNearLedge, w.shoveNearWater = c.ShoveNear, c.ShoveNearLedge, c.ShoveNearWater
 	w.shovesMade, w.shovesBroke, w.shovesHeld = c.ShovesMade, c.ShovesBroke, c.ShovesHeld
+	w.deathsWatched, w.deathsUnseen, w.deathsSeen = c.DeathsWatched, c.DeathsUnseen, c.DeathsSeen
+	w.lessonsRipe, w.lessonsTaken, w.lessonsCopied = c.LessonsRipe, c.LessonsTaken, c.LessonsCopied
 	w.friendFights, w.snatched, w.snatchedFriend = c.FriendFights, c.Snatched, c.SnatchedFriend
 	w.snatchBites, w.sidesTaken = c.SnatchBites, c.SidesTaken
 	w.fightChoices, w.fightLiked = c.FightChoices, c.FightLiked
@@ -670,6 +685,7 @@ func loadAgent(s *agentSnap, cfg *Config) Agent {
 	}
 	a.hints = s.Hints
 	a.hintSlots = s.HintSlots
+	a.lessons, a.lessonSlots, a.seenDeaths = s.Lessons, s.LessonSlots, s.SeenDeaths
 	a.sawFood, a.sawMate = s.SawFood, s.SawMate
 	a.chronotype = s.Chronotype
 	a.taste = s.Taste
@@ -736,13 +752,18 @@ func loadAgent(s *agentSnap, cfg *Config) Agent {
 
 // Node is one body's inheritance, free of the world it was raised in.
 type Node struct {
-	Genome     []float64 `json:"genome"`
-	Sex        Sex       `json:"sex"`
-	Species    Species   `json:"species"`
-	Lore       loreSnap  `json:"lore"`
-	Hints      []Hint    `json:"hints,omitempty"`
-	HintSlots  int       `json:"hintSlots"`
-	Chronotype float64   `json:"chronotype"`
+	Genome    []float64 `json:"genome"`
+	Sex       Sex       `json:"sex"`
+	Species   Species   `json:"species"`
+	Lore      loreSnap  `json:"lore"`
+	Hints     []Hint    `json:"hints,omitempty"`
+	HintSlots int       `json:"hintSlots"`
+
+	// A body carried out of its own world keeps the room it paid for, and
+	// nothing it watched happen there (#137): what it saw belongs to the
+	// world it saw it in.
+	LessonSlots int     `json:"lessonSlots"`
+	Chronotype  float64 `json:"chronotype"`
 
 	// Taste is which ornament this body likes (stage 84). It travels with a
 	// population for the reason the chronotype does: it is what this body is,
@@ -777,10 +798,11 @@ func (w *World) Nodes() []Node {
 				MateWeight:        a.lore.mateWeight,
 				NoiseWeight:       a.lore.noiseWeight,
 			},
-			Hints:      append([]Hint(nil), a.hints...),
-			HintSlots:  a.hintSlots,
-			Chronotype: a.chronotype,
-			Taste:      a.taste,
+			Hints:       append([]Hint(nil), a.hints...),
+			HintSlots:   a.hintSlots,
+			LessonSlots: a.lessonSlots,
+			Chronotype:  a.chronotype,
+			Taste:       a.taste,
 		})
 	}
 	return out
@@ -854,6 +876,7 @@ func (w *World) Repopulate(nodes []Node) int {
 		}
 		a.hints = append([]Hint(nil), n.Hints...)
 		a.hintSlots = n.HintSlots
+		a.lessonSlots = n.LessonSlots
 		a.chronotype = n.Chronotype
 		a.taste = n.Taste
 		a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))

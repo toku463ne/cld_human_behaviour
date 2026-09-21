@@ -3346,6 +3346,16 @@ func (g *game) drawPanel(screen *ebiten.Image) {
 				t.line("   %-11s -> %-8s %+5.1f", h.Feature, h.Act, h.Weight)
 			}
 		}
+		// And what it learnt from watching bodies stop (#137). A separate
+		// list from the hunches above, because the two come from different
+		// places: one is what its lineage was born believing, the other is
+		// what this body watched happen.
+		if lessons, slots := a.Lessons(); slots > 0 {
+			t.line("learnt:  %d of %d rooms used (from watching others die)", len(lessons), slots)
+			for _, l := range lessons {
+				t.line("   %-12s-> %-8s %+5.1f", l.Feature, l.Act, l.Weight)
+			}
+		}
 		if chrono, fit := g.world.ClockOf(a.ID); g.world.Hour() > 0 || chrono > 0 {
 			sleepy := "wide awake"
 			switch {
@@ -4051,6 +4061,9 @@ func costTerms(u engine.Utility) string {
 	// What this node's own rules of thumb made of the option. It is neither a
 	// goal nor a cost: it stands for nothing in particular, which is the
 	// point of it.
+	if u.Lesson != 0 {
+		s += fmt.Sprintf("  lesson %+.2f", u.Lesson)
+	}
 	if u.Hint != 0 {
 		s += fmt.Sprintf("  hunch %+.2f", u.Hint)
 	}
@@ -4423,6 +4436,7 @@ func main() {
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
 	shove := flag.Float64("shove", 0, "how far a body throws another one when it spends the tick pushing instead of hitting, in world units (#139; 0 = every world before it). A fourth stance, scored beside the other three: it gives up most of the blow and buys the ticks the other one spends walking back in. 20 is past arm's length and actually breaks the fight off")
+	lessons := flag.Int("lessons", 0, "how many things a body may learn from watching others die (#137; 0 = every world before it). A room of its own, bought out of the same budget the genes are: a body that learns two things is measurably smaller than one that learns none. What it learns is which move not to make in the situation it watched somebody stop in, and it takes two deaths of a kind to learn it")
 	sides := flag.Float64("sides", 0, "let goodwill decide who fights whom (#138): the amount, in affinity, that swinging at somebody costs, that taking a side is worth, and that being beaten to your meal costs the one who got there first. 0 = every world before it")
 	noahead100 := flag.Bool("groundunread", false, "put back the world before 2026-09-19: every option priced with the ground underfoot rather than with the ground one cell toward where it would take the node (stage 100)")
 	rich := flag.String("rich", "",
@@ -4550,6 +4564,13 @@ func main() {
 	// about whether pushing works.
 	if *shove > 0 {
 		cfg.ShovePush = *shove
+	}
+	// And learning from watching bodies stop (#137). Worth watching with
+	// -slow on a crowded spot: the right panel grows a "learnt:" list under
+	// the hunches, and the candidate list grows a "lesson" line on whatever
+	// move that body has been taught to be wary of.
+	if *lessons > 0 {
+		cfg.LessonSlots = *lessons
 	}
 	// Goodwill deciding who fights whom (#138). The six rules are switched on
 	// together at one figure, since measuring them apart is what the arms in

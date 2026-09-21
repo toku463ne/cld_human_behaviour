@@ -338,6 +338,12 @@ func (w *World) exchangeLore(a, o *Agent) {
 	// into an agent that paid for somewhere to put one (stage 12c).
 	moved += float64(w.exchangeHints(a, o)+w.exchangeHints(o, a)) * cfg.HintTradeWorth
 
+	// And what either of them has learnt from watching bodies stop (#137).
+	// Same shape and same worth as the line above: a lesson is not a number
+	// two bodies can meet in the middle, so it is copied into an empty slot
+	// or not at all.
+	moved += float64(w.exchangeLessons(a, o)+w.exchangeLessons(o, a)) * cfg.HintTradeWorth
+
 	// A skill is a number on a line, so unlike an idea it can be compared -
 	// and what spreads by watching is the better of the two figures (stage
 	// 38a). This is the one place the copying differs from stage 12c's, and

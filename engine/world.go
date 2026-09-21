@@ -547,6 +547,20 @@ type World struct {
 	shoveWaits   []shoveWait
 	shoveRejoins int
 	shoveWaitSum int
+
+	// What watching a body stop teaches (lesson.go, #137). deathsWatched is
+	// deaths somebody was there to see, deathsUnseen the rest, deathsSeen the
+	// (death x onlooker) pairs, lessonsRipe how many of those were the second
+	// of their kind for that onlooker, lessonsTaken how many of those found a
+	// slot, and lessonsCopied how many were handed on afterwards.
+	//
+	// The first four are taken whether or not anybody can hold a lesson: how
+	// often a rule could fire is the ceiling on what it can explain.
+	deathsWatched, deathsUnseen, deathsSeen  int
+	lessonsRipe, lessonsTaken, lessonsCopied int
+	deathFeature                             [NumDeathFeatures]int
+	deathAct                                 [numActionKinds]int
+
 	// The same count for a killing seen (stage 31), split by which way the
 	// sign went: killWitnesses is readings taken of somebody who killed,
 	// avengeWitnesses is onlookers who thought better of one of their own for
@@ -2243,7 +2257,12 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	budget, genius := w.inheritBudget(pa, pb)
 	slots := w.inheritHintSlots(pa, pb, genius)
 	hints := w.inheritHints(pa, pb, slots, genius)
-	fitBudget(genome, budget-w.hintCost(slots))
+	// And room for what it will learn from watching bodies stop (#137),
+	// bought out of the same budget and on the same terms. Only the room is
+	// inherited: a newborn has seen nothing and holds nothing, which is the
+	// whole difference between a lesson and a rule of thumb.
+	lessonSlots := w.inheritLessonSlots(pa, pb, genius)
+	fitBudget(genome, budget-w.hintCost(slots)-w.lessonCost(lessonSlots))
 
 	child := w.newAgent(
 		(pa.X+pb.X)/2+w.randRange(-8, 8),
@@ -2296,6 +2315,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.fancy = w.drawFancy(&child) // what it likes just now (stage 90)
 	child.adornWant = 1               // until the next tick prices its hands (stage 84)
 	child.hintSlots, child.hints = slots, hints
+	child.lessonSlots = lessonSlots
 	// What it knows for having been born where it was, merged with what it
 	// inherited by the one comparison there is (skill.go). A genius child
 	// goes further with what it already holds - a leap is about something the
@@ -2418,6 +2438,12 @@ func (w *World) kill(a *Agent) {
 		// still the one who killed it.
 		w.witnessKill(a, a.recentAttackers(w.tick, w.cfg.HuntCreditTicks))
 	}
+	// And what everybody standing there makes of how it died (#137). Every
+	// death, not only the violent ones: starving where you sat and being
+	// taken by the river are two of the four patterns this is for, and the
+	// walk above only fires on a killing. Taken before the body leaves the
+	// world, for the same reason that one is.
+	w.witnessDeath(a)
 	if a.PartnerID != 0 {
 		if p := w.agentByID(a.PartnerID); p != nil && p.Alive {
 			w.releaseFromBond(p, w.cfg.MatingCooldown/2)
@@ -2755,13 +2781,16 @@ func (w *World) randomAgent(species Species) Agent {
 	a.adornWant = 1
 	a.hintSlots = w.drawHintSlots()
 	a.hints = w.drawHints(a.hintSlots)
+	// Room for lessons, on the same terms (#137). A founder holds none: it
+	// has not watched anybody die yet either.
+	a.lessonSlots = w.drawLessonSlots()
 	// And whatever the country it arrived in has to teach (stage 38a). The
 	// same rule a newborn gets, applied to where the world put it: nobody
 	// draws a skill out of nothing, so a flat world never contains one.
 	w.learnFromBirthplace(&a)
 	// Room for ideas comes out of the same budget the body does, for founders
 	// as for everybody else.
-	fitBudget(a.Genome, a.Budget()-w.hintCost(a.hintSlots))
+	fitBudget(a.Genome, a.Budget()-w.hintCost(a.hintSlots)-w.lessonCost(a.lessonSlots))
 	a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))
 	a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
 	// Founders are spread across a range of remaining lifespan too, the same

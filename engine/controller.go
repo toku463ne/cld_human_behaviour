@@ -191,6 +191,12 @@ type AIController struct {
 	// strength says nothing about an option with no stranger in it.
 	hints []Hint
 	feats hintFeatures
+
+	// And what it has learnt from watching bodies stop (#137, lesson.go),
+	// with the situation those read. There is no per-target half: a lesson
+	// is about what this body is doing and where it is standing.
+	lessons []Lesson
+	deaths  deathFeatures
 }
 
 func (c *AIController) Decide(p *Perception) Action {
@@ -209,6 +215,10 @@ func (c *AIController) Decide(p *Perception) Action {
 	// target is read (rest, wandering, food) see nothing about a target.
 	c.hints = p.Self.Hints
 	c.feats.readSelf(p)
+	c.lessons = p.Self.Lessons
+	if len(c.lessons) > 0 {
+		c.deaths.readSelf(p)
+	}
 	c.drownChance, c.lifeValue = p.Self.Drown, p.Cfg.LifeValue
 	c.chillDX, c.chillDY = p.Self.ChillDX, p.Self.ChillDY
 	c.chillSpeed = p.Self.MaxSpeed
@@ -598,6 +608,15 @@ func (c *AIController) add(a Action, u Utility) {
 	// The one place a rule of thumb touches a decision, and all it does is
 	// add to the score. Nothing branches on it.
 	u.Hint = c.feats.score(c.hints, a.Kind)
+
+	// And the one place a lesson does (#137). Same rule, opposite sign: what
+	// was learnt from a body that stopped is always a mark against. It is a
+	// term of its own rather than folded into the line above because the two
+	// come from different places and a viewer that cannot tell them apart
+	// cannot say whether either is doing anything.
+	if len(c.lessons) > 0 {
+		u.Lesson = c.deaths.score(c.lessons, a.Kind)
+	}
 
 	// And the one place the ground's own danger touches a decision (stage
 	// 34). It is charged per tick the option is expected to take, so what
