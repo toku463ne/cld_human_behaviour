@@ -471,6 +471,23 @@ type FoodView struct {
 	RivalDist float64
 	// RivalID is that agent, 0 when nobody else is near enough to matter.
 	RivalID int
+
+	// ClaimedBy is somebody in sight who has already chosen this item and is
+	// on the way to it, and nought when nobody has (#140). It is a different
+	// fact from RivalID, which is whoever happens to be nearest whether or
+	// not they want it: this one is a choice that has been made, read off the
+	// action the other body is carrying out.
+	//
+	// It is not a message and nothing is sent. A body walking towards
+	// something is a body walking towards something, and this is read in the
+	// same scan of who is in sight that fills RivalID in - which is also why
+	// it can only see as far as the eye does.
+	//
+	// Two of them where two have chosen the same item is not recorded: what
+	// the scoring needs is somebody whose goodwill is at stake, and the
+	// nearest such is the one that matters. The last one seen wins, which is
+	// the order the agents are stored in and is stable for a given seed.
+	ClaimedBy int
 }
 
 // AgentView is somebody else as an agent sees them.
@@ -960,11 +977,34 @@ func (w *World) perceive(a *Agent) *Perception {
 		// rival is only one if the observer can see it, so the set to search is
 		// the one already in hand, and querying around each item instead would
 		// turn up agents outside the observer's sight and change the answer.
+		claimed := o.Action.Kind == ActEat && o.Action.TargetID != 0
 		for j := range p.Foods {
 			f := &p.Foods[j]
 			if d := dist2(o.X, o.Y, f.X, f.Y); d < f.RivalDist*f.RivalDist {
 				f.RivalDist = math.Sqrt(d)
 				f.RivalID = o.ID
+			}
+			// And whether this one has already chosen it (#140). One
+			// comparison on a loop that is already running, which is why this
+			// needs no message and no second scan.
+			//
+			// One slot, and where two have chosen the same item the one kept
+			// is whoever this body would mind taking it from most (#142).
+			// Keeping the last one seen meant a stranger could mask a friend -
+			// the item read as free to take because the wrong claimant
+			// happened to be scanned second - which is the one way this rule
+			// could be pointed at a friend's meal while saying it was not.
+			if claimed && o.Action.TargetID == f.ID {
+				switch {
+				case f.ClaimedBy == 0:
+					f.ClaimedBy = o.ID
+				default:
+					w.claimContests++
+					if w.mindsMore(a, o.ID, f.ClaimedBy) {
+						f.ClaimedBy = o.ID
+						w.claimKept++
+					}
+				}
 			}
 		}
 		// And for the money, which is raced for like anything else lying

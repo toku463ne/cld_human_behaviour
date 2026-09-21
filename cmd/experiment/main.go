@@ -1646,6 +1646,94 @@ var variants = []variant{
 			c.AffinityAlly = 6
 		},
 	},
+	// #140: the two follow-ups of 14 that were taken up. give is (A) alone -
+	// the goodwill a snatch would cost, priced before the race instead of
+	// after it, which is the reader (vi) never had. blows is (B) alone, the
+	// side-taking paid off swings rather than off a declared intention, with
+	// AffinityAlly at the same figure the first form was measured at.
+	{
+		name:  "give",
+		about: "140(A): standing back from the meal somebody you are fond of is already walking towards",
+		apply: func(c *engine.Config) { c.AffinityNegative, c.AffinitySnatched = true, 6 },
+	},
+	{
+		name:  "giveplay",
+		about: "140(A) on the played map: the arm that tests last time's reading of why the sign flipped",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapCountry, 0.5
+			c.AffinityNegative, c.AffinitySnatched = true, 6
+		},
+	},
+	// #141: two shapes the user asked for after the first measurement of #140.
+	// forgive settles the offence with a coin weighted by what is already held
+	// - a friend is let off, a stranger is not - instead of making the body
+	// stand back before the race; forgiveboth keeps the standing back as well,
+	// since the two are not alternatives but the near and the far end of the
+	// same rule. once pays the side-taking with one body rather than with
+	// every body already swinging, which is what tells the joining apart from
+	// the sheer volume of goodwill the first form minted.
+	{
+		name:  "forgive",
+		about: "141(A): a friend is forgiven for taking your meal, and nobody stands back",
+		apply: func(c *engine.Config) {
+			c.AffinityNegative, c.AffinitySnatched = true, 6
+			c.SnatchForgiveness, c.SnatchPriced = 1, false
+		},
+	},
+	{
+		name:  "forgiveboth",
+		about: "141(A): forgiven at the far end and priced at the near end, both",
+		apply: func(c *engine.Config) {
+			c.AffinityNegative, c.AffinitySnatched = true, 6
+			c.SnatchForgiveness = 1
+		},
+	},
+	{
+		name:  "forgiveplay",
+		about: "141(A) on the played map, where standing back cost births",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapCountry, 0.5
+			c.AffinityNegative, c.AffinitySnatched = true, 6
+			c.SnatchForgiveness, c.SnatchPriced = 1, false
+		},
+	},
+	{
+		name:  "wake",
+		about: "142: the ones already walking towards a meal think again when somebody they are fond of sets out for it",
+		apply: func(c *engine.Config) {
+			c.AffinityNegative, c.AffinitySnatched = true, 6
+			c.ClaimRetriggers = true
+		},
+	},
+	{
+		name:  "wakeplay",
+		about: "142 on the played map, where standing back is what costs births",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapCountry, 0.5
+			c.AffinityNegative, c.AffinitySnatched = true, 6
+			c.ClaimRetriggers = true
+		},
+	},
+	{
+		name:  "once",
+		about: "141(B): taking a side is paid with the one whose side was taken, not with everybody swinging",
+		apply: func(c *engine.Config) { c.AffinityAlly, c.AllyPaidOncePerFight = 6, true },
+	},
+	{
+		name:  "give24",
+		about: "sweep for give: four times the goodwill at stake, to tell a dose too small from a target too rare",
+		apply: func(c *engine.Config) { c.AffinityNegative, c.AffinitySnatched = true, 24 },
+	},
+	{
+		name:  "blows",
+		about: "140(B): taking a side is paid off swings that happened, not off a declared intention",
+		apply: func(c *engine.Config) { c.AffinityAlly = 6 },
+	},
+	{
+		name:  "declared",
+		about: "control for blows: the same figure paid off the declaration, as the rule was first written",
+		apply: func(c *engine.Config) { c.AffinityAlly, c.AllyPaidOnBlows = 6, false },
+	},
 	{
 		name:  "mourn",
 		about: "138: killing one somebody was fond of costs you their goodwill, in proportion to what the dead one was worth",
@@ -6078,6 +6166,9 @@ var metricNames = []string{
 	"knocked", "knockShare", "knockWet", "knockFell",
 	"friendFightShare", "snatched", "snatchRate", "snatchFriend",
 	"snatchBite", "sideTaken", "fightChoice", "fightLiked", "mourned",
+	"claimSeen", "claimLiked",
+	"snatchLook", "forgiven",
+	"claimTwo", "claimSwap", "claimWake",
 	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"mateWeight", "sdMateWeight",
@@ -6764,7 +6855,25 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"fightLiked":  share(end.FightLiked, end.FightChoices),
 		// And how many killings cost the killer somebody's goodwill because
 		// the dead one was theirs (#138). Nought with the rule off.
-		"mourned":    float64(end.MournWitnesses),
+		"mourned": float64(end.MournWitnesses),
+		// What #140 would work with: of the food in sight when a body decides,
+		// how much somebody else has already chosen, and how much of that
+		// belongs to somebody it thinks well of. Counted before the rule is
+		// written - standing back is offered more often than being robbed is
+		// suffered, and by how much says whether the rule can matter.
+		"claimSeen":  share(end.FoodsClaimed, end.FoodsSeen),
+		"claimLiked": share(end.FoodsClaimedLiked, end.FoodsClaimed),
+		// The coin (#141): how many snatches had any goodwill to forgive, and
+		// how many of those were let go. Both nought where nothing forgives.
+		"snatchLook": float64(end.SnatchLooks),
+		"forgiven":   share(end.SnatchForgiven, end.SnatchLooks),
+		// The one slot a claimed item has (#142): how often two bodies in
+		// sight had chosen the same one, how often that changed which of them
+		// the observer was shown, and how many bodies were woken because
+		// somebody they are fond of set out for the meal they were after.
+		"claimTwo":   float64(end.ClaimContests),
+		"claimSwap":  share(end.ClaimKept, end.ClaimContests),
+		"claimWake":  float64(end.ClaimWakes),
 		"watchShare": ratio(end.Observes, end.Decisions),
 		"craftShare": ratio(end.Crafts, end.Decisions),
 		// Calling others in, and going in on something somebody else has

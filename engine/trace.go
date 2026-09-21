@@ -30,6 +30,7 @@ const (
 	TriggerControllerSet                // a different controller took it over
 	TriggerRequested                    // asked for without a stated reason
 	TriggerCourted                      // somebody has walked up and proposed
+	TriggerClaimHeard                   // somebody it is fond of has set out for the meal it is after
 
 	// numTriggers is how many there are, for the code that has to keep one
 	// flag per trigger (stage 23). It is not a trigger.
@@ -56,6 +57,8 @@ func (t Trigger) String() string {
 		return "food in sight"
 	case TriggerBondEnded:
 		return "bond ended"
+	case TriggerClaimHeard:
+		return "claim heard"
 	case TriggerControllerSet:
 		return "controller set"
 	case TriggerRequested:

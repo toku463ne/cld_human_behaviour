@@ -2,6 +2,10 @@ package engine
 
 import "testing"
 
+// w0Trust is the world's own figure for "trusted completely", so that a test
+// can say "a friend" without repeating the number.
+const w0Trust = 20
+
 // Whose side a body is on (TODO 14, #138). Every rule here is off by default,
 // so each test switches on the one it is about and nothing else: what is being
 // checked is that the rule does what it says, and that the world without it is
@@ -203,9 +207,12 @@ func TestSnatchesAreCountedWithTheRuleOff(t *testing.T) {
 
 // --- (iii) taking somebody's side -------------------------------------------
 
+// The first form of the rule, kept so that the two can be run against each
+// other: the payment priced off a declared intention rather than off blows.
 func TestTakingSomebodysSidePaysBoth(t *testing.T) {
 	cfg := sidesConfig()
 	cfg.AffinityAlly = 6
+	cfg.AllyPaidOnBlows = false
 	w := NewWorld(cfg)
 
 	quarry := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Genome: genomeOf(50, 50, 50)})
@@ -340,5 +347,337 @@ func TestKillingSomebodysFriendCostsTheKillerGoodwill(t *testing.T) {
 	w2, watcher2, killer2 := build(0)
 	if op := mustAgent(t, w2, watcher2).opinion(killer2); op != nil && op.Affinity < 0 {
 		t.Fatalf("a stranger's death cost the killer goodwill: %+v", op)
+	}
+}
+
+// --- #140: the meal somebody else is already walking towards -----------------
+
+// A body can see that an item has been chosen, and by whom. It is read off the
+// action the other one is carrying out, in the scan that was already finding
+// out who is nearest - no message is sent anywhere.
+func TestFoodSomebodyIsWalkingTowardsIsSeenAsTheirs(t *testing.T) {
+	w := NewWorld(sidesConfig())
+	subject := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Hunger: 60, Genome: genomeOf(50, 100, 100)})
+	other := w.addAgent(Agent{Maturity: 1, X: 215, Y: 200, Hunger: 60, Genome: genomeOf(50, 50, 50)})
+	claimed := w.addFood(230, 200)
+	free := w.addFood(190, 200)
+	mustAgent(t, w, other).Action = Action{Kind: ActEat, TargetID: claimed}
+
+	p := w.perceive(mustAgent(t, w, subject))
+	for i := range p.Foods {
+		f := &p.Foods[i]
+		switch f.ID {
+		case claimed:
+			if f.ClaimedBy != other {
+				t.Fatalf("the item %d was walking towards reads ClaimedBy %d", other, f.ClaimedBy)
+			}
+		case free:
+			if f.ClaimedBy != 0 {
+				t.Fatalf("an item nobody chose reads ClaimedBy %d", f.ClaimedBy)
+			}
+		}
+	}
+	if got := w.Stats().FoodsClaimed; got != 0 {
+		t.Fatalf("FoodsClaimed = %d before any decision was taken, want 0", got)
+	}
+}
+
+// Taking the meal a friend is walking towards is worth less than taking the
+// same meal from a stranger, and with the rule off the two are the same meal.
+func TestTakingAFriendsMealScoresLower(t *testing.T) {
+	score := func(affinity, cost float64) float64 {
+		cfg := sidesConfig()
+		cfg.AffinitySnatched = cost
+		cfg.AffinityNegative = true
+		w := NewWorld(cfg)
+		subject := w.addAgent(Agent{Maturity: 1,
+			X: 200, Y: 200, Sex: Male, Vitality: 80, Hunger: 60,
+			Genome: genomeOf(50, 100, 100)})
+		other := w.addAgent(Agent{Maturity: 1, X: 240, Y: 200, Hunger: 60, Genome: genomeOf(50, 50, 50)})
+		food := w.addFood(215, 200)
+		mustAgent(t, w, other).Action = Action{Kind: ActEat, TargetID: food}
+		if affinity > 0 {
+			w.rememberAffinity(mustAgent(t, w, subject), other, affinity)
+		}
+		c := &AIController{}
+		c.Decide(w.perceive(mustAgent(t, w, subject)))
+		best, found := 0.0, false
+		for i := range c.opts {
+			o := &c.opts[i]
+			if o.action.Kind != ActEat || o.action.TargetID != food {
+				continue
+			}
+			if !found || o.util > best {
+				best, found = o.util, true
+			}
+		}
+		if !found {
+			t.Fatal("going for the meal was not scored at all")
+		}
+		return best
+	}
+
+	if friend, stranger := score(12, 6), score(0, 6); friend >= stranger {
+		t.Fatalf("a friend's meal scored %.4f and a stranger's %.4f", friend, stranger)
+	}
+	if a, b := score(0, 0), score(12, 0); a != b {
+		t.Fatalf("with AffinitySnatched 0 the two differ: %.4f vs %.4f", a, b)
+	}
+}
+
+// --- #140: taking a side, priced off blows -----------------------------------
+
+// Two bodies that have swung at the same one have taken each other's side, and
+// the payment happens once per engagement rather than once per blow.
+func TestSwingingAtTheSameBodyPaysBothOnce(t *testing.T) {
+	cfg := sidesConfig()
+	cfg.AffinityAlly = 6
+	w := NewWorld(cfg)
+	quarry := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+	first := w.addAgent(Agent{Maturity: 1, X: 205, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+	second := w.addAgent(Agent{Maturity: 1, X: 195, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+
+	mustAgent(t, w, quarry).noteHit(first, w.tick)
+	w.noteSideTaken(mustAgent(t, w, second), mustAgent(t, w, quarry))
+
+	for _, pair := range [][2]int{{second, first}, {first, second}} {
+		op := mustAgent(t, w, pair[0]).opinion(pair[1])
+		if op == nil || op.Affinity != 6 {
+			t.Fatalf("%d thinks %+v of %d, want 6 both ways", pair[0], op, pair[1])
+		}
+	}
+	// The second swing of the same engagement pays nothing more.
+	mustAgent(t, w, quarry).noteHit(second, w.tick)
+	w.noteSideTaken(mustAgent(t, w, second), mustAgent(t, w, quarry))
+	if op := mustAgent(t, w, second).opinion(first); op.Affinity != 6 {
+		t.Fatalf("a second blow in the same fight paid again: %+v", op)
+	}
+	if got := w.Stats().SidesTaken; got != 1 {
+		t.Fatalf("SidesTaken = %d, want 1", got)
+	}
+}
+
+// Hitting the one that is hitting somebody is taking that somebody's side -
+// the half of the rule that looks like defending a friend rather than piling
+// onto a quarry.
+func TestHittingSomebodysAttackerTakesTheirSide(t *testing.T) {
+	cfg := sidesConfig()
+	cfg.AffinityAlly = 6
+	w := NewWorld(cfg)
+	victim := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+	bully := w.addAgent(Agent{Maturity: 1, X: 205, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+	rescuer := w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+
+	// The bully has been hitting the victim, and is still at it.
+	mustAgent(t, w, bully).Action = Action{Kind: ActAttack, TargetID: victim}
+	mustAgent(t, w, victim).noteHit(bully, w.tick)
+
+	w.noteSideTaken(mustAgent(t, w, rescuer), mustAgent(t, w, bully))
+
+	op := mustAgent(t, w, victim).opinion(rescuer)
+	if op == nil || op.Affinity != 6 {
+		t.Fatalf("the one being set upon thinks %+v of the one that waded in, want 6", op)
+	}
+	if back := mustAgent(t, w, rescuer).opinion(victim); back == nil || back.Affinity != 6 {
+		t.Fatalf("it is not paid both ways: %+v", back)
+	}
+}
+
+// An intention is not a blow: somebody who has declared for a target but never
+// swung at it is not owed anything.
+func TestDeclaringWithoutSwingingPaysNobody(t *testing.T) {
+	cfg := sidesConfig()
+	cfg.AffinityAlly = 6
+	w := NewWorld(cfg)
+	quarry := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+	talker := w.addAgent(Agent{Maturity: 1, X: 205, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+	striker := w.addAgent(Agent{Maturity: 1, X: 195, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+
+	mustAgent(t, w, talker).Action = Action{Kind: ActAttack, TargetID: quarry}
+	w.noteSideTaken(mustAgent(t, w, striker), mustAgent(t, w, quarry))
+
+	if op := mustAgent(t, w, striker).opinion(talker); op != nil {
+		t.Fatalf("a body that only declared was paid: %+v", op)
+	}
+	if got := w.Stats().SidesTaken; got != 0 {
+		t.Fatalf("SidesTaken = %d, want 0", got)
+	}
+}
+
+// --- #141: forgiving, and paying once ---------------------------------------
+
+// The coin is weighted by what is already held: somebody trusted completely is
+// let off every time, a stranger never, and with the figure at nought nobody
+// is let off and no random number is drawn.
+func TestAFriendIsForgivenForTakingYourMeal(t *testing.T) {
+	setup := func(forgiveness, affinity float64) *World {
+		cfg := sidesConfig()
+		cfg.AffinityNegative = true
+		cfg.AffinitySnatched = 6
+		cfg.SnatchForgiveness = forgiveness
+		w := NewWorld(cfg)
+		loser := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Hunger: 50, Genome: genomeOf(50, 50, 50)})
+		taker := w.addAgent(Agent{Maturity: 1, X: 120, Y: 100, Hunger: 50, Genome: genomeOf(50, 50, 50)})
+		if affinity > 0 {
+			w.rememberAffinity(mustAgent(t, w, loser), taker, affinity)
+		}
+		for i := 0; i < 20; i++ {
+			food := w.addFood(130, 100)
+			mustAgent(t, w, loser).Action = Action{Kind: ActEat, TargetID: food}
+			w.eat(mustAgent(t, w, taker), food)
+		}
+		return w
+	}
+
+	// Trusted completely, and everything forgiven: the opinion never falls.
+	w := setup(1, w0Trust)
+	if got := w.Stats().SnatchBites; got != 0 {
+		t.Fatalf("a body trusted completely took offence %d times, want 0", got)
+	}
+	if got := w.Stats().SnatchLooks; got != 20 {
+		t.Fatalf("SnatchLooks = %d, want 20", got)
+	}
+
+	// A stranger is never forgiven, whatever the figure says.
+	if got := setup(1, 0).Stats().SnatchBites; got != 20 {
+		t.Fatalf("a stranger was forgiven: SnatchBites = %d, want 20", got)
+	}
+
+	// And with forgiveness off there is no coin at all, not even a look.
+	off := setup(0, w0Trust)
+	if off.Stats().SnatchBites != 20 || off.Stats().SnatchLooks != 0 {
+		t.Fatalf("with SnatchForgiveness 0: bites %d looks %d, want 20 and 0",
+			off.Stats().SnatchBites, off.Stats().SnatchLooks)
+	}
+}
+
+// Halfway along, some are forgiven and some are not: what the coin is tied to
+// is how much is held, and nothing else.
+func TestForgivenessRunsWithWhatIsHeld(t *testing.T) {
+	cfg := sidesConfig()
+	cfg.AffinityNegative = true
+	cfg.AffinitySnatched = 0.0001 // small enough not to move the opinion it is read from
+	cfg.SnatchForgiveness = 1
+	w := NewWorld(cfg)
+	loser := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Hunger: 50, Genome: genomeOf(50, 50, 50)})
+	taker := w.addAgent(Agent{Maturity: 1, X: 120, Y: 100, Hunger: 50, Genome: genomeOf(50, 50, 50)})
+	w.rememberAffinity(mustAgent(t, w, loser), taker, w0Trust/2)
+
+	for i := 0; i < 400; i++ {
+		food := w.addFood(130, 100)
+		mustAgent(t, w, loser).Action = Action{Kind: ActEat, TargetID: food}
+		w.eat(mustAgent(t, w, taker), food)
+	}
+	forgiven := float64(w.Stats().SnatchForgiven) / float64(w.Stats().SnatchLooks)
+	if forgiven < 0.4 || forgiven > 0.6 {
+		t.Fatalf("half the goodwill forgave %.2f of them, want about half", forgiven)
+	}
+}
+
+// Paid with one body rather than with every body already swinging.
+func TestPayingOncePerFight(t *testing.T) {
+	build := func(once bool) *World {
+		cfg := sidesConfig()
+		cfg.AffinityAlly = 6
+		cfg.AllyPaidOncePerFight = once
+		w := NewWorld(cfg)
+		quarry := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+		for i := 0; i < 3; i++ {
+			id := w.addAgent(Agent{Maturity: 1, X: float64(205 + i), Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+			mustAgent(t, w, quarry).noteHit(id, w.tick)
+		}
+		latecomer := w.addAgent(Agent{Maturity: 1, X: 195, Y: 200, Vitality: 100, Genome: genomeOf(50, 50, 50)})
+		w.noteSideTaken(mustAgent(t, w, latecomer), mustAgent(t, w, quarry))
+		return w
+	}
+
+	if got := build(false).Stats().SidesTaken; got != 3 {
+		t.Fatalf("paying everybody swinging settled %d debts, want 3", got)
+	}
+	if got := build(true).Stats().SidesTaken; got != 1 {
+		t.Fatalf("paying once settled %d debts, want 1", got)
+	}
+}
+
+// --- #142: one slot, and being woken -----------------------------------------
+
+// Where two in sight have chosen the same item, the one the observer is shown
+// is whoever it would mind taking it from most - not whoever happened to be
+// scanned last.
+func TestTheClaimantKeptIsTheOneMissedMost(t *testing.T) {
+	seen := func(friendFirst bool) (int, int, int) {
+		w := NewWorld(sidesConfig())
+		subject := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Hunger: 60, Genome: genomeOf(50, 100, 100)})
+		var friend, stranger int
+		if friendFirst {
+			friend = w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Genome: genomeOf(50, 50, 50)})
+			stranger = w.addAgent(Agent{Maturity: 1, X: 212, Y: 200, Genome: genomeOf(50, 50, 50)})
+		} else {
+			stranger = w.addAgent(Agent{Maturity: 1, X: 212, Y: 200, Genome: genomeOf(50, 50, 50)})
+			friend = w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Genome: genomeOf(50, 50, 50)})
+		}
+		food := w.addFood(220, 200)
+		w.rememberAffinity(mustAgent(t, w, subject), friend, 12)
+		mustAgent(t, w, friend).Action = Action{Kind: ActEat, TargetID: food}
+		mustAgent(t, w, stranger).Action = Action{Kind: ActEat, TargetID: food}
+
+		p := w.perceive(mustAgent(t, w, subject))
+		got := 0
+		for i := range p.Foods {
+			if p.Foods[i].ID == food {
+				got = p.Foods[i].ClaimedBy
+			}
+		}
+		return got, friend, w.Stats().ClaimContests
+	}
+
+	// Whichever order they are scanned in, the friend is the one shown.
+	for _, first := range []bool{true, false} {
+		got, friend, contests := seen(first)
+		if got != friend {
+			t.Fatalf("friend scanned first = %v: shown claimant %d, want the friend %d", first, got, friend)
+		}
+		if contests != 1 {
+			t.Fatalf("two claimants were not counted as a contest: %d", contests)
+		}
+	}
+}
+
+// A body already walking towards a meal is asked to think again when somebody
+// it is fond of sets out for the same one - and is not, when the one setting
+// out is a stranger.
+func TestSettingOutForAFriendsMealWakesThem(t *testing.T) {
+	build := func(fond bool, on bool) (*World, int) {
+		cfg := sidesConfig()
+		cfg.AffinityNegative = true
+		cfg.AffinitySnatched = 6
+		cfg.ClaimRetriggers = on
+		w := NewWorld(cfg)
+		walker := w.addAgent(Agent{Maturity: 1, X: 200, Y: 200, Hunger: 60, Genome: genomeOf(50, 50, 50)})
+		newcomer := w.addAgent(Agent{Maturity: 1, X: 210, Y: 200, Hunger: 60, Genome: genomeOf(50, 50, 50)})
+		food := w.addFood(220, 200)
+		if fond {
+			w.rememberAffinity(mustAgent(t, w, walker), newcomer, 12)
+		}
+		mustAgent(t, w, walker).Action = Action{Kind: ActEat, TargetID: food}
+		mustAgent(t, w, walker).needsDecision = false
+		mustAgent(t, w, newcomer).Action = Action{Kind: ActEat, TargetID: food}
+		w.noteClaimMade(mustAgent(t, w, newcomer))
+		return w, walker
+	}
+
+	w, walker := build(true, true)
+	if !mustAgent(t, w, walker).needsDecision {
+		t.Fatal("a friend setting out for the same meal did not wake the one already walking to it")
+	}
+	if got := w.Stats().ClaimWakes; got != 1 {
+		t.Fatalf("ClaimWakes = %d, want 1", got)
+	}
+
+	if w, walker := build(false, true); mustAgent(t, w, walker).needsDecision {
+		t.Fatal("a stranger setting out woke it, and there is nothing there to lose")
+	}
+	if w, walker := build(true, false); mustAgent(t, w, walker).needsDecision {
+		t.Fatal("the rule is off but a body was woken")
 	}
 }

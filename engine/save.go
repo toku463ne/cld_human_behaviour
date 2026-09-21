@@ -147,6 +147,9 @@ type counterSnap struct {
 	SnatchBites, SidesTaken                      int
 	FightChoices, FightLiked                     int
 	MournWitnesses                               int
+	FoodsSeen, FoodsClaimed, FoodsClaimedLiked   int
+	SnatchLooks, SnatchForgiven                  int
+	ClaimContests, ClaimKept, ClaimWakes         int
 	Courtships, CourtshipsAccepted               int
 	Flees, Escapes                               int
 
@@ -354,7 +357,10 @@ func (w *World) Save(out io.Writer) error {
 			SnatchBites: w.snatchBites, SidesTaken: w.sidesTaken,
 			FightChoices: w.fightChoices, FightLiked: w.fightLiked,
 			MournWitnesses: w.mournWitnesses,
-			Courtships:     w.courtships, CourtshipsAccepted: w.courtshipsAccepted,
+			FoodsSeen:      w.foodsSeen, FoodsClaimed: w.foodsClaimed, FoodsClaimedLiked: w.foodsClaimedLiked,
+			SnatchLooks: w.snatchLooks, SnatchForgiven: w.snatchForgiven,
+			ClaimContests: w.claimContests, ClaimKept: w.claimKept, ClaimWakes: w.claimWakes,
+			Courtships: w.courtships, CourtshipsAccepted: w.courtshipsAccepted,
 			Flees: w.flees, Escapes: w.escapes,
 			Exchanges: w.exchanges, HintsCopied: w.hintsCopied,
 			Tolls:         snapTolls(w.tolls),
@@ -568,6 +574,9 @@ func Load(in io.Reader) (*World, error) {
 	w.snatchBites, w.sidesTaken = c.SnatchBites, c.SidesTaken
 	w.fightChoices, w.fightLiked = c.FightChoices, c.FightLiked
 	w.mournWitnesses = c.MournWitnesses
+	w.foodsSeen, w.foodsClaimed, w.foodsClaimedLiked = c.FoodsSeen, c.FoodsClaimed, c.FoodsClaimedLiked
+	w.snatchLooks, w.snatchForgiven = c.SnatchLooks, c.SnatchForgiven
+	w.claimContests, w.claimKept, w.claimWakes = c.ClaimContests, c.ClaimKept, c.ClaimWakes
 	w.courtships, w.courtshipsAccepted = c.Courtships, c.CourtshipsAccepted
 	w.flees, w.escapes = c.Flees, c.Escapes
 	w.exchanges, w.hintsCopied = c.Exchanges, c.HintsCopied

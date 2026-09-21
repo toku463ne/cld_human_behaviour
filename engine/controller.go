@@ -1055,6 +1055,27 @@ func (c *AIController) addFood(p *Perception) {
 		}
 		pGet *= raceChance(cfg, s, f.Dist, f.RivalDist)
 
+		// And what taking it would cost in the goodwill of whoever is
+		// already walking towards it (#140). The same yardstick a blow is
+		// charged with (trustLost) and the same one a gift earns with, so
+		// that the three sit on one measuring stick (stage 77).
+		//
+		// Nought for a stranger's meal, because there is no goodwill held to
+		// lose - which is what makes this a rule about friends rather than a
+		// tax on eating. And nought for a body nobody has chosen, which is
+		// most of them: the count says one item in five or seven has been
+		// chosen by somebody in sight, and one in six or ten of those belongs
+		// to somebody the deciding body is fond of.
+		//
+		// It is charged at the chance of actually getting there first,
+		// because a race that is lost costs nobody anything.
+		taking := 0.0
+		if cfg.AffinitySnatched > 0 && cfg.SnatchPriced && f.ClaimedBy != 0 {
+			if o := viewOf(p, f.ClaimedBy); o != nil {
+				taking = c.goodwillWorth(cfg) * trustLost(cfg, o.Affinity, cfg.AffinitySnatched)
+			}
+		}
+
 		// How long the body would stand there getting it (#76). One is every
 		// world before the rule, and it is the tick the meal always took;
 		// where the body is not told, it goes on pricing a meal at that one
@@ -1096,6 +1117,7 @@ func (c *AIController) addFood(p *Perception) {
 			meal := gap(cfg, now, after) * cfg.LifeValue
 			c.add(Action{Kind: ActEat, TargetID: f.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: meal, Chance: pGet},
+				Lore:         Goal{Value: -taking, Chance: pGet},
 				Vitality:     cost + poison*pGet,
 				Ticks:        ticks,
 				VitalityCost: (cost + poison*pGet) * cfg.VitalityWeight,

@@ -2248,6 +2248,47 @@ type Config struct {
 	// everybody wherever food was thick on the ground.
 	AffinitySnatched float64
 
+	// SnatchForgiveness is how much of the goodwill already held buys a body
+	// out of taking offence at all (#141). Nought is the rule as it was first
+	// written - every snatch costs the taker, whoever they are - and one makes
+	// the chance of minding fall the whole way to nothing for somebody already
+	// trusted completely.
+	//
+	//	chance of minding = 1 - SnatchForgiveness * (affinity / AffinityTrust)
+	//
+	// It is a coin, and this world allows one only where it is tied to
+	// something (#124): here it is tied to the figure everything else about
+	// trust is measured against. What it is for is what the first measurement
+	// found - that being robbed grinds down the friendships that already
+	// exist, because the bodies you race for food are the bodies you live next
+	// to - and it answers that at the far end, by letting a friend let it go,
+	// rather than at the near end, by making the body stand back.
+	//
+	// It draws nothing while it is nought, and nothing for a body with no
+	// goodwill to forgive, so a world without it consumes the random source
+	// exactly as it did.
+	SnatchForgiveness float64
+
+	// SnatchPriced says whether the goodwill a snatch would cost is also
+	// charged before the race, in the deciding (#140). True is the form
+	// measured first. Turning it off leaves the ledger written and nobody
+	// reading it - worth having as an arm precisely because that is the shape
+	// this project has now measured seven times.
+	SnatchPriced bool
+
+	// ClaimRetriggers wakes the bodies already walking towards an item when
+	// somebody they are fond of sets out for it too (#142), so that the
+	// weighing #140 put in the deciding happens while the race is on.
+	//
+	// Without it a body finds out in one of two ways, both after the fact: at
+	// its next idle rethink, forty ticks later, or when the meal is gone and
+	// what fires is the rule that lowers an opinion.
+	//
+	// It sends nothing and invents no range: the wake reaches only bodies
+	// that can see the one that chose, which is the same reach the claim
+	// itself has.
+	ClaimRetriggers bool
+
 	// AffinityAlly is what going in on somebody's side is worth to the two of
 	// them - (iii) - and, read the other way round, what a body can expect to
 	// buy by going in - (iv). One figure for both because they are one
@@ -2258,6 +2299,29 @@ type Config struct {
 	// swinging at it too - so what these two add is the motive and the
 	// reward, not the act.
 	AffinityAlly float64
+
+	// AllyPaidOnBlows says which of the two the payment is priced off (#140):
+	// swings that landed in the same fight, or a declared intention to fight.
+	// True is the blow-priced form and the default.
+	//
+	// The intention-priced form has two faults the count found. It pays the
+	// same pair again every time either of them thinks about the fight again
+	// - 13954 payments a run against joins at 3% of decisions - and it pays a
+	// body that called a fight and never swung. It is kept so that the two can
+	// be run against each other on the same seeds.
+	AllyPaidOnBlows bool
+
+	// AllyPaidOncePerFight settles the debt with one body rather than with
+	// every body already swinging (#141): whoever's side was actually taken -
+	// the one being set upon if there is one, otherwise the first into the
+	// fight.
+	//
+	// False is the form measured first, where a brawl of four pays six pairs
+	// and the minting grows with the square of who turns up. That measurement
+	// is what raises the question: joining moved joinShare by 0.01, while the
+	// sheer volume of goodwill minted moved fightLiked, claimLiked and
+	// snatchFriend. This is the arm that tells the two apart.
+	AllyPaidOncePerFight bool
 
 	// AffinityKilledMine is what killing somebody this body was fond of costs
 	// the killer in its goodwill, as a multiple of what the dead one was
@@ -3662,19 +3726,24 @@ func DefaultConfig() Config {
 		// 1100-1900 times a run, nine tenths of them by a stranger - so the
 		// target is there; what these are waiting on is the measurement of
 		// what they do to the population.
-		FightTrustCost:      0,
-		AffinityNegative:    false,
-		AffinitySnatched:    0,
-		AffinityAlly:        0,
-		AffinityKilledMine:  0,
-		AffinityWitnessKill: 2,
-		KillWitnessFactor:   2,
-		KillWitnessLooks:    true,
-		CallTicks:           30,
-		Coins:               0, // stage 51: the map author scatters them
-		CoinValue:           0.5,
-		CoinPricedCertain:   false, // stage 51's pricing, put right
-		Dropping:            false, // stage 70: the map author turns it on
+		FightTrustCost:       0,
+		AffinityNegative:     false,
+		AffinitySnatched:     0,
+		SnatchForgiveness:    0,
+		SnatchPriced:         true,
+		ClaimRetriggers:      false,
+		AffinityAlly:         0,
+		AllyPaidOnBlows:      true,
+		AllyPaidOncePerFight: false,
+		AffinityKilledMine:   0,
+		AffinityWitnessKill:  2,
+		KillWitnessFactor:    2,
+		KillWitnessLooks:     true,
+		CallTicks:            30,
+		Coins:                0, // stage 51: the map author scatters them
+		CoinValue:            0.5,
+		CoinPricedCertain:    false, // stage 51's pricing, put right
+		Dropping:             false, // stage 70: the map author turns it on
 
 		// Stage 71: the hand as a slot, and what a second thing in it is
 		// worth. The first two are the world as it was; the third is a fix.

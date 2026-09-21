@@ -214,6 +214,29 @@ type Stats struct {
 	// and thought less of the killer for it (#138).
 	MournWitnesses int
 
+	// FoodsSeen is how many items were in sight over all the decisions taken,
+	// FoodsClaimed how many of those somebody else had already chosen, and
+	// FoodsClaimedLiked how many of those belonged to somebody the deciding
+	// body thought well of (#140). The target of "stand back from a friend's
+	// meal", counted before the rule exists.
+	FoodsSeen         int
+	FoodsClaimed      int
+	FoodsClaimedLiked int
+
+	// SnatchLooks is how many snatches were put to the coin at all - somebody
+	// with goodwill to forgive - and SnatchForgiven how many of those came
+	// back forgiven (#141). Both nought where nothing is forgiven.
+	SnatchLooks    int
+	SnatchForgiven int
+
+	// ClaimContests is how many times two bodies in sight had chosen the same
+	// item, ClaimKept how many of those swapped which of them the observer was
+	// shown, and ClaimWakes how many bodies were asked to think again because
+	// somebody they are fond of set out for the meal they were after (#142).
+	ClaimContests int
+	ClaimKept     int
+	ClaimWakes    int
+
 	// DrownWitnesses is how many times an agent has seen the ground take
 	// somebody (stage 35), summed over witnesses: one drowning in front of
 	// three of them counts three times.
@@ -779,14 +802,22 @@ type World struct {
 
 	// Whose side a body is on (sides.go, TODO 14). Measurements; nothing
 	// reads them back.
-	friendFights   int
-	snatched       int
-	snatchedFriend int
-	snatchBites    int
-	sidesTaken     int
-	fightChoices   int
-	fightLiked     int
-	mournWitnesses int
+	friendFights      int
+	snatched          int
+	snatchedFriend    int
+	snatchBites       int
+	sidesTaken        int
+	fightChoices      int
+	fightLiked        int
+	mournWitnesses    int
+	claimContests     int
+	claimKept         int
+	claimWakes        int
+	snatchLooks       int
+	snatchForgiven    int
+	foodsSeen         int
+	foodsClaimed      int
+	foodsClaimedLiked int
 }
 
 // NewWorld creates a world populated according to cfg. The same cfg (same seed
@@ -898,14 +929,22 @@ func (w *World) Stats() Stats {
 		Evaded:     w.evaded,
 		Knocked:    w.knocked,
 
-		FriendFights:   w.friendFights,
-		Snatched:       w.snatched,
-		SnatchedFriend: w.snatchedFriend,
-		SnatchBites:    w.snatchBites,
-		SidesTaken:     w.sidesTaken,
-		FightChoices:   w.fightChoices,
-		FightLiked:     w.fightLiked,
-		MournWitnesses: w.mournWitnesses,
+		FriendFights:      w.friendFights,
+		Snatched:          w.snatched,
+		SnatchedFriend:    w.snatchedFriend,
+		SnatchBites:       w.snatchBites,
+		SidesTaken:        w.sidesTaken,
+		FightChoices:      w.fightChoices,
+		FightLiked:        w.fightLiked,
+		MournWitnesses:    w.mournWitnesses,
+		ClaimContests:     w.claimContests,
+		ClaimKept:         w.claimKept,
+		ClaimWakes:        w.claimWakes,
+		SnatchLooks:       w.snatchLooks,
+		SnatchForgiven:    w.snatchForgiven,
+		FoodsSeen:         w.foodsSeen,
+		FoodsClaimed:      w.foodsClaimed,
+		FoodsClaimedLiked: w.foodsClaimedLiked,
 
 		KnockedWet:  w.knockedWet,
 		KnockedFell: w.knockedFell,
@@ -1163,6 +1202,9 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 
 	p := w.perceive(a)
 	p.Trigger = trigger
+	// What the unwritten rule of #140 would have to work with: how much of
+	// the food in sight somebody else has already chosen. Read only.
+	w.noteClaimsSeen(a, p)
 	// Only an agent somebody asked to follow records anything. The controller
 	// fills in the options it compared; the world fills in the rest, so that a
 	// controller which ignores the trace still leaves a usable record.
@@ -1191,6 +1233,9 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	}
 	// And who it chose to swing at (TODO 14): the ruler that (i) is about.
 	w.noteFightChoice(a)
+	// And, where it chose a meal, whoever is already walking towards that one
+	// and would mind (#142).
+	w.noteClaimMade(a)
 	if ai, ok := c.(*AIController); ok {
 		// How far the winner won by, and how wide this body's own noise was
 		// (2026-09-20). A gap much narrower than the noise means the body
@@ -1696,6 +1741,11 @@ func (w *World) resolveAttacks() {
 		// The one being hit is meanwhile doing whatever it chose: turning the
 		// blow aside, not being there, or neither if it was eating - and all
 		// of it worth less if its own last blow found nothing.
+		// Who has taken whose side (#140), read before the ledger of who has
+		// hit whom is brought up to date: what says this swing starts an
+		// engagement rather than continues one is that this body is not
+		// already in that ledger.
+		w.noteSideTaken(from, to)
 		to.noteHit(from.ID, w.tick)
 		composure := to.composure(&w.cfg, w.tick)
 		// And the ground it is standing on, if it is standing above the one
