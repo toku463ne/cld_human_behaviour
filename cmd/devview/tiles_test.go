@@ -31,72 +31,97 @@ func theManifest(t *testing.T) manifestFile {
 	return m
 }
 
+// worlds is the shapes of world this viewer can be pointed at, as far as the
+// pictures are concerned. A beast's build is read off its row in EnemyKinds
+// (enemyBuild), so a sheet that is complete for one table can have holes in
+// another, and the table below is the one cmd/devview actually offers.
+func worlds() map[string]engine.Config {
+	plain := engine.DefaultConfig()
+	kinds := engine.DefaultConfig()
+	kinds.EnemyKinds = []engine.EnemyKind{
+		{Name: "stray", Share: 3, BudgetMean: 380},
+		{Name: "brute", Share: 1, BudgetMean: 700},
+	}
+	beasts := engine.DefaultConfig()
+	beasts.EnemyKinds = []engine.EnemyKind{
+		{Name: "brute", Share: 2, BudgetMean: 700},
+		{Name: "stray", Share: 3, BudgetMean: 380},
+		{Name: "flyer", Share: 2, BudgetMean: 260, Flies: true, FlyHeight: 2},
+		{Name: "lurker", Share: 1, BudgetMean: 450, Water: true},
+	}
+	return map[string]engine.Config{"plain": plain, "-kinds": kinds, "-beasts": beasts}
+}
+
 // Every picture the viewer can ask for is in the sheet. This is the test that
 // earns its keep: what a body is doing decides which clip is asked for, so a
 // state nobody drew is a hole that only shows up when a body happens to do
 // that thing on screen.
 //
-// Both sexes, because the sex picks the clip now as well as the action. Half
-// the keys this can ask for came into being the day that started, and a sheet
-// drawn for one sex would have looked complete until the first woman on the
-// screen did something.
+// Both sexes and every row of every table, because both pick the clip now.
+// Half the keys this can ask for came into being the day the sexes started
+// picking, and the rest the day the builds did; a sheet drawn for one sex, or
+// for one sort of beast, would have looked complete until the first woman or
+// the first winged thing on the screen did something.
 func TestEveryActionHasAPictureToDrawItWith(t *testing.T) {
 	m := theManifest(t)
 	have := map[string]int{}
 	for _, c := range m.Clips {
 		have[c.Name] = c.Frames
 	}
-	for kind := engine.ActionKind(0); kind < 32; kind++ {
-		for _, species := range []engine.Species{engine.SpeciesHuman, engine.SpeciesEnemy} {
-			for _, sex := range []engine.Sex{engine.Male, engine.Female} {
-				a := &engine.Agent{Species: species, Sex: sex, Action: engine.Action{Kind: kind}}
-				name := clipFor(a)
-				if have[name] == 0 {
-					t.Fatalf("%v (%v, %v) wants %q, and the sheet has %v", kind, species, sex, name, have)
+	for world, cfg := range worlds() {
+		for kind := engine.ActionKind(0); kind < 32; kind++ {
+			for _, species := range []engine.Species{engine.SpeciesHuman, engine.SpeciesEnemy} {
+				for _, sex := range []engine.Sex{engine.Male, engine.Female} {
+					for row := 0; row <= len(cfg.EnemyKinds); row++ {
+						for _, aloft := range []bool{false, true} {
+							if aloft && species != engine.SpeciesEnemy {
+								continue // only a beast is ever off the ground
+							}
+							a := &engine.Agent{
+								Species: species, Sex: sex, Kind: uint8(row),
+								Action: engine.Action{Kind: kind},
+							}
+							name := clipFor(a, &cfg, aloft)
+							if have[name] == 0 {
+								t.Fatalf("%s: %v (%v, %v, row %d, aloft %v) wants %q",
+									world, kind, species, sex, row, aloft, name)
+							}
+						}
+					}
 				}
 			}
 		}
 	}
 }
 
-// A man and a woman doing the same thing are drawn with different pictures.
+// The four builds are four pictures, and which one a beast gets is read off
+// what the world says the sort is rather than off what the map called it.
 //
-// The one test standing where the colour used to. Sex was the fill of the
-// circle from the first week of this viewer; a drawn body cannot be filled
-// with a colour, and if this ever comes back green the fact has quietly left
-// the screen rather than broken anything.
-func TestTheSexesAreDrawnApart(t *testing.T) {
-	have := map[string]bool{}
-	for _, c := range theManifest(t).Clips {
-		have[c.Name] = true
+// The names are the map's and the properties are the row's (decision #133).
+// A map that calls its heavy beast something else still has to get the heavy
+// picture, and one that invents a sort nobody anticipated has to get a
+// picture rather than a hole - which is the last case here.
+func TestABeastIsDrawnAsWhatTheWorldSaysItIs(t *testing.T) {
+	cfg := engine.DefaultConfig()
+	cfg.EnemyKinds = []engine.EnemyKind{
+		{Name: "anything at all", BudgetMean: cfg.EnemyBudgetMean + 100},
+		{Name: "anything at all", BudgetMean: cfg.EnemyBudgetMean - 100},
+		{Name: "anything at all", Water: true},
+		{Name: "anything at all", Flies: true},
+		{Name: "anything at all"}, // says nothing, so the world's own size
 	}
-	for kind := engine.ActionKind(0); kind < 32; kind++ {
-		man := clipFor(&engine.Agent{Sex: engine.Male, Action: engine.Action{Kind: kind}})
-		woman := clipFor(&engine.Agent{Sex: engine.Female, Action: engine.Action{Kind: kind}})
-		if man == woman {
-			t.Fatalf("%v draws both sexes with %q", kind, man)
-		}
-		if !have[man] || !have[woman] {
-			t.Fatalf("%v wants %q and %q", kind, man, woman)
+	want := []string{"big", "small", "water", "fly", "small"}
+	for row, w := range want {
+		a := &engine.Agent{Species: engine.SpeciesEnemy, Kind: uint8(row)}
+		if got := enemyBuild(a, &cfg); got != w {
+			t.Errorf("row %d came out %q and should be %q", row, got, w)
 		}
 	}
-}
-
-// Drawn art is never given a colour, and grey art always is.
-//
-// Multiplying a body that is already skin and hair and cloth by the sex blue
-// turns it into a drowned one, and by the sex pink into something skinned -
-// which is what this looked like when it was first tried. The rule is in the
-// sheet rather than in the code, so this is where it is checked.
-func TestOnlyTheGreyArtIsGivenAColour(t *testing.T) {
-	for _, c := range theManifest(t).Clips {
-		drawn := c.W == 32
-		if drawn && c.Tint {
-			t.Errorf("%s is drawn art and would be stained by a tint", c.Name)
-		}
-		if !drawn && !c.Tint {
-			t.Errorf("%s is a grey placeholder and would be invisible without a tint", c.Name)
-		}
+	// And a row nobody wrote, which is what a saved world from before a map
+	// shortened its table looks like.
+	beyond := &engine.Agent{Species: engine.SpeciesEnemy, Kind: 200}
+	if got := enemyBuild(beyond, &cfg); got != "small" {
+		t.Errorf("a body from off the end of the table came out %q", got)
 	}
 }
 

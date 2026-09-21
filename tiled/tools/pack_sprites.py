@@ -30,14 +30,16 @@ which picture goes in which cell of a sheet; which body gets which picture is
 cmd/devview/tiles.go, and the engine has never heard of either.
 
 Usage:
-    python3 tiled/tools/pack_sprites.py SHEET.png OUT_DIR [--carry DIR]
+    python3 tiled/tools/pack_sprites.py SHEET.png OUT_DIR --layout NAME [--carry DIR]
 
-SHEET.png is the generated sheet, laid out as docs/sprites.md asks for it: one
+SHEET.png is a generated sheet, laid out as docs/sprites.md asks for it: one
 clip per row, a standing reference body alone in the leftmost column of every
-row. OUT_DIR gets tiles.<hash>.png and manifest.json. --carry names a
-directory holding an existing sheet and manifest, and any clip in it that this
-sheet does not provide is copied across, so that art nobody has redrawn yet
-survives a repack.
+row. --layout names the table that says what is in it. OUT_DIR gets
+tiles.<hash>.png and manifest.json. --carry names a directory holding an
+existing sheet and manifest, and any clip in it that this sheet does not
+provide is copied across - which is how several sheets and the grey
+placeholders end up in one texture, by running this once per sheet and
+carrying the last result forward.
 """
 
 import argparse
@@ -57,19 +59,30 @@ TILE = 32   # one cell of the sheet
 BODY = 30   # how tall a standing adult is inside its cell
 FEET = 1    # rows left under the feet, so a body is not flush with the edge
 
-# Which bodies of which row make which clip, and what the clip's standing
-# height is in the render.
+# Which bodies of which row make which clip, per sheet.
 #
-# This table is read off the sheet by eye and belongs to that sheet: a fresh
-# render has its own rows and its own drift, and whoever repacks one checks
-# this against what --dump prints. Rows are numbered from the top, bodies from
-# the left, both ignoring the reference column.
+# A table belongs to the sheet it was read off: a fresh render has its own
+# rows, its own drift and its own idea of how big things are, so whoever packs
+# one runs --dump first and checks it against this. --layout picks the table.
 #
-# The fourth field is the height, in the render, of a standing body in that
-# row; it is what the clip is normalised by. None means the clip is not a body
-# standing on the ground - sitting, wading, a child, a corpse - and keeps its
-# drawn proportion against a standing adult instead.
-PICKS = [
+# The fourth field is how the clip is scaled, and the two sheets need
+# different answers because the two subjects are shaped differently.
+#
+# A person is taller than wide and stands on the ground, so what has to match
+# between clips is height: a body that shrank a tenth when a fight started
+# would be the one artefact of the generator's drift nobody could miss. A
+# number there is the height, in that render, of a standing body in that row.
+# None means the pose is meant to be lower - sitting, wading, a child, a
+# corpse - and keeps its drawn proportion against a standing adult.
+#
+# A beast is wider than tall, and its size on screen does not come from its
+# picture at all: the viewer reads that off the budget its body was drawn
+# from, so a brute is drawn big because it IS big. Making the art half again a
+# person as well would count the same fact twice. So a beast's clips are
+# scaled to fill the cell the same way, by a name shared with every other clip
+# of the same build - one scale for the build, taken from its widest frame, so
+# that nothing changes size between standing and pouncing.
+HUMANS = [
     ("human.idle",    0, [0, 1], 90),
     ("human.walk",    1, [0, 1], 83),
     ("human.fight",   3, [0, 1], 81),
@@ -83,8 +96,6 @@ PICKS = [
     ("human.f.hurt",  4, [4, 5], 78),
     ("human.f.eat",   2, [4, 5], None),
     ("human.f.swim",  5, [4, 5], None),
-    # The corpses came out three male and one female, and a corpse's sex is
-    # not something anybody reads at sixteen pixels, so there is one clip.
     ("child.idle",    7, [0, 1], None),
     ("child.f.idle",  7, [4, 5], None),
     # The old stand like everyone else, so they are normalised like everyone
@@ -98,8 +109,44 @@ PICKS = [
     ("item",         10, [0, 1, 2, 3, 4, 5, 6, 7], None),
 ]
 
-# The height a standing adult is drawn at in this render, which everything
-# not normalised in its own right is measured against.
+# The beasts. Four builds across every row, in the order the brief asked for
+# them: heavy, light, water, winged. The row of a body being struck was asked
+# for and did not come back, which costs nothing because nothing asks for it,
+# and the two rows of a winged one in the air did, which nothing asks for
+# either - they wait in the sheet the way the humans' spare poses do.
+ENEMIES = [
+    ("enemy.big.idle",    0, [0, 1], "big"),
+    ("enemy.big.walk",    1, [0, 1], "big"),
+    ("enemy.big.eat",     2, [0, 1], "big"),
+    ("enemy.big.fight",   3, [0, 1], "big"),
+    ("enemy.big.dead",    4, [0, 1], "big"),
+    ("enemy.small.idle",  0, [2, 3], "small"),
+    ("enemy.small.walk",  1, [2, 3], "small"),
+    ("enemy.small.eat",   2, [2, 3], "small"),
+    ("enemy.small.fight", 3, [2, 3], "small"),
+    ("enemy.small.dead",  4, [2, 3], "small"),
+    ("enemy.water.idle",  0, [4, 5], "water"),
+    ("enemy.water.walk",  1, [4, 5], "water"),
+    ("enemy.water.eat",   2, [4, 5], "water"),
+    ("enemy.water.fight", 3, [4, 5], "water"),
+    ("enemy.water.dead",  4, [4, 5], "water"),
+    ("enemy.fly.idle",    0, [6, 7], "fly"),
+    ("enemy.fly.walk",    1, [6, 7], "fly"),
+    ("enemy.fly.eat",     2, [6, 7], "fly"),
+    ("enemy.fly.fight",   3, [6, 7], "fly"),
+    ("enemy.fly.dead",    4, [6, 7], "fly"),
+    # In the air, which nothing draws yet. Its own scale because a spread
+    # wing is half again as wide as a folded one, and sharing the ground
+    # build's scale would push it off both sides of its cell.
+    ("enemy.fly.air",     5, [0, 1], "air"),
+    ("enemy.fly.flap",    5, [2, 3], "air"),
+    ("remains",           6, [0],    "bone"),
+]
+
+LAYOUTS = {"humans": HUMANS, "enemies": ENEMIES}
+
+# The height a standing adult is drawn at in the human render, which every
+# clip of it that is not normalised in its own right is measured against.
 STANDING = 90.0
 
 
@@ -245,10 +292,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("sheet")
     ap.add_argument("out_dir")
+    ap.add_argument("--layout", default="humans", choices=sorted(LAYOUTS),
+                    help="which table says what is in this sheet")
     ap.add_argument("--carry", help="a directory whose unclaimed clips come across")
     ap.add_argument("--dump", action="store_true",
-                    help="print what was found and stop, for checking PICKS")
+                    help="print what was found and stop, for checking the table")
     args = ap.parse_args()
+    picks = LAYOUTS[args.layout]
 
     img, fg = load(args.sheet)
     bands, x_from = rows_of(fg)
@@ -256,15 +306,33 @@ def main():
 
     if args.dump:
         for i, (row, (_, _, ref)) in enumerate(zip(found, bands)):
-            print("row %2d  reference %3d  bodies %2d  heights %s"
-                  % (i, ref, len(row), [b[3] - b[1] for b in row]))
+            print("row %2d  reference %3d  bodies %2d  wxh %s"
+                  % (i, ref, len(row),
+                     [(b[2] - b[0], b[3] - b[1]) for b in row]))
         return
 
+    # A build's scale, for the clips that share one: the widest frame any of
+    # them uses, so every pose of that build fits its cell and none of them is
+    # shrunk again by fit() and left smaller than its neighbours.
+    widest = {}
+    for name, row, frames, how in picks:
+        if not isinstance(how, str):
+            continue
+        if row >= len(found):
+            continue
+        for i in frames:
+            if i < len(found[row]):
+                x0, _, x1, _ = found[row][i]
+                widest[how] = max(widest.get(how, 0), x1 - x0)
+
     made = []
-    for name, row, frames, standing in PICKS:
+    for name, row, frames, how in picks:
         if row >= len(found):
             sys.exit("%s wants row %d and the sheet has %d" % (name, row, len(found)))
-        scale = BODY / (standing if standing else STANDING)
+        if isinstance(how, str):
+            scale = TILE / widest[how]
+        else:
+            scale = BODY / (how if how else STANDING)
         made.append((name, [cell(img, found[row][i], scale) for i in frames], TILE, TILE))
 
     claimed = {name for name, _, _, _ in made}

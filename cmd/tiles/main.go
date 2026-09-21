@@ -22,17 +22,19 @@
 // the sheet's name carries a hash of its own bytes so that a browser may keep
 // it for ever and still never show a stale one.
 //
-// What this still draws, since 2026-09-21, is the enemies and nothing else
-// anybody sees. The humans and the things lying about are drawn art now, cut
-// from a generated sheet by tiled/tools/pack_sprites.py (docs/sprites.md),
-// and that tool carries across whatever clips its own sheet does not provide
-// - which is what this one is for. So the order is:
+// Nothing this draws is in the sheet any more, as of 2026-09-22. The people,
+// the things lying about, the beasts and a person's bones are all drawn art
+// now, cut from generated sheets by tiled/tools/pack_sprites.py
+// (docs/sprites.md), and that tool carries across only the clips its own
+// sheets do not provide - which by now is none of them.
 //
-//	go run ./cmd/tiles -out /tmp/grey
-//	python3 tiled/tools/pack_sprites.py <sheet>.png cmd/devview/assets --carry /tmp/grey
+// It is kept for the next thing nobody has drawn yet. That is what it was
+// worth the whole time: a way to put SOMETHING on the screen the same
+// afternoon a rule arrives, without waiting on anybody to draw it. The bone
+// that stood for a person's remains lived here for about four hours.
 //
-// and that is why -out does not default to the viewer's assets any more:
-// running this on its own would put the grey placeholders back over the art.
+// -out does not default to the viewer's assets, and must not: running this
+// on its own would put the grey placeholders back over the art.
 package main
 
 import (

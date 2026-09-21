@@ -15,3 +15,6 @@
 # a sheet was cut from wherever you keep such things; docs/sprites.md says
 # how to cut a fresh one.
 /tiled/samples/*.png
+
+# what python leaves beside a tool that was imported
+__pycache__/

@@ -698,15 +698,15 @@ go run ./cmd/snapshot -mode genes -seeds 8 -ticks 20000 -out docs/images/genes-<
 - `cmd/devview/` — 上記の開発用ビューア
 - `cmd/experiment/` — ルール変更をA/Bで測るヘッドレスのランナー
 - `cmd/snapshot/` — 集団のようすをPNGに描くヘッドレスのツール
-- `cmd/tiles/` — **外敵の灰色の置き絵を描いて1枚のシートに焼くツール**（`TODO.md` の10番。**2026-09-21 から外敵だけです**——人間と物は生成した絵に替わりました）。**絵は `cmd/tiles/art.go` に1文字1ピクセルで書いてあります**（`.` 透明・`o` 輪郭・`b` 本体・`s` 陰・`e` 目）——地形や地域や天気を文字で描くのと同じ形。**`-out` は必須です**（素で回すと描かれた絵を置き絵で上書きしてしまうため）
+- `cmd/tiles/` — **置き絵を描いて1枚のシートに焼くツール**（`TODO.md` の10番）。**2026-09-22 から、これが描く絵はどれも使われていません**——人間・物・外敵・骨がすべて描かれた絵で揃ったためで、**まだ誰も描いていないものが次に出たときのために残してあります**。**絵は `cmd/tiles/art.go` に1文字1ピクセルで書いてあります**（`.` 透明・`o` 輪郭・`b` 本体・`s` 陰・`e` 目）——地形や地域や天気を文字で描くのと同じ形。**`-out` は必須です**（素で回すと描かれた絵を置き絵で上書きしてしまうため）
 - `tiled/tools/pack_sprites.py` — **生成した絵のシートを 32px に切って `cmd/devview/assets/` を作るツール**（2026-09-21。**頼み方と手順は `docs/sprites.md`**）。回し方は2行です:
 
   ```sh
-  go run ./cmd/tiles -out /tmp/grey
-  python3 tiled/tools/pack_sprites.py tiled/samples/<シート>.png cmd/devview/assets --carry /tmp/grey
+  python3 tiled/tools/pack_sprites.py tiled/samples/10humans_new.png /tmp/step1 --layout humans
+  python3 tiled/tools/pack_sprites.py tiled/samples/enemies.png cmd/devview/assets --layout enemies --carry /tmp/step1
   ```
 
-  1行目が置き絵を出し、2行目が**生成シートから人間と物を切り出して1枚にまとめ**、`--carry` で**自分が作らなかったクリップ（外敵）だけ**を引き継ぎます。**新しいシートが届いたら、まず `--dump` を付けて回し**、行と体の数を `pack_sprites.py` の `PICKS` と突き合わせてください（**`PICKS` はそのシート専用です**）。**ファイル名に中身のハッシュが入る**ので、ブラウザは古い絵を掴みません
+  **シート1枚につき1回回し、`--carry` で前の結果を持ち越します**（`--carry` は**自分が作らなかったクリップだけ**を引き継ぐので、同じ名前の絵を新しく作れば古いほうは自動的に落ちます）。**`--layout` はそのシートに何が入っているかを言う表**で、`pack_sprites.py` の中にあります。**新しいシートが届いたら、まず `--dump` を付けて回し**、行と体の数を表と突き合わせてください（**表はそのシート専用です**）。**ファイル名に中身のハッシュが入る**ので、ブラウザは古い絵を掴みません
 - `cmd/devview/assets/` — そのシートと manifest。**ネイティブでは実行ファイルに埋め込み、ブラウザでは `fetch` で取ります**（絵だけ差し替えたときに 15MB の wasm を配り直さずに済むため）
 - `docs/images/` — `cmd/snapshot` が残した記録用の画像（ファイル名にコミットが入る）
 - `NODE.md` / `ENEMY.md` / `PARAMETERS.md` — ルールとパラメータの参照

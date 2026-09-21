@@ -2699,7 +2699,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// enemy" is the first question anybody asks of this screen. The shape
 		// is free: it carries no other meaning, where every ring around the
 		// body already carries one.
-		if g.drawBody(screen, a, x, y, radius, bodyTint(a, fill)) {
+		if g.drawBody(screen, a, &cfg, x, y, radius, bodyTint(a, fill)) {
 			// The picture is the body; how much of it is left is the bar
 			// under it, because a sprite cannot be half filled in the way a
 			// circle can (TODO 10). Everything else around it - the ring

@@ -142,17 +142,30 @@ func (t *tileset) frame(name string, i int) *ebiten.Image {
 // body was filled with, and the drawn art cannot be filled with a colour, so
 // without this every human in the world would be the male picture and a fact
 // that has been on this screen since the first week would be gone. The art
-// says it the way the art can: what the body is wearing.
+// says it the way art can: what the body is wearing.
 //
-// The sheet holds more than these - a body being hit, a body up to its waist
-// in water, a body lying dead, a child, someone old - and nothing asks for
-// them yet. They are in there so that asking is a line of this function
-// rather than another afternoon of drawing.
-func clipFor(a *engine.Agent) string {
+// For a beast it is the build instead of the sex, and aloft is a run of its
+// own: a winged one in the air is the one body on this screen that is drawn
+// somewhere it is not standing, and until now it was the same picture lifted.
+//
+// The sheet holds more than these - a person being hit, one up to its waist
+// in water, one lying dead, a child, someone old, a beast lying dead - and
+// nothing asks for them yet. They are in there so that asking is a line of
+// this function rather than another afternoon of drawing.
+func clipFor(a *engine.Agent, cfg *engine.Config, aloft bool) string {
 	kind := "human"
 	switch {
 	case a.Species == engine.SpeciesEnemy:
-		kind = "enemy"
+		if aloft {
+			// Flapping while it crosses the sky, gliding while it holds
+			// station. Two pictures for the price of the one the art
+			// already had.
+			if a.Action.Kind == engine.ActMove || a.Action.Kind == engine.ActFlee {
+				return "enemy.fly.flap"
+			}
+			return "enemy.fly.air"
+		}
+		kind = "enemy." + enemyBuild(a, cfg)
 	case a.Sex == engine.Female:
 		kind = "human.f"
 	}
@@ -168,6 +181,39 @@ func clipFor(a *engine.Agent) string {
 	return kind + ".idle"
 }
 
+// enemyBuild is which of the four beasts a body is drawn as.
+//
+// Read off what the world says the sort IS, never off what the map called it.
+// A map brings the names and where each sort comes into the world; the row
+// brings what the sort is like (decision #133), and a picture is a thing the
+// sort is like. A map that calls its heavy beast something else still gets
+// the heavy picture, and one that invents a fifth sort gets a picture rather
+// than a hole.
+//
+// Size is the one that needs saying twice: it is NOT in here. The viewer
+// draws a beast as big as its body already (bodySize), so the four builds are
+// drawn filling their cells the same way and the budget does the rest. Art
+// half again the size of a person, on a body whose budget is already half
+// again a person's, would count the same fact twice.
+func enemyBuild(a *engine.Agent, cfg *engine.Config) string {
+	if int(a.Kind) >= len(cfg.EnemyKinds) {
+		return "small"
+	}
+	k := cfg.EnemyKinds[a.Kind]
+	switch {
+	case k.Flies:
+		return "fly"
+	case k.Water:
+		return "water"
+	}
+	// A row that says nothing about its size is the world's own size, which
+	// is the ordinary beast rather than the heavy one.
+	if k.BudgetMean > cfg.EnemyBudgetMean {
+		return "big"
+	}
+	return "small"
+}
+
 // animTicks is how many ticks of the world one frame of an animation lasts.
 // The world's clock rather than the viewer's, so that a stopped world holds
 // still: a body walking on the spot while the clock is paused looks like the
@@ -176,14 +222,14 @@ const animTicks = 5
 
 // drawBody stamps one body. It reports whether it drew anything, so that the
 // caller can fall back to the circle where there is no picture for it.
-func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, x, y, radius float32, tint color.RGBA) bool {
+func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, cfg *engine.Config, x, y, radius float32, tint color.RGBA) bool {
 	if g.tiles == nil {
 		return false
 	}
 	// Each body starts its animation at its own point in the cycle, from its
 	// ID: sixty bodies marching in step is the one thing that would make this
 	// look worse than the circles did.
-	clip := clipFor(a)
+	clip := clipFor(a, cfg, g.world.Aloft(*a))
 	img := g.tiles.frame(clip, a.ID+g.world.Tick()/animTicks)
 	if img == nil {
 		return false
