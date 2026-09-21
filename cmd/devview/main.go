@@ -219,6 +219,11 @@ type game struct {
 	was     lifeMark
 	offer   *offer
 
+	// The dynasty game (TODO 6, dynasty.go), nil unless -dynasty was asked
+	// for. It owns the goal, the ten year wait and the transfer menu; the
+	// ordinary succession question above is what happens without it.
+	dyn *dynasty
+
 	// The question raised by the played body dying: which of the line's
 	// living children to go on as. It is the interface's question, like the
 	// milestone offer - the engine has never heard of a line - and it is asked
@@ -452,6 +457,10 @@ func (g *game) Update() error {
 	// Before the pause, so that bubbles go on fading while the clock is
 	// stopped and a player who paused to read is not left with a wall of them.
 	g.watchProtagonist()
+	// And the dynasty's own clock (TODO 6), which runs through the pause for
+	// the same reason: the ten years after a death are not the player's time,
+	// and the frame that starts them is the frame that stopped the world.
+	g.watchDynasty()
 	if g.paused {
 		return nil
 	}
@@ -814,6 +823,12 @@ func (g *game) handlePlayInput() {
 	if g.answerProposal() {
 		return
 	}
+	if g.handleDynastyInput() {
+		// The transfer question, and the wait behind it: the same standing as
+		// the succession question below - nothing else means anything until
+		// a country is chosen.
+		return
+	}
 	if g.succession != nil {
 		// Nothing else means anything: there is no body to drive until this
 		// is answered, and the clock is stopped behind it.
@@ -1035,6 +1050,10 @@ func (g *game) toggleControl() {
 		g.lineFrom, g.lineAt = g.world.Tick(), g.world.Tick()
 		g.bodies, g.lineKids, g.last, g.walkTo = 1, nil, nil, mark{}
 		g.endowTheProtagonist()
+		// And the dynasty, if one is being played (TODO 6): the line being
+		// played for is whoever the player is first given, so it is read
+		// here rather than at start-up, where there is no body yet.
+		g.startDynasty()
 		g.say("#%d decides for itself and asks you at the turning points. h again to drive it", g.played)
 		g.raiseOffer("you have taken up its life")
 
@@ -1175,6 +1194,14 @@ func (g *game) carryTheLineOn() {
 		return
 	}
 	dead := g.played
+	if g.dyn != nil && !g.dyn.over && g.dyn.line != 0 {
+		// The dynasty answers a death its own way: ten years pass, and then
+		// the line is picked up wherever it still has somebody (dynasty.go).
+		// A named heir is no shortcut through that - the wait is the price.
+		g.heir = 0
+		g.beginTheWait(dead)
+		return
+	}
 	if g.heir != 0 && g.world.SetController(g.heir, g.controller()) {
 		heir := g.heir
 		g.heir = 0
@@ -1341,6 +1368,7 @@ func (g *game) takeOver(from, id int, dead bool) {
 	g.walkTo = mark{}
 	g.padKey = noKey // so a key still held walks the new body too
 	g.selectAgent(id)
+	g.startDynasty()
 	if dead {
 		g.say("#%d died. you are #%d now", from, id)
 		return
@@ -3146,6 +3174,14 @@ func (g *game) overlay() string {
 		fmt.Fprintf(&b, "#%d is proposing to you: [y] accept  [n] refuse  (%d ticks, then #%d decides for itself)\n",
 			who, left, g.played)
 	}
+	// The dynasty's own line (TODO 6): what is being played for, how far
+	// along it is, and why the clock is stopped when it is.
+	if line := g.dynastyStatus(); line != "" {
+		b.WriteString(line + "\n")
+		for i, p := range g.dynPicks() {
+			fmt.Fprintf(&b, "   [%d] %s\n", i+1, p.about)
+		}
+	}
 	if g.succession != nil {
 		if g.succession.dead {
 			fmt.Fprintf(&b, "#%d is dead: 1-%d go on as one of its line, enter to stop here (see the panel)\n",
@@ -4435,6 +4471,7 @@ func main() {
 	soak := flag.Float64("soak", 0, "what a tick in the water takes out of a body in vitality, standing still or not (stage 99; needs -terrain river or country). 0 is the world before this stage, where the water was a toll on movement and nothing to a body standing in it. A body recovers 0.09 a tick, so 0.02 is a fifth of that")
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
+	playDynasty := flag.Bool("dynasty", false, "play the dynasty (TODO 6, #130): win by settling your line in every goal block the map marks at once, and pay for each death with ten years the world runs without you. Needs a map with goal blocks (-tiled, or -terrain with goals painted). Brings -play with it")
 	shove := flag.Float64("shove", 0, "how far a body throws another one when it spends the tick pushing instead of hitting, in world units (#139; 0 = every world before it). A fourth stance, scored beside the other three: it gives up most of the blow and buys the ticks the other one spends walking back in. 20 is past arm's length and actually breaks the fight off")
 	lessons := flag.Int("lessons", 0, "how many things a body may learn from watching others die (#137; 0 = every world before it). A room of its own, bought out of the same budget the genes are: a body that learns two things is measurably smaller than one that learns none. What it learns is which move not to make in the situation it watched somebody stop in, and it takes two deaths of a kind to learn it")
 	sides := flag.Float64("sides", 0, "let goodwill decide who fights whom (#138): the amount, in affinity, that swinging at somebody costs, that taking a side is worth, and that being beaten to your meal costs the one who got there first. 0 = every world before it")
@@ -4844,12 +4881,20 @@ func main() {
 	if *beliefs {
 		g.mode = modeBeliefs
 	}
-	if *play || *ask {
+	// The dynasty (TODO 6) is set up before the body is taken over, because
+	// taking one over is what starts it: startDynasty reads the line off
+	// whoever the player is first given.
+	if *playDynasty {
+		g.dyn = &dynasty{
+			settle: engine.NewSettlementTracker(engine.DefaultSettleWindow, engine.DefaultSettleShare),
+		}
+	}
+	if *play || *ask || *playDynasty {
 		if g.selected == 0 {
 			g.selectAgent(quickestBody(g.world))
 		}
 		g.toggleControl() // the first press is the asked mode
-		if *play {
+		if *play || *playDynasty {
 			g.toggleControl() // and the second takes the reins
 		}
 	}

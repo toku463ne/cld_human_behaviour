@@ -131,6 +131,16 @@ func (t *SettlementTracker) settledIn(id int) (int, bool) {
 	return best, true
 }
 
+// SettledIn is the block this body has spent most of its recent past in, and
+// false when no block holds enough of it. Read only.
+//
+// It is exported for the game to ask about one body at a time: a win
+// condition written on "my line lives in these places" needs to know which
+// bodies of that line live where, and Result answers a different question
+// (what all the lines are doing on average). The engine still does not know
+// which line is anybody's, or that anything is being won.
+func (t *SettlementTracker) SettledIn(id int) (int, bool) { return t.settledIn(id) }
+
 // Result reads off what the lines have settled into.
 func (t *SettlementTracker) Result(w *World) SettlementUse {
 	var out SettlementUse

@@ -2296,7 +2296,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 		mother = pb
 	}
 	child.Lineage = mother.Lineage
-	if w.lineTaken(mother, child.X, child.Y) {
+	if w.lineTaken(mother) {
 		child.Lineage = 0
 	}
 	if w.cfg.NestInherited {

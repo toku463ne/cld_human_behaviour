@@ -949,11 +949,6 @@ var variants = []variant{
 		apply: func(c *engine.Config) { c.LineageRule = engine.LineageChain },
 	},
 	{
-		name:  "lineregion",
-		about: "a line passes to one child at a time in each region: the rule a travelling dynasty asks for",
-		apply: func(c *engine.Config) { c.LineageRule = engine.LineageRegionChain },
-	},
-	{
 		name:  "nests",
 		about: "the nest rides down the lineage: a newborn's home is its parent's, not its birthplace",
 		apply: func(c *engine.Config) {

@@ -41,15 +41,24 @@ const (
 	// and those die out with probability one.
 	LineageChain
 
-	// LineageRegionChain: one carrier at a time in each region. A newborn
-	// takes its mother's line when no living carrier of it is in the block
-	// the child is born in.
+	// There was a third, LineageRegionChain: one carrier at a time in each
+	// block, taken up by a newborn when no carrier of that line was standing
+	// there. It was written for the travelling dynasty and it was deleted on
+	// 2026-09-21, because it was not what that game wanted and could not have
+	// been.
 	//
-	// It is the rule a travelling dynasty asks for: going somewhere new and
-	// leaving descendants there is what makes a carrier there, and a line
-	// standing in three places means three heirs who were left in three
-	// places.
-	LineageRegionChain
+	// What the game wants is "who is the heir in this country now", and that
+	// changes the moment somebody dies, with no birth anywhere near it. A tag
+	// is written once, at birth, so it cannot say it: under that rule a
+	// second son born while his elder brother stood there was never a carrier
+	// and never could become one, and a block whose carrier died stayed empty
+	// until the next child happened to be born in it. Measured on the played
+	// map, a line held 2.09 blocks of twelve against the tree's 9.25, and one
+	// ten-year gap took it to 0.91 with the line gone altogether 0.55 of the
+	// time.
+	//
+	// The thing it was trying to be is LineHeirs below - a question asked of
+	// the world rather than a mark left on a body. See docs/history/decision.
 )
 
 // LineageUse is what the lines of descent are doing. Read only.
@@ -118,14 +127,49 @@ func (w *World) Lineages() LineageUse {
 	return out
 }
 
+// LineHeirs is the eldest living carrier of a line in each block of the
+// world: the answer to "where in the world does this line still have
+// somebody", one body per block.
+//
+// It is a fact about bodies and about nothing else - who is playing, what
+// counts as a win, and how long a player waits after a death are all the
+// game's, and stage 19's line is that the engine does not know any of them.
+// What this is for is the menu the game puts up, and the count that said how
+// often that menu would be empty.
+//
+// The eldest rather than the nearest or the healthiest, because a line's heir
+// in a country is the one who has been there longest; and one per block
+// rather than all of them, because the choice being offered is which country
+// to carry on in, not which body.
+//
+// Read only, and it draws nothing from the random source.
+func (w *World) LineHeirs(line uint16) map[int]int {
+	if line == 0 || len(w.regions) == 0 {
+		return nil
+	}
+	out := map[int]int{}
+	age := map[int]int{}
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Lineage != line {
+			continue
+		}
+		r := w.regionIndexAt(a.X, a.Y)
+		if _, held := out[r]; !held || a.Age > age[r] {
+			out[r], age[r] = a.ID, a.Age
+		}
+	}
+	return out
+}
+
 // lineTakenBy says whether the mother's line already has somebody to carry
 // it, and so whether this newborn takes it up.
 //
-// Nothing keeps an "heir" field, in either rule. The answer has to change the
-// moment a carrier dies, and a field would have to be kept up by every path a
-// body can leave the world by - which is the kind of bookkeeping that is
-// right until the day it is not. Both of these are walks, asked once a birth.
-func (w *World) lineTaken(mother *Agent, atX, atY float64) bool {
+// Nothing keeps an "heir" field. The answer has to change the moment a
+// carrier dies, and a field would have to be kept up by every path a body can
+// leave the world by - which is the kind of bookkeeping that is right until
+// the day it is not. This is a walk, asked once a birth.
+func (w *World) lineTaken(mother *Agent) bool {
 	if mother.Lineage == 0 {
 		return false
 	}
@@ -135,30 +179,6 @@ func (w *World) lineTaken(mother *Agent, atX, atY float64) bool {
 		// it already?
 		for _, id := range mother.ChildIDs {
 			if c := w.agentByID(id); c != nil && c.Alive && c.Lineage == mother.Lineage {
-				return true
-			}
-		}
-		return false
-	case LineageRegionChain:
-		// One at a time in each block: is anybody of this line standing in
-		// the block this child is being born in? Anybody, not only her own
-		// children - a line's heir in a country is whoever of that line is
-		// there, which is what makes moving somewhere and leaving descendants
-		// the way to have one there.
-		if len(w.regions) == 0 {
-			return false
-		}
-		here := w.regionIndexAt(atX, atY)
-		for i := range w.agents {
-			a := &w.agents[i]
-			// Not the mother herself: she is standing where the birth is by
-			// construction, so counting her would mean no child ever takes a
-			// line up. What is being asked is whether she is leaving an heir
-			// in this country or one is already here.
-			if a.ID == mother.ID || !a.Alive || a.Lineage != mother.Lineage {
-				continue
-			}
-			if w.regionIndexAt(a.X, a.Y) == here {
 				return true
 			}
 		}
