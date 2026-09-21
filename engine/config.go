@@ -2208,6 +2208,69 @@ type Config struct {
 	// nothing either.
 	AffinityHunt float64
 
+	// Whose side a body is on (TODO 14, #138, sides.go). Five figures, all
+	// nought or false in every world before them, and they are meant to be
+	// switched on together: measured apart, the first three are a rule that
+	// lowers a number nobody reads.
+	//
+	// FightTrustCost is what swinging at somebody costs in their goodwill -
+	// (i), and the only one of the five that touches the utility formula.
+	// Until it, affinity decided where a body rested, what it handed over and
+	// who it would call in, and decided nothing at all about who it fought:
+	// two bodies racing for the same plant were priced identically whether
+	// they had grown up together or met a moment ago.
+	//
+	// It is charged as the goodwill it would lose, by the same yardstick a
+	// gift earns goodwill with (trustBought), so the two sit in one term and
+	// on one measuring stick (stage 77). What it must not become is a flat
+	// tax on fighting, which is what AttackCost already is: the floor on
+	// affinity stays at nought here, so a stranger and somebody already
+	// disliked cost the same nothing, and all this rule adds is the
+	// difference a friend makes.
+	FightTrustCost float64
+
+	// AffinityNegative allows a record to go below nought - (a). On its own
+	// it changes nothing at all: every reader of affinity clamps at nought,
+	// so a body at -10 is read exactly like a stranger. What it buys is
+	// somewhere for the losses to go, and it moves three seams that would
+	// otherwise work backwards, all of them in this file's neighbours: which
+	// record a full memory throws out first, what a gift to somebody
+	// disliked buys, and whether a loss is allowed to make room for itself.
+	AffinityNegative bool
+
+	// AffinitySnatched is what being beaten to the item you were walking
+	// towards costs the one who got there first - (vi). It fires in eat, once
+	// per body that had that item as its target, drawing no random numbers.
+	//
+	// The event is deliberately narrow: not being near somebody, not being in
+	// a race with them, but having chosen that item and been on the way to
+	// it. A rule keyed on proximity would lower everybody's opinion of
+	// everybody wherever food was thick on the ground.
+	AffinitySnatched float64
+
+	// AffinityAlly is what going in on somebody's side is worth to the two of
+	// them - (iii) - and, read the other way round, what a body can expect to
+	// buy by going in - (iv). One figure for both because they are one
+	// quantity: what the joining is worth is what it pays.
+	//
+	// The machinery for (ii) has been in the world since stage 32 - a friend
+	// swinging at something already raises the odds this body scores for
+	// swinging at it too - so what these two add is the motive and the
+	// reward, not the act.
+	AffinityAlly float64
+
+	// AffinityKilledMine is what killing somebody this body was fond of costs
+	// the killer in its goodwill, as a multiple of what the dead one was
+	// worth to it (TODO 14, #138). Nought in every world before it, and it
+	// needs AffinityNegative the way (vi) does.
+	//
+	// In proportion rather than flat, because what is being recorded is a
+	// loss and not a judgement: killing a stranger in front of somebody costs
+	// nothing here. That is also what keeps it clear of "no grudges" - a
+	// fallen opinion buys no revenge, it only takes away the discount (i)
+	// gives a friend.
+	AffinityKilledMine float64
+
 	// AffinityWitnessKill is what an onlooker comes to think of somebody it
 	// has just watched kill a creature of another kind (stage 31).
 	//
@@ -3589,10 +3652,21 @@ func DefaultConfig() Config {
 		// is slower than the risk memory's: what somebody did for you outlasts
 		// what they did to you, which is the only reason a group could hold
 		// together for longer than a grudge.
-		AffinityPairBond:    18,
-		AffinityBirth:       18,
-		AffinityKin:         22,
-		AffinityHunt:        6,
+		AffinityPairBond: 18,
+		AffinityBirth:    18,
+		AffinityKin:      22,
+		AffinityHunt:     6,
+		// Whose side a body is on (TODO 14): all five off. Counted before
+		// they were written - a friend is fighting somebody liked less in
+		// 16-22% of decisions, and an item is taken from under somebody
+		// 1100-1900 times a run, nine tenths of them by a stranger - so the
+		// target is there; what these are waiting on is the measurement of
+		// what they do to the population.
+		FightTrustCost:      0,
+		AffinityNegative:    false,
+		AffinitySnatched:    0,
+		AffinityAlly:        0,
+		AffinityKilledMine:  0,
 		AffinityWitnessKill: 2,
 		KillWitnessFactor:   2,
 		KillWitnessLooks:    true,

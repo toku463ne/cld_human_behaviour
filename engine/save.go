@@ -143,6 +143,10 @@ type counterSnap struct {
 	MaxGeneration                                int
 	BlowsSeen, BlowsAnswered                     int
 	Knocked, KnockedWet, KnockedFell             int
+	FriendFights, Snatched, SnatchedFriend       int
+	SnatchBites, SidesTaken                      int
+	FightChoices, FightLiked                     int
+	MournWitnesses                               int
 	Courtships, CourtshipsAccepted               int
 	Flees, Escapes                               int
 
@@ -346,7 +350,11 @@ func (w *World) Save(out io.Writer) error {
 			MaxGeneration: w.maxGeneration,
 			BlowsSeen:     w.blowsSeen, BlowsAnswered: w.blowsAnswered,
 			Knocked: w.knocked, KnockedWet: w.knockedWet, KnockedFell: w.knockedFell,
-			Courtships: w.courtships, CourtshipsAccepted: w.courtshipsAccepted,
+			FriendFights: w.friendFights, Snatched: w.snatched, SnatchedFriend: w.snatchedFriend,
+			SnatchBites: w.snatchBites, SidesTaken: w.sidesTaken,
+			FightChoices: w.fightChoices, FightLiked: w.fightLiked,
+			MournWitnesses: w.mournWitnesses,
+			Courtships:     w.courtships, CourtshipsAccepted: w.courtshipsAccepted,
 			Flees: w.flees, Escapes: w.escapes,
 			Exchanges: w.exchanges, HintsCopied: w.hintsCopied,
 			Tolls:         snapTolls(w.tolls),
@@ -556,6 +564,10 @@ func Load(in io.Reader) (*World, error) {
 	w.maxGeneration = c.MaxGeneration
 	w.blowsSeen, w.blowsAnswered = c.BlowsSeen, c.BlowsAnswered
 	w.knocked, w.knockedWet, w.knockedFell = c.Knocked, c.KnockedWet, c.KnockedFell
+	w.friendFights, w.snatched, w.snatchedFriend = c.FriendFights, c.Snatched, c.SnatchedFriend
+	w.snatchBites, w.sidesTaken = c.SnatchBites, c.SidesTaken
+	w.fightChoices, w.fightLiked = c.FightChoices, c.FightLiked
+	w.mournWitnesses = c.MournWitnesses
 	w.courtships, w.courtshipsAccepted = c.Courtships, c.CourtshipsAccepted
 	w.flees, w.escapes = c.Flees, c.Escapes
 	w.exchanges, w.hintsCopied = c.Exchanges, c.HintsCopied

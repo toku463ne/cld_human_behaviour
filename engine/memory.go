@@ -184,7 +184,15 @@ func (w *World) weakestOpinion(a *Agent, forced bool) (int, bool) {
 	found := false
 	for id, op := range a.opinions {
 		elapsed := w.tick - op.lastTick
-		weight := decay(op.Risk, riskRate, elapsed) + decay(op.Affinity, affinityRate, elapsed)
+		affinity := decay(op.Affinity, affinityRate, elapsed)
+		if w.cfg.AffinityNegative {
+			// What is being ranked is how much a record matters, and a body
+			// it has fallen out with matters. Without the absolute value the
+			// first thing a full memory would throw away is the one it likes
+			// least, which would undo (vi) as fast as it happened.
+			affinity = math.Abs(affinity)
+		}
+		weight := decay(op.Risk, riskRate, elapsed) + affinity
 		switch {
 		case !found,
 			weight < worstWeight,
@@ -324,7 +332,14 @@ func (w *World) rememberAffinityIfRoom(a *Agent, otherID int, amount float64) {
 }
 
 func (w *World) addAffinity(a *Agent, otherID int, amount float64, forced bool) {
-	if amount <= 0 || otherID == 0 || a.ID == otherID {
+	// A record may go below nought only where the world has asked for it
+	// (TODO 14, (a)). Until then this guard is what kept affinity a ledger of
+	// good turns alone, and dropping it quietly would change what every
+	// caller means.
+	if amount == 0 || (amount < 0 && !w.cfg.AffinityNegative) {
+		return
+	}
+	if otherID == 0 || a.ID == otherID {
 		return
 	}
 	op := w.record(a, otherID, forced, -1)
@@ -409,6 +424,15 @@ type MemoryUse struct {
 	// is what the exposure of resting is meant to move: an agent that only
 	// lies down among its own keeps this low.
 	RestNear float64
+
+	// Disliked is how many records a body holds that have gone below nought,
+	// per agent, and Worst the lowest of them, averaged over the bodies that
+	// have one (TODO 14, (a)). Both are nought in every world where affinity
+	// is a ledger of good turns alone, which is every world before this, and
+	// they are the pair that says whether falling out actually happens or
+	// merely became possible.
+	Disliked float64
+	Worst    float64
 }
 
 // MemoryUse walks the population's memories. It is O(population x capacity)
@@ -419,7 +443,7 @@ func (w *World) MemoryUse() MemoryUse {
 		return out
 	}
 
-	var resting, nearby int
+	var resting, nearby, enemied int
 	var scratch []int
 	g := w.spatialIndex()
 	r := w.cfg.PerceptionRadius
@@ -427,10 +451,19 @@ func (w *World) MemoryUse() MemoryUse {
 	for i := range w.agents {
 		a := &w.agents[i]
 		out.Remembered += float64(len(a.opinions))
+		worst := 0.0
 		for _, op := range a.opinions {
-			if w.decayedAffinity(a, op) > 0 {
+			switch aff := w.decayedAffinity(a, op); {
+			case aff > 0:
 				out.Friends++
+			case aff < 0:
+				out.Disliked++
+				worst = math.Min(worst, aff)
 			}
+		}
+		if worst < 0 {
+			out.Worst += worst
+			enemied++
 		}
 		if capacity := a.MemoryCapacity(&w.cfg); capacity > 0 && len(a.opinions) >= capacity {
 			out.FullShare++
@@ -456,9 +489,13 @@ func (w *World) MemoryUse() MemoryUse {
 	n := float64(len(w.agents))
 	out.Remembered /= n
 	out.Friends /= n
+	out.Disliked /= n
 	out.FullShare /= n
 	if resting > 0 {
 		out.RestNear = float64(nearby) / float64(resting)
+	}
+	if enemied > 0 {
+		out.Worst /= float64(enemied)
 	}
 	return out
 }

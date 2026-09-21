@@ -166,6 +166,12 @@ type AIController struct {
 	// Measurement only, like ChoseBetterGround.
 	JoinedDeclared bool
 
+	// Whether this decision was taken in front of a friend fighting somebody
+	// the body thinks less of (sides.go, TODO 14). Measurement only, and set
+	// whether or not anything is done about it: how often the situation
+	// arises is the ceiling on what a rule about it could explain.
+	SawFriendFight bool
+
 	// Which options, if any, were walks towards somebody crying their wares
 	// (stage 49), and whether one of them won. Measurement only, and for the
 	// same reason ChoseBetterGround is measured: an advertisement can only
@@ -1211,8 +1217,32 @@ func trustBought(cfg *Config, affinity, amount float64) float64 {
 	if amount <= 0 || cfg.AffinityTrust <= 0 {
 		return 0
 	}
-	return clamp((affinity+amount)/cfg.AffinityTrust, 0, 1) -
-		clamp(affinity/cfg.AffinityTrust, 0, 1)
+	// Where affinity may go below nought (TODO 14, (a)), the bottom of the
+	// scale opens with it. Clamping at nought would say that a gift to
+	// somebody you have fallen out with buys nothing whatever - the way back
+	// closed - which is a rule nobody chose and the opposite of what trust
+	// saturating is supposed to mean.
+	floor := 0.0
+	if cfg.AffinityNegative {
+		floor = -1
+	}
+	return clamp((affinity+amount)/cfg.AffinityTrust, floor, 1) -
+		clamp(affinity/cfg.AffinityTrust, floor, 1)
+}
+
+// trustLost is the mirror: how much of somebody's goodwill a move would cost
+// (TODO 14, (i)). The floor stays at nought whatever (a) says, and that is the
+// whole of what makes this a rule about friends rather than a tax on fighting.
+// A body that is already disliked has no goodwill left to lose, so swinging at
+// it costs exactly what swinging at a stranger costs - which is what lets the
+// one everybody has fallen out with end up fought by several at once, without
+// a line of the formula being about revenge.
+func trustLost(cfg *Config, affinity, amount float64) float64 {
+	if amount <= 0 || cfg.AffinityTrust <= 0 {
+		return 0
+	}
+	return clamp(affinity/cfg.AffinityTrust, 0, 1) -
+		clamp((affinity-amount)/cfg.AffinityTrust, 0, 1)
 }
 
 // takerWorth is what the thing that would change hands looks like it would do
@@ -2230,22 +2260,26 @@ func (c *AIController) addThrow(p *Perception, o *AgentView) {
 // trust-weighted strength of everybody who has declared for the same target,
 // and the damage they are expected to be putting in.
 type allyForce struct {
-	target  int
-	score   float64
-	damage  float64
-	backers int
+	target   int
+	score    float64
+	damage   float64
+	backers  int
+	goodwill float64 // what going in beside them would buy (TODO 14, (iv))
 }
 
-func (c *AIController) noteAlly(target int, score, damage float64) {
+func (c *AIController) noteAlly(target int, score, damage, goodwill float64) {
 	for i := range c.allies {
 		if c.allies[i].target == target {
 			c.allies[i].score += score
 			c.allies[i].damage += damage
+			c.allies[i].goodwill += goodwill
 			c.allies[i].backers++
 			return
 		}
 	}
-	c.allies = append(c.allies, allyForce{target: target, score: score, damage: damage, backers: 1})
+	c.allies = append(c.allies, allyForce{
+		target: target, score: score, damage: damage, goodwill: goodwill, backers: 1,
+	})
 }
 
 // quarrelOnly reports that a declaration should not be counted because it is
@@ -2298,6 +2332,10 @@ func (c *AIController) hoped(p *Perception, prey *AgentView) allyForce {
 		}
 		out.score += trust * o.EstStrength * o.Vitality
 		out.damage += trust * damagePerTick(cfg, o.EstStrength, 1)
+		// What calling this one in would buy in its goodwill if it came
+		// (TODO 14, (iv)). The same figure the join is scored with, since an
+		// invitation is the front half of the same fight.
+		out.goodwill += trustBought(cfg, o.Affinity, cfg.AffinityAlly)
 		out.backers++
 	}
 	return out
@@ -2441,10 +2479,32 @@ func (c *AIController) scoreFight(p *Perception, o *AgentView, help allyForce, k
 		}
 	}
 
+	// Where this move leaves the body with everybody else (TODO 14). Two
+	// halves of one quantity on one measuring stick (stage 77): the goodwill
+	// of the one being swung at, which swinging loses (i), and the goodwill
+	// of the friends already swinging at it, which going in beside them buys
+	// (iv). Both are priced with goodwillWorth, the same figure that makes
+	// watching somebody worth the pause and a gift worth the meal.
+	//
+	// It goes in as Lore rather than as a cost of its own because that term
+	// is already "what this move does for my standing", and a second name for
+	// one quantity is how a formula stops being comparable to itself.
+	//
+	// Nothing here reaches the second window: the lookahead carries vitality
+	// and hunger and nothing else (stages 67, 72), so the whole of this
+	// weighing happens inside one scoring, which is where a balance belongs.
+	standing := Goal{}
+	if w := c.goodwillWorth(cfg); w > 0 {
+		if gain := help.goodwill - trustLost(cfg, o.Affinity, cfg.FightTrustCost); gain != 0 {
+			standing = Goal{Value: w * gain, Chance: 1}
+		}
+	}
+
 	c.add(Action{Kind: kind, TargetID: o.ID, Effort: effort, Stance: stance}, Utility{
 		Life:         Goal{Value: lifeTerm, Chance: 1},
 		Stake:        stake,
 		Rival:        competition,
+		Lore:         standing,
 		Risk:         s.RiskWeight * o.Risk,
 		Vitality:     cost,
 		Ticks:        ticks,
@@ -2557,6 +2617,8 @@ func (c *AIController) survey(p *Perception) {
 	attacker := p.Self.AttackerID
 	known := false
 
+	c.SawFriendFight = false
+
 	for i := range p.Others {
 		o := &p.Others[i]
 		threat := damagePerTick(cfg, o.EstStrength, 1)
@@ -2587,7 +2649,25 @@ func (c *AIController) survey(p *Perception) {
 			if target := o.DeclaredFor; target != 0 && !c.quarrelOnly(p, target) {
 				trust := clamp(o.Affinity/cfg.AffinityTrust, 0, 1) * cfg.AllyTrustWeight
 				if trust > 0 {
-					c.noteAlly(target, trust*o.EstStrength*o.Vitality, trust*threat)
+					// And what going in beside this one would buy in its
+					// goodwill (TODO 14, (iv)). Gathered here rather than
+					// scored here, because it belongs in the same comparison
+					// as everything else about the fight - and gathered only
+					// for those already trusted, since trust is what this
+					// loop is filtering on.
+					c.noteAlly(target, trust*o.EstStrength*o.Vitality, trust*threat,
+						trustBought(cfg, o.Affinity, cfg.AffinityAlly))
+				}
+			}
+		}
+		// And whether this is one of the situations the unwritten rule is
+		// about (sides.go, TODO 14): somebody this body is fond of, swinging
+		// at somebody it is less fond of, both of them in sight. Measurement
+		// only - nothing below reads it, and it draws nothing.
+		if !c.SawFriendFight && o.Affinity > 0 {
+			if target := o.DeclaredFor; target != 0 {
+				if t := viewOf(p, target); t != nil && t.Affinity < o.Affinity {
+					c.SawFriendFight = true
 				}
 			}
 		}

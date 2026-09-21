@@ -4414,6 +4414,7 @@ func main() {
 	soak := flag.Float64("soak", 0, "what a tick in the water takes out of a body in vitality, standing still or not (stage 99; needs -terrain river or country). 0 is the world before this stage, where the water was a toll on movement and nothing to a body standing in it. A body recovers 0.09 a tick, so 0.02 is a fifth of that")
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
+	sides := flag.Float64("sides", 0, "let goodwill decide who fights whom (#138): the amount, in affinity, that swinging at somebody costs, that taking a side is worth, and that being beaten to your meal costs the one who got there first. 0 = every world before it")
 	noahead100 := flag.Bool("groundunread", false, "put back the world before 2026-09-19: every option priced with the ground underfoot rather than with the ground one cell toward where it would take the node (stage 100)")
 	rich := flag.String("rich", "",
 		"paint how well the ground grows things: one character a cell, rows separated by commas "+
@@ -4532,6 +4533,16 @@ func main() {
 	// worth watching with -terrain country.
 	if *knock > 0 {
 		cfg.KnockbackDist = *knock
+	}
+	// Goodwill deciding who fights whom (#138). The six rules are switched on
+	// together at one figure, since measuring them apart is what the arms in
+	// cmd/experiment are for; here the question is what it looks like.
+	if *sides > 0 {
+		cfg.FightTrustCost = *sides
+		cfg.AffinityNegative = true
+		cfg.AffinitySnatched = *sides
+		cfg.AffinityAlly = *sides
+		cfg.AffinityKilledMine = 1
 	}
 	// Reading the ground one cell ahead (stage 100), and the control that
 	// looks at the world instead of the cell.

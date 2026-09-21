@@ -98,6 +98,24 @@ func (w *World) witnessKill(victim *Agent, killers []int) {
 				continue
 			}
 			w.killWitnesses++
+			// And what it thinks of somebody who has just killed one it was
+			// fond of (TODO 14, #138). In proportion to what the dead one was
+			// worth to this body and nothing else: a stranger's death costs
+			// the killer nothing here, which is what keeps this an accounting
+			// of what was actually lost rather than a rule about murder.
+			//
+			// It makes no revenge. Nothing in the formula is worth more for
+			// being aimed at somebody disliked; what a fallen opinion does is
+			// take away the discount (i) gives a friend. Being hated in this
+			// world is not being hunted, it is being unprotected.
+			if cfg.AffinityKilledMine > 0 && cfg.AffinityNegative {
+				if op := o.opinion(victim.ID); op != nil {
+					if held := w.decayedAffinity(o, op); held > 0 {
+						w.addAffinity(o, id, -held*cfg.AffinityKilledMine, true)
+						w.mournWitnesses++
+					}
+				}
+			}
 			if cfg.KillWitnessFactor > 0 && w.takeReading(o, killer, spectated, cfg.KillWitnessLooks) {
 				w.killLessons++
 			}

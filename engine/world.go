@@ -180,6 +180,40 @@ type Stats struct {
 	Calls int
 	Joins int
 
+	// What the two unwritten rules of TODO 14 would have to work with
+	// (sides.go). FriendFights is how many decisions were taken in front of
+	// somebody this body is fond of fighting somebody it is less fond of -
+	// the whole target of "join in on your friend's side", counted once per
+	// decision rather than per pair. Snatched is how many times an item was
+	// eaten while another living body was on its way to eat that same item,
+	// summed over the bodies that lost it, and SnatchedFriend the part of
+	// that where the one who got there first was already thought well of.
+	//
+	// Snatched is narrower than a race on purpose: RivalID, which the food
+	// scoring already works out, is whoever happens to be nearest the item
+	// whether or not they want it.
+	FriendFights   int
+	Snatched       int
+	SnatchedFriend int
+
+	// And what the rules did once they were on: SnatchBites is how many of
+	// those snatches actually lowered an opinion, SidesTaken how many times
+	// one body took another's side and the two of them were paid for it.
+	SnatchBites int
+	SidesTaken  int
+
+	// FightChoices is how many decisions were an attack and FightLiked how
+	// many of those were aimed at somebody the deciding body thought well of.
+	// The pair that says whether goodwill is deciding who gets fought, which
+	// the cluster-based fightCompanion cannot: a crowd holds a body's friends
+	// and the strangers it races alike.
+	FightChoices int
+	FightLiked   int
+
+	// MournWitnesses is how many times somebody saw one it was fond of killed
+	// and thought less of the killer for it (#138).
+	MournWitnesses int
+
 	// DrownWitnesses is how many times an agent has seen the ground take
 	// somebody (stage 35), summed over witnesses: one drowning in front of
 	// three of them counts three times.
@@ -742,6 +776,17 @@ type World struct {
 	// made on its own.
 	inBirthTrade bool
 	hintsCopied  int
+
+	// Whose side a body is on (sides.go, TODO 14). Measurements; nothing
+	// reads them back.
+	friendFights   int
+	snatched       int
+	snatchedFriend int
+	snatchBites    int
+	sidesTaken     int
+	fightChoices   int
+	fightLiked     int
+	mournWitnesses int
 }
 
 // NewWorld creates a world populated according to cfg. The same cfg (same seed
@@ -846,12 +891,22 @@ func (w *World) SetController(id int, c Controller) bool {
 // Stats summarises the current population.
 func (w *World) Stats() Stats {
 	s := Stats{
-		Tick:        w.tick,
-		Population:  len(w.agents),
-		FoodItems:   len(w.foods),
-		Births:      w.births,
-		Evaded:      w.evaded,
-		Knocked:     w.knocked,
+		Tick:       w.tick,
+		Population: len(w.agents),
+		FoodItems:  len(w.foods),
+		Births:     w.births,
+		Evaded:     w.evaded,
+		Knocked:    w.knocked,
+
+		FriendFights:   w.friendFights,
+		Snatched:       w.snatched,
+		SnatchedFriend: w.snatchedFriend,
+		SnatchBites:    w.snatchBites,
+		SidesTaken:     w.sidesTaken,
+		FightChoices:   w.fightChoices,
+		FightLiked:     w.fightLiked,
+		MournWitnesses: w.mournWitnesses,
+
 		KnockedWet:  w.knockedWet,
 		KnockedFell: w.knockedFell,
 		Hunts:       w.hunts,
@@ -1134,6 +1189,8 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	if a.Action.Kind == ActCraft {
 		w.crafts++
 	}
+	// And who it chose to swing at (TODO 14): the ruler that (i) is about.
+	w.noteFightChoice(a)
 	if ai, ok := c.(*AIController); ok {
 		// How far the winner won by, and how wide this body's own noise was
 		// (2026-09-20). A gap much narrower than the noise means the body
@@ -1158,6 +1215,14 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 		}
 		if ai.JoinedDeclared {
 			w.joins++
+			// And what going in beside them is worth to both (TODO 14,
+			// (iii)). Here rather than where the blow lands: this is the
+			// moment one body took the other's side, and a tick of a fight
+			// is not a second decision to be paid for again.
+			w.paySides(a)
+		}
+		if ai.SawFriendFight {
+			w.friendFights++
 		}
 		if ai.WentToOffer {
 			w.offerDraws++
@@ -2340,6 +2405,9 @@ func (w *World) eat(a *Agent, foodID int) {
 		w.plantsEaten++
 	}
 	w.noteEaten(a, f.Kind)
+	// And who else was on their way to this one (sides.go, TODO 14). Counted
+	// before the item is removed, since it is the item that identifies them.
+	w.noteSnatched(a, foodID)
 	// Some of what it swallows lives through the journey (stage 17c).
 	w.noteSeedEaten(a, f)
 	w.removeFoodByID(foodID)

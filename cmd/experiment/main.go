@@ -1602,6 +1602,72 @@ var variants = []variant{
 		about: "control: the push with no ground to be pushed into (the flat world)",
 		apply: func(c *engine.Config) { c.KnockbackDist = 5 },
 	},
+	// Whose side a body is on (TODO 14, #138, sides.go). Five figures, and
+	// the arms are built so that each can be read on its own and the pair
+	// that must go together can be read together.
+	//
+	// The count before any of it was written says where the room is: a friend
+	// is fighting somebody liked less in 16-22% of decisions while joining in
+	// happens in 2-3%, and an item is taken from under somebody 1100-1900
+	// times a run, nine tenths of them by a stranger.
+	//
+	// spitevi is the one that should do nothing. Affinity falls, and every
+	// reader of affinity clamps at nought, so a body at -10 is read exactly
+	// like the stranger it used to be. It is here because this project has
+	// five measurements of information that changed nobody's mind, and the
+	// way to not be fooled by the sixth is to run it as its own arm.
+	{
+		name:  "spitei",
+		about: "138(i): swinging at somebody costs their goodwill - the friend half alone",
+		apply: func(c *engine.Config) { c.FightTrustCost = 6 },
+	},
+	{
+		name:  "spitevi",
+		about: "138(vi)+(a): being robbed of your meal costs the taker your goodwill, and goodwill may go below nought - the control that should move nothing",
+		apply: func(c *engine.Config) { c.AffinityNegative, c.AffinitySnatched = true, 6 },
+	},
+	{
+		name:  "spite",
+		about: "138(i)+(vi)+(a): the pair the design says must be measured together",
+		apply: func(c *engine.Config) {
+			c.FightTrustCost, c.AffinityNegative, c.AffinitySnatched = 6, true, 6
+		},
+	},
+	{
+		name:  "sideswith",
+		about: "138(iii)+(iv): going in on a friend's side buys their goodwill, and is scored for it",
+		apply: func(c *engine.Config) { c.AffinityAlly = 6 },
+	},
+	{
+		name:  "sides",
+		about: "138: all five together - who fights whom is decided by goodwill",
+		apply: func(c *engine.Config) {
+			c.FightTrustCost, c.AffinityNegative, c.AffinitySnatched = 6, true, 6
+			c.AffinityAlly = 6
+		},
+	},
+	{
+		name:  "mourn",
+		about: "138: killing one somebody was fond of costs you their goodwill, in proportion to what the dead one was worth",
+		apply: func(c *engine.Config) { c.AffinityNegative, c.AffinityKilledMine = true, 1 },
+	},
+	{
+		name:  "spiteiplay",
+		about: "138(i) alone on the played map: the one arm of the five that bought anything on the flat world",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapCountry, 0.5
+			c.FightTrustCost = 6
+		},
+	},
+	{
+		name:  "sidesplay",
+		about: "138: all five on the map a world would be played on",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace = mapCountry, 0.5
+			c.FightTrustCost, c.AffinityNegative, c.AffinitySnatched = 6, true, 6
+			c.AffinityAlly = 6
+		},
+	},
 	{
 		name:  "countryskill",
 		about: "the whole country with skills (the map a world would be played on)",
@@ -5931,7 +5997,7 @@ var metricNames = []string{
 	"halfLife", "together", "censored",
 	"fightCompanion", "fightStranger", "fightRatio",
 	"species", "humans", "enemies", "rareShare", "rareTrough", "rareSwing",
-	"remembered", "friends", "memFull", "restNear",
+	"remembered", "friends", "memFull", "restNear", "disliked", "worstAff",
 	"power", "rationality", "intelligence",
 	"sdPower", "sdRationality", "sdIntelligence",
 	"dPower", "dRationality", "dIntelligence",
@@ -6010,6 +6076,8 @@ var metricNames = []string{
 	"wetPace", "wetFloor",
 	"drownMult", "wetGreen", "drownTaken", "wetStill", "soakTaken",
 	"knocked", "knockShare", "knockWet", "knockFell",
+	"friendFightShare", "snatched", "snatchRate", "snatchFriend",
+	"snatchBite", "sideTaken", "fightChoice", "fightLiked", "mourned",
 	"tolHeld", "tolNominal", "tolReal",
 	"riskWeight", "sdRiskWeight", "competition", "sdCompetition", "shock", "sdShock",
 	"mateWeight", "sdMateWeight",
@@ -6062,6 +6130,7 @@ type sample struct {
 	// agents that have run out of room, and how many agents it is not fond of
 	// are standing over the ones that are resting.
 	remembered, friends, memFull, restNear float64
+	disliked, worstAff                     float64
 
 	// What the population assumes: the mean of each of the five figures the
 	// utility formula used to take from the config, and the spread of the
@@ -6529,6 +6598,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 			childShare: share(s.Children, s.Population),
 			remembered: mem.Remembered, friends: mem.Friends,
 			memFull: mem.FullShare, restNear: mem.RestNear,
+			disliked: mem.Disliked, worstAff: mem.Worst,
 			tick: s.Tick, pop: s.Population,
 			power: s.AvgPower, rat: s.AvgRationality, intel: s.AvgIntelligence,
 			sdPower: sdP, sdRat: sdR, sdIntel: sdI,
@@ -6668,6 +6738,33 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"knockShare": share(end.Knocked, end.Fights),
 		"knockWet":   float64(end.KnockedWet),
 		"knockFell":  float64(end.KnockedFell),
+		// What the two unwritten rules of TODO 14 have to work with, counted
+		// before either is written (sides.go). friendFightShare is the share
+		// of decisions taken in front of a friend fighting somebody the body
+		// likes less - the ceiling on what "join in on your friend's side"
+		// could ever explain. snatched is how often somebody ate the item a
+		// body was walking towards, snatchRate the same per decision, and
+		// snatchFriend the share of those where the one who got there first
+		// was already liked: the rest would not be lowering an affinity so
+		// much as pushing one below nought for the first time.
+		"friendFightShare": ratio(end.FriendFights, end.Decisions),
+		"snatched":         float64(end.Snatched),
+		"snatchRate":       ratio(end.Snatched, end.Decisions),
+		"snatchFriend":     share(end.SnatchedFriend, end.Snatched),
+		// And what the rules actually did once they were on: how many of
+		// those snatches lowered an opinion, and how many times one body took
+		// another's side and was paid for it.
+		"snatchBite": float64(end.SnatchBites),
+		"sideTaken":  float64(end.SidesTaken),
+		// Who gets fought, by goodwill rather than by geography (TODO 14).
+		// fightLiked is the share of attack decisions aimed at somebody the
+		// body thinks well of: the ruler (i) is about, since fightCompanion
+		// splits by cluster and a crowd holds friends and rivals alike.
+		"fightChoice": ratio(end.FightChoices, end.Decisions),
+		"fightLiked":  share(end.FightLiked, end.FightChoices),
+		// And how many killings cost the killer somebody's goodwill because
+		// the dead one was theirs (#138). Nought with the rule off.
+		"mourned":    float64(end.MournWitnesses),
 		"watchShare": ratio(end.Observes, end.Decisions),
 		"craftShare": ratio(end.Crafts, end.Decisions),
 		// Calling others in, and going in on something somebody else has
@@ -6859,7 +6956,13 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"remembered": tail.remembered,
 		"friends":    tail.friends,
 		"memFull":    tail.memFull,
-		"restNear":   tail.restNear,
+		// Falling out (TODO 14, (a)). disliked is how many records a body
+		// holds that have gone below nought and worstAff the lowest of them,
+		// over the bodies that have one. Both nought wherever affinity is a
+		// ledger of good turns alone, which is every world before this.
+		"disliked": tail.disliked,
+		"worstAff": tail.worstAff,
+		"restNear": tail.restNear,
 		// What the population assumes, and what the world actually did. The
 		// two "Err" figures are the ones to read: a belief is only worth
 		// anything if it is closer to the truth than the constant it replaced,
@@ -7456,6 +7559,8 @@ func tailAverage(series []sample) sample {
 		out.friends += s.friends
 		out.memFull += s.memFull
 		out.restNear += s.restNear
+		out.disliked += s.disliked
+		out.worstAff += s.worstAff
 		out.retal += s.retal
 		out.accept += s.accept
 		out.riskWeight += s.riskWeight
@@ -7646,6 +7751,8 @@ func tailAverage(series []sample) sample {
 	out.friends /= d
 	out.memFull /= d
 	out.restNear /= d
+	out.disliked /= d
+	out.worstAff /= d
 	out.retal /= d
 	out.accept /= d
 	out.riskWeight /= d
