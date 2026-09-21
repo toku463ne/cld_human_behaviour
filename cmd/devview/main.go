@@ -198,6 +198,15 @@ type game struct {
 	// per frame; see spreadCrowd. spread is whether to do it at all.
 	nudge  map[int][2]float64
 	spread bool
+
+	// Who is being hit this tick, and who has gone down lately: the two
+	// circumstances that pick a picture and are not questions the world can
+	// be asked about one body. Both are rebuilt from the frame; see
+	// markBlows and markFallen.
+	struck   map[int]bool
+	standing map[int]fallen
+	fallen   map[int]fallen
+	standAt  int
 	// tickAccum carries the fraction of a tick left over by a slow rate, so
 	// that 1/5 speed really is one tick every five frames.
 	tickAccum float64
@@ -2582,9 +2591,16 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	g.drawAim(screen)
 
 	agents := g.world.Agents()
+	cfg := g.world.Config()
 	// Where each of them is drawn, before anything is drawn from it. The
 	// lines, the bodies and the bubbles all read this, and so does the click.
 	g.spreadCrowd(agents)
+	// And what is happening to each of them, which the pictures ask about.
+	g.markBlows(agents)
+	g.markFallen(agents, &cfg)
+	// Under the living, so that somebody standing over a body is drawn over
+	// it rather than behind it.
+	g.drawFallen(screen)
 
 	// Bonds, drawn once per pair, and every blow being thrown.
 	for i := range agents {
@@ -2624,7 +2640,6 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		}
 	}
 
-	cfg := g.world.Config()
 	// Back to front, so that bodies standing close together read as a crowd
 	// with depth in it rather than as a heap. Until they were pictures this
 	// did not matter: circles drawn in any order look the same. Drawn people
@@ -5123,4 +5138,146 @@ func (g *game) drawnAt(a *engine.Agent) (float32, float32) {
 func (g *game) drawnWorldAt(a *engine.Agent) (float64, float64) {
 	n := g.nudge[a.ID]
 	return a.X + n[0], a.Y + n[1]
+}
+
+// --- what is happening to a body --------------------------------------------
+
+// lookAt is the three circumstances a picture can be chosen by, read off the
+// world for one body. Nothing here is remembered and nothing is a new fact:
+// two of them are single questions to the world, and the third is a set built
+// once a frame from what everybody is already doing.
+func (g *game) lookAt(a *engine.Agent) look {
+	return look{
+		aloft:  g.world.Aloft(*a),
+		wading: g.world.TerrainAt(a.X, a.Y).Kind == engine.GroundWater,
+		struck: g.struck[a.ID],
+	}
+}
+
+// markBlows is who is being hit this tick, built once for the frame.
+//
+// Taken from the aimed actions rather than from any damage the engine
+// recorded, because the viewer already draws a line along exactly this - the
+// red one that says somebody is coming for somebody - so the picture and the
+// line cannot disagree about who is in a fight with whom. It also means the
+// reading is in the target's own perception (AttackingMe), which is the rule
+// the lines were allowed under: it tells a player nothing their node does not
+// know.
+func (g *game) markBlows(agents []engine.Agent) {
+	if g.struck == nil {
+		g.struck = map[int]bool{}
+	}
+	clear(g.struck)
+	for i := range agents {
+		a := &agents[i]
+		if hitting(a) && a.Action.TargetID != 0 {
+			g.struck[a.Action.TargetID] = true
+		}
+	}
+}
+
+// fallen is a body that was here last frame and is not here now, kept just
+// long enough to draw it lying down.
+type fallen struct {
+	x, y float64
+	clip string
+	at   int
+}
+
+// deathFlashTicks is how long a body lies where it fell, in the world's own
+// clock so that a stopped world holds still.
+//
+// The same length as the ring around a beast that has just arrived, and for
+// the same reason: the two are the same signal at opposite ends of a life,
+// and a player scanning the map for what changed should not have to learn two
+// durations.
+const deathFlashTicks = 150
+
+// markFallen notices who has gone since the last frame.
+//
+// Agents() is the living - the engine compacts the dead out every tick - so a
+// body that stops appearing has died, and drawing it for a moment where it
+// fell is the only place the sheet's dead runs can be used at all.
+//
+// It is the one thing on this screen drawn for a body the world does not
+// have. It is kept honest by being brief, by carrying none of the rings or
+// bars that say a body is alive, and by not being clickable: there is nothing
+// there to select.
+func (g *game) markFallen(agents []engine.Agent, cfg *engine.Config) {
+	tick := g.world.Tick()
+	if g.standing == nil {
+		g.standing = map[int]fallen{}
+		g.fallen = map[int]fallen{}
+	}
+	// A world that was loaded or replaced is not a world where everybody
+	// died. The tick going backwards or jumping is the only sign of it the
+	// viewer gets, and forgetting is the right answer to both.
+	if tick < g.standAt || tick-g.standAt > deathFlashTicks {
+		clear(g.standing)
+		clear(g.fallen)
+	}
+	g.standAt = tick
+	here := make(map[int]bool, len(agents))
+	for i := range agents {
+		a := &agents[i]
+		here[a.ID] = true
+		g.standing[a.ID] = fallen{x: a.X, y: a.Y, clip: deadClipFor(a, cfg)}
+	}
+	for id, was := range g.standing {
+		if here[id] {
+			continue
+		}
+		delete(g.standing, id)
+		was.at = tick
+		g.fallen[id] = was
+	}
+	for id, f := range g.fallen {
+		if tick-f.at > deathFlashTicks {
+			delete(g.fallen, id)
+		}
+	}
+}
+
+// drawFallen lays out whoever went down lately, under everything else.
+func (g *game) drawFallen(screen *ebiten.Image) {
+	if g.tiles == nil {
+		return
+	}
+	for _, f := range g.fallen {
+		if !g.onCamera(f.x, f.y) {
+			continue
+		}
+		img := g.tiles.frame(f.clip, 0)
+		if img == nil {
+			continue
+		}
+		x, y := g.onScreen(f.x, f.y)
+		w, h := img.Bounds().Dx(), img.Bounds().Dy()
+		size := g.long(bodyRadius * 2)
+		scale := float64(size) / float64(w)
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(-float64(w)/2, -float64(h)/2)
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(float64(x), float64(y))
+		// Fading out rather than vanishing, so that the eye can tell a body
+		// that went down a moment ago from one that went down long enough for
+		// its meat to have been carried off.
+		left := 1 - float32(g.world.Tick()-f.at)/deathFlashTicks
+		op.ColorScale.ScaleAlpha(clamp01f(left))
+		op.Filter = ebiten.FilterNearest
+		if scale < 1 {
+			op.Filter = ebiten.FilterLinear
+		}
+		screen.DrawImage(img, op)
+	}
+}
+
+func clamp01f(v float32) float32 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }

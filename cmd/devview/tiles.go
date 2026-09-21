@@ -130,33 +130,51 @@ func (t *tileset) frame(name string, i int) *ebiten.Image {
 	return frames[((i%len(frames))+len(frames))%len(frames)]
 }
 
+// look is what the viewer knows about a body that the body does not carry
+// itself: where it is standing, and what is being done to it. All three are
+// read off the world the same frame the body is drawn, none of them is a new
+// fact, and none of them is remembered anywhere.
+type look struct {
+	aloft  bool // off the ground (a winged sort, between meals)
+	wading bool // standing in water
+	struck bool // somebody is hitting it this tick
+}
+
 // clipFor is which run of pictures a body's current action belongs to.
 //
-// Four states, which is as much as the eye can tell apart at this size:
-// standing, going somewhere, eating, and having it out with somebody.
-// Everything else in the vocabulary is one of those from the outside - crying
-// your wares and cooking are both standing still, and the rings around the
-// body are what tell them apart, as they always were.
+// Four states were as much as the eye could tell apart while the art had four
+// runs: standing, going somewhere, eating, and having it out with somebody.
+// The sheet has more than that now, and what it has more of is not actions
+// but circumstances - being hit, being up to your waist in a river, being
+// small, being old - so those are asked about first and the action decides
+// only what is left.
 //
-// Sex picks the run as well, because it has to. It used to be the colour the
-// body was filled with, and the drawn art cannot be filled with a colour, so
-// without this every human in the world would be the male picture and a fact
-// that has been on this screen since the first week would be gone. The art
-// says it the way art can: what the body is wearing.
+// The order is what matters here, and it is by what the eye needs most. A
+// body being struck is the thing a player is watching for, so it wins over
+// where it is standing; where it is standing wins over how old it is,
+// because a body in water is in immediate danger and a child is only small.
+//
+// Sex picks the run too. It used to be the colour the body was filled with,
+// and drawn art cannot be filled with a colour, so without this every human
+// would be the male picture and a fact that has been on this screen since the
+// first week would be gone. The art says it the way art can: what the body is
+// wearing.
 //
 // For a beast it is the build instead of the sex, and aloft is a run of its
-// own: a winged one in the air is the one body on this screen that is drawn
-// somewhere it is not standing, and until now it was the same picture lifted.
+// own: a winged one in the air is the one body on this screen drawn somewhere
+// it is not standing, and until the beasts were drawn it was the same picture
+// lifted.
 //
-// The sheet holds more than these - a person being hit, one up to its waist
-// in water, one lying dead, a child, someone old, a beast lying dead - and
-// nothing asks for them yet. They are in there so that asking is a line of
-// this function rather than another afternoon of drawing.
-func clipFor(a *engine.Agent, cfg *engine.Config, aloft bool) string {
+// What is still asleep in the sheet is the hair. Seven colours, and each of
+// them a whole standing body rather than a head to lay over one, so using it
+// would give a body coloured hair while it stood and brown hair the moment it
+// walked. Lineage by hair colour needs the art in two layers, which is a
+// thing to ask for and not a thing to write.
+func clipFor(a *engine.Agent, cfg *engine.Config, l look) string {
 	kind := "human"
 	switch {
 	case a.Species == engine.SpeciesEnemy:
-		if aloft {
+		if l.aloft {
 			// Flapping while it crosses the sky, gliding while it holds
 			// station. Two pictures for the price of the one the art
 			// already had.
@@ -169,16 +187,114 @@ func clipFor(a *engine.Agent, cfg *engine.Config, aloft bool) string {
 	case a.Sex == engine.Female:
 		kind = "human.f"
 	}
+	if hitting(a) {
+		// Throwing the blow beats taking one: a body doing both at once is
+		// more legible as the one going forward.
+		return kind + ".fight"
+	}
+	// Taking a blow and standing in a river are drawn for people only. The
+	// beasts' sheet has neither - the row of one being struck was asked for
+	// and never arrived, and nobody asked for one in the water because the
+	// beast that lives in water is a build rather than a circumstance, and a
+	// brute wading across a river is still a brute.
+	//
+	// This is a hole in the art and it is left as one on purpose. Reaching
+	// for enemy.water.* here would draw a heavy beast as a lurker, which is a
+	// lie about which sort it is - and which sort it is, is the one thing
+	// about a beast this screen has to get right.
+	if a.Species == engine.SpeciesHuman {
+		if l.struck {
+			return kind + ".hurt"
+		}
+		if l.wading {
+			return kind + ".swim"
+		}
+	}
+	// Small and old, and only while standing still.
+	//
+	// The sheet has one run each for a child and for someone old, which is a
+	// body standing there, and nothing for either of them walking or eating
+	// or fighting. Using it for those too would leave a child sliding across
+	// the ground in a standing pose while every adult beside it walked, which
+	// reads as a broken picture rather than as a child. So a child that is
+	// doing something is the grown picture drawn small, exactly as it was
+	// before these runs existed - nothing is lost, and a child standing
+	// still now looks like a child. The fix is two more rows of art.
+	if idling(a) {
+		if !a.IsAdult(cfg) {
+			return childOf(kind) + ".idle"
+		}
+		// Past its prime is the engine's own line, read off the same figure
+		// that already makes an old body draw smaller, so a world with the
+		// rule turned off has nobody old in it and asks for nothing.
+		if a.Maturity >= 1 && a.AgeFactor(cfg) < 1 {
+			return oldOf(kind) + ".idle"
+		}
+	}
 	switch a.Action.Kind {
 	case engine.ActEat:
 		return kind + ".eat"
-	case engine.ActAttack, engine.ActThrow:
-		return kind + ".fight"
 	case engine.ActMove, engine.ActFlee, engine.ActCourt, engine.ActInvite,
 		engine.ActTake, engine.ActBuy, engine.ActGive, engine.ActOffer:
 		return kind + ".walk"
 	}
 	return kind + ".idle"
+}
+
+// hitting is whether this body is throwing a blow, and idling whether it is
+// doing something that looks like standing there. Both are the same reading
+// the action switch below makes, pulled out so that the circumstances above
+// can ask the question before the action answers it.
+func hitting(a *engine.Agent) bool {
+	return a.Action.Kind == engine.ActAttack || a.Action.Kind == engine.ActThrow
+}
+
+func idling(a *engine.Agent) bool {
+	switch a.Action.Kind {
+	case engine.ActEat, engine.ActAttack, engine.ActThrow, engine.ActMove,
+		engine.ActFlee, engine.ActCourt, engine.ActInvite, engine.ActTake,
+		engine.ActBuy, engine.ActGive, engine.ActOffer:
+		return false
+	}
+	return true
+}
+
+// childOf and oldOf are the runs drawn for the young and the old of a kind.
+// Only the people have them; a beast is a beast at every age, which is what
+// the sheet was asked for and what the rules say about one.
+func childOf(kind string) string {
+	switch kind {
+	case "human":
+		return "child"
+	case "human.f":
+		return "child.f"
+	}
+	return kind
+}
+
+func oldOf(kind string) string {
+	switch kind {
+	case "human":
+		return "old"
+	case "human.f":
+		return "old.f"
+	}
+	return kind
+}
+
+// deadClipFor is the picture for a body that has just stopped being one.
+//
+// Its own function because the world no longer holds the body by the time
+// this is wanted - Agents() is the living - so the caller has kept the little
+// it needs rather than the Agent itself, and there is no action to ask about.
+func deadClipFor(a *engine.Agent, cfg *engine.Config) string {
+	if a.Species == engine.SpeciesEnemy {
+		return "enemy." + enemyBuild(a, cfg) + ".dead"
+	}
+	// One picture for both sexes. The render had three dead men and one dead
+	// woman rather than a clean pair, and a corpse's sex is not something
+	// anybody reads at sixteen pixels.
+	return "human.dead"
 }
 
 // enemyBuild is which of the four beasts a body is drawn as.
@@ -229,7 +345,7 @@ func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, cfg *engine.Confi
 	// Each body starts its animation at its own point in the cycle, from its
 	// ID: sixty bodies marching in step is the one thing that would make this
 	// look worse than the circles did.
-	clip := clipFor(a, cfg, g.world.Aloft(*a))
+	clip := clipFor(a, cfg, g.lookAt(a))
 	img := g.tiles.frame(clip, a.ID+g.world.Tick()/animTicks)
 	if img == nil {
 		return false

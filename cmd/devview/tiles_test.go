@@ -53,44 +53,146 @@ func worlds() map[string]engine.Config {
 }
 
 // Every picture the viewer can ask for is in the sheet. This is the test that
-// earns its keep: what a body is doing decides which clip is asked for, so a
-// state nobody drew is a hole that only shows up when a body happens to do
-// that thing on screen.
+// earns its keep: what a body is doing and what is being done to it decide
+// which clip is asked for, so a state nobody drew is a hole that only shows
+// up when a body happens to be in it on screen.
 //
-// Both sexes and every row of every table, because both pick the clip now.
-// Half the keys this can ask for came into being the day the sexes started
-// picking, and the rest the day the builds did; a sheet drawn for one sex, or
-// for one sort of beast, would have looked complete until the first woman or
-// the first winged thing on the screen did something.
+// Every action, both sexes, every row of every table, every circumstance, and
+// every age. Most of the keys this can ask for came into being long after the
+// first sheet was drawn - the day the sexes started picking, the day the
+// builds did, the day being hit and being in a river did - and each time, a
+// sheet that looked complete had holes in it that nothing but this found.
 func TestEveryActionHasAPictureToDrawItWith(t *testing.T) {
 	m := theManifest(t)
 	have := map[string]int{}
 	for _, c := range m.Clips {
 		have[c.Name] = c.Frames
 	}
+	looks := []look{
+		{},
+		{struck: true},
+		{wading: true},
+		{aloft: true},
+		{struck: true, wading: true},
+	}
+	ages := []struct {
+		name string
+		with func(*engine.Agent, *engine.Config)
+	}{
+		{"a child", func(a *engine.Agent, cfg *engine.Config) { a.Maturity = 0 }},
+		{"an adult", func(a *engine.Agent, cfg *engine.Config) { a.Maturity = 1 }},
+		{"someone old", func(a *engine.Agent, cfg *engine.Config) {
+			a.Maturity = 1
+			a.Age = int((cfg.SenescenceYears + 20) * float64(cfg.TicksPerYear))
+		}},
+	}
 	for world, cfg := range worlds() {
 		for kind := engine.ActionKind(0); kind < 32; kind++ {
 			for _, species := range []engine.Species{engine.SpeciesHuman, engine.SpeciesEnemy} {
 				for _, sex := range []engine.Sex{engine.Male, engine.Female} {
 					for row := 0; row <= len(cfg.EnemyKinds); row++ {
-						for _, aloft := range []bool{false, true} {
-							if aloft && species != engine.SpeciesEnemy {
-								continue // only a beast is ever off the ground
-							}
-							a := &engine.Agent{
-								Species: species, Sex: sex, Kind: uint8(row),
-								Action: engine.Action{Kind: kind},
-							}
-							name := clipFor(a, &cfg, aloft)
-							if have[name] == 0 {
-								t.Fatalf("%s: %v (%v, %v, row %d, aloft %v) wants %q",
-									world, kind, species, sex, row, aloft, name)
+						for _, l := range looks {
+							for _, age := range ages {
+								if l.aloft && species != engine.SpeciesEnemy {
+									continue // only a beast is ever off the ground
+								}
+								a := &engine.Agent{
+									Species: species, Sex: sex, Kind: uint8(row),
+									Action: engine.Action{Kind: kind},
+								}
+								age.with(a, &cfg)
+								name := clipFor(a, &cfg, l)
+								if have[name] == 0 {
+									t.Fatalf("%s: %v (%v, %v, row %d, %+v, %s) wants %q",
+										world, kind, species, sex, row, l, age.name, name)
+								}
 							}
 						}
 					}
 				}
 			}
 		}
+	}
+}
+
+// And a body that has stopped being one.
+//
+// Its own test because the world has already forgotten it by then: the engine
+// compacts the dead out every tick, so this picture is chosen from what the
+// viewer kept rather than from anything that can be asked for.
+func TestABodyThatHasFallenHasAPicture(t *testing.T) {
+	have := map[string]int{}
+	for _, c := range theManifest(t).Clips {
+		have[c.Name] = c.Frames
+	}
+	for world, cfg := range worlds() {
+		for _, species := range []engine.Species{engine.SpeciesHuman, engine.SpeciesEnemy} {
+			for _, sex := range []engine.Sex{engine.Male, engine.Female} {
+				for row := 0; row <= len(cfg.EnemyKinds); row++ {
+					a := &engine.Agent{Species: species, Sex: sex, Kind: uint8(row)}
+					if name := deadClipFor(a, &cfg); have[name] == 0 {
+						t.Fatalf("%s: a dead %v (%v, row %d) wants %q", world, species, sex, row, name)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Circumstance beats action, and the order between the circumstances is the
+// one the eye needs.
+//
+// The order is the whole of this function's design, so it is the thing worth
+// pinning: a body being hit is what a player is watching for, and a body in
+// water is in danger, and a child is only small.
+func TestWhatIsHappeningToABodyBeatsWhatItIsDoing(t *testing.T) {
+	cfg := engine.DefaultConfig()
+	walking := engine.Action{Kind: engine.ActMove}
+	swinging := engine.Action{Kind: engine.ActAttack}
+	adult := func(a *engine.Agent) *engine.Agent { a.Maturity = 1; return a }
+
+	cases := []struct {
+		what string
+		a    *engine.Agent
+		l    look
+		want string
+	}{
+		{"walking", adult(&engine.Agent{Action: walking}), look{}, "human.walk"},
+		{"walking and hit", adult(&engine.Agent{Action: walking}), look{struck: true}, "human.hurt"},
+		{"walking in water", adult(&engine.Agent{Action: walking}), look{wading: true}, "human.swim"},
+		{"hit in water", adult(&engine.Agent{Action: walking}), look{struck: true, wading: true}, "human.hurt"},
+		// Throwing the blow beats taking one: a body doing both is more
+		// legible as the one going forward.
+		{"swinging and hit", adult(&engine.Agent{Action: swinging}), look{struck: true}, "human.fight"},
+		// And a child is only small, so anything at all outranks it.
+		{"a child standing", &engine.Agent{Maturity: 0}, look{}, "child.idle"},
+		{"a child walking", &engine.Agent{Maturity: 0, Action: walking}, look{}, "human.walk"},
+		{"a child in water", &engine.Agent{Maturity: 0}, look{wading: true}, "human.swim"},
+	}
+	for _, c := range cases {
+		if got := clipFor(c.a, &cfg, c.l); got != c.want {
+			t.Errorf("%s came out %q and should be %q", c.what, got, c.want)
+		}
+	}
+}
+
+// Someone old is drawn old only where the world has ageing in it.
+//
+// The line is the engine's own - the same figure that already makes an old
+// body draw smaller - so a world with the rule switched off has nobody old in
+// it and asks the sheet for nothing.
+func TestNobodyIsOldInAWorldWithoutAgeing(t *testing.T) {
+	on := engine.DefaultConfig()
+	off := engine.DefaultConfig()
+	off.SenescenceRate = 0
+	old := func() *engine.Agent {
+		return &engine.Agent{Maturity: 1, Age: int((on.SenescenceYears + 20) * float64(on.TicksPerYear))}
+	}
+	if got := clipFor(old(), &on, look{}); got != "old.idle" {
+		t.Errorf("with ageing on, an old body came out %q", got)
+	}
+	if got := clipFor(old(), &off, look{}); got != "human.idle" {
+		t.Errorf("with ageing off, the same body came out %q", got)
 	}
 }
 
