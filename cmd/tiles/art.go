@@ -35,6 +35,11 @@ func sheet() []clipArt {
 		// nothing lying on the ground does anything.
 		{"item", [][]string{itemPlant, itemFish, itemMeat, itemStone,
 			itemCoin, itemBook, itemTrinket, itemHide}},
+		// A clip of its own rather than a ninth frame of the strip above,
+		// because the strip is drawn art now and this is a placeholder:
+		// pack_sprites.py carries whole clips across by name, and a frame
+		// bolted onto somebody else's clip would have nowhere to come from.
+		{"remains", [][]string{itemRemains}},
 	}
 }
 
@@ -498,6 +503,33 @@ var itemHide = []string{
 	"..obbbbbbbbbbbo.",
 	"...obbooooobbo..",
 	"...oo......oo...",
+	"................",
+	"................",
+	"................",
+	"................",
+	"................",
+}
+
+// What is left of a person (2026-09-21). The engine has always known whose
+// kind a carcass came from - nobody eats its own dead - and until now the
+// viewer drew both with the same drumstick, so a field after a bad winter was
+// strewn with what looked like somebody's supper. It is the same fact the
+// rules already turn on, drawn.
+//
+// Bones, and deliberately not a body: a lying person is what the sheet uses
+// for somebody who has just died, and this is what is still there afterwards.
+var itemRemains = []string{
+	"................",
+	"................",
+	"................",
+	"................",
+	"....oo......oo..",
+	"...obbo....obbo.",
+	"....obbooooobo..",
+	".....obbbbbbo...",
+	"....obboooobbo..",
+	"...obbo....obbo.",
+	"....oo......oo..",
 	"................",
 	"................",
 	"................",

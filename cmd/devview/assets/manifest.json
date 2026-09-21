@@ -1,78 +1,222 @@
 {
-  "sheet": "tiles.a9ee3852.png",
-  "tile": 16,
+  "sheet": "tiles.398fb110.png",
+  "tile": 32,
   "clips": [
     {
       "name": "human.idle",
       "x": 0,
       "y": 0,
-      "w": 16,
-      "h": 16,
-      "frames": 2
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
     },
     {
       "name": "human.walk",
       "x": 0,
-      "y": 16,
-      "w": 16,
-      "h": 16,
-      "frames": 2
-    },
-    {
-      "name": "human.eat",
-      "x": 0,
       "y": 32,
-      "w": 16,
-      "h": 16,
-      "frames": 2
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
     },
     {
       "name": "human.fight",
       "x": 0,
-      "y": 48,
-      "w": 16,
-      "h": 16,
-      "frames": 2
-    },
-    {
-      "name": "enemy.idle",
-      "x": 0,
       "y": 64,
-      "w": 16,
-      "h": 16,
-      "frames": 2
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
     },
     {
-      "name": "enemy.walk",
-      "x": 0,
-      "y": 80,
-      "w": 16,
-      "h": 16,
-      "frames": 2
-    },
-    {
-      "name": "enemy.eat",
+      "name": "human.hurt",
       "x": 0,
       "y": 96,
-      "w": 16,
-      "h": 16,
-      "frames": 2
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
     },
     {
-      "name": "enemy.fight",
+      "name": "human.eat",
       "x": 0,
-      "y": 112,
-      "w": 16,
-      "h": 16,
-      "frames": 2
+      "y": 128,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "human.swim",
+      "x": 0,
+      "y": 160,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "human.dead",
+      "x": 0,
+      "y": 192,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "human.f.idle",
+      "x": 0,
+      "y": 224,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "human.f.walk",
+      "x": 0,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "human.f.fight",
+      "x": 0,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "human.f.hurt",
+      "x": 0,
+      "y": 320,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "human.f.eat",
+      "x": 0,
+      "y": 352,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "human.f.swim",
+      "x": 0,
+      "y": 384,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "child.idle",
+      "x": 0,
+      "y": 416,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "child.f.idle",
+      "x": 0,
+      "y": 448,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "old.idle",
+      "x": 0,
+      "y": 480,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "old.f.idle",
+      "x": 0,
+      "y": 512,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "hair",
+      "x": 0,
+      "y": 544,
+      "w": 32,
+      "h": 32,
+      "frames": 7,
+      "tint": false
     },
     {
       "name": "item",
       "x": 0,
-      "y": 128,
+      "y": 576,
+      "w": 32,
+      "h": 32,
+      "frames": 8,
+      "tint": false
+    },
+    {
+      "name": "enemy.eat",
+      "x": 0,
+      "y": 608,
       "w": 16,
       "h": 16,
-      "frames": 8
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "enemy.fight",
+      "x": 0,
+      "y": 624,
+      "w": 16,
+      "h": 16,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "enemy.idle",
+      "x": 0,
+      "y": 640,
+      "w": 16,
+      "h": 16,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "enemy.walk",
+      "x": 0,
+      "y": 656,
+      "w": 16,
+      "h": 16,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "remains",
+      "x": 0,
+      "y": 672,
+      "w": 16,
+      "h": 16,
+      "frames": 1,
+      "tint": true
     }
   ]
 }

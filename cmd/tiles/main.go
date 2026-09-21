@@ -21,6 +21,18 @@
 // counted against. The manifest is what says where each frame is in it, and
 // the sheet's name carries a hash of its own bytes so that a browser may keep
 // it for ever and still never show a stale one.
+//
+// What this still draws, since 2026-09-21, is the enemies and nothing else
+// anybody sees. The humans and the things lying about are drawn art now, cut
+// from a generated sheet by tiled/tools/pack_sprites.py (docs/sprites.md),
+// and that tool carries across whatever clips its own sheet does not provide
+// - which is what this one is for. So the order is:
+//
+//	go run ./cmd/tiles -out /tmp/grey
+//	python3 tiled/tools/pack_sprites.py <sheet>.png cmd/devview/assets --carry /tmp/grey
+//
+// and that is why -out does not default to the viewer's assets any more:
+// running this on its own would put the grey placeholders back over the art.
 package main
 
 import (
@@ -79,8 +91,12 @@ type manifest struct {
 }
 
 func main() {
-	out := flag.String("out", "cmd/devview/assets", "where to write the sheet and the manifest")
+	out := flag.String("out", "", "where to write the sheet and the manifest")
 	flag.Parse()
+	if *out == "" {
+		log.Fatal("-out is required: this draws the placeholders, and " +
+			"tiled/tools/pack_sprites.py --carry is what puts them in the sheet")
+	}
 
 	rows := sheet()
 	width, height := 0, len(rows)*tile

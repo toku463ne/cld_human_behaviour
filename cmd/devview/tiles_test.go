@@ -35,6 +35,11 @@ func theManifest(t *testing.T) manifestFile {
 // earns its keep: what a body is doing decides which clip is asked for, so a
 // state nobody drew is a hole that only shows up when a body happens to do
 // that thing on screen.
+//
+// Both sexes, because the sex picks the clip now as well as the action. Half
+// the keys this can ask for came into being the day that started, and a sheet
+// drawn for one sex would have looked complete until the first woman on the
+// screen did something.
 func TestEveryActionHasAPictureToDrawItWith(t *testing.T) {
 	m := theManifest(t)
 	have := map[string]int{}
@@ -43,11 +48,54 @@ func TestEveryActionHasAPictureToDrawItWith(t *testing.T) {
 	}
 	for kind := engine.ActionKind(0); kind < 32; kind++ {
 		for _, species := range []engine.Species{engine.SpeciesHuman, engine.SpeciesEnemy} {
-			a := &engine.Agent{Species: species, Action: engine.Action{Kind: kind}}
-			name := clipFor(a)
-			if have[name] == 0 {
-				t.Fatalf("%v (%v) wants %q, and the sheet has %v", kind, species, name, have)
+			for _, sex := range []engine.Sex{engine.Male, engine.Female} {
+				a := &engine.Agent{Species: species, Sex: sex, Action: engine.Action{Kind: kind}}
+				name := clipFor(a)
+				if have[name] == 0 {
+					t.Fatalf("%v (%v, %v) wants %q, and the sheet has %v", kind, species, sex, name, have)
+				}
 			}
+		}
+	}
+}
+
+// A man and a woman doing the same thing are drawn with different pictures.
+//
+// The one test standing where the colour used to. Sex was the fill of the
+// circle from the first week of this viewer; a drawn body cannot be filled
+// with a colour, and if this ever comes back green the fact has quietly left
+// the screen rather than broken anything.
+func TestTheSexesAreDrawnApart(t *testing.T) {
+	have := map[string]bool{}
+	for _, c := range theManifest(t).Clips {
+		have[c.Name] = true
+	}
+	for kind := engine.ActionKind(0); kind < 32; kind++ {
+		man := clipFor(&engine.Agent{Sex: engine.Male, Action: engine.Action{Kind: kind}})
+		woman := clipFor(&engine.Agent{Sex: engine.Female, Action: engine.Action{Kind: kind}})
+		if man == woman {
+			t.Fatalf("%v draws both sexes with %q", kind, man)
+		}
+		if !have[man] || !have[woman] {
+			t.Fatalf("%v wants %q and %q", kind, man, woman)
+		}
+	}
+}
+
+// Drawn art is never given a colour, and grey art always is.
+//
+// Multiplying a body that is already skin and hair and cloth by the sex blue
+// turns it into a drowned one, and by the sex pink into something skinned -
+// which is what this looked like when it was first tried. The rule is in the
+// sheet rather than in the code, so this is where it is checked.
+func TestOnlyTheGreyArtIsGivenAColour(t *testing.T) {
+	for _, c := range theManifest(t).Clips {
+		drawn := c.W == 32
+		if drawn && c.Tint {
+			t.Errorf("%s is drawn art and would be stained by a tint", c.Name)
+		}
+		if !drawn && !c.Tint {
+			t.Errorf("%s is a grey placeholder and would be invisible without a tint", c.Name)
 		}
 	}
 }
@@ -106,5 +154,41 @@ func TestTheTintVariesByBodyWithoutLosingTheSex(t *testing.T) {
 	}
 	if len(seen) < 30 {
 		t.Fatalf("sixty bodies came out in %d colours", len(seen))
+	}
+}
+
+// What is left of a person is not drawn as a meal.
+//
+// The engine has told these apart since meat existed - a carcass remembers
+// whose kind it came from, and nobody eats its own dead - and the viewer drew
+// both with the same drumstick until 2026-09-21. This is the test that keeps
+// them apart: it is the one place a rule the simulation already has reaches
+// the only person who ever sees it.
+func TestAPersonsRemainsAreNotDrawnAsAMeal(t *testing.T) {
+	have := map[string]int{}
+	for _, c := range theManifest(t).Clips {
+		have[c.Name] = c.Frames
+	}
+	mine := engine.Food{Kind: engine.FoodMeat, From: engine.SpeciesHuman}
+	theirs := engine.Food{Kind: engine.FoodMeat, From: engine.SpeciesEnemy}
+	mineClip, mineAt := itemClip(mine)
+	theirsClip, theirsAt := itemClip(theirs)
+	if mineClip == theirsClip && mineAt == theirsAt {
+		t.Fatalf("a person and a beast both come out as %s[%d]", mineClip, mineAt)
+	}
+	for _, c := range []string{mineClip, theirsClip} {
+		if have[c] == 0 {
+			t.Fatalf("nothing in the sheet is called %q", c)
+		}
+	}
+	// And nothing that is not meat is diverted by it: the line is whose
+	// carcass it is, not what the thing is.
+	for kind := engine.FoodKind(0); kind < engine.NumFoodKinds; kind++ {
+		if kind == engine.NumEdibleKinds || kind == engine.FoodMeat {
+			continue
+		}
+		if c, _ := itemClip(engine.Food{Kind: kind, From: engine.SpeciesHuman}); c != "item" {
+			t.Fatalf("%v came out as %q", kind, c)
+		}
 	}
 }

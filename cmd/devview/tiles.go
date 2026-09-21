@@ -56,6 +56,13 @@ type clipInfo struct {
 	W      int    `json:"w"`
 	H      int    `json:"h"`
 	Frames int    `json:"frames"`
+	// Tint says this clip is grey and has to be given a colour to be seen at
+	// all. The drawn art must not be given one: multiplying a body that is
+	// already skin and hair and cloth by a colour does not tint it, it stains
+	// it - the sex blue turns a body into a drowned one and the sex pink into
+	// something skinned. Which clips are which is the sheet's business rather
+	// than this file's, so the sheet says.
+	Tint bool `json:"tint"`
 }
 
 type manifestFile struct {
@@ -69,6 +76,7 @@ type manifestFile struct {
 type tileset struct {
 	sheet *ebiten.Image
 	clips map[string][]*ebiten.Image
+	tint  map[string]bool
 	tile  int
 }
 
@@ -96,7 +104,8 @@ func loadTiles() (*tileset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", m.Sheet, err)
 	}
-	t := &tileset{sheet: ebiten.NewImageFromImage(src), tile: m.Tile, clips: map[string][]*ebiten.Image{}}
+	t := &tileset{sheet: ebiten.NewImageFromImage(src), tile: m.Tile,
+		clips: map[string][]*ebiten.Image{}, tint: map[string]bool{}}
 	for _, c := range m.Clips {
 		frames := make([]*ebiten.Image, 0, c.Frames)
 		for i := 0; i < c.Frames; i++ {
@@ -104,6 +113,7 @@ func loadTiles() (*tileset, error) {
 			frames = append(frames, t.sheet.SubImage(r).(*ebiten.Image))
 		}
 		t.clips[c.Name] = frames
+		t.tint[c.Name] = c.Tint
 	}
 	return t, nil
 }
@@ -122,15 +132,29 @@ func (t *tileset) frame(name string, i int) *ebiten.Image {
 
 // clipFor is which run of pictures a body's current action belongs to.
 //
-// Four states, which is what the art has and as much as the eye can tell
-// apart at sixteen pixels: standing, going somewhere, eating, and having it
-// out with somebody. Everything else in the vocabulary is one of those from
-// the outside - crying your wares and cooking are both standing still, and
-// the rings around the body are what tell them apart, as they always were.
+// Four states, which is as much as the eye can tell apart at this size:
+// standing, going somewhere, eating, and having it out with somebody.
+// Everything else in the vocabulary is one of those from the outside - crying
+// your wares and cooking are both standing still, and the rings around the
+// body are what tell them apart, as they always were.
+//
+// Sex picks the run as well, because it has to. It used to be the colour the
+// body was filled with, and the drawn art cannot be filled with a colour, so
+// without this every human in the world would be the male picture and a fact
+// that has been on this screen since the first week would be gone. The art
+// says it the way the art can: what the body is wearing.
+//
+// The sheet holds more than these - a body being hit, a body up to its waist
+// in water, a body lying dead, a child, someone old - and nothing asks for
+// them yet. They are in there so that asking is a line of this function
+// rather than another afternoon of drawing.
 func clipFor(a *engine.Agent) string {
 	kind := "human"
-	if a.Species == engine.SpeciesEnemy {
+	switch {
+	case a.Species == engine.SpeciesEnemy:
 		kind = "enemy"
+	case a.Sex == engine.Female:
+		kind = "human.f"
 	}
 	switch a.Action.Kind {
 	case engine.ActEat:
@@ -159,13 +183,16 @@ func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, x, y, radius floa
 	// Each body starts its animation at its own point in the cycle, from its
 	// ID: sixty bodies marching in step is the one thing that would make this
 	// look worse than the circles did.
-	img := g.tiles.frame(clipFor(a), a.ID+g.world.Tick()/animTicks)
+	clip := clipFor(a)
+	img := g.tiles.frame(clip, a.ID+g.world.Tick()/animTicks)
 	if img == nil {
 		return false
 	}
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	// Drawn to the size the circle would have been, so that the one thing the
-	// shape has always said - how much body there is - still holds.
+	// shape has always said - how much body there is - still holds. A clip
+	// carries its own w and h, so the grey placeholders the enemies are still
+	// drawn with are half the size in the sheet and the same size on screen.
 	scale := float64(radius*2) / float64(w)
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(-float64(w)/2, -float64(h)/2)
@@ -176,18 +203,30 @@ func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, x, y, radius floa
 	}
 	op.GeoM.Scale(scale, scale)
 	op.GeoM.Translate(float64(x), float64(y))
-	op.ColorScale.ScaleWithColor(tint)
+	if g.tiles.tint[clip] {
+		op.ColorScale.ScaleWithColor(tint)
+	}
+	// Nearest while the picture is being made bigger, which is what the zoom
+	// the game is played at does to it, and where anything else would turn
+	// drawn pixels to mush. Drawn smaller - the whole world on one screen,
+	// where a body is seven pixels across - nearest throws away five pixels
+	// in six and what is left crawls as the body moves. There the average is
+	// the honest one.
 	op.Filter = ebiten.FilterNearest
+	if scale < 1 {
+		op.Filter = ebiten.FilterLinear
+	}
 	screen.DrawImage(img, op)
 	return true
 }
 
 // drawItem stamps one thing lying about, in the colour that says what it is.
-func (g *game) drawItem(screen *ebiten.Image, kind engine.FoodKind, x, y float32, tint color.RGBA) bool {
+func (g *game) drawItem(screen *ebiten.Image, f engine.Food, x, y float32, tint color.RGBA) bool {
 	if g.tiles == nil {
 		return false
 	}
-	img := g.tiles.frame("item", itemFrame(kind))
+	clip, at := itemClip(f)
+	img := g.tiles.frame(clip, at)
 	if img == nil {
 		return false
 	}
@@ -198,10 +237,30 @@ func (g *game) drawItem(screen *ebiten.Image, kind engine.FoodKind, x, y float32
 	op.GeoM.Translate(-float64(w)/2, -float64(h)/2)
 	op.GeoM.Scale(scale, scale)
 	op.GeoM.Translate(float64(x), float64(y))
-	op.ColorScale.ScaleWithColor(tint)
+	if g.tiles.tint[clip] {
+		op.ColorScale.ScaleWithColor(tint)
+	}
 	op.Filter = ebiten.FilterNearest
+	if scale < 1 {
+		op.Filter = ebiten.FilterLinear
+	}
 	screen.DrawImage(img, op)
 	return true
+}
+
+// itemClip is which picture stands for one thing lying in the world.
+//
+// Almost always the strip of kinds below, and the one exception is what is
+// left of a person. The engine has drawn that line since the day meat
+// existed - a carcass remembers whose kind it came from, because nobody eats
+// its own dead - and the viewer drew both sides of it with the same drumstick
+// until 2026-09-21, which made a field after a hard winter read as somebody's
+// larder. Nothing about the rules changed; the picture caught up with them.
+func itemClip(f engine.Food) (string, int) {
+	if f.Kind == engine.FoodMeat && f.From == engine.SpeciesHuman {
+		return "remains", 0
+	}
+	return "item", itemFrame(f.Kind)
 }
 
 // itemFrame is which picture stands for a kind of thing. The order is the

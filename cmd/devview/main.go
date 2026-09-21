@@ -42,8 +42,26 @@ const (
 	screenWidth  = worldWidth + panelWidth
 	screenHeight = worldHeight
 
+	// How big a body is drawn.
+	//
+	// A person is one size, whatever it spent on being big, scaled only by
+	// how old it is - a child is smaller, someone past their prime is
+	// smaller, and every adult is the same. A beast is drawn as big as its
+	// body, because "how large is that thing" is the first question anybody
+	// asks of one and the only one the picture of it can answer.
+	//
+	// Drawn art is what changed this (2026-09-21). A circle whose radius was
+	// the vitality gene was legible at any size, and sixty people drawn at
+	// sixty sizes is not: the screen went to mush the day the circles became
+	// bodies. What the size used to say has moved to the bar under the feet,
+	// which is now as long as the body is big and as full as the body is
+	// well - so a large body that has been hurt still reads differently from
+	// a small one in good health, which is the whole point of the budget.
+	bodyRadius  = 9.0
 	minRadius   = 3.5
 	maxRadius   = 11.0
+	minBar      = 7.0
+	maxBar      = 20.0
 	minRingSize = 1.0
 	maxRingSize = 4.0
 
@@ -97,6 +115,7 @@ var (
 	// What is left in a body, where the body is a picture and cannot be
 	// drawn half full (TODO 10).
 	colorVitalityBar = color.RGBA{0x3c, 0xa0, 0x5c, 0xff}
+	colorRemains     = color.RGBA{0x9a, 0x92, 0x80, 0xff}
 	colorMale        = color.RGBA{0x2a, 0x78, 0xd6, 0xff}
 	colorFemale      = color.RGBA{0xe8, 0x7b, 0xa4, 0xff}
 	colorForage      = color.RGBA{0xc3, 0xc2, 0xb7, 0xff}
@@ -173,6 +192,12 @@ type game struct {
 	// it: there is no free camera, because there is nothing to look at that is
 	// not one of those two.
 	zoom int
+
+	// Where bodies are drawn when several of them are standing on the same
+	// spot, by ID, as an offset from where they really are. Worked out once
+	// per frame; see spreadCrowd. spread is whether to do it at all.
+	nudge  map[int][2]float64
+	spread bool
 	// tickAccum carries the fraction of a tick left over by a slow rate, so
 	// that 1/5 speed really is one tick every five frames.
 	tickAccum float64
@@ -2020,7 +2045,12 @@ func (g *game) nodeAt(mx, my int) int {
 	reach := g.pickReach()
 	best, bestDist := 0, reach*reach
 	for _, a := range g.world.Agents() {
-		dx, dy := a.X-wx, a.Y-wy
+		// Where it is drawn, not where it is. A crowd is drawn spread out
+		// (spreadCrowd), and picking by the true place would mean clicking a
+		// body in a huddle and getting whichever of its neighbours happened
+		// to be underneath.
+		px, py := g.drawnWorldAt(&a)
+		dx, dy := px-wx, py-wy
 		if d := dx*dx + dy*dy; d < bestDist {
 			bestDist, best = d, a.ID
 		}
@@ -2388,8 +2418,8 @@ func (g *game) drawBubbles(screen *ebiten.Image) {
 		return
 	}
 	cfg := g.world.Config()
-	x, y := g.onScreen(a.X, a.Y)
-	top := y - g.long(minRadius+a.MaxVitality(&cfg)/150*(maxRadius-minRadius)) - 8
+	x, y := g.drawnAt(&a)
+	top := y - g.bodySize(&a, &cfg) - 8
 
 	for i := len(g.bubbles) - 1; i >= 0; i-- {
 		b := g.bubbles[i]
@@ -2529,8 +2559,16 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			// much of it, it does not grow back, and the one thing a player
 			// wants to be able to see is where it went.
 			c = colorCoin
+		case engine.FoodMeat:
+			// What is left of a person is bone, not meat (2026-09-21). The
+			// engine has always known the difference - nobody eats its own
+			// dead - and this is the same fact, in the one place a player
+			// actually looks at it.
+			if f.From == engine.SpeciesHuman {
+				c = colorRemains
+			}
 		}
-		if !g.drawItem(screen, f.Kind, fx, fy, c) {
+		if !g.drawItem(screen, f, fx, fy, c) {
 			vector.DrawFilledCircle(screen, fx, fy, g.long(3), c, true)
 		}
 		// The awkward crop (stage 44) gets a ring: it is food that has to be
@@ -2544,14 +2582,17 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	g.drawAim(screen)
 
 	agents := g.world.Agents()
+	// Where each of them is drawn, before anything is drawn from it. The
+	// lines, the bodies and the bubbles all read this, and so does the click.
+	g.spreadCrowd(agents)
 
 	// Bonds, drawn once per pair, and every blow being thrown.
 	for i := range agents {
 		a := &agents[i]
-		ax, ay := g.onScreen(a.X, a.Y)
+		ax, ay := g.drawnAt(a)
 		if a.PartnerID > a.ID {
 			if p, ok := g.world.AgentByID(a.PartnerID); ok {
-				px, py := g.onScreen(p.X, p.Y)
+				px, py := g.drawnAt(&p)
 				vector.StrokeLine(screen, ax, ay, px, py, 1, colorPairLink, true)
 			}
 		}
@@ -2565,7 +2606,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		switch a.Action.Kind {
 		case engine.ActAttack, engine.ActCourt, engine.ActInvite:
 			if t, ok := g.world.AgentByID(a.Action.TargetID); ok {
-				tx, ty := g.onScreen(t.X, t.Y)
+				tx, ty := g.drawnAt(&t)
 				line := colorFightLink
 				switch a.Action.Kind {
 				case engine.ActCourt:
@@ -2584,7 +2625,21 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 	}
 
 	cfg := g.world.Config()
-	for i := range agents {
+	// Back to front, so that bodies standing close together read as a crowd
+	// with depth in it rather than as a heap. Until they were pictures this
+	// did not matter: circles drawn in any order look the same. Drawn people
+	// do not - one behind stamped over one in front is what made a gathering
+	// look like a smear rather than like people standing together - and this
+	// costs a sort of a few hundred and moves nobody an inch from where the
+	// world says they are.
+	order := make([]int, len(agents))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(i, j int) bool {
+		return agents[order[i]].Y < agents[order[j]].Y
+	})
+	for _, i := range order {
 		a := &agents[i]
 		g.drawnAll++
 		if !g.onCamera(a.X, a.Y) {
@@ -2598,7 +2653,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// like a small one in good health - which is the whole difference the
 		// budget is supposed to create.
 		capacity := a.MaxVitality(&cfg)
-		radius := g.long(minRadius + capacity/150*(maxRadius-minRadius))
+		radius := g.bodySize(a, &cfg)
 		filled := radius
 		if capacity > 0 {
 			filled = radius * float32(clamp01(a.Vitality/capacity))
@@ -2612,7 +2667,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			fill = colorFemale
 		}
 
-		x, y := g.onScreen(a.X, a.Y)
+		x, y := g.drawnAt(a)
 
 		// A tail behind it, as long as the agent is quick. Speed is otherwise
 		// invisible: two agents standing still look the same however much one
@@ -2652,7 +2707,7 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 			// - is the same drawing it always was.
 			if capacity > 0 {
 				left := float32(clamp01(a.Vitality / capacity))
-				bar := g.long(12)
+				bar := g.long(minBar + capacity/150*(maxBar-minBar))
 				vector.StrokeLine(screen, x-bar/2, y+radius+1, x-bar/2+bar*left, y+radius+1, 2, colorVitalityBar, true)
 			}
 		} else if a.Species == engine.SpeciesEnemy {
@@ -2802,7 +2857,7 @@ func (g *game) drawNests(screen *ebiten.Image) {
 			delete(g.arrived, id)
 			continue
 		}
-		x, y := g.onScreen(a.X, a.Y)
+		x, y := g.drawnAt(&a)
 		r := g.long(8 + float64(age)/arrivalFlashTicks*22)
 		vector.StrokeCircle(screen, x, y, r, 1.5, colorNest, true)
 	}
@@ -4455,6 +4510,7 @@ func main() {
 	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
 	trinkets := flag.Bool("trinkets", false, "bodies can make things worth looking at, wanted for nothing but themselves and each body wanting a different one (stages 82 and 84; brings -lighthands with it)")
 	circles := flag.Bool("circles", false, "draw the bodies as circles rather than as pictures (TODO 10; the circles are what every screenshot before 2026-09-20 was taken of)")
+	huddle := flag.Bool("huddle", false, "draw bodies standing on the same spot on top of each other, as they really are (2026-09-21; the default draws them pushed apart, which changes nothing about the world)")
 	hides := flag.Bool("hides", false, "beasts leave skins and a warm thing can only be worked out of one, in a cold that kills (TODO 8; brings the coat, the money and the prices with it)")
 	cold := flag.Float64("cold", 0, "lay a cold half over the world and charge that much vitality a tick for standing in the coldest of it (stage 85; 0 = the ordinary world)")
 	notaste := flag.Bool("notaste", false, "put back the world stage 82 measured: every body wants the same ornament, and wants it whatever is about to happen to it")
@@ -4912,6 +4968,11 @@ func main() {
 	// viewer that cannot find them says so once and draws the circles it
 	// always did, because a missing picture must never stop the development
 	// tool this also is.
+	// Bodies have no size in this world and several of them stand on the same
+	// spot, which as pictures reads as a smear. They are drawn pushed apart
+	// unless asked otherwise; nothing about the world changes either way.
+	g.spread = !*huddle
+
 	if !*circles {
 		tiles, err := loadTiles()
 		if err != nil {
@@ -4926,4 +4987,140 @@ func main() {
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// bodySize is how wide on screen one body is drawn.
+//
+// A person is one size scaled by its age, and a beast is as big as its body.
+// The split is the point: within a species the silhouette says nothing, so
+// sixty people read as sixty people rather than as sixty different shapes,
+// and across species it says which of them will eat the other.
+//
+// It is here rather than inlined because three things have to agree about it:
+// the body, the rings around it, and where a speech bubble hangs.
+func (g *game) bodySize(a *engine.Agent, cfg *engine.Config) float32 {
+	if a.Species == engine.SpeciesEnemy {
+		return g.long(minRadius + a.MaxVitality(cfg)/150*(maxRadius-minRadius))
+	}
+	return g.long(bodyRadius * a.AgeFactor(cfg))
+}
+
+// --- drawing a crowd -------------------------------------------------------
+//
+// Bodies in this world have no size. Nothing in the rules says two of them may
+// not stand on the same spot, and several usually do: the world is 800 across,
+// a body is drawn 18 wide, and a gathering of forty around a good patch of
+// ground does not fit in the space it is standing on. As circles that read as
+// a stack of rings. As drawn people it reads as a smear, which is what made
+// this worth doing at all.
+//
+// So this pushes them apart to draw them, and only to draw them. The world is
+// not consulted and not told: World.Agents returns a copy, nothing here writes
+// through to it, and a body's X and Y are exactly what they were. What changes
+// is which pixel its picture is stamped on.
+//
+// Two rules keep it from becoming a lie.
+//
+// It never moves a body more than crowdNudge from where it really is. Full
+// separation would need eighteen units between neighbours, and in a crowd
+// that is a long way from the truth - bodies would be drawn in ground they
+// are nowhere near, walking up hills they are not on. A third of a body is
+// enough to break a stack into a huddle and small enough that no body is ever
+// drawn on ground its neighbour is not also standing on.
+//
+// And everything that points at a body uses the same displaced place: the
+// bonds, the lines saying who is coming for whom, the rings, the bar, the
+// speech bubbles, and - the one that would actually bite - what a click
+// picks. A body drawn in one place and selected in another would be worse
+// than the smear.
+const (
+	crowdSpace  = 11.0 // closer than this and they are drawn apart
+	crowdNudge  = 5.0  // and never further from the truth than this
+	crowdPasses = 4
+)
+
+// spreadCrowd works out the nudge for every body, once for the frame.
+func (g *game) spreadCrowd(agents []engine.Agent) {
+	if g.nudge == nil {
+		g.nudge = map[int][2]float64{}
+	}
+	clear(g.nudge)
+	if !g.spread || len(agents) < 2 {
+		return
+	}
+	// Where each body is being drawn as this settles, starting from the truth.
+	at := make([][2]float64, len(agents))
+	for i := range agents {
+		at[i] = [2]float64{agents[i].X, agents[i].Y}
+	}
+	// A cell per crowdSpace, rebuilt each pass because the points move. This
+	// is the viewer and the count is a few hundred, so the cost of rebuilding
+	// is not worth an incremental structure - and the engine's own index is
+	// deliberately not used, because that one belongs to the world and this
+	// is not about the world.
+	cell := make(map[[2]int][]int)
+	for pass := 0; pass < crowdPasses; pass++ {
+		clear(cell)
+		for i := range at {
+			k := [2]int{int(at[i][0] / crowdSpace), int(at[i][1] / crowdSpace)}
+			cell[k] = append(cell[k], i)
+		}
+		for i := range at {
+			k := [2]int{int(at[i][0] / crowdSpace), int(at[i][1] / crowdSpace)}
+			for dx := -1; dx <= 1; dx++ {
+				for dy := -1; dy <= 1; dy++ {
+					for _, j := range cell[[2]int{k[0] + dx, k[1] + dy}] {
+						if j <= i {
+							continue // each pair once, and never against itself
+						}
+						sx, sy := at[i][0]-at[j][0], at[i][1]-at[j][1]
+						d := math.Hypot(sx, sy)
+						if d >= crowdSpace {
+							continue
+						}
+						if d < 1e-6 {
+							// Exactly on top of one another, which happens:
+							// a newborn starts where its mother stands. There
+							// is no line to push along, so one is taken from
+							// the pair's IDs - the same trick the tint uses,
+							// and for the same reason. It has to be steady
+							// from frame to frame or the two would shiver.
+							h := float64((agents[i].ID*2654435761 + agents[j].ID) % 628)
+							sx, sy, d = math.Cos(h/100), math.Sin(h/100), 1
+						}
+						// Half the overlap each, so a pair parts evenly and
+						// neither is dragged through the other.
+						push := (crowdSpace - d) / 2 / d
+						at[i][0] += sx * push
+						at[i][1] += sy * push
+						at[j][0] -= sx * push
+						at[j][1] -= sy * push
+					}
+				}
+			}
+		}
+	}
+	for i := range agents {
+		dx, dy := at[i][0]-agents[i].X, at[i][1]-agents[i].Y
+		if d := math.Hypot(dx, dy); d > crowdNudge {
+			dx, dy = dx/d*crowdNudge, dy/d*crowdNudge
+		}
+		if dx != 0 || dy != 0 {
+			g.nudge[agents[i].ID] = [2]float64{dx, dy}
+		}
+	}
+}
+
+// drawnAt is where a body's picture goes: its own place, moved by whatever
+// the crowd did to it. Everything that draws a body or points at one goes
+// through here, and so does the click that picks one.
+func (g *game) drawnAt(a *engine.Agent) (float32, float32) {
+	n := g.nudge[a.ID]
+	return g.onScreen(a.X+n[0], a.Y+n[1])
+}
+
+// drawnWorldAt is the same place in world coordinates, for the click.
+func (g *game) drawnWorldAt(a *engine.Agent) (float64, float64) {
+	n := g.nudge[a.ID]
+	return a.X + n[0], a.Y + n[1]
 }

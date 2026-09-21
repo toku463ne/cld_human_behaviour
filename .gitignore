@@ -6,3 +6,12 @@
 # worlds and populations written by cmd/devview (F2)
 /world-*.json
 /nodes-*.json
+
+# what Windows leaves beside a file copied into WSL
+*:Zone.Identifier
+
+# the generated art the sprite sheet is cut from. Megabytes each, and what
+# the program reads is cmd/devview/assets, which is committed. Keep the one
+# a sheet was cut from wherever you keep such things; docs/sprites.md says
+# how to cut a fresh one.
+/tiled/samples/*.png
