@@ -6136,6 +6136,11 @@ var variants = []variant{
 		},
 	},
 	{
+		name:  "meatalways",
+		about: "the world before 2026-09-22: every death leaves a carcass, however it died",
+		apply: func(c *engine.Config) { c.MeatFromKills = false },
+	},
+	{
 		name:  "brittlelifespan",
 		about: "MaxLifespan cut to 1500: how visible aging death becomes when the budget is tight",
 		apply: func(c *engine.Config) { c.MaxLifespan = 1500 },

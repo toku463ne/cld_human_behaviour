@@ -755,9 +755,34 @@ type Config struct {
 	// creature was made of, so bringing down something large is worth more
 	// than bringing down something small - which is the only reason a group
 	// would ever be better than an individual at it.
-	MeatPerBudget   float64 // budget per item of meat a carcass leaves
-	MeatClaimTicks  int     // how long the carcass belongs to those who killed it
-	HuntCreditTicks int     // how recently a blow must have landed to count as taking part
+	MeatPerBudget  float64 // budget per item of meat a carcass leaves
+	MeatClaimTicks int     // how long the carcass belongs to those who killed it
+
+	// MeatFromKills leaves a carcass only where something brought the body
+	// down. A body that starved, wore out or was taken by the river leaves
+	// nothing to eat. On since 2026-09-22, and it moved the baseline.
+	//
+	// It went in because a beast lying there as dinner after dying of old
+	// age is odd to look at, and it was measured because it is a rule about
+	// the food supply: this world had fed on every death since stage 11, and
+	// the beasts eat nothing else. Every prediction written down before the
+	// run was wrong, and wrong the same way (12 seeds x 200000 ticks):
+	//
+	//	pop         161 -> 215 (+53 *)     enemies   41 -> 57 (+16 **)
+	//	starved     -507 **                collapsed 0.08 -> 0.00 *
+	//	meatDropped +594, not significant  spoiled   0.21 -> 0.03 ***
+	//
+	// The supply did not fall at all. What fell was waste. Meat left by a
+	// quiet death lies wherever that body happened to be, which is nowhere
+	// in particular, and a fifth of it rotted untouched; meat left by a kill
+	// lies where the killer is already standing, and 0.97 of it is eaten
+	// against 0.78 before. The same meat, in the mouths it was meant for,
+	// feeds a bigger and steadier world - and the world it feeds leaves more
+	// kills, which is where the rest of the supply came back from.
+	//
+	// The arm that puts the old world back is "meatalways".
+	MeatFromKills   bool
+	HuntCreditTicks int // how recently a blow must have landed to count as taking part
 
 	// CarryCapacity is how many items a body of ordinary build can hold at
 	// once (stage 40). Zero is the world before carrying, where food was only
@@ -3756,7 +3781,8 @@ func DefaultConfig() Config {
 		BoundaryMargin: 8,
 
 		PreyValue:        1,
-		MeatPerBudget:    120, // an ordinary agent leaves 4 items, a large enemy many more
+		MeatPerBudget:    120,  // an ordinary agent leaves 4 items, a large enemy many more
+		MeatFromKills:    true, // only what something brought down (2026-09-22)
 		CarryCapacity:    1,
 		CarryCost:        0.5,
 		CarryValue:       0.5,

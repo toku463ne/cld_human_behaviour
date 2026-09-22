@@ -225,6 +225,13 @@ func (w *World) dropMeat(a *Agent) {
 	if w.cfg.MeatPerBudget <= 0 {
 		return
 	}
+	// Nothing is left by a body nobody brought down, where the world says so
+	// (MeatFromKills). The test is the one the kill counter uses, so what
+	// leaves meat and what is counted as a kill cannot come apart: a blow
+	// landed in the last tick, and the river's own dead are the river's.
+	if w.cfg.MeatFromKills && (a.drowned || a.lastAttackTick < w.tick-1) {
+		return
+	}
 	items := int(w.meatOf(a) / w.cfg.MeatPerBudget)
 	if items <= 0 {
 		return

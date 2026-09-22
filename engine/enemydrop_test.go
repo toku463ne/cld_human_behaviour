@@ -454,3 +454,57 @@ func TestBeingFarFromTheNestIsAPriceAndNotALeash(t *testing.T) {
 		t.Fatal("a body far from its nest was left with nowhere to go")
 	}
 }
+
+// A body nobody brought down leaves nothing to eat, where the world says so
+// (MeatFromKills).
+//
+// The rule is off by default and this is why it is worth a test either way:
+// it is a rule about the food supply, not about plausibility only. The
+// beasts eat nothing but meat, so a world that stops feeding them its own
+// dead is a world with less in it - which cmd/experiment measures (the arm
+// is "meatkills") and this only pins the mechanism.
+func TestACarcassIsLeftByAKillAndNotByAQuietDeath(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		cfg := carcassConfig()
+		cfg.MeatFromKills = on
+		w := NewWorld(cfg)
+		w.tick = 500
+
+		// Worn out, starved, or taken by the river: nobody has touched it.
+		quiet := &Agent{Species: SpeciesEnemy, X: 100, Y: 100, Genome: filledGenome(60),
+			lastAttackTick: 0}
+		want := 0
+		if !on {
+			want = meatItems(&cfg, w, quiet)
+		}
+		if got := meatLeftBy(t, w, quiet); (got > 0) != (want > 0) {
+			t.Errorf("MeatFromKills=%v: a body nobody touched left %d items, want %d", on, got, want)
+		}
+
+		// And one that was being hit a moment ago leaves a carcass whatever
+		// the rule is: that is the kill this world has always fed on.
+		struck := &Agent{Species: SpeciesEnemy, X: 300, Y: 300, Genome: filledGenome(60),
+			lastAttackTick: w.tick}
+		if got := meatLeftBy(t, w, struck); got <= 0 {
+			t.Errorf("MeatFromKills=%v: a body that was just struck left %d items, want some", on, got)
+		}
+
+		// The river's dead are the river's, even where a blow had just
+		// landed - the same line the kill counter draws.
+		drowned := &Agent{Species: SpeciesEnemy, X: 500, Y: 500, Genome: filledGenome(60),
+			lastAttackTick: w.tick, drowned: true}
+		got := meatLeftBy(t, w, drowned)
+		if on && got != 0 {
+			t.Errorf("MeatFromKills=on: a drowned body left %d items, want none", got)
+		}
+		if !on && got <= 0 {
+			t.Errorf("MeatFromKills=off: a drowned body left %d items, want some", got)
+		}
+	}
+}
+
+// meatItems is how many items this body's carcass is worth, for a test that
+// wants to know whether the rule or the arithmetic answered.
+func meatItems(cfg *Config, w *World, a *Agent) int {
+	return int(w.meatOf(a) / cfg.MeatPerBudget)
+}

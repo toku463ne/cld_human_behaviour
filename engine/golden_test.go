@@ -176,6 +176,13 @@ import (
 // - both would be wrong together. It needs numbers from the world as it was, so
 // here they are.
 //
+// And again when a carcass stopped being left by a body nobody brought down
+// (MeatFromKills, 2026-09-22). That one moves the world on purpose and by a
+// lot: over 12 seeds and 200000 ticks the population goes 161 to 215 and the
+// share of meat that rots goes 0.21 to 0.03. The arm that puts the old world
+// back is "meatalways", and every figure in HISTORY.md recorded before that
+// date was measured with it.
+//
 // These are also the numbers to look at when a later stage changes the rules on
 // purpose: they will move, and the diff says by how much. Rewrite them when
 // that happens, in the commit that changes the rule, and never to make a red
@@ -186,9 +193,9 @@ var goldenRuns = []struct {
 	fights, gen                       int
 	power, vitality, hunger           float64
 }{
-	{seed: 1, pop: 86, births: 60, deaths: 56, kills: 35, aging: 0, fights: 6505, gen: 3, power: 35.291305, vitality: 98.018461, hunger: 25.330426},
-	{seed: 2, pop: 61, births: 56, deaths: 77, kills: 64, aging: 0, fights: 10898, gen: 3, power: 35.932735, vitality: 118.819970, hunger: 23.350755},
-	{seed: 3, pop: 52, births: 41, deaths: 70, kills: 56, aging: 0, fights: 8503, gen: 2, power: 32.036601, vitality: 92.126455, hunger: 20.342416},
+	{seed: 1, pop: 57, births: 44, deaths: 69, kills: 51, aging: 0, fights: 5683, gen: 3, power: 34.862986, vitality: 108.910238, hunger: 26.689473},
+	{seed: 2, pop: 71, births: 59, deaths: 69, kills: 59, aging: 0, fights: 7070, gen: 3, power: 39.750007, vitality: 116.858287, hunger: 24.780280},
+	{seed: 3, pop: 61, births: 48, deaths: 66, kills: 52, aging: 0, fights: 6246, gen: 2, power: 40.036882, vitality: 107.163801, hunger: 30.415722},
 }
 
 const goldenTicks = 5000
