@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/xml"
+	"fmt"
 	"image"
 	_ "image/png"
 	"os"
@@ -380,6 +382,81 @@ func TestTheTilesetAMapIsPaintedWithDrawsWhatItSays(t *testing.T) {
 	for class := range wants {
 		if !seen[class] {
 			t.Errorf("nothing in the tileset is a %q any more, and this test still expects one", class)
+		}
+	}
+}
+
+// The tilesets a person paints with say the same as the map that ships.
+//
+// There are two copies of every property now: the .tsx files beside the
+// pictures, which Tiled reads when somebody adds the tileset to a new map,
+// and the copy embedded in 001_3division.tmj, which is what the engine
+// reads (it refuses a map whose tilesets are not embedded). Two copies of
+// anything drift, and the way this one would drift is the worst kind: a
+// map drawn with the tileset would behave differently from the sample that
+// was measured, and nothing would say so.
+func TestThePaintedTilesetsSayWhatTheSampleMapSays(t *testing.T) {
+	const dir = "../../tiled/samples/tilesets/001_simple/"
+	raw, err := os.ReadFile("../../tiled/samples/001_3division.tmj")
+	if err != nil {
+		t.Fatalf("the sample map is not there: %v", err)
+	}
+	var m struct {
+		Tilesets []struct {
+			Name  string `json:"name"`
+			Tiles []struct {
+				ID         int `json:"id"`
+				Properties []struct {
+					Name  string          `json:"name"`
+					Value json.RawMessage `json:"value"`
+				} `json:"properties"`
+			} `json:"tiles"`
+		} `json:"tilesets"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("001_3division.tmj: %v", err)
+	}
+	type tileset struct {
+		Tiles []struct {
+			ID         int `xml:"id,attr"`
+			Properties []struct {
+				Name  string `xml:"name,attr"`
+				Value string `xml:"value,attr"`
+			} `xml:"properties>property"`
+		} `xml:"tile"`
+	}
+	for _, in := range m.Tilesets {
+		want := map[string]string{}
+		for _, tile := range in.Tiles {
+			for _, p := range tile.Properties {
+				want[fmt.Sprintf("%d.%s", tile.ID, p.Name)] =
+					strings.Trim(string(p.Value), `"`)
+			}
+		}
+		painted, err := os.ReadFile(dir + in.Name + ".tsx")
+		if err != nil {
+			t.Errorf("%s is in the map and there is no tileset to paint it with: %v", in.Name, err)
+			continue
+		}
+		var out tileset
+		if err := xml.Unmarshal(painted, &out); err != nil {
+			t.Errorf("%s.tsx: %v", in.Name, err)
+			continue
+		}
+		got := map[string]string{}
+		for _, tile := range out.Tiles {
+			for _, p := range tile.Properties {
+				got[fmt.Sprintf("%d.%s", tile.ID, p.Name)] = p.Value
+			}
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("%s.tsx tile %s = %q, and the sample map says %q", in.Name, k, got[k], v)
+			}
+			delete(got, k)
+		}
+		for k, v := range got {
+			t.Errorf("%s.tsx tile %s = %q, and the sample map says nothing about it", in.Name, k, v)
 		}
 	}
 }
