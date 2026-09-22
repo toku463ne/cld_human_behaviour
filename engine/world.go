@@ -503,7 +503,12 @@ type World struct {
 
 	// Where each sort of enemy comes into the world, when a map painted it
 	// (enemykind.go). Nil in every world that paints none.
-	enemyKindCells [][]cell
+	enemyKindCells [][]nestCell
+
+	// How many arrivals the world has tried to let in since it began, and how
+	// many of them every nest refused because it was full (2026-09-22, TODO
+	// 18). Counters for the instruments; no rule reads either.
+	nestTries, nestRefused int
 
 	drownDeaths int
 	// drownTakenSwim is the realised swimming of the bodies the water has
@@ -906,6 +911,12 @@ func NewWorld(cfg Config) *World {
 		w.addAgent(a)
 	}
 	for i := 0; i < cfg.InitialEnemies; i++ {
+		// The nests fill as the world is laid out, the same way they do once
+		// it is running: a map that says one nest holds two beasts means it
+		// on the first tick as well as the thousandth.
+		if !w.nestsHaveRoom() {
+			break
+		}
 		w.addAgent(w.randomAgent(SpeciesEnemy))
 	}
 	for i := 0; i < cfg.InitialFoodItems; i++ {
@@ -2941,6 +2952,16 @@ func (w *World) spawnEnemyOfTick() {
 		}
 	}
 	if n >= w.cfg.MaxEnemies {
+		return
+	}
+	// A map whose nests are all full sends nobody (2026-09-22, TODO 18).
+	// Asked before anything is drawn, so that a full map does not consume
+	// randomness and shift the rest of the run - the rule spawnFood has kept
+	// since the stones went in. A world with no caps painted answers yes
+	// without counting a body.
+	w.nestTries++
+	if !w.nestsHaveRoom() {
+		w.nestRefused++
 		return
 	}
 	w.addAgent(w.randomAgent(SpeciesEnemy))

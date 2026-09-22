@@ -410,7 +410,12 @@ func (w *World) spawnSpotFor(species Species, kind int) (float64, float64) {
 	// Where the map said this sort comes in, if it said anywhere
 	// (2026-09-20). It is read before the weighting for the reason every
 	// painting is: it is the more particular thing the author said.
-	if species == SpeciesEnemy {
+	//
+	// Unless this arrival is one of the ambient ones (2026-09-22): a share of
+	// them come in from outside the map however full or quiet its nests are,
+	// so that a country cannot be emptied of beasts for good. The share is
+	// nought by default and then nothing is drawn here at all.
+	if species == SpeciesEnemy && !w.ambientArrival() {
 		if x, y, ok := w.paintedSpotFor(kind); ok {
 			return x, y
 		}
@@ -447,6 +452,20 @@ func (w *World) spawnSpotFor(species Species, kind int) (float64, float64) {
 	x := clamp(w.randRange(minX, maxX), 20, w.cfg.Width-20)
 	y := clamp(w.randRange(minY, maxY), 20, w.cfg.Height-20)
 	return x, y
+}
+
+// ambientArrival is whether this arrival ignores the painted nests and comes
+// in the way it would in a world with none. Always no when the share is
+// nought, which is every world before 2026-09-22 - and it takes nothing out of
+// the random source to say so.
+func (w *World) ambientArrival() bool {
+	if w.cfg.EnemyAmbientShare <= 0 || len(w.enemyKindCells) == 0 {
+		return false
+	}
+	if w.cfg.EnemyAmbientShare >= 1 {
+		return true
+	}
+	return w.rng.Float64() < w.cfg.EnemyAmbientShare
 }
 
 // prowlAt is how many of the world's enemies turn up where this is.

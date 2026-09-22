@@ -948,6 +948,80 @@ var variants = []variant{
 		about: "a line passes to one child at a time - the eldest, and the next when the eldest dies",
 		apply: func(c *engine.Config) { c.LineageRule = engine.LineageChain },
 	},
+	// 2026-09-22: counting before TODO 18. Two nests painted as cells, the
+	// same two in all three arms, and the only difference is what it costs to
+	// be away from one. The dose is stage 64's own range (0.5, 2) rather than
+	// the 0.02 the nests arm above uses, because that is the range the
+	// parameter was swept and written up in - at 0.02 the term is a rounding
+	// error on a utility whose other columns are whole vitality.
+	{
+		name:  "nesthold",
+		about: "counting for 18: two painted nests and nothing holding anybody near them",
+		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 0 },
+	},
+	{
+		name:  "nestholdmild",
+		about: "the same two nests, with stage 64's lighter price for being away from one",
+		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 0.5 },
+	},
+	{
+		name:  "nestholdhard",
+		about: "the same two nests at four times that price",
+		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 2 },
+	},
+	{
+		name:  "nestcap2",
+		about: "18: the same two nests, each holding two of its own before it sends no more",
+		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 2; c.NestCap = 2 },
+	},
+	{
+		name:  "nestcap6",
+		about: "the same at six",
+		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 2; c.NestCap = 6 },
+	},
+	{
+		name:  "nestcap12",
+		about: "the same at twelve, which is the whole world's ceiling in one nest",
+		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 2; c.NestCap = 12 },
+	},
+	{
+		name:  "nestrate",
+		about: "18: the same two nests, one sending nine arrivals in ten and the other one",
+		apply: func(c *engine.Config) {
+			paintTwoNests(c)
+			c.EnemyHomeCost = 2
+			c.NestRateMap = []string{
+				"........",
+				".1......",
+				"........",
+				"........",
+				"......9.",
+				"........",
+			}
+		},
+	},
+	{
+		name:  "nestrateflat",
+		about: "the control for nestrate: painted, and both nests alike",
+		apply: func(c *engine.Config) {
+			paintTwoNests(c)
+			c.EnemyHomeCost = 2
+			c.NestRateMap = []string{
+				"........",
+				".5......",
+				"........",
+				"........",
+				"......5.",
+				"........",
+			}
+		},
+	},
+	{
+		name: "nestholdroom",
+		about: "the same as nestholdhard with twice the ceiling: what holds the enemies at twelve, " +
+			"the cap or the world",
+		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 2; c.MaxEnemies = 24 },
+	},
 	{
 		name:  "nests",
 		about: "the nest rides down the lineage: a newborn's home is its parent's, not its birthplace",
@@ -6241,6 +6315,8 @@ var metricNames = []string{
 	"humanRich", "enemyRich", "richGain", "enemyRichGain",
 	"standGain", "suitGain", "suitCeiling", "regionsSeen", "oneRegion", "regionShare",
 	"prowlArrive", "prowlGain", "prowlKept", "enemyBorn", "humanProwl", "enemyCrowd", "prowlBite",
+	"nests", "nestHold", "nestRoom", "nestGain", "nestFull",
+	"nestCrowd", "nestCapped", "nestStopped", "nestRated",
 	"kinds", "kindMix", "kindGap", "kindHomed",
 	"enemyAway", "enemyAtHome", "homeShare",
 	"plantRate", "foodMean",
@@ -6433,6 +6509,14 @@ type sample struct {
 	// prowlBite whether the dying is more violent where they arrive.
 	prowlGain, humanProwl, enemyCrowd, prowlBite float64
 	prowlArrive, enemyBorn                       float64
+
+	// What the painted nests hold (2026-09-22, counting for TODO 18).
+	// nestGain is nestHold less nestRoom: standing near a nest is only
+	// evidence of anything against how much of the map is near one.
+	// nestFull is how often the world is sitting against MaxEnemies, which
+	// is what says whether a per-nest rate could matter at all.
+	nestHold, nestRoom, nestGain, nestFull, nests float64
+	nestCrowd, nestCapped, nestStopped, nestRated float64
 
 	// What the bond hands on (stage 65): how far apart two making a child
 	// are, and how many trades the birth itself and the bond put there.
@@ -6702,6 +6786,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		stand := w.Standing()
 		suited := w.Suits()
 		prowl := w.Prowl()
+		nesting := w.Nesting()
 		sorts := w.Kinds()
 		roam := w.Roaming()
 		grows, fromMap := w.PlantSupply()
@@ -6725,6 +6810,10 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 			standGain: stand.Gain, suitGain: suited.Gain, suitCeiling: suited.Ceiling,
 			prowlGain: prowl.EnemyGain, humanProwl: prowl.HumanGain,
 			prowlArrive: prowl.ArriveGain, enemyBorn: prowl.BornShare,
+			nestHold: nesting.Hold, nestRoom: nesting.Room, nestGain: nesting.Gain,
+			nestFull: nesting.AtCap, nests: float64(nesting.Nests),
+			nestCrowd: nesting.Crowd, nestCapped: nesting.Capped,
+			nestStopped: nesting.Stopped, nestRated: nesting.Rated,
 			enemyAway: roam.Away, enemyAtHome: roam.AtHome, homeShare: roam.Draws,
 			plantRate: grows, foodMean: fromMap,
 			rearNear: rear.Near, rearTrades: rear.Trades,
@@ -7506,11 +7595,20 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"prowlGain":   tail.prowlGain,
 		// How much of what the rule did is still there. Read the two above as
 		// a pair: a rule that fires perfectly can leave nothing behind.
-		"prowlKept":  kept(tail.prowlGain, tail.prowlArrive),
-		"enemyBorn":  tail.enemyBorn,
-		"humanProwl": tail.humanProwl,
-		"enemyCrowd": tail.enemyCrowd,
-		"prowlBite":  tail.prowlBite,
+		"prowlKept":   kept(tail.prowlGain, tail.prowlArrive),
+		"enemyBorn":   tail.enemyBorn,
+		"nestHold":    tail.nestHold,
+		"nestRoom":    tail.nestRoom,
+		"nestGain":    tail.nestGain,
+		"nestFull":    tail.nestFull,
+		"nestCrowd":   tail.nestCrowd,
+		"nestCapped":  tail.nestCapped,
+		"nestStopped": tail.nestStopped,
+		"nestRated":   tail.nestRated,
+		"nests":       tail.nests,
+		"humanProwl":  tail.humanProwl,
+		"enemyCrowd":  tail.enemyCrowd,
+		"prowlBite":   tail.prowlBite,
 		// What the table of enemy sorts produced (stage 59). kindMix is over
 		// the arrivals rather than the standing population, which drifts.
 		"kinds":     tail.kinds,
@@ -7902,6 +8000,15 @@ func tailAverage(series []sample) sample {
 		out.suitGain += s.suitGain
 		out.suitCeiling += s.suitCeiling
 		out.prowlGain += s.prowlGain
+		out.nestHold += s.nestHold
+		out.nestRoom += s.nestRoom
+		out.nestGain += s.nestGain
+		out.nestFull += s.nestFull
+		out.nestRated += s.nestRated
+		out.nestStopped += s.nestStopped
+		out.nestCapped += s.nestCapped
+		out.nestCrowd += s.nestCrowd
+		out.nests += s.nests
 		out.prowlArrive += s.prowlArrive
 		out.enemyBorn += s.enemyBorn
 		out.enemiesWet += s.enemiesWet
@@ -8095,6 +8202,15 @@ func tailAverage(series []sample) sample {
 	out.suitGain /= d
 	out.suitCeiling /= d
 	out.prowlGain /= d
+	out.nestHold /= d
+	out.nestRoom /= d
+	out.nestGain /= d
+	out.nestFull /= d
+	out.nestRated /= d
+	out.nestStopped /= d
+	out.nestCapped /= d
+	out.nestCrowd /= d
+	out.nests /= d
 	out.prowlArrive /= d
 	out.enemyBorn /= d
 	out.enemiesWet /= d
@@ -8710,6 +8826,25 @@ func main() {
 
 // riverMapForFish is a river down the middle, the smallest map that has any
 // water in it at all: without water the fish arms are the flat world twice.
+// paintTwoNests puts two nests of one sort on the map, far apart, as cells
+// rather than as a weighting over regions (2026-09-22, counting for TODO 18).
+//
+// One sort, because the question is whether anything stays near a nest at all
+// and two sorts would only split the population between two answers. The
+// radius is left unset, which is half a region - the figure the rule has been
+// charged from since home became a point.
+func paintTwoNests(c *engine.Config) {
+	c.EnemyKinds = []engine.EnemyKind{{Name: "brute", Share: 1, Key: 'b', Homing: 1, Homely: 1}}
+	c.EnemyKindMap = []string{
+		"........",
+		".b......",
+		"........",
+		"........",
+		"......b.",
+		"........",
+	}
+}
+
 func riverMapForFish() []string {
 	out := make([]string, 12)
 	for i := range out {

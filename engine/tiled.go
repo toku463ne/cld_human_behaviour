@@ -64,6 +64,18 @@ type TiledWorld struct {
 	// with such tiles fills both.
 	Rich []string
 
+	// NestRate and NestCap are what a nest tile says about itself
+	// (2026-09-22, TODO 18), in the vocabulary Config.NestRateMap and
+	// Config.NestCapMap take: fifths, so '5' is an ordinary nest. Nil when no
+	// tile carries a "rate" or a "cap", and then every painted nest is alike,
+	// which is every world before this.
+	//
+	// They are read off whatever layer the nests themselves are on, since a
+	// tile that says which sort comes out here is the natural one to say how
+	// often and how many.
+	NestRate []string
+	NestCap  []string
+
 	// Climate is what the weather is like in each cell, one character per
 	// cell (#135), in the vocabulary Config.ClimateMap takes. Nil when no
 	// tile carries a "chill" or a "heat" property, and then the world has no
@@ -176,6 +188,8 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 		return nil, err
 	}
 	riches, anyRich := tileRiches(f.Tilesets)
+	rates, anyRate := tileFifths(f.Tilesets, "rate")
+	caps, anyCap := tileFifths(f.Tilesets, "cap")
 	climates, anyClimate := tileClimates(f.Tilesets)
 	plants := tilePlantKinds(f.Tilesets)
 	beasts := tileNamed(f.Tilesets, "enemy")
@@ -275,6 +289,25 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 					out.Rich = rows
 				}
 			}
+			// And what a nest sends out, off the layer the nests are on.
+			if out.NestRate == nil && anyRate {
+				rows, err := terrainRows(l, f.Width, f.Height, rates)
+				if err != nil {
+					return nil, err
+				}
+				if paintedRichness(rows) {
+					out.NestRate = rows
+				}
+			}
+			if out.NestCap == nil && anyCap {
+				rows, err := terrainRows(l, f.Width, f.Height, caps)
+				if err != nil {
+					return nil, err
+				}
+				if paintedRichness(rows) {
+					out.NestCap = rows
+				}
+			}
 		case "objectgroup":
 			out.Regions = append(out.Regions, regionShapes(l, f)...)
 		}
@@ -310,6 +343,32 @@ func tileRiches(sets []tiledTilset) (map[int]byte, bool) {
 			c, ok := richChar(t.Properties)
 			out[s.FirstGID+t.ID] = c
 			any = any || ok
+		}
+	}
+	return out, any
+}
+
+// tileFifths turns the tilesets into "this tile id says this much of the
+// thing named", as the character a fifths-grid takes, and says whether any
+// tile carried the property at all (2026-09-22, TODO 18).
+//
+// It is tileRiches with the name of the property handed in, because the nests
+// have two of these and the weather already showed what happens when each
+// vocabulary grows its own copy of the same walk.
+//
+// The scale is the one every painted grid in this engine uses: the number on
+// the tile is a multiple of the world's own figure, rounded to the nearest
+// fifth, so 1 is ordinary and 0 is none. The absolute is in Config (#133).
+func tileFifths(sets []tiledTilset, name string) (map[int]byte, bool) {
+	out, any := map[int]byte{}, false
+	for _, s := range sets {
+		for _, t := range s.Tiles {
+			c := byte(richOrdinary)
+			if v, ok := propNumberOK(t.Properties, name); ok {
+				d := int(math.Round(clamp(v, 0, 2) * 5))
+				c, any = byte('0'+clampInt(d, 0, 9)), true
+			}
+			out[s.FirstGID+t.ID] = c
 		}
 	}
 	return out, any
@@ -890,6 +949,12 @@ func (t *TiledWorld) Apply(cfg *Config) {
 	}
 	if len(t.Rich) > 0 {
 		cfg.RichMap = append([]string(nil), t.Rich...)
+	}
+	if len(t.NestRate) > 0 {
+		cfg.NestRateMap = append([]string(nil), t.NestRate...)
+	}
+	if len(t.NestCap) > 0 {
+		cfg.NestCapMap = append([]string(nil), t.NestCap...)
 	}
 	if len(t.Climate) > 0 {
 		cfg.ClimateMap = append([]string(nil), t.Climate...)

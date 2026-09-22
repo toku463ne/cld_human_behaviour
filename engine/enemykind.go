@@ -218,8 +218,17 @@ func (w *World) pickEnemyKind() int {
 	if len(kinds) <= 1 {
 		return 0
 	}
+	// A sort whose every nest is full is not coming, so it is not drawn from
+	// either: leaving it in would spend the arrival on a sort that has no
+	// room and quietly make the cap a cap on the world instead of on a nest.
+	// With no caps painted, share is what it always was and nothing here
+	// counts a body.
+	capped := w.nestsCapped()
 	total := 0.0
 	for i := range kinds {
+		if capped && !w.kindHasRoom(i) {
+			continue
+		}
 		total += max(kinds[i].Share, 0)
 	}
 	if total <= 0 {
@@ -227,6 +236,9 @@ func (w *World) pickEnemyKind() int {
 	}
 	r := w.rng.Float64() * total
 	for i := range kinds {
+		if capped && !w.kindHasRoom(i) {
+			continue
+		}
 		r -= max(kinds[i].Share, 0)
 		if r <= 0 {
 			return i
@@ -523,8 +535,23 @@ func (w *World) Feeding() Feeding {
 	return out
 }
 
+// nestCell is one square the map painted for a sort, and what the map said
+// about it: how many of the sort's arrivals come out of it, relative to its
+// other nests, and how many bodies it keeps nearby before it sends no more.
+//
+// Both are a proportion rather than a figure (#133): rate is a share of this
+// sort's arrivals and cap is a multiple of Config.NestCap. A world whose map
+// painted neither has rate 1 and cap 0 everywhere, which is the world before
+// 2026-09-22 down to the draw.
+type nestCell struct {
+	cell
+	rate float64
+	cap  float64
+}
+
 // buildEnemyKindCells reads Config.EnemyKindMap into one list of cells per
-// sort, once, because Config does not change while a world runs.
+// sort, once, because Config does not change while a world runs. The rate and
+// the cap are read off the same grid, cell for cell.
 func (w *World) buildEnemyKindCells() {
 	rows := w.cfg.EnemyKindMap
 	kinds := w.cfg.EnemyKinds
@@ -540,7 +567,7 @@ func (w *World) buildEnemyKindCells() {
 	if len(at) == 0 {
 		return
 	}
-	cells := make([][]cell, len(kinds))
+	cells := make([][]nestCell, len(kinds))
 	for r, row := range rows {
 		h := w.cfg.Height / float64(len(rows))
 		y := (float64(r) + 0.5) * h
@@ -550,7 +577,11 @@ func (w *World) buildEnemyKindCells() {
 				continue
 			}
 			cw := w.cfg.Width / float64(len(row))
-			cells[i] = append(cells[i], cell{x: (float64(c) + 0.5) * cw, y: y, w: cw, h: h})
+			cells[i] = append(cells[i], nestCell{
+				cell: cell{x: (float64(c) + 0.5) * cw, y: y, w: cw, h: h},
+				rate: fifthsAt(w.cfg.NestRateMap, r, c, 1),
+				cap:  w.cfg.NestCap * fifthsAt(w.cfg.NestCapMap, r, c, 1),
+			})
 		}
 	}
 	for i := range cells {
@@ -561,9 +592,100 @@ func (w *World) buildEnemyKindCells() {
 	}
 }
 
+// fifthsAt is what a painted grid says about one cell, as a multiplier: a
+// digit is that many fifths, so '5' is the ordinary one. Anything the grid
+// does not cover - an empty map, a short row, a character nobody knows - is
+// the fallback, which is what keeps an unpainted world identical.
+func fifthsAt(rows []string, r, c int, fallback float64) float64 {
+	if r < 0 || r >= len(rows) {
+		return fallback
+	}
+	row := rows[r]
+	if c < 0 || c >= len(row) {
+		return fallback
+	}
+	ch := row[c]
+	if ch < '0' || ch > '9' {
+		return fallback
+	}
+	return float64(ch-'0') / 5
+}
+
+// nestCrowd is how many living bodies of this sort are standing within its
+// roam of this nest - what its cap is a cap on.
+func (w *World) nestCrowd(kind int, c nestCell) float64 {
+	roam := w.roamOf(kind)
+	n := 0.0
+	for i := range w.agents {
+		a := &w.agents[i]
+		if !a.Alive || a.Species != SpeciesEnemy || int(a.Kind) != kind {
+			continue
+		}
+		if distToCell(a.X, a.Y, c.cell) <= roam {
+			n++
+		}
+	}
+	return n
+}
+
+// nestHasRoom is whether this nest would send another one out.
+//
+// A cap of nought is a nest that holds nobody rather than a nest that holds
+// everybody: "not from here" is a thing a map should be able to say, and
+// whether caps are in play at all is Config.NestCap's business, not a cell's.
+func (w *World) nestHasRoom(kind int, c nestCell) bool {
+	if !w.nestsCapped() {
+		return true
+	}
+	return w.nestCrowd(kind, c) < c.cap
+}
+
+// kindHasRoom is whether any nest of this sort would. A sort the map painted
+// nowhere is not capped by anything, and neither is a world with no caps
+// painted at all - both answer yes without counting anybody.
+func (w *World) kindHasRoom(kind int) bool {
+	if !w.nestsCapped() || kind < 0 || kind >= len(w.enemyKindCells) {
+		return true
+	}
+	cells := w.enemyKindCells[kind]
+	if len(cells) == 0 {
+		return true
+	}
+	for _, c := range cells {
+		if w.nestHasRoom(kind, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// nestsCapped is whether this world caps its nests at all. It is the gate that
+// keeps every world before this one untouched: with no cap set, nothing below
+// counts a body or draws a value.
+func (w *World) nestsCapped() bool { return w.cfg.NestCap > 0 }
+
+// nestsHaveRoom is whether anywhere on the map would send another enemy out.
+// True in a world with no caps, so the ordinary arrival is unchanged.
+func (w *World) nestsHaveRoom() bool {
+	if !w.nestsCapped() {
+		return true
+	}
+	for kind := range w.enemyKindCells {
+		if len(w.enemyKindCells[kind]) > 0 && w.kindHasRoom(kind) {
+			return true
+		}
+	}
+	return false
+}
+
 // paintedSpotFor draws where this sort comes into the world, when the map
 // painted anywhere for it. The second return is false when it painted none,
 // and then the arrival is the one it always was.
+//
+// Which of its nests it comes out of is the map's own weighting where there is
+// one, and otherwise the plain draw over the cells the rule has had since the
+// nests were painted - the same call, taking the same value out of the random
+// source, so an unweighted map runs exactly as it did.
 func (w *World) paintedSpotFor(kind int) (float64, float64, bool) {
 	if kind < 0 || kind >= len(w.enemyKindCells) {
 		return 0, 0, false
@@ -572,10 +694,51 @@ func (w *World) paintedSpotFor(kind int) (float64, float64, bool) {
 	if len(cells) == 0 {
 		return 0, 0, false
 	}
-	c := cells[w.rng.Intn(len(cells))]
+	open := cells
+	if w.nestsCapped() {
+		open = open[:0:0]
+		for _, c := range cells {
+			if w.nestHasRoom(kind, c) {
+				open = append(open, c)
+			}
+		}
+		if len(open) == 0 {
+			return 0, 0, false
+		}
+	}
+	c, ok := w.drawNest(open)
+	if !ok {
+		return 0, 0, false
+	}
 	x := clamp(c.x+w.randRange(-c.w/2, c.w/2), 20, w.cfg.Width-20)
 	y := clamp(c.y+w.randRange(-c.h/2, c.h/2), 20, w.cfg.Height-20)
 	return x, y, true
+}
+
+// drawNest picks one of them, weighted by what the map painted. With nothing
+// painted every nest weighs one and the draw is the plain one it always was.
+func (w *World) drawNest(cells []nestCell) (nestCell, bool) {
+	if len(w.cfg.NestRateMap) == 0 {
+		return cells[w.rng.Intn(len(cells))], true
+	}
+	total := 0.0
+	for _, c := range cells {
+		total += max(c.rate, 0)
+	}
+	if total <= 0 {
+		// Every nest here was painted '0'. The map has said this sort does
+		// not come out of these, and a fallback to an even draw would be the
+		// engine overruling it.
+		return nestCell{}, false
+	}
+	r := w.rng.Float64() * total
+	for _, c := range cells {
+		r -= max(c.rate, 0)
+		if r <= 0 {
+			return c, true
+		}
+	}
+	return cells[len(cells)-1], true
 }
 
 // NestView is one square a map painted for a sort of enemy: where it is, how

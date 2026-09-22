@@ -178,6 +178,8 @@ type counterSnap struct {
 	EnemyArrivalSum        float64   `json:",omitempty"`
 	EnemyBorn              float64   `json:",omitempty"`
 	EnemyByKind            []float64 `json:",omitempty"`
+	NestTries              int       `json:",omitempty"`
+	NestRefused            int       `json:",omitempty"`
 	Exchanges, HintsCopied int
 }
 
@@ -385,6 +387,7 @@ func (w *World) Save(out io.Writer) error {
 			MateGapSum: w.mateGapSum, MateGaps: w.mateGaps,
 			EnemyArrivals: w.enemyArrivals, EnemyArrivalSum: w.enemyArrivalSum,
 			EnemyBorn: w.enemyBorn, EnemyByKind: w.enemyArrivalsByKind,
+			NestTries: w.nestTries, NestRefused: w.nestRefused,
 		},
 	}
 	for i := range w.pendingSeeds {
@@ -611,6 +614,7 @@ func Load(in io.Reader) (*World, error) {
 	w.enemyArrivals, w.enemyArrivalSum = c.EnemyArrivals, c.EnemyArrivalSum
 	w.enemyBorn = c.EnemyBorn
 	w.enemyArrivalsByKind = append([]float64(nil), c.EnemyByKind...)
+	w.nestTries, w.nestRefused = c.NestTries, c.NestRefused
 	for i := range c.Tolls {
 		if i < len(w.tolls) {
 			w.tolls[i] = regionToll{deaths: c.Tolls[i].Deaths, kills: c.Tolls[i].Kills}

@@ -327,6 +327,65 @@ type Config struct {
 	// order every other painting is read in.
 	EnemyKindMap []string
 
+	// NestRateMap is how often each painted nest is the one an arrival comes
+	// out of, one character a cell over the same grid EnemyKindMap uses
+	// (2026-09-22, TODO 18). A digit is that many fifths, so '5' is an
+	// ordinary nest, '9' is one that sends out nearly twice as many and '0'
+	// one that sends none; a dot, a short row and a character nobody knows
+	// are ordinary. Empty is every world before this: the nests of a sort
+	// share its arrivals alike.
+	//
+	// It is a share and not a rate, which is the whole of decision #143's
+	// answer to "how many". How many enemies a tick the world lets in is
+	// still EnemySpawnTicks and how many it holds is still MaxEnemies; what
+	// a map paints here is which of its nests they come out of. The map
+	// carries the proportion and Config carries the figure it is a
+	// proportion of (#133), exactly as chill and heat do.
+	//
+	// Counted before it was built: the world sits against MaxEnemies in 0.53
+	// to 0.57 of readings, and doubling that ceiling buys only 2.34 more
+	// enemies before the world itself stops them. A per-nest rate therefore
+	// moves arrivals about; it does not make a country's beasts more
+	// numerous.
+	NestRateMap []string
+
+	// NestCap is how many bodies of its own sort an ordinary nest keeps
+	// within Roam of itself before it stops sending any out, and NestCapMap
+	// paints the same in fifths of it per cell (2026-09-22, TODO 18). Zero -
+	// the default - is no cap at all, which is every world before this.
+	//
+	// What it does not do is stop anything being born. A nest that is full
+	// simply does not let another one in from outside; the beasts already
+	// there go on breeding, and that asymmetry is the point of the rule
+	// rather than a limitation of it.
+	//
+	// It is a cap on what the world puts in, on the shelf MaxEnemies and
+	// MaxPopulation and MaxFoodItems are on, and not a threshold on anybody's
+	// behaviour: no body is told about it and no decision reads it.
+	//
+	// Counting a crowd by where it stands rather than by where it came from
+	// is deliberate - an enemy carries no mark of which nest it belongs to,
+	// NestInherited having been measured and left off - and it is also what
+	// a player means by "this place is crowded". The cost is that it only
+	// means much in a world that also charges for being away from home:
+	// measured, the share of enemies standing within a nest's roam is 0.41
+	// against 0.34 of the map at EnemyHomeCost 0, and 0.54 at EnemyHomeCost 2.
+	NestCap    float64
+	NestCapMap []string
+
+	// EnemyAmbientShare is how many of the arrivals ignore the painted nests
+	// and come in from wherever the world would otherwise have put them
+	// (2026-09-22, TODO 18). Zero - the default - is every world since the
+	// nests were painted: a map with nests on it receives every arrival
+	// through them.
+	//
+	// It exists for the world where every nest is quiet or full. Arrivals
+	// from outside the map are the reason a country cannot be emptied of
+	// beasts for good by clearing it once, and a map that wants that
+	// guarantee turns this up; a map that wants its nests to be the whole
+	// story leaves it at nought.
+	EnemyAmbientShare float64
+
 	// HumanHomeCost is the same for a person (TODO 6, #130), and zero - the
 	// default - is every world before it.
 	//
