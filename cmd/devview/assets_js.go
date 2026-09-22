@@ -17,6 +17,10 @@ import (
 // mean re-downloading the pictures every time a rule moved, and caching the
 // pictures for ever would mean never seeing a new one - the hash in the name
 // settles both at once.
+//
+// And here, unlike the build with a filesystem behind it, only the set being
+// drawn with is ever fetched: a name is a directory under assets/, so the
+// sets nobody asked for cost the telephone nothing.
 func loadAsset(name string) ([]byte, error) {
 	resp, err := http.Get("assets/" + name)
 	if err != nil {

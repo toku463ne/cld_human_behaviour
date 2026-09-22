@@ -1,55 +1,84 @@
 package main
 
 import (
-	"encoding/json"
 	"image/color"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/toku463ne/cld_human_behaviour/engine"
 )
 
-// theManifest is what the viewer will be reading at startup. The sheet itself
-// cannot be tested here - cutting it up needs a graphics device, and there is
-// none in a test - but everything that decides which picture is asked for can
-// be, and that is where a missing picture actually comes from.
-func theManifest(t *testing.T) manifestFile {
+// theArt is the sets of pictures the viewer will be choosing between, and
+// theManifest is what it will read out of one. The sheet itself cannot be
+// tested here - cutting it up needs a graphics device, and there is none in a
+// test - but everything that decides which picture is asked for can be, and
+// that is where a missing picture actually comes from.
+func theArt(t *testing.T) artIndex {
 	t.Helper()
-	raw, err := loadAsset("manifest.json")
+	ix, err := artSets()
 	if err != nil {
 		t.Fatalf("the art is not where the program will look for it: %v", err)
 	}
-	var m manifestFile
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatalf("manifest: %v", err)
+	return ix
+}
+
+func theManifest(t *testing.T) manifestFile { return manifestOf(t, theArt(t).Default) }
+
+func manifestOf(t *testing.T, set string) manifestFile {
+	t.Helper()
+	m, err := readManifest(set)
+	if err != nil {
+		t.Fatalf("%s: %v", set, err)
 	}
-	if m.Sheet == "" || m.Tile <= 0 || len(m.Clips) == 0 {
-		t.Fatalf("manifest says %+v", m)
+	if len(m.Clips) == 0 {
+		t.Fatalf("%s: manifest says %+v", set, m)
 	}
-	if _, err := loadAsset(m.Sheet); err != nil {
-		t.Fatalf("the manifest names a sheet that is not there: %v", err)
+	if _, err := loadAsset(set + "/" + m.Sheet); err != nil {
+		t.Fatalf("%s: the manifest names a sheet that is not there: %v", set, err)
 	}
 	return m
 }
 
-// worlds is the shapes of world this viewer can be pointed at, as far as the
-// pictures are concerned. A beast's build is read off its row in EnemyKinds
-// (enemyBuild), so a sheet that is complete for one table can have holes in
-// another, and the table below is the one cmd/devview actually offers.
-func worlds() map[string]engine.Config {
-	plain := engine.DefaultConfig()
-	kinds := engine.DefaultConfig()
-	kinds.EnemyKinds = []engine.EnemyKind{
-		{Name: "stray", Share: 3, BudgetMean: 380},
-		{Name: "brute", Share: 1, BudgetMean: 700},
+// What sets.json says is on offer is what is on disk.
+//
+// The file exists because a browser cannot list a directory - it fetches by
+// name and has no way to ask what is there - so the list is written by hand,
+// and a list written by hand is a list that goes stale. This is the only
+// place the two can be compared, because only a test runs where both the
+// directory and the program are.
+func TestTheArtOnOfferIsTheArtThatIsThere(t *testing.T) {
+	ix := theArt(t)
+	listed := map[string]bool{}
+	for _, set := range ix.Sets {
+		if set.Note == "" {
+			t.Errorf("%s says nothing about itself, and nothing about a picture will", set.Name)
+		}
+		if listed[set.Name] {
+			t.Fatalf("%s is listed twice", set.Name)
+		}
+		listed[set.Name] = true
+		manifestOf(t, set.Name) // it loads, and its sheet is beside it
 	}
-	beasts := engine.DefaultConfig()
-	beasts.EnemyKinds = []engine.EnemyKind{
-		{Name: "brute", Share: 2, BudgetMean: 700},
-		{Name: "stray", Share: 3, BudgetMean: 380},
-		{Name: "flyer", Share: 2, BudgetMean: 260, Flies: true, FlyHeight: 2},
-		{Name: "lurker", Share: 1, BudgetMean: 450, Water: true},
+	if !listed[ix.Default] {
+		t.Fatalf("the default is %q, which is not one of the sets", ix.Default)
 	}
-	return map[string]engine.Config{"plain": plain, "-kinds": kinds, "-beasts": beasts}
+	found, err := os.ReadDir("assets")
+	if err != nil {
+		t.Fatalf("assets: %v", err)
+	}
+	for _, e := range found {
+		if !e.IsDir() {
+			continue
+		}
+		if !listed[e.Name()] {
+			t.Errorf("assets/%s is art that sets.json does not offer", e.Name())
+		}
+		delete(listed, e.Name())
+	}
+	for name := range listed {
+		t.Errorf("sets.json offers %s and there is no assets/%s", name, name)
+	}
 }
 
 // Every picture the viewer can ask for is in the sheet. This is the test that
@@ -63,11 +92,22 @@ func worlds() map[string]engine.Config {
 // builds did, the day being hit and being in a river did - and each time, a
 // sheet that looked complete had holes in it that nothing but this found.
 func TestEveryActionHasAPictureToDrawItWith(t *testing.T) {
-	m := theManifest(t)
+	for _, set := range theArt(t).Sets {
+		t.Run(set.Name, func(t *testing.T) { everyActionIsDrawn(t, set.Name) })
+	}
+}
+
+func everyActionIsDrawn(t *testing.T, set string) {
+	m := manifestOf(t, set)
 	have := map[string]int{}
 	for _, c := range m.Clips {
 		have[c.Name] = c.Frames
 	}
+	// An older set is allowed to be short of a picture, and says so by what
+	// it stands in with; the set this is built to draw with is not.
+	strict := set == theArt(t).Default
+	has := func(n string) bool { return have[n] > 0 }
+	asked := askedFor()
 	looks := []look{
 		{},
 		{struck: true},
@@ -102,9 +142,24 @@ func TestEveryActionHasAPictureToDrawItWith(t *testing.T) {
 								}
 								age.with(a, &cfg)
 								name := clipFor(a, &cfg, l)
-								if have[name] == 0 {
+								// The gap report walks the same ground on its
+								// own (askedFor), and a report that missed a
+								// case would say a set was complete when it
+								// was not, which is worse than no report.
+								if asked[name] == 0 {
+									t.Fatalf("%s: %v (%v, %v, row %d, %+v, %s) asks for %q and -artgaps does not know to look for it",
+										world, kind, species, sex, row, l, age.name, name)
+								}
+								if have[name] > 0 {
+									continue
+								}
+								if strict {
 									t.Fatalf("%s: %v (%v, %v, row %d, %+v, %s) wants %q",
 										world, kind, species, sex, row, l, age.name, name)
+								}
+								if stood := standIn(name, has); have[stood] == 0 {
+									t.Fatalf("%s: %v (%v, %v, row %d, %+v, %s) wants %q, and %s stands in with %q, which it has not got",
+										world, kind, species, sex, row, l, age.name, name, set, stood)
 								}
 							}
 						}
@@ -164,10 +219,17 @@ func TestWhatIsHappeningToABodyBeatsWhatItIsDoing(t *testing.T) {
 		// Throwing the blow beats taking one: a body doing both is more
 		// legible as the one going forward.
 		{"swinging and hit", adult(&engine.Agent{Action: swinging}), look{struck: true}, "human.fight"},
-		// And a child is only small, so anything at all outranks it.
+		// How old a body is outranks all of it, because it is not a
+		// circumstance: a child that starts walking is still a child. It
+		// was the other way round until 2026-09-22, when the art for the
+		// other five poses arrived - until then a child that took a step
+		// turned into an adult drawn small.
 		{"a child standing", &engine.Agent{Maturity: 0}, look{}, "child.idle"},
-		{"a child walking", &engine.Agent{Maturity: 0, Action: walking}, look{}, "human.walk"},
-		{"a child in water", &engine.Agent{Maturity: 0}, look{wading: true}, "human.swim"},
+		{"a child walking", &engine.Agent{Maturity: 0, Action: walking}, look{}, "child.walk"},
+		{"a child in water", &engine.Agent{Maturity: 0}, look{wading: true}, "child.swim"},
+		{"a child being hit", &engine.Agent{Maturity: 0}, look{struck: true}, "child.hurt"},
+		{"a child swinging", &engine.Agent{Maturity: 0, Action: swinging}, look{}, "child.fight"},
+		{"a girl walking", &engine.Agent{Maturity: 0, Sex: engine.Female, Action: walking}, look{}, "child.f.walk"},
 	}
 	for _, c := range cases {
 		if got := clipFor(c.a, &cfg, c.l); got != c.want {
@@ -193,6 +255,17 @@ func TestNobodyIsOldInAWorldWithoutAgeing(t *testing.T) {
 	}
 	if got := clipFor(old(), &off, look{}); got != "human.idle" {
 		t.Errorf("with ageing off, the same body came out %q", got)
+	}
+	// And it stays old through everything it does, which is what the six
+	// poses bought. A body that was old standing and an adult the moment it
+	// walked was the one thing wrong with drawing age at all.
+	walking := old()
+	walking.Action = engine.Action{Kind: engine.ActMove}
+	if got := clipFor(walking, &on, look{}); got != "old.walk" {
+		t.Errorf("an old body that walked came out %q", got)
+	}
+	if got := clipFor(old(), &on, look{wading: true}); got != "old.swim" {
+		t.Errorf("an old body in water came out %q", got)
 	}
 }
 
@@ -316,6 +389,142 @@ func TestAPersonsRemainsAreNotDrawnAsAMeal(t *testing.T) {
 		}
 		if c, _ := itemClip(engine.Food{Kind: kind, From: engine.SpeciesHuman}); c != "item" {
 			t.Fatalf("%v came out as %q", kind, c)
+		}
+	}
+}
+
+// An older set draws a walking child with the grown picture, which is what
+// every version of this viewer did until the day the young were drawn moving.
+//
+// This is what makes the sets swappable at all. Without it, switching to art
+// drawn before some distinction was made puts circles back on the screen
+// wherever a body falls into that distinction, which reads as a broken viewer
+// rather than as older art. The order things are given up in is the design:
+// age first, because it is only wrong about size and the viewer says the size
+// itself; the pose last, because a body standing still while it walks is the
+// one the eye catches.
+func TestOlderArtStandsInWithWhatItHas(t *testing.T) {
+	// A set from before the young and the old were drawn doing anything.
+	older := map[string]bool{}
+	for _, n := range []string{"human.idle", "human.walk", "human.f.idle", "human.f.walk",
+		"child.idle", "child.f.idle", "old.idle", "old.f.idle",
+		"enemy.big.idle", "enemy.big.walk"} {
+		older[n] = true
+	}
+	has := func(n string) bool { return older[n] }
+	for _, c := range []struct{ want, from string }{
+		{"human.walk", "child.walk"},        // a child that started walking
+		{"human.f.walk", "child.f.walk"},    // and a girl, who keeps her clothes
+		{"human.walk", "old.walk"},          // the same for the old
+		{"child.idle", "child.idle"},        // what it does have, it uses
+		{"human.f.idle", "human.f.hurt"},    // no picture of a blow landing
+		{"enemy.big.idle", "enemy.big.eat"}, // a beast gives up the pose, never the build
+	} {
+		if got := standIn(c.from, has); got != c.want {
+			t.Errorf("%s came out as %q and should be %q", c.from, got, c.want)
+		}
+	}
+	// And the set this is built for gives nothing up: everything resolves to
+	// itself, which is the other half of the guarantee.
+	have := map[string]bool{}
+	for _, c := range theManifest(t).Clips {
+		have[c.Name] = true
+	}
+	for name := range have {
+		if got := standIn(name, func(n string) bool { return have[n] }); got != name {
+			t.Errorf("the default art turned %q into %q", name, got)
+		}
+	}
+}
+
+// A wish that has come true is taken out of the list by hand, and this is
+// what says so.
+//
+// The list of art nobody has drawn is written by hand because there is
+// nothing to read it off - the viewer does not ask for what does not exist -
+// and a hand-written list of things to do is a list that outlives the doing.
+// So the one thing that can be checked is checked: if a set actually has what
+// a wish asks for, the wish is stale.
+func TestNothingIsStillWishedForOnceItHasBeenDrawn(t *testing.T) {
+	sets := theArt(t).Sets
+	for _, w := range wishes {
+		if w.Ask == "" || w.What == "" {
+			t.Errorf("a wish with nothing to take to whoever draws: %+v", w)
+		}
+		if where := drawnIn(w, sets); where != "" {
+			t.Errorf("%q is in %s now, so take it out of wishes", w.What, where)
+		}
+	}
+}
+
+// And the report itself runs, on every set there is.
+//
+// It reads manifests and nothing else - no world, no window, no graphics
+// device - which is what lets it be the thing somebody runs over a terminal
+// before writing to whoever draws. A report that needed a screen would be
+// useless for that, so this is where that stays true.
+func TestTheGapReportSaysWhatEachSetIsShortOf(t *testing.T) {
+	report, err := artReport()
+	if err != nil {
+		t.Fatalf("artgaps: %v", err)
+	}
+	for _, set := range theArt(t).Sets {
+		if !strings.Contains(report, set.Name) {
+			t.Errorf("the report says nothing about %s", set.Name)
+		}
+	}
+	// set1 is the set from before the young and the old were drawn moving,
+	// and it is in here as the case that has holes: a report that cannot see
+	// those cannot see any.
+	holes, err := holesIn("set1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(holes) == 0 {
+		t.Fatal("set1 has no holes, which cannot be: it has no picture of a child walking")
+	}
+	for _, h := range holes {
+		if h.StandIn == h.Clip {
+			t.Errorf("%s stands in for itself", h.Clip)
+		}
+	}
+}
+
+// The report finds art that is there and wrong, not only art that is absent.
+//
+// Both halves are pinned here, because both have a way of being quietly
+// useless: a measure that finds nothing looks the same as a set with nothing
+// wrong, and a measure that finds everything is noise nobody reads.
+func TestTheGapReportMeasuresArtThatIsWrong(t *testing.T) {
+	for _, set := range theArt(t).Sets {
+		flaws, err := flawsIn(set.Name)
+		if err != nil {
+			t.Fatalf("%s: %v", set.Name, err)
+		}
+		found := map[string]bool{}
+		for _, f := range flaws {
+			found[f.Clip] = true
+			if f.Says == "" {
+				t.Errorf("%s: %s is called wrong and nothing says why", set.Name, f.Clip)
+			}
+			// A beast fills its cell by width, so its poses are different
+			// heights on purpose (docs/sprites.md section 4). Reporting that
+			// would be reporting the rule.
+			if strings.HasPrefix(f.Clip, "enemy.") && strings.Contains(f.Says, "standing") &&
+				strings.Contains(f.Says, "pixels tall") {
+				t.Errorf("%s: %s is measured against a height it was never meant to keep", set.Name, f.Clip)
+			}
+		}
+		// The adult woman's walk is in every set drawn so far: her two frames
+		// differ less than her breathing does, because the skirt hides the
+		// legs. If this stops being found, the measure has gone blind.
+		if !found["human.f.walk"] {
+			t.Errorf("%s: the measure no longer finds the walk it was built on", set.Name)
+		}
+		// And it is not flagging everything: the man's walk is the one that
+		// was drawn right.
+		if found["human.walk"] {
+			t.Errorf("%s: human.walk is the walk that works and it was reported", set.Name)
 		}
 	}
 }

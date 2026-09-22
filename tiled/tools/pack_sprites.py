@@ -40,6 +40,12 @@ existing sheet and manifest, and any clip in it that this sheet does not
 provide is copied across - which is how several sheets and the grey
 placeholders end up in one texture, by running this once per sheet and
 carrying the last result forward.
+
+The viewer keeps several sets of art side by side and switches between them,
+so the last OUT_DIR of a run is cmd/devview/assets/<set name> rather than
+assets itself, and the name goes in assets/sets.json. An existing set is a
+perfectly good --carry: building the next one on top of the last is how a
+redraw of half the sheets keeps the half nobody redrew.
 """
 
 import argparse
@@ -143,7 +149,57 @@ ENEMIES = [
     ("remains",           6, [0],    "bone"),
 ]
 
-LAYOUTS = {"humans": HUMANS, "enemies": ENEMIES}
+# The young and the old, from a sheet of their own. Four bodies across every
+# row - a boy, a girl, an old man, an old woman - and six rows, which is what
+# the first sheet was missing: it had them standing and nothing else, so a
+# child that started walking turned into an adult drawn small.
+#
+# Two things had to be decided here rather than measured.
+#
+# The old are normalised to a standing ADULT, not to what they were drawn at.
+# This render draws them at a child's size - the old man 115 against the boy's
+# 112 and the reference adult's 141 - and a bald child is a worse lie than an
+# old man who has not stooped. Age is said by the white hair and the bald
+# head, which is what the first sheet decided too, and for the same reason.
+#
+# The children keep the proportion they were drawn at, 0.80 of the reference
+# adult, which is the only thing in the sheet that says "child" at all once
+# the picture is 24 pixels tall.
+#
+# Everything else is the drift, measured: one body is drawn 7% taller walking
+# than standing and 6% shorter eating, and the numbers below are what a
+# standing adult measures on each clip's own scale, which is the reference
+# (141) moved by however much that row was drawn bigger or smaller. Sitting
+# and wading keep their drawn proportion against the same body standing, so
+# they are given the standing number and come out lower.
+CHILDREN = [
+    ("child.idle",     0, [0, 1], 141),
+    ("child.walk",     1, [0, 1], 152),
+    ("child.eat",      2, [0, 1], 141),
+    ("child.fight",    3, [0, 1], 143),
+    ("child.hurt",     4, [0, 1], 144),
+    ("child.swim",     5, [0, 1], 141),
+    ("child.f.idle",   0, [2, 3], 141),
+    ("child.f.walk",   1, [2, 3], 147),
+    ("child.f.eat",    2, [2, 3], 141),
+    ("child.f.fight",  3, [2, 3], 138),
+    ("child.f.hurt",   4, [2, 3], 141),
+    ("child.f.swim",   5, [2, 3], 141),
+    ("old.idle",       0, [4, 5], 116),
+    ("old.walk",       1, [4, 5], 118),
+    ("old.eat",        2, [4, 5], 116),
+    ("old.fight",      3, [4, 5], 110),
+    ("old.hurt",       4, [4, 5], 109),
+    ("old.swim",       5, [4, 5], 116),
+    ("old.f.idle",     0, [6, 7], 129),
+    ("old.f.walk",     1, [6, 7], 135),
+    ("old.f.eat",      2, [6, 7], 129),
+    ("old.f.fight",    3, [6, 7], 119),
+    ("old.f.hurt",     4, [6, 7], 122),
+    ("old.f.swim",     5, [6, 7], 129),
+]
+
+LAYOUTS = {"humans": HUMANS, "enemies": ENEMIES, "children": CHILDREN}
 
 # The height a standing adult is drawn at in the human render, which every
 # clip of it that is not normalised in its own right is measured against.
@@ -243,26 +299,62 @@ def bodies(fg, band, x_from, least=200):
 
 # --- writing the sheet -----------------------------------------------------
 
+def wide(img, box):
+    """How wide the body in this frame is, as against how wide the frame is.
+
+    What is drawn flying off a body - the marks off a punch, the red off a
+    blow landing - is part of the picture and was glued to the body on the way
+    in, because a mark that came away as a sprite of its own would be counted
+    as another body in the row. It is not part of the body, though, and on
+    this sheet a punch throws its marks half again as far as the body is wide:
+    130 pixels against a body of 68. Fitting the cell to that shrinks the body
+    to make room for a mark.
+
+    So the body is the largest blob in the frame, found without the dilation
+    that glued the loose parts on. Everything the eye reads a size off is one
+    blob - a body standing, a body lying down, a beast with its wings out, a
+    body up to its waist in water it overlaps - and everything that is thrown
+    off one is a small separate one.
+    """
+    a = np.asarray(img.crop(box))[:, :, 3] > 0
+    labels, n = ndimage.label(a)
+    if n == 0:
+        return box[2] - box[0]
+    biggest = 1 + np.argmax(ndimage.sum(a, labels, range(1, n + 1)))
+    columns = np.nonzero((labels == biggest).sum(0))[0]
+    return columns[-1] - columns[0] + 1
+
+
+def fits(img, boxes, scale):
+    """The scale a clip is actually drawn at: its own, unless a frame overflows.
+
+    A cell is square and some poses are not. A body lying down is 36 to 38
+    pixels across at the scale a standing one is 30 tall, and nothing reads a
+    corpse's size, so the corpse gives up the tenth rather than the grid give
+    up its square cells. What overflows and is not a body - the far end of a
+    punch's mark - is cut off at the cell's edge instead, because clipping the
+    tip of a mark is not something the eye has anything to compare against and
+    a body that flinches a tenth smaller on the frame it lands its punch is.
+
+    Whatever has to give, it cannot be one frame giving it and not the next:
+    the overflow is measured across every frame of the clip and the whole clip
+    is stepped down together. Scaling each frame to fit its own outline is how
+    two frames of one punch end up two sizes.
+    """
+    for box in boxes:
+        scale = min(scale, TILE / wide(img, box), (TILE - FEET) / (box[3] - box[1]))
+    return scale
+
+
 def cell(img, box, scale):
     """One body, scaled and dropped into its cell with its feet on the floor.
-
-    Capped by width as well as height because a body lying down is wider than
-    a cell at the scale a standing one fits: it is 36 to 38 pixels across when
-    a standing body is 30 tall. Nothing reads a corpse's size, so the corpse
-    gives up the tenth rather than the grid give up its square cells.
 
     Feet on the floor rather than centred: a body centred in its cell rises
     off the ground whenever a pose changes its outline.
     """
     c = img.crop(box)
-    w, h = round(c.width * scale), round(c.height * scale)
-    if w > TILE:
-        h = max(1, round(h * TILE / w))
-        w = TILE
-    if h > TILE - FEET:
-        w = max(1, round(w * (TILE - FEET) / h))
-        h = TILE - FEET
-    small = c.resize((max(1, w), max(1, h)), Image.BOX)
+    w, h = max(1, round(c.width * scale)), max(1, round(c.height * scale))
+    small = c.resize((w, h), Image.BOX)
     out = Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
     out.paste(small, ((TILE - small.width) // 2, TILE - FEET - small.height), small)
     return out
@@ -333,7 +425,9 @@ def main():
             scale = TILE / widest[how]
         else:
             scale = BODY / (how if how else STANDING)
-        made.append((name, [cell(img, found[row][i], scale) for i in frames], TILE, TILE))
+        boxes = [found[row][i] for i in frames]
+        scale = fits(img, boxes, scale)
+        made.append((name, [cell(img, b, scale) for b in boxes], TILE, TILE))
 
     claimed = {name for name, _, _, _ in made}
     if args.carry:

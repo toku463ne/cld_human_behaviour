@@ -12,7 +12,12 @@ import (
 // development build has to carry its own art - the same reason the golden
 // test carries its own numbers.
 //
-//go:embed assets/manifest.json assets/tiles.*.png
+// All of the art, not one set of it. A set is a few hundred kilobytes and
+// this binary is tens of megabytes, so carrying every set costs nothing and
+// buys the one thing the sets are for: switching between them without
+// rebuilding.
+//
+//go:embed assets
 var assets embed.FS
 
 func loadAsset(name string) ([]byte, error) {

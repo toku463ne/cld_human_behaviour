@@ -318,6 +318,14 @@ type game struct {
 	// to on its own.
 	tiles *tileset
 
+	// The sets of pictures on offer and which one is in hand (2026-09-22).
+	// The art is generated, so a fresh one is a fresh throw and the only way
+	// to judge it is to put two of them on the same world; F4 walks through
+	// them without restarting, which is why they are kept here rather than
+	// read once at the start.
+	artSets []artSet
+	artAt   int
+
 	// How much there was to draw last frame, and how much of it was on the
 	// screen (TODO 10). Counted, not reckoned: nothing here culls anything
 	// yet, so the two apart are what culling would be worth.
@@ -539,6 +547,8 @@ func (g *game) handleInput() {
 		g.say("zoom x%.1f", zoomLevels[g.zoom])
 	case inpututil.IsKeyJustPressed(ebiten.KeyF2):
 		g.saveWorld()
+	case inpututil.IsKeyJustPressed(ebiten.KeyF4):
+		g.useArt(g.artAt + 1)
 	case inpututil.IsKeyJustPressed(ebiten.KeyTab):
 		g.mode = panelMode((int(g.mode) + 1) % numPanelModes)
 	case inpututil.IsKeyJustPressed(ebiten.KeyBracketLeft):
@@ -634,6 +644,8 @@ func (g *game) handleEditorInput() {
 		g.zoom = (g.zoom + 1) % len(zoomLevels)
 	case inpututil.IsKeyJustPressed(ebiten.KeyF2):
 		g.saveWorld()
+	case inpututil.IsKeyJustPressed(ebiten.KeyF4):
+		g.useArt(g.artAt + 1)
 	case inpututil.IsKeyJustPressed(ebiten.KeyTab):
 		g.tune = (g.tune + 1) % len(g.world.Tunables())
 	case inpututil.IsKeyJustPressed(ebiten.KeyEqual), inpututil.IsKeyJustPressed(ebiten.KeyUp):
@@ -2048,6 +2060,37 @@ func (g *game) say(format string, args ...any) {
 	g.noticed = g.world.Tick()
 }
 
+// useArt puts one of the sets of pictures in hand, by its place in the list.
+//
+// It keeps whatever is already drawn if the new set will not load, because
+// the alternative - a viewer that empties itself because somebody pressed a
+// key - is worse than one that says it could not. Walking off the end comes
+// back round to the first, so the key is a loop and needs no second key to
+// go back.
+func (g *game) useArt(at int) {
+	if len(g.artSets) == 0 {
+		return
+	}
+	at = ((at % len(g.artSets)) + len(g.artSets)) % len(g.artSets)
+	set := g.artSets[at]
+	tiles, err := loadTiles(set.Name)
+	if err != nil {
+		log.Printf("keeping the art it had: %v", err)
+		return
+	}
+	g.tiles, g.artAt = tiles, at
+	if g.world != nil {
+		// With the count of what it is short of, because that is the whole
+		// reason for looking at two sets: -artgaps says which pictures, this
+		// says whether the one now on the screen is standing anything in.
+		short := ""
+		if holes, err := holesIn(set.Name); err == nil && len(holes) > 0 {
+			short = fmt.Sprintf(" (%d pictures stood in for; -artgaps says which)", len(holes))
+		}
+		g.say("art: %s - %s%s", set.Name, set.Note, short)
+	}
+}
+
 // nodeAt returns the node under the cursor, or 0.
 func (g *game) nodeAt(mx, my int) int {
 	wx, wy := g.inWorld(mx, my)
@@ -3230,7 +3273,7 @@ func (g *game) overlay() string {
 	default:
 		b.WriteString("space pause   right/n one tick   -/= slower/faster   z zoom   click a node   esc clear\n")
 	}
-	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node   F2 save this world   F3 lay one out\n")
+	b.WriteString("tab decisions/beliefs/play   [ ] older/newer decision   h play the selected node   F2 save this world   F3 lay one out   F4 other art\n")
 	switch g.play {
 	case playDriven:
 		fmt.Fprintf(&b, "playing #%d: numpad or arrows+home/end/pgup/pgdn walk it (hold to keep going)   click a spot then m walks there and stops\n", g.played)
@@ -4525,6 +4568,8 @@ func main() {
 	hands := flag.Bool("hands", false, "no gate on the hand - only the weight - and the second thing in it worth less than the first (stage 71)")
 	trinkets := flag.Bool("trinkets", false, "bodies can make things worth looking at, wanted for nothing but themselves and each body wanting a different one (stages 82 and 84; brings -lighthands with it)")
 	circles := flag.Bool("circles", false, "draw the bodies as circles rather than as pictures (TODO 10; the circles are what every screenshot before 2026-09-20 was taken of)")
+	art := flag.String("art", "", "which set of pictures to draw with (a directory under cmd/devview/assets; empty is the one sets.json calls the default, and F4 walks through the rest)")
+	artGaps := flag.Bool("artgaps", false, "print what each set of pictures is short of, and what nobody has drawn in any of them, and stop (2026-09-22; this is the list to take to whoever draws)")
 	huddle := flag.Bool("huddle", false, "draw bodies standing on the same spot on top of each other, as they really are (2026-09-21; the default draws them pushed apart, which changes nothing about the world)")
 	hides := flag.Bool("hides", false, "beasts leave skins and a warm thing can only be worked out of one, in a cold that kills (TODO 8; brings the coat, the money and the prices with it)")
 	cold := flag.Float64("cold", 0, "lay a cold half over the world and charge that much vitality a tick for standing in the coldest of it (stage 85; 0 = the ordinary world)")
@@ -4988,12 +5033,47 @@ func main() {
 	// unless asked otherwise; nothing about the world changes either way.
 	g.spread = !*huddle
 
+	if *artGaps {
+		// Before the world is built: this reads manifests and needs no
+		// simulation, no window and no graphics device, so it can be run
+		// anywhere, including over a terminal with no display at all.
+		report, err := artReport()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Print(report)
+		return
+	}
+
 	if !*circles {
-		tiles, err := loadTiles()
+		ix, err := artSets()
 		if err != nil {
 			log.Printf("drawing circles: %v", err)
 		} else {
-			g.tiles = tiles
+			g.artSets = ix.Sets
+			at := 0
+			for i, set := range ix.Sets {
+				if set.Name == ix.Default {
+					at = i
+				}
+			}
+			if *art != "" {
+				at = -1
+				for i, set := range ix.Sets {
+					if set.Name == *art {
+						at = i
+					}
+				}
+				if at < 0 {
+					names := make([]string, 0, len(ix.Sets))
+					for _, set := range ix.Sets {
+						names = append(names, set.Name)
+					}
+					log.Fatalf("there is no art called %q; there is %s",
+						*art, strings.Join(names, ", "))
+				}
+			}
+			g.useArt(at)
 		}
 	}
 

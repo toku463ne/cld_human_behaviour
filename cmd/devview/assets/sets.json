@@ -1,0 +1,13 @@
+{
+  "default": "set2",
+  "sets": [
+    {
+      "name": "set1",
+      "note": "people, beasts and things, before the young and the old were drawn doing anything"
+    },
+    {
+      "name": "set2",
+      "note": "the same, with six poses each for a boy, a girl, an old man and an old woman"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	_ "image/png"
+	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -71,9 +72,55 @@ type manifestFile struct {
 	Clips []clipInfo `json:"clips"`
 }
 
+// artSet is one set of pictures: a directory under assets/ holding a sheet
+// and the manifest that cuts it up.
+//
+// There are several because the art is generated, a fresh render is a fresh
+// throw, and the only way to tell whether a new one is better is to put the
+// two on the same world and look. A set is a few hundred kilobytes, so
+// keeping the old one costs less than the argument about whether to.
+//
+// The note is what the set is, in a few words, said when it is switched to.
+// It is written by hand: nothing about a picture tells you what was different
+// about the day it was asked for.
+type artSet struct {
+	Name string `json:"name"`
+	Note string `json:"note"`
+}
+
+type artIndex struct {
+	Default string   `json:"default"`
+	Sets    []artSet `json:"sets"`
+}
+
+// artSets is what is on offer, and which of them is drawn with unless
+// somebody says otherwise.
+//
+// A file rather than a listing of the directory, because the browser has no
+// directory to list: it fetches by name over the network and has no way to
+// ask what is there. A test keeps the file honest against what is on disk.
+func artSets() (artIndex, error) {
+	raw, err := loadAsset("sets.json")
+	if err != nil {
+		return artIndex{}, err
+	}
+	var ix artIndex
+	if err := json.Unmarshal(raw, &ix); err != nil {
+		return artIndex{}, fmt.Errorf("sets.json: %w", err)
+	}
+	if len(ix.Sets) == 0 {
+		return artIndex{}, fmt.Errorf("sets.json names no art")
+	}
+	if ix.Default == "" {
+		ix.Default = ix.Sets[0].Name
+	}
+	return ix, nil
+}
+
 // tileset is the sheet, cut up. The sub-images share the one texture, so
 // drawing from any of them batches with drawing from any other.
 type tileset struct {
+	name  string
 	sheet *ebiten.Image
 	clips map[string][]*ebiten.Image
 	tint  map[string]bool
@@ -84,19 +131,12 @@ type tileset struct {
 // in hand when it returns or it returns an error: that is what "preloaded"
 // means, and it is why this is called before the game is handed to ebiten
 // rather than lazily on the first draw.
-func loadTiles() (*tileset, error) {
-	raw, err := loadAsset("manifest.json")
+func loadTiles(set string) (*tileset, error) {
+	m, err := readManifest(set)
 	if err != nil {
-		return nil, fmt.Errorf("manifest: %w", err)
+		return nil, err
 	}
-	var m manifestFile
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, fmt.Errorf("manifest: %w", err)
-	}
-	if m.Sheet == "" || m.Tile <= 0 {
-		return nil, fmt.Errorf("manifest names no sheet")
-	}
-	png, err := loadAsset(m.Sheet)
+	png, err := loadAsset(set + "/" + m.Sheet)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", m.Sheet, err)
 	}
@@ -104,7 +144,7 @@ func loadTiles() (*tileset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", m.Sheet, err)
 	}
-	t := &tileset{sheet: ebiten.NewImageFromImage(src), tile: m.Tile,
+	t := &tileset{name: set, sheet: ebiten.NewImageFromImage(src), tile: m.Tile,
 		clips: map[string][]*ebiten.Image{}, tint: map[string]bool{}}
 	for _, c := range m.Clips {
 		frames := make([]*ebiten.Image, 0, c.Frames)
@@ -118,16 +158,99 @@ func loadTiles() (*tileset, error) {
 	return t, nil
 }
 
-// frame is one picture out of a clip, or nil where the world asks for
-// something nobody drew. A nil picture is the caller's cue to fall back to
-// the circle, so a half-finished sheet is a partly drawn world rather than a
+// readManifest is the half of loading a set that needs no graphics device,
+// which is the half a test can run.
+func readManifest(set string) (manifestFile, error) {
+	raw, err := loadAsset(set + "/manifest.json")
+	if err != nil {
+		return manifestFile{}, fmt.Errorf("manifest: %w", err)
+	}
+	var m manifestFile
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return manifestFile{}, fmt.Errorf("manifest: %w", err)
+	}
+	if m.Sheet == "" || m.Tile <= 0 {
+		return manifestFile{}, fmt.Errorf("%s: manifest names no sheet", set)
+	}
+	return m, nil
+}
+
+// frame is one picture out of a clip, or nil where the set has nothing that
+// will stand in for it. A nil picture is the caller's cue to fall back to the
+// circle, so a half-finished sheet is a partly drawn world rather than a
 // crash.
 func (t *tileset) frame(name string, i int) *ebiten.Image {
 	frames := t.clips[name]
 	if len(frames) == 0 {
-		return nil
+		has := func(n string) bool { return len(t.clips[n]) > 0 }
+		if stood := t.clips[standIn(name, has)]; len(stood) > 0 {
+			frames = stood
+		} else {
+			return nil
+		}
 	}
 	return frames[((i%len(frames))+len(frames))%len(frames)]
+}
+
+// standIn is what an older set draws with where it has nothing for what was
+// asked.
+//
+// Sets exist to be swapped, and a set drawn before some distinction was made
+// does not have it: every set before 2026-09-22 has one picture of a child
+// standing and none of one walking. Without this, switching to one of those
+// puts circles back on this screen wherever a child moves, which reads as a
+// broken viewer rather than as older art.
+//
+// What is given up, and in what order, is the design. The pose is given up
+// last, because it is the only part of a picture the eye has a neighbour to
+// compare against: a child sliding along the ground in a standing pose while
+// every adult beside it walks is what a wrong pose looks like, and it reads
+// as a broken picture rather than as a child. So age goes first - a child
+// drawn as a grown body walking is the world exactly as it stood until the
+// young were drawn moving, and it is only wrong about size, which the viewer
+// says for itself by drawing the body smaller. Sex goes second, and costs the
+// clothes. Only when nothing at all is drawn for the pose does the body stand
+// still, and then the most particular body that set has is used.
+func standIn(name string, has func(string) bool) string {
+	if has(name) {
+		return name // a set that has it gives nothing up
+	}
+	part := strings.Split(name, ".")
+	if part[0] == "enemy" {
+		// A beast has no age and no sex, and its build is the one thing not
+		// to lie about - a heavy one drawn as a lurker is wrong about which
+		// sort it is, which is the single thing this screen has to get right.
+		// So the pose is all there is to give up.
+		if len(part) == 3 {
+			return part[0] + "." + part[1] + ".idle"
+		}
+		return name
+	}
+	if len(part) < 2 {
+		return name
+	}
+	kind, sex, pose := part[0], "", part[len(part)-1]
+	if len(part) == 3 {
+		sex = part[1]
+	}
+	with := func(kind, sex, pose string) string {
+		if sex == "" {
+			return kind + "." + pose
+		}
+		return kind + "." + sex + "." + pose
+	}
+	for _, try := range []string{
+		with("human", sex, pose), // the same thing, grown
+		with("human", "", pose),  // and a man
+		with(kind, sex, "idle"),  // nobody drew the pose: this body, standing
+		with("human", sex, "idle"),
+		"human.idle",
+	} {
+		if has(try) {
+			return try
+		}
+	}
+	return "human.idle"
 }
 
 // look is what the viewer knows about a body that the body does not carry
@@ -151,8 +274,10 @@ type look struct {
 //
 // The order is what matters here, and it is by what the eye needs most. A
 // body being struck is the thing a player is watching for, so it wins over
-// where it is standing; where it is standing wins over how old it is,
-// because a body in water is in immediate danger and a child is only small.
+// where it is standing, and where it is standing wins over what it is doing.
+// How old it is is not in that order at all: it is picked before any of them,
+// because it is not a circumstance but part of who the body is - the same
+// place the sex is picked, and for the same reason.
 //
 // Sex picks the run too. It used to be the colour the body was filled with,
 // and drawn art cannot be filled with a colour, so without this every human
@@ -187,6 +312,25 @@ func clipFor(a *engine.Agent, cfg *engine.Config, l look) string {
 	case a.Sex == engine.Female:
 		kind = "human.f"
 	}
+	// How old it is picks the kind, the same way its sex does, and for the
+	// same reason: both of them are what the body IS, and neither of them
+	// stops being true because it started walking. This used to be asked
+	// after the action, and only of a body standing still, because the sheet
+	// had one picture each for a child and for someone old - so a child that
+	// took a step turned into an adult drawn small. The sheet has all six
+	// poses for both now (2026-09-22) and the question moved to where it
+	// belonged in the first place.
+	if a.Species == engine.SpeciesHuman {
+		switch {
+		case !a.IsAdult(cfg):
+			kind = childOf(kind)
+		// Past its prime is the engine's own line, read off the same figure
+		// that already makes an old body draw smaller, so a world with the
+		// rule turned off has nobody old in it and asks for nothing.
+		case a.Maturity >= 1 && a.AgeFactor(cfg) < 1:
+			kind = oldOf(kind)
+		}
+	}
 	if hitting(a) {
 		// Throwing the blow beats taking one: a body doing both at once is
 		// more legible as the one going forward.
@@ -210,27 +354,6 @@ func clipFor(a *engine.Agent, cfg *engine.Config, l look) string {
 			return kind + ".swim"
 		}
 	}
-	// Small and old, and only while standing still.
-	//
-	// The sheet has one run each for a child and for someone old, which is a
-	// body standing there, and nothing for either of them walking or eating
-	// or fighting. Using it for those too would leave a child sliding across
-	// the ground in a standing pose while every adult beside it walked, which
-	// reads as a broken picture rather than as a child. So a child that is
-	// doing something is the grown picture drawn small, exactly as it was
-	// before these runs existed - nothing is lost, and a child standing
-	// still now looks like a child. The fix is two more rows of art.
-	if idling(a) {
-		if !a.IsAdult(cfg) {
-			return childOf(kind) + ".idle"
-		}
-		// Past its prime is the engine's own line, read off the same figure
-		// that already makes an old body draw smaller, so a world with the
-		// rule turned off has nobody old in it and asks for nothing.
-		if a.Maturity >= 1 && a.AgeFactor(cfg) < 1 {
-			return oldOf(kind) + ".idle"
-		}
-	}
 	switch a.Action.Kind {
 	case engine.ActEat:
 		return kind + ".eat"
@@ -241,27 +364,18 @@ func clipFor(a *engine.Agent, cfg *engine.Config, l look) string {
 	return kind + ".idle"
 }
 
-// hitting is whether this body is throwing a blow, and idling whether it is
-// doing something that looks like standing there. Both are the same reading
-// the action switch below makes, pulled out so that the circumstances above
-// can ask the question before the action answers it.
+// hitting is whether this body is throwing a blow: the same reading the
+// action switch below makes, pulled out so that the circumstances above can
+// ask the question before the action answers it.
 func hitting(a *engine.Agent) bool {
 	return a.Action.Kind == engine.ActAttack || a.Action.Kind == engine.ActThrow
 }
 
-func idling(a *engine.Agent) bool {
-	switch a.Action.Kind {
-	case engine.ActEat, engine.ActAttack, engine.ActThrow, engine.ActMove,
-		engine.ActFlee, engine.ActCourt, engine.ActInvite, engine.ActTake,
-		engine.ActBuy, engine.ActGive, engine.ActOffer:
-		return false
-	}
-	return true
-}
-
 // childOf and oldOf are the runs drawn for the young and the old of a kind.
 // Only the people have them; a beast is a beast at every age, which is what
-// the sheet was asked for and what the rules say about one.
+// the sheet was asked for and what the rules say about one. Every pose the
+// grown picture has, these have, so the caller can pick the kind and then
+// forget that it did.
 func childOf(kind string) string {
 	switch kind {
 	case "human":

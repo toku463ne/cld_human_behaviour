@@ -10,11 +10,12 @@
 # what Windows leaves beside a file copied into WSL
 *:Zone.Identifier
 
-# the generated art the sprite sheet is cut from. Megabytes each, and what
-# the program reads is cmd/devview/assets, which is committed. Keep the one
-# a sheet was cut from wherever you keep such things; docs/sprites.md says
-# how to cut a fresh one.
+# the generated art the sprite sheet is cut from, and whatever is drawn beside
+# it to check one. Megabytes each, and what the program reads is
+# cmd/devview/assets, which is committed. Keep the one a sheet was cut from
+# wherever you keep such things; docs/sprites.md says how to cut a fresh one.
 /tiled/samples/*.png
+/tiled/samples/*.gif
 
 # what python leaves beside a tool that was imported
 __pycache__/
