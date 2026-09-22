@@ -2935,6 +2935,22 @@ func (g *game) drawNests(screen *ebiten.Image) {
 			vector.DrawFilledRect(screen, cx-2, cy-2, 4, 4, colorNest, true)
 		}
 	}
+	// And the places a people came from (TODO 20), drawn in that people's own
+	// colour so that the square and the bodies that came out of it are read
+	// as one thing. A village that has fallen silent is drawn faintly: it is
+	// still where these people are from, and it is no longer sending anybody.
+	for _, v := range g.world.HumanNests() {
+		x0, y0 := g.onScreen(v.X-v.W/2, v.Y-v.H/2)
+		x1, y1 := g.onScreen(v.X+v.W/2, v.Y+v.H/2)
+		c, ok := lineColour(v.Lineage)
+		if !ok {
+			c = colorStranger
+		}
+		if v.Left == 0 {
+			c.A = 0x55
+		}
+		vector.StrokeRect(screen, x0, y0, x1-x0, y1-y0, 2, c, true)
+	}
 	if len(nests) == 0 {
 		return
 	}
@@ -4681,6 +4697,7 @@ func main() {
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
 	playDynasty := flag.Bool("dynasty", false, "play the dynasty (TODO 6, #130): win by settling your line in every goal block the map marks at once, and pay for each death with ten years the world runs without you. Needs a map with goal blocks (-tiled, or -terrain with goals painted). Brings -play with it")
+	villages := flag.Int("villages", 0, "found the people from this many places instead of scattering them (TODO 20, #142; 0 = every world before it). Each village hands its people a line of its own and keeps it up for ten years, then falls silent. It brings -play's own people with it: the founders are the villages' rather than the world's")
 	paint := flag.String("paint", "line", "what a body's colour says: \"line\" (the family it was born into, handed down from the mother, with the played line drawn white) or \"budget\" (where this body's budget went - red for fighting, green for getting about, blue for knowing), which is what it said until 2026-09-22. Neither changes anything a body does")
 	bosses := flag.Float64("bosses", 0, "how big the master of a den is, as a multiple of an ordinary one of its sort (TODO 19, #141; 0 = every world before it). Tap a den to be asked whether to call it out; kill what comes out and the den sends nobody for five years. Nothing calls it out but you. Above about 1.7 the world's own ceiling on a body takes over and the answer is the same creature")
 	settleHome := flag.Float64("settle", 0, "what leaving the place it was born costs a person, per region's width and per tick out there (TODO 6, #130; 0 = every world before it). The same rule stage 64 gave the beasts, and the same shape: a price, not a leash. Without it an ordinary life crosses seven of the twelve blocks, so travelling somewhere new is not something a player can be seen to have decided")
@@ -4910,6 +4927,29 @@ func main() {
 	// Something in the water (stage 63). Two sorts, one of which comes out of
 	// the river: what is worth looking at is where they are, so the panel's
 	// "sort:" line and the map between them say which is which.
+	// Where a people starts (TODO 20). Three places rather than sixty
+	// strangers, each handing out a line of its own - which is what the
+	// colours on the screen are about, so a world run this way reads as three
+	// peoples and not as a crowd.
+	if *villages > 0 && len(cfg.HumanNestMap) == 0 {
+		spots := []string{".w......", "....m...", "......e."}
+		row := make([]string, 6)
+		for i := range row {
+			row[i] = "........"
+		}
+		names := []string{"west", "middle", "east"}
+		keys := []byte{'w', 'm', 'e'}
+		n := min(*villages, len(names))
+		cfg.HumanNests = nil
+		for i := 0; i < n; i++ {
+			cfg.HumanNests = append(cfg.HumanNests, engine.HumanNest{
+				Name: names[i], Key: keys[i], Rate: 100, Life: 10000, Cap: 20,
+			})
+			row[1+i*2] = spots[i]
+		}
+		cfg.HumanNestMap = row
+		cfg.InitialPopulation = 0
+	}
 	// Dens with a master in them (TODO 19). Paints two of them when the map
 	// has painted none, so that the flag is worth typing on a plain world:
 	// what a master is only means anything where there is a den to come out

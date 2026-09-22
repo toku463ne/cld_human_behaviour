@@ -77,6 +77,13 @@ type TiledWorld struct {
 	NestCap   []string
 	NestQuiet []string
 
+	// HumanNests is where people come into the world, by name (2026-09-22,
+	// TODO 20), and HumanNestMap which cell is which - the same pair the
+	// beasts' sorts have, and the same division of labour: the map brings the
+	// name and the place, Config brings the figures (#133).
+	HumanNests   []HumanNest
+	HumanNestMap []string
+
 	// Climate is what the weather is like in each cell, one character per
 	// cell (#135), in the vocabulary Config.ClimateMap takes. Nil when no
 	// tile carries a "chill" or a "heat" property, and then the world has no
@@ -195,6 +202,7 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 	climates, anyClimate := tileClimates(f.Tilesets)
 	plants := tilePlantKinds(f.Tilesets)
 	beasts := tileNamed(f.Tilesets, "enemy")
+	folk := tileNamed(f.Tilesets, "human")
 	places := tileRegions(f.Tilesets)
 	for _, l := range f.Layers {
 		switch l.Type {
@@ -258,6 +266,16 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 			// And which sort of plant grows here, off the same layer again:
 			// the tile that says plants may come up is the natural one to
 			// say which sort they are.
+			// And where a people starts, off the same layer again.
+			if out.HumanNestMap == nil {
+				rows, nests, err := humanNestRows(l, f.Width, f.Height, folk)
+				if err != nil {
+					return nil, err
+				}
+				if len(nests) > 0 {
+					out.HumanNestMap, out.HumanNests = rows, nests
+				}
+			}
 			if out.PlantKindMap == nil {
 				rows, kinds, err := plantKindRows(l, f.Width, f.Height, plants)
 				if err != nil {
@@ -438,6 +456,19 @@ func enemyKindRows(l tiledLayer, cols, rows int, named map[int]string) ([]string
 	out := make([]EnemyKind, len(kinds))
 	for i, k := range kinds {
 		out[i] = EnemyKind{Name: k.name, Key: k.key}
+	}
+	return painted, out, nil
+}
+
+// humanNestRows is enemyKindRows for the places people come out of.
+func humanNestRows(l tiledLayer, cols, rows int, named map[int]string) ([]string, []HumanNest, error) {
+	painted, nests, err := namedRows(l, cols, rows, named)
+	if err != nil || len(nests) == 0 {
+		return nil, nil, err
+	}
+	out := make([]HumanNest, len(nests))
+	for i, n := range nests {
+		out[i] = HumanNest{Name: n.name, Key: n.key}
 	}
 	return painted, out, nil
 }
@@ -975,6 +1006,7 @@ func (t *TiledWorld) Apply(cfg *Config) {
 	}
 	t.applyPlantKinds(cfg)
 	t.applyEnemyKinds(cfg)
+	t.applyHumanNests(cfg)
 	if len(t.Regions) > 0 {
 		cfg.RegionShapes = append([]RegionShape(nil), t.Regions...)
 	}
@@ -1008,6 +1040,27 @@ func (t *TiledWorld) applyPlantKinds(cfg *Config) {
 		cfg.PlantKinds = append(cfg.PlantKinds, k)
 	}
 	cfg.PlantKindMap = append([]string(nil), t.PlantKindMap...)
+}
+
+// applyHumanNests merges the places the map named into the table the Config
+// brought, the same way the sorts do: a name in both is one nest, and a name
+// the table never heard of becomes a row that takes the world's own figures.
+func (t *TiledWorld) applyHumanNests(cfg *Config) {
+	if len(t.HumanNests) == 0 {
+		return
+	}
+	at := map[string]int{}
+	for i := range cfg.HumanNests {
+		at[cfg.HumanNests[i].Name] = i
+	}
+	for _, n := range t.HumanNests {
+		if i, ok := at[n.Name]; ok {
+			cfg.HumanNests[i].Key = n.Key
+			continue
+		}
+		cfg.HumanNests = append(cfg.HumanNests, n)
+	}
+	cfg.HumanNestMap = append([]string(nil), t.HumanNestMap...)
 }
 
 // applyEnemyKinds is applyPlantKinds for the beasts, and merges the same way:

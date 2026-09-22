@@ -75,7 +75,7 @@ func TestTrustNearIsSummedAndNotCounted(t *testing.T) {
 		Self: SelfView{Intelligence: 50, NoiseWeight: 1},
 		Rand: w.rng,
 		Others: []AgentView{
-			{ID: 1, Affinity: 0},                    // a stranger
+			{ID: 1, Affinity: 0},                     // a stranger
 			{ID: 2, Affinity: cfg.AffinityTrust / 2}, // halfway
 			{ID: 3, Affinity: cfg.AffinityTrust * 3}, // well past it
 		},

@@ -516,6 +516,12 @@ type World struct {
 	nestLives [][]nestLife
 	retired   int
 
+	// Where people come into the world, when a map painted anywhere for them
+	// (humannest.go), and how many each one has sent. Nil in every world that
+	// paints none.
+	humanNestCells [][]cell
+	humanNestSent  []int
+
 	drownDeaths int
 	// drownTakenSwim is the realised swimming of the bodies the water has
 	// taken, summed (stage 98). Against the swimming of the bodies standing in
@@ -904,6 +910,7 @@ func NewWorld(cfg Config) *World {
 	w.buildPlantKinds()
 	w.buildEnemyKindCells()
 	w.buildNestLives()
+	w.buildHumanNests()
 	w.buildRegions()
 	// The stones are laid out before anybody arrives (stage 45): they are
 	// part of what the ground is, not something the world keeps producing.
@@ -1130,6 +1137,7 @@ func (w *World) Step() {
 	w.spawnFoodOfTick()
 	w.spawnFishOfTick()
 	w.spawnEnemyOfTick()
+	w.spawnHumansOfTick()
 
 	// What the ground under each body is worth to it this tick (stage 57),
 	// before anybody decides anything with it.
@@ -2783,6 +2791,18 @@ func (w *World) randomAgent(species Species) Agent {
 		}
 		w.enemyArrivalsByKind[kind]++
 	}
+	return w.randomAgentAt(species, kind, x, y)
+}
+
+// randomAgentAt is the rest of it, with the spot already chosen: everything
+// from where a body comes into the world onwards.
+//
+// It is split out for the nests people come out of (TODO 20), which know
+// where the body goes before anything else about it. Putting the body
+// together and then moving it would not do - what the country it arrived in
+// has to teach is read off the spot (learnFromBirthplace), so a body moved
+// afterwards would know the wrong country.
+func (w *World) randomAgentAt(species Species, kind int, x, y float64) Agent {
 	a := w.newAgent(
 		x,
 		y,

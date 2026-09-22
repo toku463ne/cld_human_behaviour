@@ -411,6 +411,35 @@ type Config struct {
 	NestQuietYears float64
 	NestQuietMap   []string
 
+	// HumanNests are the places people come into the world, one row each, and
+	// HumanNestMap is where they are - one character a cell, each character
+	// being a row's Key (2026-09-22, TODO 20, decision #142). Both empty is
+	// every world before this one: people come from a birth and from the
+	// first tick's InitialPopulation, and from nowhere else.
+	//
+	// The row carries the figures and the map carries the name and the place
+	// (#133), which is the arrangement the beasts' sorts already have.
+	//
+	// What it is not is a second way of being born. Nothing here touches
+	// birth: no parents, no vitality paid, no cooldown. The world lets a grown
+	// body in, exactly as it does with a beast - so this is on
+	// EnemySpawnTicks' shelf and not on Endow's, which is only ever called
+	// from outside the engine.
+	//
+	// It is also the first time people in this world come from anywhere but a
+	// birth, so a run with a nest in it is not comparable body for body with
+	// one without. An arm that uses one says so in its name.
+	HumanNests   []HumanNest
+	HumanNestMap []string
+
+	// HumanNestTicks and HumanNestLife are what a nest gets when its row says
+	// nothing: one body a year, for ten years. The figures are here rather
+	// than in the row for the reason every other table in this Config has a
+	// world-level fallback - a row that only wants to name a place should not
+	// have to carry numbers it does not care about.
+	HumanNestTicks int
+	HumanNestLife  int
+
 	// EnemyAmbientShare is how many of the arrivals ignore the painted nests
 	// and come in from wherever the world would otherwise have put them
 	// (2026-09-22, TODO 18). Zero - the default - is every world since the
@@ -4285,7 +4314,9 @@ func DefaultConfig() Config {
 		FoodRenormalize:     true, // the world grows as much as it did (stage 15a)
 		EnemyBudgetMean:     520,  // over the human 360, so a carcass feeds several
 		EnemyBudgetStd:      90,
-		BossRouseTicks:      500, // a year out before it will walk back in
+		HumanNestTicks:      500,  // one a year
+		HumanNestLife:       5000, // for ten years
+		BossRouseTicks:      500,  // a year out before it will walk back in
 		NestQuietYears:      5,
 		EnemySpawnTicks:     400,
 		MaxEnemies:          12,

@@ -579,7 +579,7 @@ func (w *World) buildEnemyKindCells() {
 			}
 			cw := w.cfg.Width / float64(len(row))
 			cells[i] = append(cells[i], nestCell{
-				cell: cell{x: (float64(c) + 0.5) * cw, y: y, w: cw, h: h},
+				cell:  cell{x: (float64(c) + 0.5) * cw, y: y, w: cw, h: h},
 				rate:  fifthsAt(w.cfg.NestRateMap, r, c, 1),
 				cap:   w.cfg.NestCap * fifthsAt(w.cfg.NestCapMap, r, c, 1),
 				quiet: fifthsAt(w.cfg.NestQuietMap, r, c, 1),

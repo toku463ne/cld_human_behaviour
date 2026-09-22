@@ -851,7 +851,7 @@ func TestIntelligenceMakesTheChoiceReliable(t *testing.T) {
 	hits := func(intelligence float64) int {
 		c := &AIController{}
 		p := &Perception{
-			Cfg:  &cfg,
+			Cfg: &cfg,
 			// NoiseWeight one is the world as it was: from stage 95 the
 			// amplitude is intelligence times this body's own multiplier, and
 			// a literal built here would otherwise read nought and never

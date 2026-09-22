@@ -182,6 +182,7 @@ type counterSnap struct {
 	NestRefused            int       `json:",omitempty"`
 	Retired                int       `json:",omitempty"`
 	NestLives              [][]int   `json:",omitempty"` // boss, rousedAt, quietTill per nest
+	HumanNestSent          []int     `json:",omitempty"`
 	Exchanges, HintsCopied int
 }
 
@@ -391,6 +392,7 @@ func (w *World) Save(out io.Writer) error {
 			EnemyBorn: w.enemyBorn, EnemyByKind: w.enemyArrivalsByKind,
 			NestTries: w.nestTries, NestRefused: w.nestRefused,
 			Retired: w.retired, NestLives: snapNests(w.nestLives),
+			HumanNestSent: w.humanNestSent,
 		},
 	}
 	for i := range w.pendingSeeds {
@@ -604,6 +606,7 @@ func Load(in io.Reader) (*World, error) {
 	w.buildPlantKinds()
 	w.buildEnemyKindCells()
 	w.buildNestLives()
+	w.buildHumanNests()
 	for i := range s.PendingSeeds {
 		p := &s.PendingSeeds[i]
 		w.pendingSeeds = append(w.pendingSeeds, pendingSeed{x: p.X, y: p.Y, genes: p.Genes})
@@ -663,6 +666,11 @@ func Load(in io.Reader) (*World, error) {
 	w.nestTries, w.nestRefused = c.NestTries, c.NestRefused
 	w.retired = c.Retired
 	loadNests(w.nestLives, c.NestLives)
+	for i := range w.humanNestSent {
+		if i < len(c.HumanNestSent) {
+			w.humanNestSent[i] = c.HumanNestSent[i]
+		}
+	}
 	for i := range c.Tolls {
 		if i < len(w.tolls) {
 			w.tolls[i] = regionToll{deaths: c.Tolls[i].Deaths, kills: c.Tolls[i].Kills}

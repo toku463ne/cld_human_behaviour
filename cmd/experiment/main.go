@@ -975,6 +975,60 @@ var variants = []variant{
 		about: "the same two nests at four times that price",
 		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 2 },
 	},
+	// 2026-09-22: where a people starts (TODO 20). Every arm here has the
+	// same sixty founders as the baseline; what differs is whether they were
+	// scattered over the map or handed out by three villages, and whether the
+	// villages keep their lines up afterwards.
+	//
+	// A run with a village in it is not comparable body for body with one
+	// without - people come from somewhere other than a birth for the first
+	// time - so these are read against each other and never against baseline.
+	{
+		name:  "villages",
+		about: "20: three villages hand out the founders, twenty each, and stop there",
+		apply: func(c *engine.Config) { threeVillages(c, 0) },
+	},
+	{
+		name:  "villagesheld",
+		about: "the same three villages, each keeping its own line at twenty for ten years",
+		apply: func(c *engine.Config) { threeVillages(c, 20) },
+	},
+	{
+		name:  "villagessmall",
+		about: "the same, held at five: how many founders a country needs to stand on its own",
+		apply: func(c *engine.Config) { threeVillages(c, 5) },
+	},
+	{
+		name: "villagesfed",
+		about: "20: three villages that really do keep their lines up - five a year each, " +
+			"for ten years, while the line is under twenty",
+		apply: func(c *engine.Config) {
+			threeVillages(c, 20)
+			for i := range c.HumanNests {
+				c.HumanNests[i].Rate = 100
+			}
+		},
+	},
+	{
+		name: "villagesatonce",
+		about: "the same three villages, handing their sixty out in the first twenty ticks: " +
+			"where they started, without when",
+		apply: func(c *engine.Config) {
+			threeVillages(c, 0)
+			for i := range c.HumanNests {
+				c.HumanNests[i].Rate, c.HumanNests[i].Life = 1, 20
+			}
+		},
+	},
+	{
+		name:  "villagesscattered",
+		about: "the control: the same sixty bodies put in the way they always were",
+		apply: func(c *engine.Config) {
+			threeVillages(c, 0)
+			c.HumanNestMap = nil // painted nowhere, so nobody comes out
+			c.InitialPopulation = 60
+		},
+	},
 	// 2026-09-22: the master of a den (TODO 19). All three arms have the same
 	// two dens, the same price for being away from one and the same blunt
 	// caller; what differs is how big the master is. The doses are 1, 1.5 and
@@ -6365,6 +6419,7 @@ var metricNames = []string{
 	"nestCrowd", "nestCapped", "nestStopped", "nestRated",
 	"bossCalled", "bossKilled", "bossWalked", "bossKillShare", "bossYears", "densEmpty",
 	"denSettled", "denRoom",
+	"villageSent",
 	"kinds", "kindMix", "kindGap", "kindHomed",
 	"enemyAway", "enemyAtHome", "homeShare",
 	"plantRate", "foodMean",
@@ -7671,6 +7726,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"bossKillShare": share(rouser.killed, rouser.called),
 		"bossYears":     rouser.yearsToFall(w),
 		"densEmpty":     rouser.emptied(),
+		"villageSent":   villagesSent(w),
 		"denSettled":    denSettled,
 		"denRoom":       denRoom,
 		"nests":         tail.nests,
@@ -9024,6 +9080,46 @@ func (r *rouser) emptied() float64 {
 		return 0
 	}
 	return r.quiet / r.dens
+}
+
+// villagesSent is how many people the map's villages have put into the world
+// (TODO 20). Nought in every world that paints none, which is every arm but
+// the villages.
+func villagesSent(w *engine.World) float64 {
+	seen := map[string]int{}
+	for _, v := range w.HumanNests() {
+		seen[v.Name] = v.Sent
+	}
+	n := 0.0
+	for _, sent := range seen {
+		n += float64(sent)
+	}
+	return n
+}
+
+// threeVillages hands the founders out from three places instead of scattering
+// them (2026-09-22, TODO 20). The sixty bodies of the baseline become sixty
+// bodies out of three villages, twenty each, over the first twenty years - so
+// what differs from the world it is read against is where they started and
+// when, and not how many there are.
+//
+// held is what each village keeps its own line at. Nought is a village that
+// simply sends its twenty and stops.
+func threeVillages(c *engine.Config, held int) {
+	c.InitialPopulation = 0
+	c.HumanNests = []engine.HumanNest{
+		{Name: "west", Key: 'w', Rate: 500, Life: 10000, Cap: held},
+		{Name: "middle", Key: 'm', Rate: 500, Life: 10000, Cap: held},
+		{Name: "east", Key: 'e', Rate: 500, Life: 10000, Cap: held},
+	}
+	c.HumanNestMap = []string{
+		"........",
+		".w......",
+		"........",
+		"....m...",
+		"........",
+		"......e.",
+	}
 }
 
 // paintTwoNests puts two nests of one sort on the map, far apart, as cells

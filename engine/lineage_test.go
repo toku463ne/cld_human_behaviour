@@ -177,4 +177,3 @@ func TestALineMayBeHandedDownOneAtATime(t *testing.T) {
 		t.Fatalf("with the eldest gone the next is line %d, want 5", got)
 	}
 }
-
