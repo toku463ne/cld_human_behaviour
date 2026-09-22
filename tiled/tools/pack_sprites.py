@@ -61,7 +61,24 @@ try:
 except ImportError as exc:  # pragma: no cover - a developer's tool, not a build step
     sys.exit("pack_sprites needs numpy, pillow and scipy: %s" % exc)
 
-TILE = 32   # one cell of the sheet
+TILE = 32   # one cell of the sheet, unless a layout asks for more
+
+# Layouts whose clips are cut bigger than a cell, and why.
+#
+# A clip carries its own size and the viewer scales it to whatever the body
+# should be on screen, so a sheet can hold both. The beasts need it: they are
+# drawn as big as their bodies and the heaviest of them covers forty pixels,
+# which means a 32-pixel clip is blown up on every draw while a person's is
+# shrunk - so the beasts came out visibly coarser than the people standing
+# next to them. There is detail enough in the render (a beast is 160 pixels
+# wide in it) and the only thing in the way was the cell.
+#
+# 96 rather than 64, which was the first try: the game is played at a zoom of
+# 2.5, where a person is drawn 45 pixels from a 32-pixel clip (1.4 times up)
+# and the heaviest beast is drawn 120. At 64 that is nearly twice up and the
+# edges go to blocks; at 96 it is 1.25, which is finer than the people beside
+# it.
+CELL = {"spirit_beasts": 96}
 BODY = 30   # how tall a standing adult is inside its cell
 FEET = 1    # rows left under the feet, so a body is not flush with the edge
 
@@ -728,7 +745,7 @@ def shadowed(frame, dark, light):
     return Image.fromarray(np.clip(a, 0, 255).astype("uint8"))
 
 
-def pack_bodies(img, picks, found):
+def pack_bodies(img, picks, found, size=TILE):
     """The bodies half of the tool, as it has always worked."""
     # A build's scale, for the clips that share one: the widest frame any of
     # them uses, so every pose of that build fits its cell and none of them is
@@ -749,12 +766,12 @@ def pack_bodies(img, picks, found):
         if row >= len(found):
             sys.exit("%s wants row %d and the sheet has %d" % (name, row, len(found)))
         if isinstance(how, str):
-            scale = TILE / widest[how]
+            scale = size / widest[how]
         else:
-            scale = BODY / (how if how else STANDING)
+            scale = size / TILE * BODY / (how if how else STANDING)
         boxes = [found[row][i] for i in frames]
-        scale = fits(img, boxes, scale)
-        made.append((name, [cell(img, b, scale) for b in boxes], TILE, TILE))
+        scale = fits(img, boxes, scale, size)
+        made.append((name, [cell(img, b, scale, size) for b in boxes], size, size))
     return made
 
 
@@ -970,7 +987,7 @@ def tall(img, box):
     return rows_[-1] - rows_[0] + 1
 
 
-def fits(img, boxes, scale):
+def fits(img, boxes, scale, size=TILE):
     """The scale a clip is actually drawn at: its own, unless a frame overflows.
 
     A cell is square and some poses are not. A body lying down is 36 to 38
@@ -987,11 +1004,11 @@ def fits(img, boxes, scale):
     two frames of one punch end up two sizes.
     """
     for box in boxes:
-        scale = min(scale, TILE / wide(img, box), (TILE - FEET) / tall(img, box))
+        scale = min(scale, size / wide(img, box), (size - FEET) / tall(img, box))
     return scale
 
 
-def cell(img, box, scale):
+def cell(img, box, scale, size=TILE):
     """One body, scaled and dropped into its cell with its feet on the floor.
 
     Feet on the floor rather than centred: a body centred in its cell rises
@@ -1000,8 +1017,8 @@ def cell(img, box, scale):
     c = img.crop(box)
     w, h = max(1, round(c.width * scale)), max(1, round(c.height * scale))
     small = c.resize((w, h), Image.BOX)
-    out = Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
-    out.paste(small, ((TILE - small.width) // 2, TILE - FEET - small.height), small)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(small, ((size - small.width) // 2, size - FEET - small.height), small)
     return out
 
 
@@ -1072,7 +1089,7 @@ def main():
     if ground:
         made = pack_ground(src, picks, found)
     else:
-        made = pack_bodies(img, picks, found)
+        made = pack_bodies(img, picks, found, CELL.get(args.layout, TILE))
 
     if shadow := SHADOW.get(args.layout):
         prefix, dark, light = shadow

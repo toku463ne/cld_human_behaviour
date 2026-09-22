@@ -58,16 +58,20 @@ const (
 	// well - so a large body that has been hurt still reads differently from
 	// a small one in good health, which is the whole point of the budget.
 	bodyRadius = 9.0
-	// A beast is drawn as big as its body, and the range starts where a
-	// grown person ends (2026-09-22). It used to start at 3.5 - a third of
-	// a person - because it was a circle whose radius was the vitality
-	// gene, and a light beast really does have less body than a person. As
-	// a drawn animal that reads as a kitten among adults, which is a lie
-	// about the one thing this screen has to get right: a beast is what
-	// eats you. The lightest is now a person's size and the heaviest half
-	// again, which is what the art was asked for as well.
-	minRadius   = bodyRadius
-	maxRadius   = 16.0
+	// A beast is drawn as big as its body, and the range is set so that the
+	// lightest beast is at least as TALL as a grown person (2026-09-22).
+	//
+	// These are half-widths, and that is the whole reason they are so much
+	// larger than bodyRadius: a person is drawn 0.94 as tall as it is wide
+	// and a beast between 0.39 and 0.58, because one stands and the other is
+	// on four legs. Matching the widths, which the first attempt at this
+	// did, leaves a beast shorter than the person beside it and still
+	// reading as a kitten among adults - which is a lie about the one thing
+	// this screen has to get right: a beast is what eats you. At 16 the
+	// lightest comes out a person's height, and the heaviest half again,
+	// which is what the art was asked for too.
+	minRadius   = 16.0
+	maxRadius   = 24.0
 	minBar      = 7.0
 	maxBar      = 20.0
 	minRingSize = 1.0
@@ -5321,6 +5325,13 @@ type fallen struct {
 	x, y float64
 	clip string
 	at   int
+	// The colour it was being drawn in while it was alive. Kept with the
+	// body rather than worked out here, because by the time this is drawn
+	// the world has forgotten the body and the colour is read off what the
+	// body WAS: whose line it belonged to, and where its budget went. The
+	// first version left it out and every corpse in the world came up white,
+	// which is the colour that means "this one is yours".
+	paint color.RGBA
 }
 
 // deathFlashTicks is how long a body lies where it fell, in the world's own
@@ -5360,7 +5371,9 @@ func (g *game) markFallen(agents []engine.Agent, cfg *engine.Config) {
 	for i := range agents {
 		a := &agents[i]
 		here[a.ID] = true
-		g.standing[a.ID] = fallen{x: a.X, y: a.Y, clip: deadClipFor(a, cfg)}
+		clip := deadClipFor(a, cfg)
+		g.standing[a.ID] = fallen{x: a.X, y: a.Y, clip: clip,
+			paint: g.bodyPaint(a, g.greyArt(clip))}
 	}
 	for id, was := range g.standing {
 		if here[id] {
@@ -5401,6 +5414,9 @@ func (g *game) drawFallen(screen *ebiten.Image) {
 		// Fading out rather than vanishing, so that the eye can tell a body
 		// that went down a moment ago from one that went down long enough for
 		// its meat to have been carried off.
+		if g.tiles.tint[f.clip] {
+			op.ColorScale.ScaleWithColor(f.paint)
+		}
 		left := 1 - float32(g.world.Tick()-f.at)/deathFlashTicks
 		op.ColorScale.ScaleAlpha(clamp01f(left))
 		op.Filter = ebiten.FilterNearest

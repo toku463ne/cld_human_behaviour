@@ -486,10 +486,90 @@ func (g *game) bodyPaint(a *engine.Agent, grey bool) color.RGBA {
 	if g.played == 0 || a.ID == g.played || g.isKin(a.ID) {
 		return colorOwnLine
 	}
-	// A wobble from the ID, so that a crowd of strangers is not one body
-	// repeated sixty times. It is small enough that no stranger is ever as
-	// bright as the line.
-	return bodyTint(a, colorStranger)
+	return strangerColour(a)
+}
+
+// strangerColour is what a body not of the played line is drawn in: dimmer
+// than the line, always, and coloured by where its budget went.
+//
+// This is a reversal. The wobble that used to be here came from the ID and
+// said nothing on purpose - "there is no gene for complexion" - and it was
+// there only so that a crowd did not look like one body repeated sixty
+// times. The spirits can carry a colour properly, so it may as well be a
+// reading: red is a body that spent on fighting and surviving, green on
+// getting about, blue on knowing things. It is the same fact the ring width
+// and the tail already show one gene at a time, said all at once and at a
+// glance, and it is worth having because a crowd of sixty is exactly where
+// those readings are too small to use.
+//
+// Brightness is not part of it. Every colour this returns is held at the
+// same lightness, well under the line's own, because brightness already
+// answers a question - whose line is this - and a second meaning on the
+// same channel would spoil the first. A test pins that for any genome.
+func strangerColour(a *engine.Agent) color.RGBA {
+	if len(a.Genome) < engine.NumGenes {
+		return colorStranger
+	}
+	mean := func(genes ...engine.Gene) float64 {
+		sum := 0.0
+		for _, g := range genes {
+			sum += a.Genome[g]
+		}
+		return sum / float64(len(genes))
+	}
+	// Grouped by what the genes are for, and averaged inside each group so
+	// that a group of three does not outweigh a group of two by being three.
+	power := mean(engine.GeneAttack, engine.GeneDefence, engine.GeneVitality)
+	quick := mean(engine.GeneSpeed, engine.GeneEvasion)
+	wits := mean(engine.GeneMemory, engine.GeneRationality, engine.GeneIntelligence)
+	total := power + quick + wits
+	if total <= 0 {
+		return colorStranger
+	}
+	// A third each is the even body, and what is drawn is the departure
+	// from it: one step lighter in the channel a body spent on, one step
+	// darker in the ones it did not.
+	//
+	// Added to a fixed grey rather than scaled to a fixed brightness, which
+	// is how the first two attempts turned the world into a bag of sweets.
+	// Scaling puts every mix at one lightness, and a mix whose strong
+	// channel is a dark one - red, or blue - has to be multiplied a long
+	// way up to get there, which runs it off the top and clips it into a
+	// primary. Adding cannot: the furthest any channel goes is one step,
+	// so the colours stay the greys they are made of and nothing is ever
+	// saturated. Measured against real bodies (3000 ticks of the default
+	// world), the budget shares run 0.10 to 0.60 and these give the likes
+	// of rgb(132,132,155), rgb(128,165,126), rgb(165,134,120): lavender,
+	// sage, dust.
+	const (
+		grey   = 0.55 // what a body with an even budget is drawn at
+		step   = 0.45 // how far a lopsided one pulls a channel
+		lowest = 0.35
+		most   = 0.75
+	)
+	tint := func(share float64) float64 {
+		v := grey + (share/total-1.0/3)*step
+		if v < lowest {
+			v = lowest
+		}
+		if v > most {
+			v = most
+		}
+		return v
+	}
+	r, gr, b := tint(power), tint(quick), tint(wits)
+	return color.RGBA{uint8(r * 255), uint8(gr * 255), uint8(b * 255), 0xff}
+}
+
+// greyArt says whether a clip is one of the grey placeholders, which are
+// coloured by a different rule (bodyPaint). A clip carries its own size and
+// the placeholders are the small ones.
+func (g *game) greyArt(clip string) bool {
+	if g.tiles == nil {
+		return false
+	}
+	frames := g.tiles.clips[clip]
+	return len(frames) > 0 && frames[0].Bounds().Dx() != g.tiles.tile
 }
 
 // drawBody stamps one body. It reports whether it drew anything, so that the
@@ -598,6 +678,24 @@ func (g *game) stampLight(screen *ebiten.Image, clip string, x, y, size float32,
 	screen.DrawImage(img, op)
 }
 
+// colorItemGlow is what is thrown behind a thing lying on the ground.
+//
+// Fluorescent on purpose, and the only place in this world that is. The
+// bodies are held to muted colours because colour there is a reading - whose
+// line, what budget - and the country is moss and earth for reasons of its
+// own. A berry lying in that is a small dark green dot on a large dark green
+// field: the thing a player looks for most often and the hardest thing on
+// the screen to see. It is not a reading, it is a marker, so it may shout.
+//
+// One colour for everything rather than each kind's own, which was tried
+// first: a green glow under a green plant is no glow at all, and what the
+// glow has to say is "something is lying here" - which kind it is, is the
+// picture inside it.
+var colorItemGlow = color.RGBA{0xdf, 0xff, 0x4f, 0xcc}
+
+// itemGlowSize is how much bigger than the thing its glow is drawn.
+const itemGlowSize = 1.7
+
 // drawItem stamps one thing lying about, in the colour that says what it is.
 func (g *game) drawItem(screen *ebiten.Image, f engine.Food, x, y float32, tint color.RGBA) bool {
 	if g.tiles == nil {
@@ -610,6 +708,18 @@ func (g *game) drawItem(screen *ebiten.Image, f engine.Food, x, y float32, tint 
 	}
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	size := g.long(11)
+	// The same shape, larger and lit up, underneath: an outline without
+	// having to draw one - four offset copies were tried and the body
+	// covered them - and enough to lift a berry off a field of moss. Drawn
+	// from the same texture, so it costs a stamp and no batch.
+	halo := &ebiten.DrawImageOptions{}
+	halo.GeoM.Translate(-float64(w)/2, -float64(h)/2)
+	halo.GeoM.Scale(float64(size)*itemGlowSize/float64(w), float64(size)*itemGlowSize/float64(h))
+	halo.GeoM.Translate(float64(x), float64(y))
+	halo.ColorScale.ScaleWithColor(colorItemGlow)
+	halo.Filter = ebiten.FilterLinear
+	screen.DrawImage(img, halo)
+
 	scale := float64(size) / float64(w)
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(-float64(w)/2, -float64(h)/2)

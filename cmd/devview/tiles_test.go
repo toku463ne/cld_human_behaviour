@@ -2,6 +2,7 @@ package main
 
 import (
 	"image/color"
+	"math/rand"
 	"os"
 	"strings"
 	"testing"
@@ -566,6 +567,40 @@ func TestTheLineIsBrightAndEveryoneElseIsNot(t *testing.T) {
 			t.Fatalf("stranger #%d is painted %v (%.0f), as bright as the line", id, c, light(c))
 		}
 	}
+	// And with real bodies, whatever they spent their budget on: the colour
+	// varies and the brightness does not. Brightness answers "whose line is
+	// this" and a body that happened to be born pale would answer it wrong.
+	seen := map[color.RGBA]bool{}
+	rng := rand.New(rand.NewSource(7))
+	for i := 0; i < 2000; i++ {
+		body := &engine.Agent{ID: 1000 + i, Genome: make([]float64, engine.NumGenes)}
+		for j := range body.Genome {
+			body.Genome[j] = rng.Float64() * 120
+		}
+		c := g.bodyPaint(body, false)
+		seen[c] = true
+		if light(c) >= light(colorOwnLine)*0.8 {
+			t.Fatalf("a body with genome %v is painted %v (%.0f), too close to the line (%.0f)",
+				body.Genome, c, light(c), light(colorOwnLine))
+		}
+	}
+	if len(seen) < 200 {
+		t.Errorf("2000 genomes are drawn in %d colours; the point of colouring by "+
+			"the budget is that a crowd is not one body repeated", len(seen))
+	}
+	// A body that spent on fighting is redder than one that spent on knowing.
+	fighter := &engine.Agent{ID: 1, Genome: make([]float64, engine.NumGenes)}
+	thinker := &engine.Agent{ID: 2, Genome: make([]float64, engine.NumGenes)}
+	for j := range fighter.Genome {
+		fighter.Genome[j], thinker.Genome[j] = 40, 40
+	}
+	fighter.Genome[engine.GeneAttack] = 200
+	thinker.Genome[engine.GeneIntelligence] = 200
+	if f, w := strangerColour(fighter), strangerColour(thinker); f.R <= w.R || w.B <= f.B {
+		t.Errorf("a fighter is painted %v and a thinker %v; red is meant to be the "+
+			"budget spent on fighting and blue on knowing", f, w)
+	}
+
 	// Nobody playing: nothing to pick out, so nothing is dimmed.
 	none := &game{}
 	if got := none.bodyPaint(stranger, false); got != colorOwnLine {
@@ -599,5 +634,48 @@ func TestThePeopleAreColouredAndTheBeastsAreNot(t *testing.T) {
 		if tint[name] {
 			t.Errorf("%s is given a colour, which undoes the dark it was packed with", name)
 		}
+	}
+}
+
+// A body that has fallen keeps the colour it had.
+//
+// It is drawn from what the viewer remembered, because the engine compacts
+// the dead out the same tick - so if the colour is not remembered with the
+// place, there is nothing left to work it out from. The first version did
+// not remember it and every corpse in the world came up white, which is the
+// one colour that means "this one is yours".
+func TestACorpseKeepsTheColourItHad(t *testing.T) {
+	cfg := engine.DefaultConfig()
+	cfg.InitialPopulation = 0
+	g := &game{world: engine.NewWorld(cfg), played: 1, lineKids: []int{2}}
+	genome := func(spend engine.Gene) []float64 {
+		out := make([]float64, engine.NumGenes)
+		for i := range out {
+			out[i] = 40
+		}
+		out[spend] = 200
+		return out
+	}
+	agents := []engine.Agent{
+		{ID: 1, Genome: genome(engine.GeneAttack)},
+		{ID: 2, Genome: genome(engine.GeneSpeed)},
+		{ID: 3, Genome: genome(engine.GeneAttack)},
+		{ID: 4, Genome: genome(engine.GeneIntelligence)},
+	}
+	g.markFallen(agents, &cfg)
+	want := map[int]color.RGBA{
+		1: colorOwnLine, // the played body
+		2: colorOwnLine, // a child of the line
+		3: strangerColour(&agents[2]),
+		4: strangerColour(&agents[3]),
+	}
+	for id, c := range want {
+		if got := g.standing[id].paint; got != c {
+			t.Errorf("#%d would fall in %v, want %v", id, got, c)
+		}
+	}
+	if g.standing[3].paint == g.standing[4].paint {
+		t.Errorf("two strangers who spent their budgets differently fall in the same colour %v",
+			g.standing[3].paint)
 	}
 }
