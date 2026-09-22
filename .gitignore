@@ -19,3 +19,8 @@
 
 # what python leaves beside a tool that was imported
 __pycache__/
+
+# what Tiled leaves beside a project: which files were open, where the view
+# was, how far it was zoomed. Per machine and per sitting, and it carries this
+# machine's absolute paths.
+*.tiled-session
