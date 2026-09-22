@@ -7,6 +7,8 @@ import (
 	"image"
 	_ "image/png"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -457,6 +459,90 @@ func TestThePaintedTilesetsSayWhatTheSampleMapSays(t *testing.T) {
 		}
 		for k, v := range got {
 			t.Errorf("%s.tsx tile %s = %q, and the sample map says nothing about it", in.Name, k, v)
+		}
+	}
+}
+
+// Every tileset shipped to paint with is one Tiled can open and the engine
+// can read.
+//
+// The two weather ones are why this exists: no map in the repository uses
+// them, so nothing else here would ever look at them, and a tileset with a
+// picture that is the wrong size or a chill of 30 would sit there until
+// somebody drew a whole map with it and wondered why the world was mild.
+func TestEveryTilesetShippedToPaintWithIsSound(t *testing.T) {
+	const dir = "../../tiled/samples/tilesets/001_simple/"
+	found, err := filepath.Glob(dir + "*.tsx")
+	if err != nil || len(found) == 0 {
+		t.Fatalf("no tilesets to paint with in %s: %v", dir, err)
+	}
+	for _, path := range found {
+		var set struct {
+			Name       string `xml:"name,attr"`
+			TileWidth  int    `xml:"tilewidth,attr"`
+			TileHeight int    `xml:"tileheight,attr"`
+			TileCount  int    `xml:"tilecount,attr"`
+			Columns    int    `xml:"columns,attr"`
+			Image      struct {
+				Source string `xml:"source,attr"`
+				Width  int    `xml:"width,attr"`
+				Height int    `xml:"height,attr"`
+			} `xml:"image"`
+			Tiles []struct {
+				ID         int `xml:"id,attr"`
+				Properties []struct {
+					Name  string `xml:"name,attr"`
+					Type  string `xml:"type,attr"`
+					Value string `xml:"value,attr"`
+				} `xml:"properties>property"`
+			} `xml:"tile"`
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("%s: %v", path, err)
+			continue
+		}
+		if err := xml.Unmarshal(raw, &set); err != nil {
+			t.Errorf("%s: Tiled would not open this: %v", path, err)
+			continue
+		}
+		if set.Image.Width != set.TileCount*set.TileWidth || set.Image.Height != set.TileHeight {
+			t.Errorf("%s says %d tiles of %dx%d and its picture is %dx%d",
+				path, set.TileCount, set.TileWidth, set.TileHeight,
+				set.Image.Width, set.Image.Height)
+		}
+		png, err := os.Open(dir + set.Image.Source)
+		if err != nil {
+			t.Errorf("%s names a picture that is not there: %v", path, err)
+			continue
+		}
+		cfg, _, err := image.DecodeConfig(png)
+		png.Close()
+		if err != nil {
+			t.Errorf("%s: %v", set.Image.Source, err)
+			continue
+		}
+		if cfg.Width != set.Image.Width || cfg.Height != set.Image.Height {
+			t.Errorf("%s is %dx%d and %s says %dx%d",
+				set.Image.Source, cfg.Width, cfg.Height, path, set.Image.Width, set.Image.Height)
+		}
+		for _, tile := range set.Tiles {
+			if tile.ID >= set.TileCount {
+				t.Errorf("%s describes tile %d of %d", path, tile.ID, set.TileCount)
+			}
+			for _, p := range tile.Properties {
+				// The weather is a share of the worst there is, and the
+				// engine's vocabulary for it runs 1 to 9 (tiled.go). A
+				// bigger number is not a colder cell, it is a clamped one.
+				if p.Name != "chill" && p.Name != "heat" {
+					continue
+				}
+				n, err := strconv.Atoi(p.Value)
+				if err != nil || n < 1 || n > 9 {
+					t.Errorf("%s tile %d has %s=%q, and the scale is 1 to 9",
+						path, tile.ID, p.Name, p.Value)
+				}
+			}
 		}
 	}
 }
