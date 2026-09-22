@@ -777,6 +777,82 @@ var colorItemGlow = color.RGBA{0xdf, 0xff, 0x4f, 0xcc}
 // itemGlowSize is how much bigger than the thing its glow is drawn.
 const itemGlowSize = 1.7
 
+// cropColours are the colours the numbered food tiles are painted in, in the
+// palette a map is drawn with (tiled/samples/tilesets/001_simple/food_spawn.png),
+// food1 first. The author picks a tile by its colour, so the world answers in
+// the same colours - two pictures of the same thing that disagreed about
+// which sort is which would be worse than one picture.
+var cropColours = []color.RGBA{
+	{0x46, 0xaf, 0x55, 0xff}, // food1
+	{0x82, 0xbe, 0x3c, 0xff}, // food2
+	{0xd2, 0xc3, 0x41, 0xff}, // food3
+	{0xdc, 0x91, 0x37, 0xff}, // food4
+	{0xcd, 0x5f, 0x4b, 0xff}, // food5
+	{0x96, 0x73, 0xc3, 0xff}, // food6
+}
+
+// cropOf is which sort of plant one item grew from, counted from nought, or
+// -1 for anything that is not a plant of a named sort.
+//
+// A plant carries its sort in its genes and hands it to its seedlings, so
+// this reads the item rather than the ground it is standing on: a berry that
+// seeded into the next country is still a berry.
+func (g *game) cropOf(f engine.Food) int {
+	if f.Kind != engine.FoodPlant || f.Genes.Strain == 0 {
+		return -1
+	}
+	kinds := g.world.Config().PlantKinds
+	if k := int(f.Genes.Strain) - 1; k < len(kinds) {
+		return cropSlot(kinds[k].Name, k)
+	}
+	return -1
+}
+
+// cropSlot is which colour a sort is drawn in: the digit its name ends in
+// when it has one, which is what makes food3 the third colour wherever it
+// sits in the table, and otherwise its place in the table.
+//
+// The digit rather than the table's order because the order is the order the
+// names were first met reading the map, and an author who paints food3 in one
+// corner expects the colour of the third tile in the palette - not the colour
+// of whatever happened to be painted third.
+func cropSlot(name string, at int) int {
+	if n := len(name); n > 0 && name[n-1] >= '1' && name[n-1] <= '9' {
+		return int(name[n-1]-'1') % len(cropColours)
+	}
+	return at % len(cropColours)
+}
+
+// cropShade is what to multiply an item's picture by so that two sorts of
+// plant lying side by side can be told apart.
+//
+// A shade rather than a stain: the numbers average to one, so what changes is
+// the hue and not how bright the thing is, and a berry still looks like a
+// berry. The pictures are drawn already coloured (which is why the item clip
+// is not a tinted one), and a full tint would turn every sort into a
+// silhouette of itself.
+func cropShade(slot int) (float32, float32, float32) {
+	if slot < 0 || slot >= len(cropColours) {
+		return 1, 1, 1
+	}
+	c := cropColours[slot]
+	mean := (float32(c.R) + float32(c.G) + float32(c.B)) / 3
+	if mean == 0 {
+		return 1, 1, 1
+	}
+	// Towards the colour's own proportions, with a floor under every channel
+	// so that nothing is wiped out: multiplying keeps the thing as bright as
+	// it was drawn, and what changes is its hue.
+	toward := func(v uint8) float32 {
+		f := (1 + float32(v)/mean) / 2
+		if f < cropShadeFloor {
+			return cropShadeFloor
+		}
+		return f
+	}
+	return toward(c.R), toward(c.G), toward(c.B)
+}
+
 // drawItem stamps one thing lying about, in the colour that says what it is.
 func (g *game) drawItem(screen *ebiten.Image, f engine.Food, x, y float32, tint color.RGBA) bool {
 	if g.tiles == nil {
@@ -797,7 +873,8 @@ func (g *game) drawItem(screen *ebiten.Image, f engine.Food, x, y float32, tint 
 	halo.GeoM.Translate(-float64(w)/2, -float64(h)/2)
 	halo.GeoM.Scale(float64(size)*itemGlowSize/float64(w), float64(size)*itemGlowSize/float64(h))
 	halo.GeoM.Translate(float64(x), float64(y))
-	halo.ColorScale.ScaleWithColor(colorItemGlow)
+	slot := g.cropOf(f)
+	halo.ColorScale.ScaleWithColor(cropGlow(slot))
 	halo.Filter = ebiten.FilterLinear
 	screen.DrawImage(img, halo)
 
@@ -808,6 +885,12 @@ func (g *game) drawItem(screen *ebiten.Image, f engine.Food, x, y float32, tint 
 	op.GeoM.Translate(float64(x), float64(y))
 	if g.tiles.tint[clip] {
 		op.ColorScale.ScaleWithColor(tint)
+	} else if slot >= 0 {
+		// Which sort of crop this is (2026-09-22). Only the picture of the
+		// thing, never its glow: the glow says "something is lying here" and
+		// one colour is what makes that legible.
+		r, gr, b := cropShade(slot)
+		op.ColorScale.Scale(r, gr, b, 1)
 	}
 	op.Filter = ebiten.FilterNearest
 	if scale < 1 {
@@ -816,6 +899,31 @@ func (g *game) drawItem(screen *ebiten.Image, f engine.Food, x, y float32, tint 
 	screen.DrawImage(img, op)
 	return true
 }
+
+// cropGlow is the colour of the light under one item: the ordinary one, or
+// the sort's own where the map named sorts (2026-09-22).
+//
+// The glow says "something is lying here" and one colour is what made that
+// legible, so this was the second thing tried. The first was to tint the
+// picture and nothing else, and it could not be seen at the size an item is
+// drawn: the pictures are nearly pure green, and no multiple of nothing is
+// red. The light underneath is the one part of an item that is the viewer's
+// own, so it is the part that can carry a name.
+func cropGlow(slot int) color.RGBA {
+	if slot < 0 || slot >= len(cropColours) {
+		return colorItemGlow
+	}
+	c := cropColours[slot]
+	// Lifted towards white, because what it has to stay is bright: a glow
+	// the colour of the ground is not a glow.
+	lift := func(v uint8) uint8 { return uint8(int(v) + (255-int(v))*2/5) }
+	return color.RGBA{lift(c.R), lift(c.G), lift(c.B), colorItemGlow.A}
+}
+
+// How far an item's own picture may be pulled towards its sort's colour.
+// Small on purpose: what this says is "a different crop", not "a different
+// thing", and the light underneath is what says it loudly.
+const cropShadeFloor = 0.55
 
 // itemClip is which picture stands for one thing lying in the world.
 //

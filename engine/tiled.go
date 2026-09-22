@@ -1045,10 +1045,19 @@ func (t *TiledWorld) applyPlantKinds(cfg *Config) {
 // applyHumanNests merges the places the map named into the table the Config
 // brought, the same way the sorts do: a name in both is one nest, and a name
 // the table never heard of becomes a row that takes the world's own figures.
+//
+// And it empties InitialPopulation, which is the one place a map does more
+// than fill a table in. A nest is the author saying where this people starts;
+// scattering sixty strangers over the same map as well would answer that with
+// something else, and the author has no second switch to turn the strangers
+// off - the -villages flag has done exactly this since TODO 20, and a painted
+// nest means the same thing as that flag. A map that wants people spread
+// about paints no nest.
 func (t *TiledWorld) applyHumanNests(cfg *Config) {
 	if len(t.HumanNests) == 0 {
 		return
 	}
+	cfg.InitialPopulation = 0
 	at := map[string]int{}
 	for i := range cfg.HumanNests {
 		at[cfg.HumanNests[i].Name] = i

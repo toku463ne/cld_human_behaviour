@@ -2500,7 +2500,8 @@ func (w *World) eat(a *Agent, foodID int) {
 	// Worth less if it is the same as everything else it has been living on
 	// (stage 16). Nothing else changes: hunger falls by less, and everything
 	// downstream of hunger follows from that on its own.
-	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind))
+	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*
+		w.meatWorth(f.Kind)*w.plantWorth(f))
 	// What the enemies are taking off the humans' table (stage 60).
 	if a.Species == SpeciesEnemy && f.Kind == FoodPlant {
 		w.plantsToEnemies++

@@ -108,7 +108,7 @@ func (w *World) heldMeals(a *Agent) float64 {
 				float64(f.SpoilAt-w.tick) < w.cfg.PlanHorizon {
 				continue
 			}
-			meals += w.mealValues(a)[f.Kind]
+			meals += w.mealValues(a)[f.Kind] * w.plantWorth(f)
 		}
 	}
 	return meals
@@ -125,7 +125,7 @@ func (w *World) mealsOf(a *Agent, f *Food) float64 {
 	if !w.canEat(a, f) {
 		return 0
 	}
-	return w.mealValues(a)[f.Kind]
+	return w.mealValues(a)[f.Kind] * w.plantWorth(f)
 }
 
 // weightless says whether a thing of this kind costs nothing to carry (#66).
@@ -482,7 +482,8 @@ func (w *World) eatCarried(a *Agent, foodID int) {
 	f := a.carried[i]
 	kept := w.share(a, &f)
 	hungerBefore := a.Hunger
-	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*w.meatWorth(f.Kind))
+	a.Hunger = math.Max(0, a.Hunger-kept*w.cfg.FoodNutrition*w.dietValue(a, f.Kind)*
+		w.meatWorth(f.Kind)*w.plantWorth(&f))
 	if a.Species == SpeciesEnemy && f.Kind == FoodPlant {
 		w.plantsToEnemies++
 	}

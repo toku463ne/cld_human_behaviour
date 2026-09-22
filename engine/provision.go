@@ -186,7 +186,8 @@ func (w *World) share(a *Agent, f *Food) float64 {
 	}
 	each := s / float64(len(mouths))
 	for _, c := range mouths {
-		c.Hunger = math.Max(0, c.Hunger-each*w.cfg.FoodNutrition*w.dietValue(c, f.Kind)*w.meatWorth(f.Kind))
+		c.Hunger = math.Max(0, c.Hunger-each*w.cfg.FoodNutrition*w.dietValue(c, f.Kind)*
+			w.meatWorth(f.Kind)*w.plantWorth(f))
 		// A share of the mouthful is a share of everything the mouthful
 		// does, mending included (stage 39). Splitting it any other way
 		// would make provisioning a rule about calories rather than about

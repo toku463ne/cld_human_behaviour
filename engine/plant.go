@@ -87,6 +87,18 @@ type PlantKind struct {
 	// a row left at zero never comes up.
 	Share float64
 
+	// Nutrition is how filling one of this sort is, as a multiple of
+	// Config.FoodNutrition (2026-09-22). Zero is the world's own figure, so
+	// a table that says nothing about it is the world every figure before
+	// this was measured in.
+	//
+	// It is here and never on the map (decision #133): the map paints which
+	// country grows which sort, and what a sort is worth is a number, and a
+	// number in two places is a number that goes wrong in one of them. What
+	// it is for is the author's dial - a berry patch that feeds a family and
+	// a scrubland that does not - without a new rule for either.
+	Nutrition float64
+
 	// Where this kind's genes start. Zero means the world's own figure, so a
 	// row that only wants to be poisonous says nothing about spread.
 	Spread float64
@@ -105,6 +117,25 @@ type PlantKind struct {
 	// the table here brings the figures, and neither carries the other's job
 	// (decision #133).
 	Key byte
+}
+
+// plantWorth is the multiplier on what one item of this sort takes off
+// hunger, and meatWorth's opposite number on the plant side.
+//
+// One for anything that is not a plant, and one for a plant too unless the
+// sort it grew from says otherwise. A plant carries the sort it came from in
+// its genes (Strain) and hands it to its seedlings, so this asks about the
+// item rather than about its kind: two plants lying side by side may be worth
+// different amounts, which is the same thing cooking already does to meat.
+func (w *World) plantWorth(f *Food) float64 {
+	if f.Kind != FoodPlant || f.Genes.Strain == 0 {
+		return 1
+	}
+	k := int(f.Genes.Strain) - 1
+	if k >= len(w.cfg.PlantKinds) || w.cfg.PlantKinds[k].Nutrition <= 0 {
+		return 1
+	}
+	return w.cfg.PlantKinds[k].Nutrition
 }
 
 // drawPlantGenes is what the first plants of a world are. They are drawn around

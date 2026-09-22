@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -259,5 +260,64 @@ func TestAMapMaySayWhereAPeopleStarts(t *testing.T) {
 	}
 	if cfg.HumanNests[1].Name != "haven" {
 		t.Fatalf("the second is %+v", cfg.HumanNests[1])
+	}
+}
+
+// A map that says where the people start is not also answered with sixty
+// strangers scattered over it (2026-09-22). The author has no other switch
+// for that, and the flag that paints villages has emptied InitialPopulation
+// since the rule was written.
+func TestAPaintedNestIsTheOnlyPlacePeopleComeFrom(t *testing.T) {
+	const ground = `{"width":2,"height":1,"tilewidth":32,"tileheight":32,
+	 "layers":[
+	  {"type":"tilelayer","name":"ground","width":2,"height":1,"data":[2,2]}%s],
+	 "tilesets":[{"firstgid":1,"tiles":[
+	   {"id":0,"properties":[{"name":"human","type":"string","value":"hearth"}]},
+	   {"id":1,"properties":[{"name":"kind","type":"string","value":"flat"}]}]}]}`
+	folk := `,{"type":"tilelayer","name":"folk","width":2,"height":1,"data":[1,0]}`
+	for _, c := range []struct {
+		name  string
+		layer string
+		want  int
+	}{
+		{"a nest painted", folk, 0},
+		{"no nest painted", "", 60},
+	} {
+		m, err := ParseTiled([]byte(fmt.Sprintf(ground, c.layer)))
+		if err != nil {
+			t.Fatalf("%s: ParseTiled: %v", c.name, err)
+		}
+		cfg := quietConfig()
+		cfg.InitialPopulation = 60
+		m.Apply(&cfg)
+		if cfg.InitialPopulation != c.want {
+			t.Errorf("%s: the world starts with %d people, want %d",
+				c.name, cfg.InitialPopulation, c.want)
+		}
+	}
+}
+
+// And the world it builds has nobody in it who did not come out of one.
+func TestNobodyIsScatteredWhenAMapPaintsANest(t *testing.T) {
+	cfg := quietConfig()
+	cfg.InitialPopulation, cfg.InitialEnemies = 0, 0
+	cfg.HumanNests = []HumanNest{{Name: "hearth", Key: 'h', Rate: 100, Life: 10000, Cap: 20}}
+	cfg.HumanNestMap = []string{"h.."}
+	w := NewWorld(cfg)
+	if len(w.agents) != 0 {
+		t.Fatalf("the world started with %d bodies in it", len(w.agents))
+	}
+	for i := 0; i < 500; i++ {
+		w.Step()
+	}
+	line := w.humanNestLine(0)
+	for i := range w.agents {
+		if a := &w.agents[i]; a.Species == SpeciesHuman && a.Lineage != line {
+			t.Fatalf("a person of line %d is in a world whose only nest hands out %d",
+				a.Lineage, line)
+		}
+	}
+	if len(w.agents) == 0 {
+		t.Fatal("the nest sent nobody")
 	}
 }

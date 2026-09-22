@@ -17,6 +17,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -2663,6 +2664,19 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 				c = colorRemains
 			}
 		}
+		// And which sort of crop it is, where the map named sorts
+		// (2026-09-22). The circles take the palette's own colour, and a
+		// picture is laid on a patch of it: the pictures are nearly pure
+		// green and no tint of them could be seen at the size an item is
+		// drawn, so the colour goes under the thing rather than on it.
+		if slot := g.cropOf(f); slot >= 0 {
+			c = cropColours[slot]
+			if g.tiles != nil {
+				patch := c
+				patch.A = 0x88
+				vector.DrawFilledCircle(screen, fx, fy, g.long(6), patch, true)
+			}
+		}
 		if !g.drawItem(screen, f, fx, fy, c) {
 			vector.DrawFilledCircle(screen, fx, fy, g.long(3), c, true)
 		}
@@ -4669,6 +4683,12 @@ func main() {
 	beasts := flag.Bool("beasts", false,
 		"the four sorts tiled/samples/001_3division.tmj names: brute, stray, flyer and lurker. "+
 			"The map says where each comes in; this says what each is like (2026-09-20)")
+	crops := flag.String("crops", "",
+		"how filling each numbered sort of crop is, as a multiple of an ordinary plant, "+
+			"in the order food1, food2, ... (2026-09-22; e.g. \"1.6,1,0.4\"). "+
+			"The palette's numbered food tiles paint which country grows which sort and "+
+			"this says what each is worth - a figure never goes on the map (decision #133). "+
+			"Each sort is drawn in its tile's own colour")
 	kinds := flag.Bool("kinds", false, "two sorts of enemy: light ones anywhere, heavy ones in the bad country (stage 59)")
 	prowl := flag.Float64("prowl", 0, "how unevenly the world's enemies arrive across the regions (stage 58; 0 = everywhere alike, which is the default world)")
 	favour := flag.Float64("favour", 0, "how far apart the regions are in which genes they favour, averaging to one (stage 57c; 0 = no region has a taste in builds)")
@@ -4996,6 +5016,31 @@ func main() {
 			cfg.EnemySpread = 0.6
 		}
 	}
+	// What each numbered sort of crop is worth (2026-09-22). The rows are
+	// made here rather than found on the map: the map carries the name and
+	// the country, the table carries the figure, and a name in both is one
+	// sort (decision #133). A sort nobody painted still comes up by its
+	// share, so the flag is worth typing on a map that names none.
+	if *crops != "" {
+		for i, part := range strings.Split(*crops, ",") {
+			v, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+			if err != nil || v < 0 {
+				log.Fatalf("-crops %q: %q is not a multiple of an ordinary plant", *crops, part)
+			}
+			name := fmt.Sprintf("food%d", i+1)
+			at := -1
+			for j := range cfg.PlantKinds {
+				if cfg.PlantKinds[j].Name == name {
+					at = j
+				}
+			}
+			if at < 0 {
+				cfg.PlantKinds = append(cfg.PlantKinds, engine.PlantKind{Name: name, Share: 1})
+				at = len(cfg.PlantKinds) - 1
+			}
+			cfg.PlantKinds[at].Nutrition = v
+		}
+	}
 	if *kinds {
 		cfg.EnemyKinds = []engine.EnemyKind{
 			{Name: "stray", Share: 3, BudgetMean: 380, BudgetStd: 60, Homing: 0},
@@ -5132,7 +5177,24 @@ func main() {
 			log.Fatalf("%v", err)
 		}
 		m.Apply(&cfg)
-		log.Printf("read %s: %d x %d tiles, %d regions drawn", *tiled, m.Cols, m.Rows, len(m.Regions))
+		// A place the map painted for people to come out of, with nobody
+		// having said how many or for how long. The map carries names and
+		// places and never figures (decision #133), so the figures come from
+		// here - and they are the ones -villages hands its own villages,
+		// because a painted nest means the same thing that flag does: this
+		// is where this people starts. Left to the world's own figures a
+		// nest sends one person every five years and then falls silent,
+		// which founds nothing.
+		for i := range cfg.HumanNests {
+			if cfg.HumanNests[i].Rate == 0 && cfg.HumanNests[i].Life == 0 &&
+				cfg.HumanNests[i].Cap == 0 {
+				cfg.HumanNests[i].Rate = 100
+				cfg.HumanNests[i].Life = 10000
+				cfg.HumanNests[i].Cap = 20
+			}
+		}
+		log.Printf("read %s: %d x %d tiles, %d regions drawn, %d nests people come out of",
+			*tiled, m.Cols, m.Rows, len(m.Regions), len(cfg.HumanNests))
 	}
 
 	// The drag of the water (stage 97), last so that it has the final word:

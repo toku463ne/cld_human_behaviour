@@ -687,3 +687,77 @@ func TestACorpseKeepsTheColourItHad(t *testing.T) {
 			g.standing[3].paint)
 	}
 }
+
+// Which colour a sort of crop is drawn in (2026-09-22). The digit in the name
+// decides, so food3 is the third colour wherever the table happens to put it -
+// the author painted a tile and the world answers in that tile's colour.
+func TestACropIsDrawnInItsOwnTilesColour(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		at   int
+		want int
+	}{
+		{"food1", 0, 0},
+		{"food3", 0, 2}, // painted first, still the third colour
+		{"food6", 5, 5},
+		{"berry", 2, 2}, // no digit: wherever the table put it
+		{"food9", 0, 8 % len(cropColours)},
+	} {
+		if got := cropSlot(c.name, c.at); got != c.want {
+			t.Errorf("%q at %d is drawn in colour %d, want %d", c.name, c.at, got, c.want)
+		}
+	}
+}
+
+// And the shade is a shade and not a stain: what it does to a picture is
+// change its hue, not how bright it is.
+func TestACropsShadeKeepsThePictureAsBrightAsItWas(t *testing.T) {
+	for slot := range cropColours {
+		r, g, b := cropShade(slot)
+		if mean := (r + g + b) / 3; mean < 0.9 || mean > 1.1 {
+			t.Errorf("colour %d multiplies brightness by %.2f", slot, mean)
+		}
+		if r < 0.4 || g < 0.4 || b < 0.4 {
+			t.Errorf("colour %d wipes a channel out: %.2f %.2f %.2f", slot, r, g, b)
+		}
+	}
+	// Anything that is not a named sort is left exactly as it was drawn.
+	if r, g, b := cropShade(-1); r != 1 || g != 1 || b != 1 {
+		t.Errorf("an unnamed plant is shaded %.2f %.2f %.2f", r, g, b)
+	}
+}
+
+// And the sort is read off the item itself, so that what the viewer draws is
+// what the world grew.
+func TestTheViewerReadsWhichSortAnItemIs(t *testing.T) {
+	cfg := engine.DefaultConfig()
+	cfg.Seed = 3
+	cfg.PlantKinds = []engine.PlantKind{
+		{Name: "food1", Share: 1},
+		{Name: "food5", Share: 1},
+	}
+	w := engine.NewWorld(cfg)
+	g := &game{world: w}
+	seen := map[int]int{}
+	for _, f := range w.Foods() {
+		if f.Kind != engine.FoodPlant {
+			continue
+		}
+		slot := g.cropOf(f)
+		if slot != 0 && slot != 4 {
+			t.Fatalf("a plant of sort %d is drawn in colour %d", f.Genes.Strain, slot)
+		}
+		seen[slot]++
+	}
+	if seen[0] == 0 || seen[4] == 0 {
+		t.Fatalf("the two sorts came out as %v, want both drawn", seen)
+	}
+	// And a world that names no sorts leaves every item as it was drawn.
+	plain := engine.NewWorld(engine.DefaultConfig())
+	gp := &game{world: plain}
+	for _, f := range plain.Foods() {
+		if got := gp.cropOf(f); got != -1 {
+			t.Fatalf("an unnamed plant is drawn in colour %d", got)
+		}
+	}
+}

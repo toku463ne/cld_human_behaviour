@@ -47,6 +47,6 @@
 | [decision/4.md](docs/history/decision/4.md) | 2026-09-13〜09-20 | 先読みとその先の経済、贈与、速度、多様性、水 |
 | [decision/5.md](docs/history/decision/5.md) | 2026-09-20 | 地図とゲーム化（Tiled・王朝もの・ブラウザ・定住・指での操作・絵での描画） |
 | [decision/6.md](docs/history/decision/6.md) | 2026-09-20〜09-21 | 材料と加工、飾り物、贈与、殴られると下がる、文書の分割 |
-| [decision/7.md](docs/history/decision/7.md) | 2026-09-21〜 | 押すことを選ぶ（#139）——**情報だけが世界を動かした6度目にして初めての例と、その非対称**。**ここが追記先** |
+| [decision/7.md](docs/history/decision/7.md) | 2026-09-21〜 | 押すことを選ぶ（#139）——**情報だけが世界を動かした6度目にして初めての例と、その非対称**。地図が巣を塗ったら世界はばらまかない。**ここが追記先** |
 
 **探すときは日付か段階番号か `Config` のフィールド名で `grep -rn docs/history/` します。** **段階ごとの結論は `docs/stages.md`、終わった段階の設計は `docs/history/plan/`**（索引は `PLAN.md`）**、次にやることは `TODO.md`。**

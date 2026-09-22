@@ -978,7 +978,7 @@ func (w *World) perceive(a *Agent) *Perception {
 			Dist:      math.Sqrt(d2),
 			Kind:      f.Kind,
 			Store:     f.Store,
-			Nutrition: p.Self.Nutrition[f.Kind],
+			Nutrition: p.Self.Nutrition[f.Kind] * w.plantWorth(f),
 			Heal:      w.itemHealKnown(a, f),
 			Cooked:    f.Cooked,
 			Spoils:    w.spoilsIn(f),

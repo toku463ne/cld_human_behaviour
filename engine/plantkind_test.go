@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func kindConfig() Config {
 	cfg := testConfig()
@@ -252,5 +255,93 @@ func TestAMapThatNamesNoPlantsPaintsNone(t *testing.T) {
 	}
 	if m.PlantKindMap != nil || m.PlantKinds != nil {
 		t.Fatalf("painted %q / %+v with nothing named", m.PlantKindMap, m.PlantKinds)
+	}
+}
+
+// How filling a sort is (2026-09-22). The table says it and the map never
+// does, which is the same division the rest of the row already has.
+func TestASortMaySayHowFillingItIs(t *testing.T) {
+	ate := func(nutrition float64) float64 {
+		cfg := quietConfig()
+		cfg.PlantKinds = []PlantKind{{Name: "food1", Share: 1, Nutrition: nutrition}}
+		w := NewWorld(cfg)
+		id := w.addAgent(Agent{Maturity: 1, X: 100, Y: 100, Genome: filledGenome(50)})
+		a := mustAgent(t, w, id)
+		a.Hunger = w.cfg.MaxHunger
+		id2 := w.addFood(100, 100)
+		if f := w.foodByID(id2); f.Genes.Strain != 1 {
+			t.Fatalf("the plant is of sort %d, want the only one there is", f.Genes.Strain)
+		}
+		before := a.Hunger
+		w.eat(a, id2)
+		return before - a.Hunger
+	}
+	ordinary := ate(0) // a row that says nothing takes the world's own figure
+	if ordinary <= 0 {
+		t.Fatalf("an ordinary plant took %v off a starving body", ordinary)
+	}
+	if got := ate(1); got != ordinary {
+		t.Fatalf("a sort that says one is worth %v, and an ordinary plant %v", got, ordinary)
+	}
+	if got := ate(2); math.Abs(got-2*ordinary) > 1e-9 {
+		t.Fatalf("a sort that says two is worth %v, want %v", got, 2*ordinary)
+	}
+	if got := ate(0.5); math.Abs(got-ordinary/2) > 1e-9 {
+		t.Fatalf("a sort that says a half is worth %v, want %v", got, ordinary/2)
+	}
+}
+
+// And what a body sees of it is what it gets. The utility is scored off the
+// perception, so a sort that fills two stomachs has to look like one before
+// it is eaten - otherwise the world would be one thing and the reasoning
+// about it another.
+func TestABodySeesHowFillingASortIs(t *testing.T) {
+	cfg := quietConfig()
+	cfg.PlantKinds = []PlantKind{
+		{Name: "food1", Share: 0, Key: 'a', Nutrition: 2},
+		{Name: "food2", Share: 0, Key: 'b'},
+	}
+	cfg.PlantKindMap = []string{"ab"}
+	w := NewWorld(cfg)
+	// Standing on the border, with one country's crop to its left and the
+	// other's to its right, both within sight.
+	id := w.addAgent(Agent{Maturity: 1, X: cfg.Width / 2, Y: cfg.Height / 2,
+		Genome: filledGenome(50)})
+	a := mustAgent(t, w, id)
+	a.Hunger = w.cfg.MaxHunger
+	// Grown where they stand, which is what reads the painting: addFood is
+	// for a plant with no whereabouts yet and takes nothing from the map.
+	plant := func(x, y float64) {
+		w.addPlant(x, y, w.drawPlantGenesAt(x, y))
+	}
+	plant(cfg.Width/2-20, cfg.Height/2) // in the country that grows food1
+	plant(cfg.Width/2+20, cfg.Height/2) // and in the one that grows food2
+	p := w.perceive(a)
+	if len(p.Foods) != 2 {
+		t.Fatalf("%d items in sight, want 2", len(p.Foods))
+	}
+	rich, plain := p.Foods[0], p.Foods[1]
+	if rich.X > plain.X {
+		rich, plain = plain, rich
+	}
+	if math.Abs(rich.Nutrition-2*plain.Nutrition) > 1e-9 {
+		t.Fatalf("the filling sort looks worth %v and the ordinary one %v",
+			rich.Nutrition, plain.Nutrition)
+	}
+}
+
+// A world whose table says nothing about it is the world every figure before
+// this was measured in, down to the random source.
+func TestSayingNothingAboutFillingChangesNothing(t *testing.T) {
+	cfg := kindConfig()
+	cfg.PlantKinds = []PlantKind{{Name: "berry", Share: 1}}
+	a := grow(cfg, 400)
+	cfg.PlantKinds = []PlantKind{{Name: "berry", Share: 1, Nutrition: 0}}
+	b := grow(cfg, 400)
+	if a.draws.draws != b.draws.draws {
+		t.Fatalf("%d draws against %d", a.draws.draws, b.draws.draws)
+	}
+	if len(a.foods) != len(b.foods) {
+		t.Fatalf("%d plants against %d", len(a.foods), len(b.foods))
 	}
 }
