@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -255,7 +256,64 @@ func (g *game) tap(x, y int) {
 		g.tapWhileDriving(x, y)
 		return
 	}
-	g.selectAgent(g.nodeAt(x, y))
+	// A body first, and the ground it is standing on second: a master that is
+	// already out is a node like any other, and tapping it should follow it.
+	if id := g.nodeAt(x, y); id != 0 {
+		g.selectAgent(id)
+		return
+	}
+	if n, ok := g.nestUnder(x, y); ok {
+		g.offerRouse(n, x, y)
+		return
+	}
+	g.selectAgent(0)
+}
+
+// nestUnder is the den the finger landed on, when the world has masters in it
+// and that one has one to call (TODO 19).
+func (g *game) nestUnder(x, y int) (engine.NestView, bool) {
+	if g.world.Config().BossBudget <= 0 {
+		return engine.NestView{}, false
+	}
+	wx, wy := g.inWorld(x, y)
+	for _, n := range g.world.EnemyNests() {
+		if math.Abs(wx-n.X) <= n.W/2 && math.Abs(wy-n.Y) <= n.H/2 {
+			return n, true
+		}
+	}
+	return engine.NestView{}, false
+}
+
+// offerRouse asks. The question and the answer are the game's: the engine has
+// no player and no prompt, and all it exposes is Rouse - which is on the shelf
+// Endow and Inspire are on, called from out here and by nothing inside.
+//
+// It is a question rather than a tap that does it, because calling a master
+// out is the one thing on this screen that cannot be undone.
+func (g *game) offerRouse(n engine.NestView, x, y int) {
+	if n.Boss != 0 {
+		g.say("the master of this den is already out")
+		g.selectAgent(n.Boss)
+		return
+	}
+	if n.Quiet > 0 {
+		g.say("this den has no master: %d ticks until another one takes it", n.Quiet)
+		return
+	}
+	g.openMenu("call the master out?", x, y,
+		menuItem{label: "yes - call it out", do: func() {
+			id, err := g.world.Rouse(n.ID)
+			if err != nil {
+				g.say("%v", err)
+				return
+			}
+			g.selectAgent(id)
+			g.say("something comes out of the den. kill it and the den is empty for a while")
+		}},
+		menuItem{label: "no - leave it be", do: func() {
+			g.say("the den is left alone")
+		}},
+	)
 }
 
 // hold is a press that stayed put.

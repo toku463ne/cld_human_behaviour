@@ -510,6 +510,12 @@ type World struct {
 	// 18). Counters for the instruments; no rule reads either.
 	nestTries, nestRefused int
 
+	// What has become of each painted nest's master (2026-09-22, TODO 19),
+	// and how many bodies have walked back into one. The shape is
+	// enemyKindCells', cell for cell.
+	nestLives [][]nestLife
+	retired   int
+
 	drownDeaths int
 	// drownTakenSwim is the realised swimming of the bodies the water has
 	// taken, summed (stage 98). Against the swimming of the bodies standing in
@@ -897,6 +903,7 @@ func NewWorld(cfg Config) *World {
 	w.fishRich = buildRichMap(w.cfg.FishRichMap)
 	w.buildPlantKinds()
 	w.buildEnemyKindCells()
+	w.buildNestLives()
 	w.buildRegions()
 	// The stones are laid out before anybody arrives (stage 45): they are
 	// part of what the ground is, not something the world keeps producing.
@@ -1193,6 +1200,10 @@ func (w *World) Step() {
 	// After everybody has moved, so a carried seed comes up where its carrier
 	// ended up rather than where it set off (stage 17c).
 	w.dropSeeds()
+
+	// What became of the nests' masters, before the dead are compacted away:
+	// one killed this tick is still here to be found (TODO 19).
+	w.nestsOfTick()
 
 	w.commitNewborns()
 	w.removeDead()

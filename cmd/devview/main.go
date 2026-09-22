@@ -175,7 +175,8 @@ var (
 	colorShadow = color.RGBA{0x00, 0x00, 0x00, 0x40}
 	// The squares a map painted for a sort of enemy, and the ring round one
 	// that has just come out of a square.
-	colorNest = color.RGBA{0x99, 0x22, 0x44, 0xcc}
+	colorNest      = color.RGBA{0x99, 0x22, 0x44, 0xcc}
+	colorNestQuiet = color.RGBA{0x55, 0x55, 0x55, 0x99}
 	// What a body's picture is multiplied by, on art drawn white for the
 	// purpose (the spirits). The line the player is playing keeps the art as
 	// it was drawn - the brightest thing in the world - and everybody else is
@@ -2907,6 +2908,13 @@ func (g *game) drawNests(screen *ebiten.Image) {
 	for _, n := range nests {
 		x0, y0 := g.onScreen(n.X-n.W/2, n.Y-n.H/2)
 		x1, y1 := g.onScreen(n.X+n.W/2, n.Y+n.H/2)
+		// A den whose master was killed is drawn grey and left empty until
+		// another one takes it (TODO 19): what a den sends out is what makes
+		// it a den, and one sending nothing should not look the same.
+		if n.Quiet > 0 {
+			vector.StrokeRect(screen, x0, y0, x1-x0, y1-y0, 1, colorNestQuiet, true)
+			continue
+		}
 		vector.StrokeRect(screen, x0, y0, x1-x0, y1-y0, 1, colorNest, true)
 		cx, cy := g.onScreen(n.X, n.Y)
 		// The mouth of it, where there is a picture of one. The outline
@@ -4651,6 +4659,7 @@ func main() {
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
 	playDynasty := flag.Bool("dynasty", false, "play the dynasty (TODO 6, #130): win by settling your line in every goal block the map marks at once, and pay for each death with ten years the world runs without you. Needs a map with goal blocks (-tiled, or -terrain with goals painted). Brings -play with it")
+	bosses := flag.Float64("bosses", 0, "how big the master of a den is, as a multiple of an ordinary one of its sort (TODO 19, #141; 0 = every world before it). Tap a den to be asked whether to call it out; kill what comes out and the den sends nobody for five years. Nothing calls it out but you. Above about 1.7 the world's own ceiling on a body takes over and the answer is the same creature")
 	settleHome := flag.Float64("settle", 0, "what leaving the place it was born costs a person, per region's width and per tick out there (TODO 6, #130; 0 = every world before it). The same rule stage 64 gave the beasts, and the same shape: a price, not a leash. Without it an ordinary life crosses seven of the twelve blocks, so travelling somewhere new is not something a player can be seen to have decided")
 	shove := flag.Float64("shove", 0, "how far a body throws another one when it spends the tick pushing instead of hitting, in world units (#139; 0 = every world before it). A fourth stance, scored beside the other three: it gives up most of the blow and buys the ticks the other one spends walking back in. 20 is past arm's length and actually breaks the fight off")
 	lessons := flag.Int("lessons", 0, "how many things a body may learn from watching others die (#137; 0 = every world before it). A room of its own, bought out of the same budget the genes are: a body that learns two things is measurably smaller than one that learns none. What it learns is which move not to make in the situation it watched somebody stop in, and it takes two deaths of a kind to learn it")
@@ -4878,6 +4887,28 @@ func main() {
 	// Something in the water (stage 63). Two sorts, one of which comes out of
 	// the river: what is worth looking at is where they are, so the panel's
 	// "sort:" line and the map between them say which is which.
+	// Dens with a master in them (TODO 19). Paints two of them when the map
+	// has painted none, so that the flag is worth typing on a plain world:
+	// what a master is only means anything where there is a den to come out
+	// of. The price of being away from home comes with it, because that is
+	// what makes a master walk back in when it is left alone.
+	if *bosses > 0 {
+		cfg.BossBudget = *bosses
+		if len(cfg.EnemyKindMap) == 0 {
+			cfg.EnemyKinds = []engine.EnemyKind{{Name: "brute", Share: 1, Key: 'b', Homing: 1, Homely: 1}}
+			cfg.EnemyKindMap = []string{
+				"........",
+				".b......",
+				"........",
+				"........",
+				"......b.",
+				"........",
+			}
+		}
+		if cfg.EnemyHomeCost == 0 {
+			cfg.EnemyHomeCost = 2
+		}
+	}
 	if *lurkers {
 		cfg.EnemyKinds = []engine.EnemyKind{
 			{Name: "brute", Share: 2, Homing: 1, Homely: 1},

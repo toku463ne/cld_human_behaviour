@@ -373,6 +373,44 @@ type Config struct {
 	NestCap    float64
 	NestCapMap []string
 
+	// BossBudget is what the master of a nest is built with, as a multiple of
+	// what its row would have given an ordinary one of its sort (2026-09-22,
+	// TODO 19, decision #141). Nought - the default - is a world with no
+	// masters in it, and then nothing in boss.go so much as counts a body.
+	//
+	// It is one number and there is no gate anywhere near it. What makes that
+	// safe is the ceiling the world already has: nine genes at MaxAbility is
+	// a budget of 900, so the hardest body this world can hold is 1.73 of the
+	// mean beast and 2.16 of the mean body. Asking for three times or ten
+	// times gives the same creature as asking for twice. A master is a hard
+	// fight by construction and cannot become a wall by a figure being
+	// mistyped.
+	//
+	// Counted before it was built: humans have a hand in 0.95 of the beasts
+	// that are killed, 29.75 of them a run, in parties averaging 1.70. A
+	// master has to be a thing one or two bodies can bring down, because
+	// nothing bigger than that gathers in this world.
+	BossBudget float64
+
+	// BossRouseTicks is how long a master stays out before it will go back
+	// in, and NestQuietYears how long its nest sends nobody out after losing
+	// it. NestQuietMap paints the second per cell, in fifths of it.
+	//
+	// Going back in wants both a time and a place: this many ticks gone by,
+	// and the body standing on its own nest. Neither is a state of the body,
+	// which is deliberate - "it turns back when it is hurt" or "when the
+	// player is far away" would be the first behavioural threshold in this
+	// project, and the reason a master walks home at all is the price of
+	// being away from one (EnemyHomeCost, stage 64), which is a cost and not
+	// a leash.
+	//
+	// Five years is the default because the thing it is measured against is
+	// the dynasty's own clock: holding the goal blocks takes a thousand ticks
+	// of settled living, which is two years.
+	BossRouseTicks int
+	NestQuietYears float64
+	NestQuietMap   []string
+
 	// EnemyAmbientShare is how many of the arrivals ignore the painted nests
 	// and come in from wherever the world would otherwise have put them
 	// (2026-09-22, TODO 18). Zero - the default - is every world since the
@@ -4247,6 +4285,8 @@ func DefaultConfig() Config {
 		FoodRenormalize:     true, // the world grows as much as it did (stage 15a)
 		EnemyBudgetMean:     520,  // over the human 360, so a carcass feeds several
 		EnemyBudgetStd:      90,
+		BossRouseTicks:      500, // a year out before it will walk back in
+		NestQuietYears:      5,
 		EnemySpawnTicks:     400,
 		MaxEnemies:          12,
 		BudgetInheritSpread: 30,

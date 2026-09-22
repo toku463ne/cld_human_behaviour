@@ -180,6 +180,8 @@ type counterSnap struct {
 	EnemyByKind            []float64 `json:",omitempty"`
 	NestTries              int       `json:",omitempty"`
 	NestRefused            int       `json:",omitempty"`
+	Retired                int       `json:",omitempty"`
+	NestLives              [][]int   `json:",omitempty"` // boss, rousedAt, quietTill per nest
 	Exchanges, HintsCopied int
 }
 
@@ -388,6 +390,7 @@ func (w *World) Save(out io.Writer) error {
 			EnemyArrivals: w.enemyArrivals, EnemyArrivalSum: w.enemyArrivalSum,
 			EnemyBorn: w.enemyBorn, EnemyByKind: w.enemyArrivalsByKind,
 			NestTries: w.nestTries, NestRefused: w.nestRefused,
+			Retired: w.retired, NestLives: snapNests(w.nestLives),
 		},
 	}
 	for i := range w.pendingSeeds {
@@ -406,6 +409,35 @@ func (w *World) Save(out io.Writer) error {
 type tollSnap struct {
 	Deaths float64
 	Kills  float64
+}
+
+// snapNests writes what has become of each nest's master as three numbers,
+// flattened in the order Rouse numbers them (TODO 19). Nil in a world with no
+// painted nests, which keeps the file the file it was.
+func snapNests(lives [][]nestLife) [][]int {
+	var out [][]int
+	for _, cells := range lives {
+		for _, l := range cells {
+			out = append(out, []int{l.boss, l.rousedAt, l.quietTill})
+		}
+	}
+	return out
+}
+
+// loadNests reads them back into a world whose Config built the same nests. A
+// file from before this, or one whose map has since been redrawn, leaves the
+// nests as the fresh world made them.
+func loadNests(lives [][]nestLife, in [][]int) {
+	n := 0
+	for kind := range lives {
+		for at := range lives[kind] {
+			if n >= len(in) || len(in[n]) < 3 {
+				return
+			}
+			lives[kind][at] = nestLife{boss: in[n][0], rousedAt: in[n][1], quietTill: in[n][2]}
+			n++
+		}
+	}
 }
 
 func snapTolls(tolls []regionToll) []tollSnap {
@@ -558,6 +590,20 @@ func Load(in io.Reader) (*World, error) {
 	// derived from the Config the file carries rather than saved.
 	w.buildSpawnCells()
 	w.rubble = stoneCells(w.ground)
+	// And the rest of what an author painted, on the same terms: derived from
+	// the Config the file carries, drawing nothing.
+	//
+	// These four were missing until 2026-09-22, and what that cost was quiet:
+	// a world saved with painted richness, painted plant sorts or painted
+	// nests came back without them, so its plants moved to wherever the
+	// regions said and its beasts stopped coming out of the map's own dens.
+	// Nothing failed - it just became a different world, which is the worst
+	// shape a bug can take in a file meant to be handed to somebody.
+	w.rich = buildRich(&w.cfg)
+	w.fishRich = buildRichMap(w.cfg.FishRichMap)
+	w.buildPlantKinds()
+	w.buildEnemyKindCells()
+	w.buildNestLives()
 	for i := range s.PendingSeeds {
 		p := &s.PendingSeeds[i]
 		w.pendingSeeds = append(w.pendingSeeds, pendingSeed{x: p.X, y: p.Y, genes: p.Genes})
@@ -615,6 +661,8 @@ func Load(in io.Reader) (*World, error) {
 	w.enemyBorn = c.EnemyBorn
 	w.enemyArrivalsByKind = append([]float64(nil), c.EnemyByKind...)
 	w.nestTries, w.nestRefused = c.NestTries, c.NestRefused
+	w.retired = c.Retired
+	loadNests(w.nestLives, c.NestLives)
 	for i := range c.Tolls {
 		if i < len(w.tolls) {
 			w.tolls[i] = regionToll{deaths: c.Tolls[i].Deaths, kills: c.Tolls[i].Kills}

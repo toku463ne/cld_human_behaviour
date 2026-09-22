@@ -286,6 +286,12 @@ type variant struct {
 	// the same footing the editor is on, so an arm that wants them has to
 	// place them.
 	stores func(*engine.World)
+
+	// rouseEvery is how often somebody calls a den's master out, in ticks
+	// (TODO 19). Nought is nobody doing it, which is every arm but the ones
+	// measuring masters - Rouse is called from outside the engine, so a run
+	// with no caller in it has no masters in it at all.
+	rouseEvery int
 }
 
 // Where the caches go. Spread out rather than clustered, so that no one body
@@ -968,6 +974,46 @@ var variants = []variant{
 		name:  "nestholdhard",
 		about: "the same two nests at four times that price",
 		apply: func(c *engine.Config) { paintTwoNests(c); c.EnemyHomeCost = 2 },
+	},
+	// 2026-09-22: the master of a den (TODO 19). All three arms have the same
+	// two dens, the same price for being away from one and the same blunt
+	// caller; what differs is how big the master is. The doses are 1, 1.5 and
+	// the ceiling: nine genes at MaxAbility is a budget of 900, so anything
+	// above 1.73 of the mean beast is the same creature.
+	{
+		name:  "boss",
+		about: "19: a master in each den, half again the size of an ordinary one, called out every other year",
+		apply: func(c *engine.Config) {
+			paintTwoNests(c)
+			c.EnemyHomeCost, c.BossBudget = 2, 1.5
+		},
+		rouseEvery: 1000,
+	},
+	{
+		name:  "bossplain",
+		about: "the same, with a master no bigger than the beasts it comes out among",
+		apply: func(c *engine.Config) {
+			paintTwoNests(c)
+			c.EnemyHomeCost, c.BossBudget = 2, 1
+		},
+		rouseEvery: 1000,
+	},
+	{
+		name:  "bosshuge",
+		about: "the same at the world's own ceiling on a body: 1.73 of the mean beast, and no more is possible",
+		apply: func(c *engine.Config) {
+			paintTwoNests(c)
+			c.EnemyHomeCost, c.BossBudget = 2, 4
+		},
+		rouseEvery: 1000,
+	},
+	{
+		name:  "bossunrousedcontrol",
+		about: "the control for the masters: the same world, and nobody calls anything out",
+		apply: func(c *engine.Config) {
+			paintTwoNests(c)
+			c.EnemyHomeCost, c.BossBudget = 2, 1.5
+		},
 	},
 	{
 		name:  "nestcap2",
@@ -6317,6 +6363,8 @@ var metricNames = []string{
 	"prowlArrive", "prowlGain", "prowlKept", "enemyBorn", "humanProwl", "enemyCrowd", "prowlBite",
 	"nests", "nestHold", "nestRoom", "nestGain", "nestFull",
 	"nestCrowd", "nestCapped", "nestStopped", "nestRated",
+	"bossCalled", "bossKilled", "bossWalked", "bossKillShare", "bossYears", "densEmpty",
+	"denSettled", "denRoom",
 	"kinds", "kindMix", "kindGap", "kindHomed",
 	"enemyAway", "enemyAtHome", "homeShare",
 	"plantRate", "foodMean",
@@ -6908,8 +6956,19 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	var personTicks float64
 	tailStart := w.Stats()
 
+	// Somebody to call the masters out (TODO 19). Rouse is called from
+	// outside the engine and by nothing inside it, so a run with no player in
+	// it has no masters in it either and there would be nothing to measure.
+	//
+	// The policy is as blunt as it can be: every so often, call out whichever
+	// den will answer. It is a floor and not a ceiling - a person choosing
+	// when to fight would do better - and the figures below are read that
+	// way.
+	rouser := newRouser(v.rouseEvery)
+
 	record()
 	for i := 0; i < ticks; i++ {
+		rouser.tick(w)
 		w.Step()
 		if i == watchFrom {
 			tailStart = w.Stats()
@@ -6951,6 +7010,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	fate := fateOf(series, ticks, deadBelow)
 	lines := w.Lineages()
 	homes := settle.Result(w)
+	denSettled, denRoom := settledByADen(w, settle)
 	mem := member.Result()
 	fr := fights.Result()
 	cen := census.Result()
@@ -7595,20 +7655,28 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"prowlGain":   tail.prowlGain,
 		// How much of what the rule did is still there. Read the two above as
 		// a pair: a rule that fires perfectly can leave nothing behind.
-		"prowlKept":   kept(tail.prowlGain, tail.prowlArrive),
-		"enemyBorn":   tail.enemyBorn,
-		"nestHold":    tail.nestHold,
-		"nestRoom":    tail.nestRoom,
-		"nestGain":    tail.nestGain,
-		"nestFull":    tail.nestFull,
-		"nestCrowd":   tail.nestCrowd,
-		"nestCapped":  tail.nestCapped,
-		"nestStopped": tail.nestStopped,
-		"nestRated":   tail.nestRated,
-		"nests":       tail.nests,
-		"humanProwl":  tail.humanProwl,
-		"enemyCrowd":  tail.enemyCrowd,
-		"prowlBite":   tail.prowlBite,
+		"prowlKept":     kept(tail.prowlGain, tail.prowlArrive),
+		"enemyBorn":     tail.enemyBorn,
+		"nestHold":      tail.nestHold,
+		"nestRoom":      tail.nestRoom,
+		"nestGain":      tail.nestGain,
+		"nestFull":      tail.nestFull,
+		"nestCrowd":     tail.nestCrowd,
+		"nestCapped":    tail.nestCapped,
+		"nestStopped":   tail.nestStopped,
+		"nestRated":     tail.nestRated,
+		"bossCalled":    float64(rouser.called),
+		"bossKilled":    float64(rouser.killed),
+		"bossWalked":    float64(rouser.walked),
+		"bossKillShare": share(rouser.killed, rouser.called),
+		"bossYears":     rouser.yearsToFall(w),
+		"densEmpty":     rouser.emptied(),
+		"denSettled":    denSettled,
+		"denRoom":       denRoom,
+		"nests":         tail.nests,
+		"humanProwl":    tail.humanProwl,
+		"enemyCrowd":    tail.enemyCrowd,
+		"prowlBite":     tail.prowlBite,
 		// What the table of enemy sorts produced (stage 59). kindMix is over
 		// the arrivals rather than the standing population, which drifts.
 		"kinds":     tail.kinds,
@@ -8826,6 +8894,138 @@ func main() {
 
 // riverMapForFish is a river down the middle, the smallest map that has any
 // water in it at all: without water the fish arms are the flat world twice.
+
+// rouser is the blunt stand-in for a player who calls masters out of their
+// dens (TODO 19). Every so many ticks it wakes whichever den will answer, and
+// it counts what became of the bodies it called: whether each one was killed,
+// and how long it lasted.
+//
+// It is the same standing the dynasty's rough player has: a floor, so that a
+// figure it produces is the least a person could get, never the most.
+type rouser struct {
+	every  int
+	called int
+	killed int
+	walked int // called out, left alone, and back in its den
+	outFor int // ticks the killed masters were alive, summed
+
+	// Which den each body came out of, so that a body that is gone can be
+	// told from a body that was killed: the den it came out of goes quiet
+	// only in the second case. Without this the two are the same event from
+	// out here, and the first reading of this measurement counted every
+	// master that walked home as one that had been brought down.
+	waiting map[int]rouseOut
+
+	// How many den-ticks have been stood empty, over how many there were.
+	// A reading at the end of the run is a coin toss - a den is empty for
+	// five years and then not - so it is counted as it happens.
+	quiet, dens float64
+}
+
+type rouseOut struct {
+	nest int
+	at   int
+}
+
+func newRouser(every int) *rouser {
+	return &rouser{every: every, waiting: map[int]rouseOut{}}
+}
+
+func (r *rouser) tick(w *engine.World) {
+	if r == nil || r.every <= 0 {
+		return
+	}
+	now := w.Tick()
+	nests := w.EnemyNests()
+	for _, n := range nests {
+		r.dens++
+		if n.Quiet > 0 {
+			r.quiet++
+		}
+	}
+	for id, out := range r.waiting {
+		if b, ok := w.AgentByID(id); ok && b.Alive {
+			continue
+		}
+		delete(r.waiting, id)
+		// Its den going quiet is what says it was killed rather than taken
+		// back in.
+		if out.nest < len(nests) && nests[out.nest].Quiet > 0 {
+			r.killed++
+			r.outFor += now - out.at
+			continue
+		}
+		r.walked++
+	}
+	if now%r.every != 0 {
+		return
+	}
+	for _, n := range nests {
+		if n.Boss != 0 || n.Quiet > 0 {
+			continue
+		}
+		if id, err := w.Rouse(n.ID); err == nil {
+			r.called++
+			r.waiting[id] = rouseOut{nest: n.ID, at: now}
+		}
+		return // one at a time: a player has one body and one day
+	}
+}
+
+// yearsToFall is how long a master that was killed lasted, in years of world
+// time, averaged over the ones that were. Nought when none were.
+func (r *rouser) yearsToFall(w *engine.World) float64 {
+	if r == nil || r.killed == 0 {
+		return 0
+	}
+	year := float64(max(w.Config().TicksPerYear, 1))
+	return float64(r.outFor) / year / float64(r.killed)
+}
+
+// settledByADen is how many of the settled bodies have settled in a block that
+// holds a den, against how many of the blocks hold one (TODO 19).
+//
+// The pair is the point, the same way nestHold and nestRoom are: living in a
+// block with a den in it is only evidence of anything against how many blocks
+// have dens. A world where emptying a den makes its country liveable would
+// show the first figure rising above the second.
+func settledByADen(w *engine.World, t *engine.SettlementTracker) (share, room float64) {
+	dens := map[int]bool{}
+	for _, n := range w.EnemyNests() {
+		dens[w.RegionAt(n.X, n.Y)] = true
+	}
+	if len(dens) == 0 {
+		return 0, 0
+	}
+	var settled, byDen float64
+	for _, a := range w.Agents() {
+		if !a.Alive || a.Species != engine.SpeciesHuman {
+			continue
+		}
+		r, ok := t.SettledIn(a.ID)
+		if !ok {
+			continue
+		}
+		settled++
+		if dens[r] {
+			byDen++
+		}
+	}
+	if settled == 0 {
+		return 0, float64(len(dens)) / float64(max(len(w.Regions()), 1))
+	}
+	return byDen / settled, float64(len(dens)) / float64(max(len(w.Regions()), 1))
+}
+
+// emptied is how much of the run the dens stood empty for: what killing a
+// master actually buys, in the only unit the map has.
+func (r *rouser) emptied() float64 {
+	if r == nil || r.dens == 0 {
+		return 0
+	}
+	return r.quiet / r.dens
+}
+
 // paintTwoNests puts two nests of one sort on the map, far apart, as cells
 // rather than as a weighting over regions (2026-09-22, counting for TODO 18).
 //

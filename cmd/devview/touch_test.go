@@ -340,3 +340,59 @@ func TestATapSelectsWhenNobodyIsBeingDriven(t *testing.T) {
 		t.Fatal("a tap on the panel changed the selection")
 	}
 }
+
+// Tapping a den asks whether to call its master out, and only a yes does it
+// (TODO 19). The question is the game's: the engine has no player and no
+// prompt, and all it offers is Rouse.
+func bossedGame(t *testing.T) *game {
+	t.Helper()
+	cfg := engine.DefaultConfig()
+	cfg.Seed = 5
+	cfg.InitialEnemies = 0
+	cfg.BossBudget, cfg.EnemyHomeCost = 1.5, 2
+	cfg.EnemyKinds = []engine.EnemyKind{{Name: "brute", Share: 1, Key: 'b', Homing: 1, Homely: 1}}
+	cfg.EnemyKindMap = []string{"b...."}
+	w := engine.NewWorld(cfg)
+	return &game{world: w, padKey: noKey}
+}
+
+func TestATapOnADenAsksBeforeCallingAnythingOut(t *testing.T) {
+	g := bossedGame(t)
+	den := g.world.EnemyNests()[0]
+	x, y := g.onScreen(den.X, den.Y)
+	g.tap(int(x), int(y))
+	if g.menu == nil || len(g.menu.items) != 2 {
+		t.Fatalf("the menu is %+v", g.menu)
+	}
+	if g.world.EnemyNests()[0].Boss != 0 {
+		t.Fatal("the question itself called the master out")
+	}
+	// No. (pickMenu closes the menu before running what was picked.)
+	no := g.menu.items[1].do
+	g.menu = nil
+	no()
+	if g.world.EnemyNests()[0].Boss != 0 {
+		t.Fatal("saying no called it out anyway")
+	}
+	// Yes.
+	g.tap(int(x), int(y))
+	yes := g.menu.items[0].do
+	g.menu = nil
+	yes()
+	if g.world.EnemyNests()[0].Boss == 0 {
+		t.Fatal("saying yes called nothing out")
+	}
+}
+
+func TestAWorldWithNoMastersIsNotAskedAboutThem(t *testing.T) {
+	g := bossedGame(t)
+	cfg := g.world.Config()
+	cfg.BossBudget = 0
+	g.world = engine.NewWorld(cfg)
+	den := g.world.EnemyNests()[0]
+	x, y := g.onScreen(den.X, den.Y)
+	g.tap(int(x), int(y))
+	if g.menu != nil {
+		t.Fatalf("a world with no masters offered one: %+v", g.menu)
+	}
+}

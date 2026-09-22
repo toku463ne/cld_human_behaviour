@@ -545,8 +545,9 @@ func (w *World) Feeding() Feeding {
 // 2026-09-22 down to the draw.
 type nestCell struct {
 	cell
-	rate float64
-	cap  float64
+	rate  float64
+	cap   float64
+	quiet float64
 }
 
 // buildEnemyKindCells reads Config.EnemyKindMap into one list of cells per
@@ -579,8 +580,9 @@ func (w *World) buildEnemyKindCells() {
 			cw := w.cfg.Width / float64(len(row))
 			cells[i] = append(cells[i], nestCell{
 				cell: cell{x: (float64(c) + 0.5) * cw, y: y, w: cw, h: h},
-				rate: fifthsAt(w.cfg.NestRateMap, r, c, 1),
-				cap:  w.cfg.NestCap * fifthsAt(w.cfg.NestCapMap, r, c, 1),
+				rate:  fifthsAt(w.cfg.NestRateMap, r, c, 1),
+				cap:   w.cfg.NestCap * fifthsAt(w.cfg.NestCapMap, r, c, 1),
+				quiet: fifthsAt(w.cfg.NestQuietMap, r, c, 1),
 			})
 		}
 	}
@@ -695,9 +697,14 @@ func (w *World) paintedSpotFor(kind int) (float64, float64, bool) {
 		return 0, 0, false
 	}
 	open := cells
-	if w.nestsCapped() {
+	if w.nestsCapped() || w.bossesAt() {
 		open = open[:0:0]
-		for _, c := range cells {
+		for at, c := range cells {
+			// A nest whose master has been killed sends nobody until it has
+			// one again (TODO 19), and a full one sends nobody either.
+			if w.nestQuiet(kind, at) {
+				continue
+			}
 			if w.nestHasRoom(kind, c) {
 				open = append(open, c)
 			}
@@ -748,6 +755,14 @@ type NestView struct {
 	X, Y, W, H float64
 	Kind       int
 	Name       string
+
+	// ID is what Rouse takes, and it is this nest's place in this very walk
+	// (2026-09-22, TODO 19). Boss is the master that is out of it just now,
+	// or nought, and Quiet how many ticks it has left with no master to call
+	// - both nought in a world with no masters in it.
+	ID    int
+	Boss  int
+	Quiet int
 }
 
 // EnemyNests is every square the map painted for every sort. Empty in a world
@@ -759,8 +774,18 @@ func (w *World) EnemyNests() []NestView {
 		if kind < len(w.cfg.EnemyKinds) {
 			name = w.cfg.EnemyKinds[kind].Name
 		}
-		for _, c := range cells {
-			out = append(out, NestView{X: c.x, Y: c.y, W: c.w, H: c.h, Kind: kind, Name: name})
+		for at, c := range cells {
+			v := NestView{X: c.x, Y: c.y, W: c.w, H: c.h, Kind: kind, Name: name, ID: len(out)}
+			if kind < len(w.nestLives) && at < len(w.nestLives[kind]) {
+				life := w.nestLives[kind][at]
+				if b := w.agentByID(life.boss); b != nil && b.Alive {
+					v.Boss = life.boss
+				}
+				if left := life.quietTill - w.tick; left > 0 {
+					v.Quiet = left
+				}
+			}
+			out = append(out, v)
 		}
 	}
 	return out

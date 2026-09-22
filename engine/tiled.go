@@ -73,8 +73,9 @@ type TiledWorld struct {
 	// They are read off whatever layer the nests themselves are on, since a
 	// tile that says which sort comes out here is the natural one to say how
 	// often and how many.
-	NestRate []string
-	NestCap  []string
+	NestRate  []string
+	NestCap   []string
+	NestQuiet []string
 
 	// Climate is what the weather is like in each cell, one character per
 	// cell (#135), in the vocabulary Config.ClimateMap takes. Nil when no
@@ -190,6 +191,7 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 	riches, anyRich := tileRiches(f.Tilesets)
 	rates, anyRate := tileFifths(f.Tilesets, "rate")
 	caps, anyCap := tileFifths(f.Tilesets, "cap")
+	quiets, anyQuiet := tileFifths(f.Tilesets, "quiet")
 	climates, anyClimate := tileClimates(f.Tilesets)
 	plants := tilePlantKinds(f.Tilesets)
 	beasts := tileNamed(f.Tilesets, "enemy")
@@ -306,6 +308,15 @@ func ParseTiled(data []byte) (*TiledWorld, error) {
 				}
 				if paintedRichness(rows) {
 					out.NestCap = rows
+				}
+			}
+			if out.NestQuiet == nil && anyQuiet {
+				rows, err := terrainRows(l, f.Width, f.Height, quiets)
+				if err != nil {
+					return nil, err
+				}
+				if paintedRichness(rows) {
+					out.NestQuiet = rows
 				}
 			}
 		case "objectgroup":
@@ -955,6 +966,9 @@ func (t *TiledWorld) Apply(cfg *Config) {
 	}
 	if len(t.NestCap) > 0 {
 		cfg.NestCapMap = append([]string(nil), t.NestCap...)
+	}
+	if len(t.NestQuiet) > 0 {
+		cfg.NestQuietMap = append([]string(nil), t.NestQuiet...)
 	}
 	if len(t.Climate) > 0 {
 		cfg.ClimateMap = append([]string(nil), t.Climate...)
