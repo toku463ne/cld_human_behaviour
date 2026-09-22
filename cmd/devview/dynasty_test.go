@@ -146,67 +146,6 @@ func TestALineWithNobodyAnywhereLosesTheRun(t *testing.T) {
 	}
 }
 
-func TestSettlingEveryGoalBlockWinsIt(t *testing.T) {
-	g, _ := aDynastyGame(t, nil)
-	// Whatever the line is actually settled in, made the goal: the win has
-	// to fire on the same reading the status line shows.
-	g.dyn.goals = nil
-	for i := 0; i < engine.DefaultSettleWindow; i++ {
-		for k := 0; k < engine.DefaultSettleStep; k++ {
-			g.world.Step()
-		}
-		g.readSettlement()
-	}
-	where := map[int]bool{}
-	for _, a := range g.world.Agents() {
-		if !a.Alive || a.Lineage != g.dyn.line {
-			continue
-		}
-		if r, ok := g.dyn.settle.SettledIn(a.ID); ok {
-			where[r] = true
-		}
-	}
-	if len(where) == 0 {
-		t.Skip("this seed's line has settled nowhere yet")
-	}
-	for r := range where {
-		g.dyn.goals = append(g.dyn.goals, r)
-	}
-	g.watchDynasty()
-	if !g.dyn.over {
-		t.Fatalf("settled in all %d goal blocks and the run did not end", len(g.dyn.goals))
-	}
-	if g.dyn.held != len(g.dyn.goals) {
-		t.Fatalf("held %d of %d", g.dyn.held, len(g.dyn.goals))
-	}
-}
-
-func TestTheWinWaitsForAFullWindowOfReadings(t *testing.T) {
-	// One reading makes every body "settled" where it stands, which is right
-	// for the instrument and would hand a player the run at tick nought.
-	g, _ := aDynastyGame(t, nil)
-	g.readSettlement()
-	where := map[int]bool{}
-	for _, a := range g.world.Agents() {
-		if !a.Alive || a.Lineage != g.dyn.line {
-			continue
-		}
-		if r, ok := g.dyn.settle.SettledIn(a.ID); ok {
-			where[r] = true
-		}
-	}
-	if len(where) == 0 {
-		t.Skip("the line is nowhere")
-	}
-	for r := range where {
-		g.dyn.goals = append(g.dyn.goals, r)
-	}
-	g.watchDynasty()
-	if g.dyn.over {
-		t.Fatalf("won on %d readings, with %d wanted", g.dyn.reads, engine.DefaultSettleWindow)
-	}
-}
-
 func TestAReadingIsTakenOnTheClockAndNotOnTheFrame(t *testing.T) {
 	// Called every frame with the world standing still, it must take one
 	// reading and not one per frame: a window filled with copies of one
@@ -257,5 +196,171 @@ func TestStandingInAGoalBlockIsNotSettlingInIt(t *testing.T) {
 	g.watchDynasty()
 	if g.dyn.over {
 		t.Fatalf("standing in the goal blocks won the run without anybody living there")
+	}
+}
+
+// Villages (2026-09-22).
+
+// aVillageGame is a dynasty game whose played body has money in its hands and
+// one goal block: the block it is standing in.
+func aVillageGame(t *testing.T, coins int) (*game, int, int) {
+	t.Helper()
+	g, who := aDynastyGame(t, nil)
+	a, _ := g.world.AgentByID(who)
+	region := g.world.RegionAt(a.X, a.Y)
+	g.dyn.goals = []int{region}
+	g.dyn.villages = map[int]*village{}
+	for i := 0; i < coins; i++ {
+		g.world.GiveItem(who, engine.FoodCoin)
+	}
+	return g, who, region
+}
+
+func TestAVillageCostsTheCountrysPrice(t *testing.T) {
+	g, who, region := aVillageGame(t, villagePrice-1)
+	g.foundVillage()
+	if g.dyn.villages[region] != nil {
+		t.Fatal("a village went up without the money for it")
+	}
+	g.world.GiveItem(who, engine.FoodCoin)
+	g.foundVillage()
+	v := g.dyn.villages[region]
+	if v == nil {
+		t.Fatal("the money was there and no village went up")
+	}
+	if n := g.coinsHeld(who); n != 0 {
+		t.Fatalf("%d coins still in hand after paying %d", n, villagePrice)
+	}
+	// The money is not burned: it is lying where the village stands.
+	coins := 0
+	for _, f := range g.world.Foods() {
+		if f.Kind == engine.FoodCoin {
+			coins++
+		}
+	}
+	if coins < villagePrice {
+		t.Fatalf("%d coins on the ground, want at least the %d that were paid", coins, villagePrice)
+	}
+	// And the village is not the player's house: what it hands out is a line
+	// of its own, which is the whole reason to marry into it.
+	if v.line == g.dyn.line {
+		t.Fatalf("the village hands out the player's own line %d", v.line)
+	}
+}
+
+func TestOnlyAGoalBlockTakesAVillage(t *testing.T) {
+	g, _, region := aVillageGame(t, villagePrice)
+	g.dyn.goals = []int{region + 1} // anywhere but here
+	g.foundVillage()
+	if len(g.dyn.villages) != 0 {
+		t.Fatal("a village went up in a block the map asks nothing of")
+	}
+}
+
+func TestABlockIsWonWhenTheHouseHasLivedThereAYear(t *testing.T) {
+	g, who, region := aVillageGame(t, villagePrice)
+	g.foundVillage()
+	v := g.dyn.villages[region]
+	if v == nil {
+		t.Fatal("no village")
+	}
+	// The player standing in it themselves is not a house living there.
+	g.watchVillages(villageHoldTicks)
+	if v.held != 0 || v.done {
+		t.Fatalf("the played body alone held the block (held %d)", v.held)
+	}
+	// Somebody else of the house, standing in the block, is.
+	a, _ := g.world.AgentByID(who)
+	heir := 0
+	for _, o := range g.world.Agents() {
+		if o.Alive && o.ID != who && g.world.RegionAt(o.X, o.Y) == region {
+			heir = o.ID
+			break
+		}
+	}
+	if heir == 0 {
+		t.Skip("nobody else is standing in this block")
+	}
+	g.world.SetLineage(heir, g.dyn.line)
+	g.watchVillages(villageHoldTicks - 1)
+	if v.done {
+		t.Fatal("the block was won a tick early")
+	}
+	g.watchVillages(1)
+	if !v.done {
+		t.Fatalf("a year of the house living there did not win the block (held %d)", v.held)
+	}
+	_ = a
+}
+
+func TestTheYearStartsAgainIfTheHouseLeaves(t *testing.T) {
+	g, _, region := aVillageGame(t, villagePrice)
+	g.foundVillage()
+	v := g.dyn.villages[region]
+	heir := 0
+	for _, o := range g.world.Agents() {
+		if o.Alive && o.ID != g.played && g.world.RegionAt(o.X, o.Y) == region {
+			heir = o.ID
+			break
+		}
+	}
+	if heir == 0 {
+		t.Skip("nobody else is standing in this block")
+	}
+	g.world.SetLineage(heir, g.dyn.line)
+	g.watchVillages(200)
+	if v.held != 200 {
+		t.Fatalf("held %d after 200 ticks", v.held)
+	}
+	g.world.SetLineage(heir, g.dyn.line+1000) // no longer of the house
+	g.watchVillages(10)
+	if v.held != 0 {
+		t.Fatalf("held %d with nobody of the house there", v.held)
+	}
+}
+
+// A child of the played body belongs to the player's house, whichever parent
+// the played body is. The engine hands a line down from the mother; a male
+// player would otherwise be childless by the only tag the game can count.
+func TestTheChildrenOfThePlayedBodyJoinItsHouse(t *testing.T) {
+	g, _ := aDynastyGame(t, []int{0})
+	g.dyn.villages = map[int]*village{}
+	// Somebody in this world who has a parent still alive: that parent is
+	// the body we play, so that the child is one of the player's.
+	child, parent := 0, 0
+	for _, a := range g.world.Agents() {
+		if !a.Alive {
+			continue
+		}
+		for _, p := range a.ParentIDs {
+			if p == 0 {
+				continue
+			}
+			if _, alive := g.world.AgentByID(p); alive {
+				child, parent = a.ID, p
+			}
+		}
+		if child != 0 {
+			break
+		}
+	}
+	if child == 0 {
+		t.Skip("nobody in this world has a living parent")
+	}
+	g.played = parent
+	g.dyn.line = 40000 // a house nobody is born into, so the change is visible
+	g.adoptChildren()
+	if a, _ := g.world.AgentByID(child); a.Lineage != 40000 {
+		t.Fatalf("a child of the played body is of house %d, want the player's", a.Lineage)
+	}
+	// And nobody but that body's children is taken in - several of them is
+	// right, anybody else is not.
+	for _, a := range g.world.Agents() {
+		if !a.Alive || a.Lineage != 40000 {
+			continue
+		}
+		if a.ParentIDs[0] != parent && a.ParentIDs[1] != parent {
+			t.Fatalf("#%d is of the house and is no child of the played body", a.ID)
+		}
 	}
 }

@@ -970,6 +970,11 @@ func (g *game) handlePlayInput() {
 		// nothing in the hand, exactly as it refuses aiming at what cannot be
 		// seen: what a player may order is what the node could have chosen.
 		g.orderAt(engine.ActThrow, markAgent)
+	case inpututil.IsKeyJustPressed(ebiten.KeyV):
+		// Founding a village (2026-09-22). It is not an order and not a verb
+		// of the world's: it is the game spending the player's money, which
+		// is why it goes nowhere near the action vocabulary.
+		g.foundVillage()
 	}
 	for i, key := range effortKeys {
 		if inpututil.IsKeyJustPressed(key) {
@@ -2173,6 +2178,7 @@ func (g *game) selectAgent(id int) {
 func (g *game) Draw(screen *ebiten.Image) {
 	screen.Fill(colorBackground)
 	g.drawWorld(screen)
+	g.drawGoalSigns(screen)
 	g.drawBubbles(screen)
 	g.drawMenu(screen)
 
@@ -4969,6 +4975,17 @@ func main() {
 		}
 		cfg.HumanNestMap = row
 		cfg.InitialPopulation = 0
+	}
+	// The dynasty needs money in the world (2026-09-22): a village is paid
+	// for in coins, and until now coins were something a map author scattered
+	// for the sake of trade. It also needs a hand that a coin does not fill -
+	// an ordinary body holds one thing - or collecting the price would mean
+	// putting dinner down for every coin.
+	if *playDynasty {
+		if cfg.Coins == 0 {
+			cfg.Coins = 60
+		}
+		cfg.CarrySlotted, cfg.CarrySlotsWeigh = true, true
 	}
 	// Dens with a master in them (TODO 19). Paints two of them when the map
 	// has painted none, so that the flag is worth typing on a plain world:

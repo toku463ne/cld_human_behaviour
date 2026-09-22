@@ -792,6 +792,8 @@ func tileRegions(sets []tiledTilset) map[int]tiledRegion {
 					Special: propNumber(t.Properties, "special"),
 					Enemies: propNumber(t.Properties, "enemies"),
 					Goal:    propNumber(t.Properties, "goal") > 0,
+					Price:   propNumber(t.Properties, "price"),
+					Years:   propNumber(t.Properties, "years"),
 				},
 			}
 		}
@@ -891,6 +893,8 @@ func regionShapes(l tiledLayer, f tiledFile) []RegionShape {
 			Special: propNumber(o.Properties, "special"),
 			Enemies: propNumber(o.Properties, "enemies"),
 			Goal:    propNumber(o.Properties, "goal") > 0,
+			Price:   propNumber(o.Properties, "price"),
+			Years:   propNumber(o.Properties, "years"),
 		})
 	}
 	// The order a drawing program happens to write its objects in is not a

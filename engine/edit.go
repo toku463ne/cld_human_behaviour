@@ -275,3 +275,38 @@ func (w *World) SetDifficulty(name string) bool {
 	}
 	return false
 }
+
+// GiveItem puts one thing of this kind into a body's hands, and is on the
+// shelf the rest of this file is on: nothing in the simulation calls it, it
+// draws no random numbers, and a world nobody is editing never sees it.
+//
+// It is here for the two callers an editor has always had in mind - a map
+// author trying something out, and a game setting a scene - and for the third
+// that turned up with the dynasty's villages: a test that needs money in a
+// hand without playing the game to earn it.
+func (w *World) GiveItem(id int, kind FoodKind) error {
+	a := w.agentByID(id)
+	if a == nil || !a.Alive {
+		return fmt.Errorf("give: no body %d", id)
+	}
+	a.carried = append(a.carried, Food{ID: w.nextFoodID, X: a.X, Y: a.Y, Kind: kind})
+	w.nextFoodID++
+	w.heldKind[kind]++
+	return nil
+}
+
+// Place puts a body somewhere, and is on the same shelf as the rest of this
+// file: an editor moving a piece, a game setting a scene, and nothing in the
+// simulation. It draws no random numbers and asks the ground nothing - what
+// an editor means by putting a body on a spot is that the body is on that
+// spot, cliff or no cliff.
+func (w *World) Place(id int, x, y float64) error {
+	a := w.agentByID(id)
+	if a == nil || !a.Alive {
+		return fmt.Errorf("place: no body %d", id)
+	}
+	a.X = clamp(x, 0, w.cfg.Width)
+	a.Y = clamp(y, 0, w.cfg.Height)
+	w.invalidateIndex()
+	return nil
+}

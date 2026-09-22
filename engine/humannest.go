@@ -52,6 +52,13 @@ type HumanNest struct {
 	Rate int
 	Life int
 
+	// Since is the tick this village started, and nought is the beginning of
+	// the world - which is every village a map paints, and is why a world
+	// that paints its villages is unchanged by this field existing. Life is
+	// counted from here, so a village founded in the middle of a run gets the
+	// years it was promised rather than none (2026-09-22).
+	Since int
+
 	// Cap is how many of its own line it keeps alive: while fewer than this
 	// are living it sends another, and at nought it sends one every Rate
 	// whatever is alive.
@@ -150,7 +157,7 @@ func (w *World) spawnHumansOfTick() {
 		if life <= 0 {
 			life = w.cfg.HumanNestLife
 		}
-		if rate <= 0 || w.tick > life || w.tick%rate != 0 {
+		if rate <= 0 || w.tick-row.Since > life || w.tick%rate != 0 {
 			continue
 		}
 		// Everything that could refuse is asked before anything is drawn, so
@@ -205,7 +212,7 @@ func (w *World) HumanNests() []HumanNestView {
 				Name:    row.Name,
 				Lineage: w.humanNestLine(nest),
 				Sent:    w.humanNestSent[nest],
-				Left:    max(life-w.tick, 0),
+				Left:    max(life-(w.tick-row.Since), 0),
 			})
 		}
 	}

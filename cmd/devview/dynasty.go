@@ -2,9 +2,14 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"sort"
+	"strings"
 
+	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/toku463ne/cld_human_behaviour/engine"
 )
@@ -96,6 +101,12 @@ type dynasty struct {
 	goals  []int
 	settle *engine.SettlementTracker
 
+	// villages is what the player has founded, by block, and lastTick the
+	// tick the year was last counted on (the world runs several ticks a
+	// frame, and the year is counted in ticks and not in frames).
+	villages map[int]*village
+	lastTick int
+
 	// waiting is how many ticks of the ten years are left, and waitFrom the
 	// body whose death started them.
 	waiting  int
@@ -144,6 +155,8 @@ func (g *game) startDynasty() {
 		return
 	}
 	g.dyn.line = a.Lineage
+	g.dyn.villages = map[int]*village{}
+	g.dyn.lastTick = g.world.Tick()
 	g.dyn.goals = g.world.GoalRegions()
 	sort.Ints(g.dyn.goals)
 	if len(g.dyn.goals) == 0 {
@@ -151,7 +164,12 @@ func (g *game) startDynasty() {
 		g.say("no goal blocks on this map: run it with a map that marks some")
 		return
 	}
-	g.say("playing for line %d. settle it in all %d goal blocks at once", a.Lineage, len(g.dyn.goals))
+	prices := make([]string, 0, len(g.dyn.goals))
+	for _, r := range g.dyn.goals {
+		prices = append(prices, fmt.Sprintf("block %d: %d coins", r, g.villagePrice(r)))
+	}
+	g.say("playing for house %d. found a village in each of the %d goal blocks (%s) and leave your house living there a year",
+		a.Lineage, len(g.dyn.goals), strings.Join(prices, ", "))
 }
 
 // watchDynasty is the whole of the mode's per-frame work: take the settlement
@@ -163,6 +181,12 @@ func (g *game) watchDynasty() {
 		return
 	}
 	g.readSettlement()
+	// The children of the played body belong to the player's house, and the
+	// year each village is waiting out is counted in ticks.
+	g.adoptChildren()
+	tick := g.world.Tick()
+	g.watchVillages(tick - d.lastTick)
+	d.lastTick = tick
 	if d.waiting > 0 {
 		g.runTheWait()
 		return
@@ -170,10 +194,15 @@ func (g *game) watchDynasty() {
 	if d.picks != nil {
 		return // the menu is up and the clock is stopped behind it
 	}
-	d.held = len(g.settledGoals())
-	if d.held == len(d.goals) && d.reads >= engine.DefaultSettleWindow {
+	d.held = 0
+	for _, v := range d.villages {
+		if v.done {
+			d.held++
+		}
+	}
+	if g.villagesWon() {
 		d.over = true
-		d.why = fmt.Sprintf("your line is settled in all %d goal blocks at once", len(d.goals))
+		d.why = fmt.Sprintf("your house has lived a year in every one of the %d goal blocks", len(d.goals))
 		g.paused = true
 		g.say("WON: %s", d.why)
 	}
@@ -360,11 +389,20 @@ func (g *game) dynastyStatus() string {
 		return fmt.Sprintf("line %d: which country does it carry on in? 1-%d (see the panel)",
 			d.line, len(d.picks))
 	}
-	if d.reads < engine.DefaultSettleWindow {
-		return fmt.Sprintf("line %d: settling in (%d of %d readings taken before the goal counts)",
-			d.line, d.reads, engine.DefaultSettleWindow)
+	parts := make([]string, 0, len(d.goals))
+	for _, r := range d.goals {
+		switch v := d.villages[r]; {
+		case v == nil:
+			parts = append(parts, fmt.Sprintf("%d: %d coins", r, g.villagePrice(r)))
+		case v.done:
+			parts = append(parts, fmt.Sprintf("%d: yours", r))
+		default:
+			parts = append(parts, fmt.Sprintf("%d: %.2f of a year", r,
+				float64(v.held)/villageHoldTicks))
+		}
 	}
-	return fmt.Sprintf("line %d: settled in %d of %d goal blocks", d.line, d.held, len(d.goals))
+	return fmt.Sprintf("house %d: %d of %d blocks held | %d coins in hand | blocks %s | [v] found a village",
+		d.line, d.held, len(d.goals), g.coinsHeld(g.played), strings.Join(parts, ", "))
 }
 
 // dynPicks is the transfer menu for whoever is drawing it, empty when no
@@ -374,4 +412,248 @@ func (g *game) dynPicks() []dynastyPick {
 		return nil
 	}
 	return g.dyn.picks
+}
+
+// Villages (2026-09-22, the user's own design).
+//
+// What the dynasty asked for before this was "settle your line in every goal
+// block at once", and what a player found there was a wall: a pair bond ends
+// when the child is born, so nobody follows you anywhere, and a far country
+// is full of strangers who are not yours and never will be. You could walk to
+// a goal block; you could not leave a line in one.
+//
+// So the player founds the village themselves. It costs coins, which are
+// lying about the world and have never had anything to buy until now, and the
+// coins are laid on the ground where the village stands rather than spent
+// into nothing - money in this world is conserved, and a village with its
+// founder's money at its feet is a better picture anyway.
+//
+// The village hands out a line of its own and never the player's. That is the
+// point of it: what the player has to do afterwards is marry into it and
+// leave children there, and the goal is not "a village stands here" but "my
+// house has been living here a year".
+//
+// The map says what a country asks. Price and years are properties of the
+// goal region (tiled: price, years), because a rich valley and a bare shelf
+// are not worth the same and the author is the one who drew the difference.
+// The engine reads neither of them.
+
+// The colours of a signboard: the post and the board it is nailed to, and
+// the three things a board can say.
+var (
+	colorSignPost    = color.RGBA{0x6b, 0x4b, 0x2a, 0xff}
+	colorSignBoard   = color.RGBA{0x2b, 0x2b, 0x2b, 0xdd}
+	colorSignPrice   = color.RGBA{0xf0, 0xc0, 0x40, 0xff}
+	colorSignWaiting = color.RGBA{0x60, 0xc0, 0xf0, 0xff}
+	colorSignHeld    = color.RGBA{0x70, 0xe0, 0x70, 0xff}
+)
+
+const (
+	// villageHoldTicks is how long the player's house has to be living in a
+	// country before it counts: one year of world time.
+	villageHoldTicks = 500
+
+	// villagePrice is what a country asks when the map says nothing, and
+	// villageYears how long a village keeps its own line up when the map says
+	// nothing about that either.
+	villagePrice = 10
+	villageYears = 10
+
+	// villageRate is how often a village sends somebody, and villageCap how
+	// many of its own line it keeps alive. The same figures -villages hands
+	// out, because a village founded by a player is a village.
+	villageRate = 100
+	villageCap  = 20
+)
+
+// village is one country the player has founded in, and how long their house
+// has been living there since.
+type village struct {
+	region int
+	at     int    // the tick it was founded
+	line   uint16 // the village's own line, which is not the player's
+	held   int    // ticks the player's house has been living here, unbroken
+	done   bool
+	x, y   float64
+}
+
+// foundVillage is the V key: pay the country's price and put a village where
+// the played body is standing.
+func (g *game) foundVillage() {
+	d := g.dyn
+	if d == nil || d.over || g.played == 0 {
+		return
+	}
+	a, alive := g.world.AgentByID(g.played)
+	if !alive {
+		return
+	}
+	region := g.world.RegionAt(a.X, a.Y)
+	goal := false
+	for _, r := range d.goals {
+		if r == region {
+			goal = true
+		}
+	}
+	if !goal {
+		g.say("a village only counts in a goal block, and this is block %d", region)
+		return
+	}
+	if d.villages[region] != nil {
+		g.say("block %d already has your village", region)
+		return
+	}
+	price := g.villagePrice(region)
+	if held := g.coinsHeld(a.ID); held < price {
+		g.say("block %d asks %d coins and you have %d", region, price, held)
+		return
+	}
+	years := g.world.GoalYears(region)
+	if years <= 0 {
+		years = villageYears
+	}
+	cfg := g.world.Config()
+	line, err := g.world.FoundNest(a.ID, price, engine.HumanNest{
+		Name: fmt.Sprintf("village %d", region),
+		Rate: villageRate, Cap: villageCap,
+		Life: int(years * float64(cfg.TicksPerYear)),
+	})
+	if err != nil {
+		g.say("%v", err)
+		return
+	}
+	d.villages[region] = &village{region: region, at: g.world.Tick(), line: line, x: a.X, y: a.Y}
+	g.say("village founded in block %d for %d coins. now leave your house living here for a year",
+		region, price)
+}
+
+// villagePrice is what this country asks, in coins.
+func (g *game) villagePrice(region int) int {
+	if p := g.world.GoalPrice(region); p > 0 {
+		return int(p)
+	}
+	return villagePrice
+}
+
+// coinsHeld is how much money one body has in its hands.
+func (g *game) coinsHeld(id int) int {
+	n := 0
+	for _, f := range g.world.CarriedBy(id) {
+		if f.Kind == engine.FoodCoin {
+			n++
+		}
+	}
+	return n
+}
+
+// watchVillages runs the year each founded village is waiting out.
+//
+// The clock runs while somebody of the player's house who is not the played
+// body is standing in the block, and goes back to nought when there is
+// nobody: what is being asked is whether the house lives there, and a player
+// standing in it themselves is not a house living there. It is the reason the
+// player has to marry into the village at all.
+func (g *game) watchVillages(ticks int) {
+	d := g.dyn
+	if d == nil || len(d.villages) == 0 || ticks <= 0 {
+		return
+	}
+	living := map[int]int{}
+	for _, a := range g.world.Agents() {
+		if !a.Alive || a.Lineage != d.line || a.ID == g.played {
+			continue
+		}
+		living[g.world.RegionAt(a.X, a.Y)]++
+	}
+	for region, v := range d.villages {
+		if v.done {
+			continue
+		}
+		if living[region] == 0 {
+			v.held = 0
+			continue
+		}
+		v.held += ticks
+		if v.held >= villageHoldTicks {
+			v.done = true
+			g.say("block %d is yours: your house has lived there a year", region)
+		}
+	}
+}
+
+// adoptChildren puts the played body's children into the player's house.
+//
+// A child takes its mother's line, which is what a family is in this engine.
+// A player who is male would otherwise father children who belong to their
+// mother's house and count for nothing, and the whole of this mode is about
+// leaving your own house somewhere. It is the game saying whose house a child
+// is of, through the one call the engine offers for it.
+func (g *game) adoptChildren() {
+	d := g.dyn
+	if d == nil || d.line == 0 || g.played == 0 {
+		return
+	}
+	for _, a := range g.world.Agents() {
+		if !a.Alive || a.Lineage == d.line {
+			continue
+		}
+		for _, parent := range a.ParentIDs {
+			if parent == g.played {
+				g.world.SetLineage(a.ID, d.line)
+				break
+			}
+		}
+	}
+}
+
+// villagesWon says whether every goal block has had the house living in it
+// for its year.
+func (g *game) villagesWon() bool {
+	d := g.dyn
+	if len(d.goals) == 0 {
+		return false
+	}
+	for _, r := range d.goals {
+		v := d.villages[r]
+		if v == nil || !v.done {
+			return false
+		}
+	}
+	return true
+}
+
+// drawGoalSigns puts a board up in every goal block.
+//
+// The price is a thing a player has to know before walking anywhere, and the
+// panel is the wrong place for it: what is being decided is "which of these
+// countries can I afford", and that is a question about the map. So the map
+// answers it, at the middle of each block, in the block's own terms - the
+// price while there is no village, how far through its year one is, and
+// nothing at all once the block is held.
+func (g *game) drawGoalSigns(screen *ebiten.Image) {
+	d := g.dyn
+	if d == nil || d.line == 0 || len(d.goals) == 0 {
+		return
+	}
+	for _, r := range d.goals {
+		// A spot inside the block and not the middle of what it spans: a
+		// painted country may be two patches with somebody else's land
+		// between them, and a sign has to stand on its own ground.
+		x, y := g.onScreen(g.world.RegionCentre(r))
+		text, c := fmt.Sprintf("%d coins", g.villagePrice(r)), colorSignPrice
+		if v := d.villages[r]; v != nil {
+			if v.done {
+				text, c = "yours", colorSignHeld
+			} else {
+				text, c = fmt.Sprintf("%.2f yr", float64(v.held)/villageHoldTicks), colorSignWaiting
+			}
+		}
+		w := float32(len(text)*6 + 8)
+		// A post and a board on it, so that it reads as something standing in
+		// the country rather than as a label floating over it.
+		vector.DrawFilledRect(screen, x-1, y-6, 2, 12, colorSignPost, true)
+		vector.DrawFilledRect(screen, x-w/2, y-20, w, 15, colorSignBoard, true)
+		vector.StrokeRect(screen, x-w/2, y-20, w, 15, 1, c, true)
+		ebitenutil.DebugPrintAt(screen, text, int(x-w/2)+4, int(y)-21)
+	}
 }

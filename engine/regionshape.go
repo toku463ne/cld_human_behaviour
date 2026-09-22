@@ -51,6 +51,20 @@ type RegionShape struct {
 	// met, and what that means, belongs to the game layer - engine has no
 	// player and no winning (stage 19).
 	Goal bool
+
+	// Price is what the game asks for a village here, in coins, and Years how
+	// long a village founded here keeps its line up. Both are carried exactly
+	// as Goal is: the engine never reads either of them (2026-09-22).
+	//
+	// They are figures, and figures are usually kept off a map (#133). The
+	// line that decision draws is about the simulation's own rules - what a
+	// beast is like, what a crop is worth - and these are neither. They are
+	// the game's asking price for a country, which is a thing only the map
+	// can know: a rich valley and a bare shelf are not worth the same, and
+	// the author is the one who drew the difference. Nothing in engine reads
+	// them, so nothing in engine can be moved by them.
+	Price float64
+	Years float64
 }
 
 // regionIndexGrid is how a position becomes a region when the regions are
@@ -229,6 +243,73 @@ func (w *World) GoalRegions() []int {
 		}
 	}
 	return out
+}
+
+// GoalPrice is what the game asks for a village in this region, in coins, and
+// GoalYears how long one founded there keeps its line up. Read only, and zero
+// where the author said nothing - the game decides what a silent map means.
+func (w *World) GoalPrice(region int) float64 {
+	if region < 0 || region >= len(w.cfg.RegionShapes) {
+		return 0
+	}
+	return w.cfg.RegionShapes[region].Price
+}
+
+func (w *World) GoalYears(region int) float64 {
+	if region < 0 || region >= len(w.cfg.RegionShapes) {
+		return 0
+	}
+	return w.cfg.RegionShapes[region].Years
+}
+
+// RegionCentre is a spot inside one block, for an interface that has to point
+// at it - a label, a sign, a camera.
+//
+// It is not the middle of the block's bounding box, which is the obvious
+// answer and the wrong one: a painted region may be two patches in opposite
+// corners, and the middle of what they span is somewhere neither of them is.
+// This is the middle of the cells the block actually holds, moved to the
+// nearest one of them when that middle falls outside.
+//
+// Read only, and it draws nothing: the grid it walks is the one the world
+// built when it was laid out.
+func (w *World) RegionCentre(i int) (float64, float64) {
+	const step = 64 // a coarse sweep: this is for pointing, not for measuring
+	var sumX, sumY, n float64
+	type spot struct{ x, y float64 }
+	var cells []spot
+	for gy := 0; gy < step; gy++ {
+		y := (float64(gy) + 0.5) / step * w.cfg.Height
+		for gx := 0; gx < step; gx++ {
+			x := (float64(gx) + 0.5) / step * w.cfg.Width
+			if w.regionIndexAt(x, y) != i {
+				continue
+			}
+			cells = append(cells, spot{x, y})
+			sumX, sumY, n = sumX+x, sumY+y, n+1
+		}
+	}
+	if n == 0 {
+		minX, minY, maxX, maxY := w.regionBounds(i)
+		return (minX + maxX) / 2, (minY + maxY) / 2
+	}
+	cx, cy := sumX/n, sumY/n
+	if w.regionIndexAt(cx, cy) == i {
+		return cx, cy
+	}
+	best, bestD := cells[0], math.Inf(1)
+	for _, c := range cells {
+		if d := (c.x-cx)*(c.x-cx) + (c.y-cy)*(c.y-cy); d < bestD {
+			best, bestD = c, d
+		}
+	}
+	return best.x, best.y
+}
+
+// RegionBounds is the ground one block covers, for an interface drawing it.
+// Read only.
+func (w *World) RegionBounds(i int) (minX, minY, maxX, maxY float64) {
+	return w.regionBounds(i)
 }
 
 // RegionNames is what the author called each region, for a map editor or a

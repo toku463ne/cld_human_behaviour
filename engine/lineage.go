@@ -1,5 +1,7 @@
 package engine
 
+import "fmt"
+
 // Lines of descent (2026-09-20).
 //
 // Every founder starts a line and every child takes its mother's, so a tag
@@ -185,4 +187,28 @@ func (w *World) lineTaken(mother *Agent) bool {
 		return false
 	}
 	return false
+}
+
+// SetLineage puts a body into a line of descent, and is the second thing in
+// this engine that only something outside it ever calls (the first is Endow).
+//
+// It exists for one thing the dynasty needs and the engine has no opinion
+// about. A child takes its mother's line, which is how a family is carried
+// here and is right for a world nobody is playing. A player who is male and
+// has a child with somebody of another country is therefore, by the tag,
+// childless: the child belongs to its mother's house. The game says otherwise
+// - what the player is playing for is their own house - and this is where the
+// game says it.
+//
+// No rule reads it back, nothing is drawn, and a world nobody plays never
+// calls it. What it costs is that the tag stops being "the line you were born
+// into" and becomes "the house you belong to", which is what the game meant
+// by it all along.
+func (w *World) SetLineage(id int, line uint16) error {
+	a := w.agentByID(id)
+	if a == nil || !a.Alive {
+		return fmt.Errorf("lineage: no body %d", id)
+	}
+	a.Lineage = line
+	return nil
 }

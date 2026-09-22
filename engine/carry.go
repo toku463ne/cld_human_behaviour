@@ -641,6 +641,19 @@ func (a *Agent) slotBlockedByTrinket(cfg *Config) bool {
 }
 
 // Carrying reports what the population is holding.
+// CarriedBy is what one body is holding, for an interface to show and a game
+// to count. Read only, and a copy: the world's own list is not handed out.
+//
+// It is here because a player needs to see their own hands, and because the
+// money a player is collecting is in them. Nothing in the simulation reads it.
+func (w *World) CarriedBy(id int) []Food {
+	a := w.agentByID(id)
+	if a == nil {
+		return nil
+	}
+	return append([]Food(nil), a.carried...)
+}
+
 func (w *World) Carrying() CarryUse {
 	var out CarryUse
 	n := 0.0
