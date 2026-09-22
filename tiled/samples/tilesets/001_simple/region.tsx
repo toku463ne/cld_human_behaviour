@@ -26,4 +26,28 @@
    <property name="rich" type="float" value="1"/>
   </properties>
  </tile>
+ <tile id="3">
+  <properties>
+   <property name="goal" type="bool" value="true"/>
+   <property name="price" type="int" value="5"/>
+   <property name="region" value="goal1"/>
+   <property name="years" type="float" value="10"/>
+  </properties>
+ </tile>
+ <tile id="4">
+  <properties>
+   <property name="goal" type="bool" value="true"/>
+   <property name="price" type="int" value="10"/>
+   <property name="region" value="goal2"/>
+   <property name="years" type="float" value="10"/>
+  </properties>
+ </tile>
+ <tile id="5">
+  <properties>
+   <property name="goal" type="bool" value="true"/>
+   <property name="price" type="int" value="15"/>
+   <property name="region" value="goal3"/>
+   <property name="years" type="float" value="10"/>
+  </properties>
+ </tile>
 </tileset>
