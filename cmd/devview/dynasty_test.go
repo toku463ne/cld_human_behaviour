@@ -364,3 +364,34 @@ func TestTheChildrenOfThePlayedBodyJoinItsHouse(t *testing.T) {
 		}
 	}
 }
+
+// A world whose people have not arrived yet hands the player nobody rather
+// than a beast (2026-09-23). A map that paints a nest starts empty, and a
+// body with no line is a dynasty that can never begin.
+func TestAWorldWithNoPeopleYetHandsOverNobody(t *testing.T) {
+	cfg := engine.DefaultConfig()
+	cfg.InitialPopulation = 0
+	cfg.InitialEnemies = 6
+	cfg.EnemyKinds = []engine.EnemyKind{{Name: "brute", Share: 1}}
+	w := engine.NewWorld(cfg)
+	if got := quickestBody(w); got != 0 {
+		a, _ := w.AgentByID(got)
+		t.Fatalf("a world of %d beasts and no people offered #%d (species %v)",
+			cfg.InitialEnemies, got, a.Species)
+	}
+	// And once somebody is there, that is who it offers.
+	cfg.HumanNests = []engine.HumanNest{{Name: "hearth", Key: 'h', Rate: 50, Life: 5000, Cap: 5}}
+	cfg.HumanNestMap = []string{"h.."}
+	w = engine.NewWorld(cfg)
+	for i := 0; i < 200; i++ {
+		w.Step()
+	}
+	who := quickestBody(w)
+	if who == 0 {
+		t.Fatal("the nest sent somebody and nobody was offered")
+	}
+	a, _ := w.AgentByID(who)
+	if a.Species != engine.SpeciesHuman {
+		t.Fatalf("#%d is not one of the people", who)
+	}
+}

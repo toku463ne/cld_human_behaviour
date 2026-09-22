@@ -986,6 +986,12 @@ func (g *game) handlePlayInput() {
 	g.walkWithPad()
 }
 
+// waitForPeople is how long the game will run a world that has nobody in it
+// yet, looking for the first person to take over. Twenty years: long enough
+// for any nest that sends anybody at all, short enough that a world with no
+// people in it says so rather than hanging.
+const waitForPeople = 10000
+
 var effortKeys = []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4, ebiten.Key5}
 
 // padWalk is one direction and the keys that mean it, laid out as the number
@@ -4471,8 +4477,17 @@ func quickestBody(w *engine.World) int {
 		grown = append(grown, a)
 	}
 	if len(grown) == 0 {
-		if agents := w.Agents(); len(agents) > 0 {
-			return agents[0].ID
+		// A world whose people have not arrived yet (2026-09-23). A map that
+		// paints a nest starts with nobody at all and sends the first person
+		// a hundred ticks later, and the fallback here used to hand the
+		// player whatever body was first in the list - which on a map with
+		// beasts on it is a beast, with no line, and a dynasty played for
+		// line nought is a dynasty that can never start. Nobody is the right
+		// answer; the caller waits.
+		for _, a := range w.Agents() {
+			if a.Species == engine.SpeciesHuman && a.Alive {
+				return a.ID // not grown yet, but it is one of the people
+			}
 		}
 		return 0
 	}
@@ -5258,7 +5273,21 @@ func main() {
 	}
 	if *play || *ask || *playDynasty {
 		if g.selected == 0 {
-			g.selectAgent(quickestBody(g.world))
+			// Wait for the people, on a map that starts with none (2026-09-23).
+			// A nest sends its first person HumanNestTicks in, and a game
+			// handed nobody would sit there with the world running and no way
+			// to join it.
+			for i := 0; quickestBody(g.world) == 0 && i < waitForPeople; i++ {
+				world.Step()
+			}
+			if who := quickestBody(g.world); who != 0 {
+				if t := world.Tick(); t > 0 {
+					log.Printf("waited %d ticks for the first person to arrive", t)
+				}
+				g.selectAgent(who)
+			} else {
+				log.Printf("nobody to play: this world has no people in it")
+			}
 		}
 		g.toggleControl() // the first press is the asked mode
 		if *play || *playDynasty {
