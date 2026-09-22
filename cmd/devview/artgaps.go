@@ -103,6 +103,13 @@ func askedFor() map[string]int {
 			}
 		}
 	}
+	// And the ground, which nothing about a body can be asked for. The list
+	// is ground.go's own (groundClips), for the same reason the bodies' list
+	// is clipFor's: the file that draws it is the only one that knows what it
+	// draws, and a list written down twice is a list that goes stale.
+	for _, clip := range groundClips() {
+		ask(clip, 1)
+	}
 	// And the things lying about. This one is read by frame rather than by
 	// name - one clip holds the whole strip - so what it needs is a count.
 	for kind := engine.FoodKind(0); kind < engine.NumFoodKinds; kind++ {
@@ -116,6 +123,12 @@ func askedFor() map[string]int {
 	}
 	return want
 }
+
+// paintedInstead is what a set without the ground art draws the country with:
+// the flat washes of colour this viewer painted it in from stage 20 until it
+// was drawn. It is all or nothing (tileset.hasGround), so one ground clip
+// missing means the whole country is painted rather than drawn.
+const paintedInstead = "the painted washes"
 
 // hole is one picture a set has not got, and what it draws instead.
 type hole struct {
@@ -140,7 +153,15 @@ func holesIn(set string) ([]hole, error) {
 	for clip, frames := range askedFor() {
 		switch {
 		case have[clip] == 0:
-			out = append(out, hole{Clip: clip, StandIn: standIn(clip, has), Frames: frames})
+			// standIn answers with the name itself where nothing stands in,
+			// which is the ground: a cell drawn with the wrong piece of
+			// ground is a river running up a cliff, so the washes take the
+			// whole country instead.
+			stood := standIn(clip, has)
+			if stood == clip {
+				stood = paintedInstead
+			}
+			out = append(out, hole{Clip: clip, StandIn: stood, Frames: frames})
 		case have[clip] < frames:
 			// One clip short of a frame, which only the strip of things can
 			// be: a body cycles its frames and does not care how many there
@@ -276,20 +297,19 @@ type wish struct {
 	Ask   string
 }
 
-var wishes = []wish{
-	{
-		What:  "a beast being struck",
-		Clips: []string{"enemy.big.hurt", "enemy.small.hurt", "enemy.water.hurt", "enemy.fly.hurt"},
-		Ask:   "docs/sprites.md section 5, the brief as it stands: row 5 came back missing. Ask again with the standing row beside it.",
-	},
-	{
-		What: "hair in two layers",
-		// No names: what it would be called depends on how it is drawn, and
-		// guessing one here would make this entry look done the day somebody
-		// drew something else with that name.
-		Ask: "docs/sprites.md section 7-2. Seven whole standing bodies is what there is, so hair colour shows only while a body stands still. A bald body plus hair alone, same size and place, is what would fix it.",
-	},
-}
+var wishes []wish
+
+// Both of the entries that used to be here are gone, and they went two
+// different ways, which is the whole reason this list is worth keeping.
+//
+//   - "a beast being struck" was asked for twice and arrived the second
+//     time, with the spirits. A test says so the day it lands, and clipFor
+//     started asking for it the same day.
+//   - "hair in two layers" was never drawn and never will be. It was a way
+//     of showing which line a body belongs to on art that cannot be
+//     coloured - brown hair and skin share a hue exactly - and the spirits
+//     answered the question instead by being drawn white, which any colour
+//     can be multiplied into. The want was never hair.
 
 // artReport is what to ask for next, per set, as plain text.
 //
@@ -327,12 +347,17 @@ func artReport() (string, error) {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("nobody has drawn these, in any set, so the viewer never asks:\n")
+	var want []wish
 	for _, w := range wishes {
-		if where := drawnIn(w, ix.Sets); where != "" {
-			continue // it arrived; the entry is stale and a test says so
+		if where := drawnIn(w, ix.Sets); where == "" {
+			want = append(want, w) // it has not arrived; a test says when it has
 		}
-		fmt.Fprintf(&b, "  - %s\n      %s\n", w.What, w.Ask)
+	}
+	if len(want) > 0 {
+		b.WriteString("nobody has drawn these, in any set, so the viewer never asks:\n")
+		for _, w := range want {
+			fmt.Fprintf(&b, "  - %s\n      %s\n", w.What, w.Ask)
+		}
 	}
 	return b.String(), nil
 }

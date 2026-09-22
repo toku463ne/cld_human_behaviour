@@ -215,6 +215,14 @@ func standIn(name string, has func(string) bool) string {
 	if has(name) {
 		return name // a set that has it gives nothing up
 	}
+	if strings.HasPrefix(name, groundPrefix) {
+		// The ground stands in for nothing. A body drawn in the wrong pose
+		// is still that body; a cell drawn with the wrong piece of ground is
+		// a river running up a cliff. A set that is short of any of it falls
+		// back to the washes as a whole (tileset.hasGround), which is one
+		// world consistently rather than two mixed.
+		return name
+	}
 	part := strings.Split(name, ".")
 	if part[0] == "enemy" {
 		// A beast has no age and no sex, and its build is the one thing not
@@ -336,23 +344,21 @@ func clipFor(a *engine.Agent, cfg *engine.Config, l look) string {
 		// more legible as the one going forward.
 		return kind + ".fight"
 	}
-	// Taking a blow and standing in a river are drawn for people only. The
-	// beasts' sheet has neither - the row of one being struck was asked for
-	// and never arrived, and nobody asked for one in the water because the
-	// beast that lives in water is a build rather than a circumstance, and a
-	// brute wading across a river is still a brute.
-	//
-	// This is a hole in the art and it is left as one on purpose. Reaching
-	// for enemy.water.* here would draw a heavy beast as a lurker, which is a
-	// lie about which sort it is - and which sort it is, is the one thing
-	// about a beast this screen has to get right.
-	if a.Species == engine.SpeciesHuman {
-		if l.struck {
-			return kind + ".hurt"
-		}
-		if l.wading {
-			return kind + ".swim"
-		}
+	// Taking a blow is drawn for everything now (2026-09-22). The row of a
+	// beast being struck was asked for twice, arrived with the spirits, and
+	// this is the line that wakes it. An older set that has not got it
+	// draws that build standing instead (standIn), which is what every set
+	// before this did anyway.
+	if l.struck {
+		return kind + ".hurt"
+	}
+	// Standing in a river is drawn for people only, and that one is not a
+	// hole in the art at all: the beast that lives in water is a BUILD rather than a
+	// circumstance, so a heavy one crossing a river is still a heavy one.
+	// Reaching for enemy.water.* here would lie about which sort it is,
+	// which is the one thing about a beast this screen has to get right.
+	if a.Species == engine.SpeciesHuman && l.wading {
+		return kind + ".swim"
 	}
 	switch a.Action.Kind {
 	case engine.ActEat:
@@ -450,9 +456,45 @@ func enemyBuild(a *engine.Agent, cfg *engine.Config) string {
 // game has come loose from the simulation.
 const animTicks = 5
 
+// bodyPaint is the colour a body's picture is multiplied by.
+//
+// Two different questions, decided by which art is in hand.
+//
+// Grey placeholder art has to be given a colour to be visible at all, and
+// the colour it was given was the sex. That is what every set before the
+// spirits is made of, and it is left alone.
+//
+// Art drawn white to be coloured (the spirits) answers a better question
+// with it: whose line this body belongs to. The played body and every child
+// the line has had are drawn exactly as the art was drawn - the brightest
+// thing in the world - and everybody else is stepped down. The children are
+// not stepped down a little, they are not stepped down at all: a line is one
+// thing, and the player has to be able to find their own at a glance in a
+// crowd of sixty. The sex is not lost by this, because the spirits say it
+// with the shape of the head instead (docs/sprites.md section 10).
+//
+// A world with nobody played has no line to pick out, so everybody is drawn
+// at full: dimming a whole world against nothing is just a darker world.
+func (g *game) bodyPaint(a *engine.Agent, grey bool) color.RGBA {
+	if grey {
+		fill := colorMale
+		if a.Sex == engine.Female {
+			fill = colorFemale
+		}
+		return bodyTint(a, fill)
+	}
+	if g.played == 0 || a.ID == g.played || g.isKin(a.ID) {
+		return colorOwnLine
+	}
+	// A wobble from the ID, so that a crowd of strangers is not one body
+	// repeated sixty times. It is small enough that no stranger is ever as
+	// bright as the line.
+	return bodyTint(a, colorStranger)
+}
+
 // drawBody stamps one body. It reports whether it drew anything, so that the
 // caller can fall back to the circle where there is no picture for it.
-func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, cfg *engine.Config, x, y, radius float32, tint color.RGBA) bool {
+func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, cfg *engine.Config, x, y, radius float32) bool {
 	if g.tiles == nil {
 		return false
 	}
@@ -480,7 +522,7 @@ func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, cfg *engine.Confi
 	op.GeoM.Scale(scale, scale)
 	op.GeoM.Translate(float64(x), float64(y))
 	if g.tiles.tint[clip] {
-		op.ColorScale.ScaleWithColor(tint)
+		op.ColorScale.ScaleWithColor(g.bodyPaint(a, w != g.tiles.tile))
 	}
 	// Nearest while the picture is being made bigger, which is what the zoom
 	// the game is played at does to it, and where anything else would turn
@@ -494,6 +536,66 @@ func (g *game) drawBody(screen *ebiten.Image, a *engine.Agent, cfg *engine.Confi
 	}
 	screen.DrawImage(img, op)
 	return true
+}
+
+// drawAura lays the light that says whose line a body belongs to, under it.
+//
+// Brightness already says it (bodyPaint) and this says it again, louder, for
+// the one body the player is actually holding. Two signals for one fact is
+// worth it here and nowhere else: the played body is what the eye has to
+// find first on a screen with sixty bodies on it, and it is the thing that
+// scrolls off and has to be found again.
+//
+// What each light is for:
+//
+//   - the ripple, on the ground at the feet: this body is where you are.
+//     It is under everything and it is the one that survives a crowd,
+//     because a body standing over it hides its middle and not its edge.
+//   - the ring, around the body: the same thing said around the outline, so
+//     that a body drawn small at a wide zoom still has it.
+//   - the motes, for the children of the line: of your blood, not you.
+//     Scattered rather than a ring, so it can never be mistaken for the
+//     played body at a glance.
+//
+// Gold, because gold has meant "yours" on this screen since the first day
+// there was a player, and the rings that say it are still drawn on top.
+// Nothing here is drawn when nobody is playing: there is no line to point
+// at, and a world lit up for nobody is just a brighter world.
+func (g *game) drawAura(screen *ebiten.Image, a *engine.Agent, x, y, radius float32) {
+	if g.tiles == nil || g.played == 0 || a.Species != engine.SpeciesHuman {
+		return
+	}
+	switch {
+	case a.ID == g.played:
+		g.stampLight(screen, "aura.ripple", x, y+radius*0.5, radius*3.2, colorPlayed)
+		g.stampLight(screen, "aura.ring", x, y, radius*2.6, colorPlayed)
+	case g.isKin(a.ID):
+		g.stampLight(screen, "aura.motes", x, y, radius*2.6, colorKin)
+	}
+}
+
+// stampLight draws one of those, if this set of art has it. Asked for by
+// name rather than through frame(), because frame() will stand in the
+// nearest body for a picture it has not got and a body drawn as somebody's
+// halo is worse than no halo.
+func (g *game) stampLight(screen *ebiten.Image, clip string, x, y, size float32, tint color.RGBA) {
+	frames := g.tiles.clips[clip]
+	if len(frames) == 0 {
+		return
+	}
+	img := frames[(g.world.Tick()/animTicks)%len(frames)]
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	scale := float64(size) / float64(w)
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-float64(w)/2, -float64(h)/2)
+	op.GeoM.Scale(scale, scale)
+	op.GeoM.Translate(float64(x), float64(y))
+	op.ColorScale.ScaleWithColor(tint)
+	op.Filter = ebiten.FilterNearest
+	if scale < 1 {
+		op.Filter = ebiten.FilterLinear
+	}
+	screen.DrawImage(img, op)
 }
 
 // drawItem stamps one thing lying about, in the colour that says what it is.

@@ -57,9 +57,17 @@ const (
 	// which is now as long as the body is big and as full as the body is
 	// well - so a large body that has been hurt still reads differently from
 	// a small one in good health, which is the whole point of the budget.
-	bodyRadius  = 9.0
-	minRadius   = 3.5
-	maxRadius   = 11.0
+	bodyRadius = 9.0
+	// A beast is drawn as big as its body, and the range starts where a
+	// grown person ends (2026-09-22). It used to start at 3.5 - a third of
+	// a person - because it was a circle whose radius was the vitality
+	// gene, and a light beast really does have less body than a person. As
+	// a drawn animal that reads as a kitten among adults, which is a lie
+	// about the one thing this screen has to get right: a beast is what
+	// eats you. The lightest is now a person's size and the heaviest half
+	// again, which is what the art was asked for as well.
+	minRadius   = bodyRadius
+	maxRadius   = 16.0
 	minBar      = 7.0
 	maxBar      = 20.0
 	minRingSize = 1.0
@@ -137,11 +145,22 @@ var (
 	// vector calls take: each channel is the colour already faded by its own
 	// alpha, and a channel brighter than the alpha does not draw at all
 	// (which is how the first version of this came out invisible).
-	colorWater      = color.RGBA{0x17, 0x26, 0x3f, 0x50}
-	colorRough      = color.RGBA{0x28, 0x20, 0x10, 0x40}
-	colorSlope      = color.RGBA{0x54, 0x48, 0x18, 0x60}
-	colorSlopeEdge  = color.RGBA{0x51, 0x48, 0x1b, 0x90}
-	colorCliff      = color.RGBA{0x44, 0x36, 0x18, 0xc0}
+	colorWater     = color.RGBA{0x17, 0x26, 0x3f, 0x50}
+	colorRough     = color.RGBA{0x28, 0x20, 0x10, 0x40}
+	colorSlope     = color.RGBA{0x54, 0x48, 0x18, 0x60}
+	colorSlopeEdge = color.RGBA{0x51, 0x48, 0x1b, 0x90}
+	colorCliff     = color.RGBA{0x44, 0x36, 0x18, 0xc0}
+	// The line round a drop, on the drawn country (ground.go). Darker and
+	// more opaque than the painted one above: over four colours of wash a
+	// brown line was enough, and over a picture of leaves and stone it was
+	// not - the first thing anybody said about the drawn world was that a
+	// ledge and a field looked alike.
+	colorDrop = color.RGBA{0x14, 0x0e, 0x08, 0xe0}
+	// And the two bands inside it, which are what keeps the line from
+	// looking like ink on a photograph: the ground fading into its own edge.
+	// Premultiplied, like everything the vector calls take.
+	colorDropInner  = color.RGBA{0x08, 0x06, 0x03, 0x66}
+	colorDropFade   = color.RGBA{0x03, 0x02, 0x01, 0x2e}
 	colorSelected   = color.RGBA{0x11, 0x11, 0x11, 0xff}
 	colorSight      = color.RGBA{0x33, 0x88, 0xcc, 0xa0}
 	colorRegionEdge = color.RGBA{0x30, 0x60, 0x30, 0x50}
@@ -152,7 +171,16 @@ var (
 	colorShadow = color.RGBA{0x00, 0x00, 0x00, 0x40}
 	// The squares a map painted for a sort of enemy, and the ring round one
 	// that has just come out of a square.
-	colorNest   = color.RGBA{0x99, 0x22, 0x44, 0xcc}
+	colorNest = color.RGBA{0x99, 0x22, 0x44, 0xcc}
+	// What a body's picture is multiplied by, on art drawn white for the
+	// purpose (the spirits). The line the player is playing keeps the art as
+	// it was drawn - the brightest thing in the world - and everybody else is
+	// stepped down to this. Whose line a body belongs to is the one thing the
+	// player has to be able to read at a glance, and brightness says it
+	// without needing a legend, at any size, in any colour of country.
+	colorStranger = color.RGBA{0x8c, 0x8c, 0x99, 0xff}
+	colorOwnLine  = color.RGBA{0xff, 0xff, 0xff, 0xff}
+
 	colorPlayed = color.RGBA{0xd9, 0x9a, 0x00, 0xff}
 	colorBubble = color.RGBA{0x1a, 0x1a, 0x22, 0xe0}
 	colorKin    = color.RGBA{0xd9, 0x9a, 0x00, 0x90}
@@ -2757,7 +2785,9 @@ func (g *game) drawWorld(screen *ebiten.Image) {
 		// enemy" is the first question anybody asks of this screen. The shape
 		// is free: it carries no other meaning, where every ring around the
 		// body already carries one.
-		if g.drawBody(screen, a, &cfg, x, y, radius, bodyTint(a, fill)) {
+		// The light that says whose line this is, under the body (2026-09-22).
+		g.drawAura(screen, a, x, y, radius)
+		if g.drawBody(screen, a, &cfg, x, y, radius) {
 			// The picture is the body; how much of it is left is the bar
 			// under it, because a sprite cannot be half filled in the way a
 			// circle can (TODO 10). Everything else around it - the ring
@@ -2859,13 +2889,6 @@ func clamp01(v float64) float64 {
 // (stage 14). Darker is ground with its back covered, where lying down among
 // strangers costs less. Nothing else about a region is visible, because nothing
 // else about a region exists: it is not a wall and no node knows it is in one.
-// drawTerrain paints the country under everything else (stage 20): what the
-// ground is made of and how high it is.
-//
-// It is drawn from World.TerrainAt rather than from anything an agent knows,
-// like the regions above it - the viewer sees the map, the bodies feel the
-// cell they are standing on. A world with no map draws nothing at all, which
-// is what every measurement before stage 20 ran on.
 // drawNests marks the squares a map painted for each sort of enemy
 // (2026-09-20). Without them the arrivals look like they come from nowhere:
 // the map decides where each sort comes into the world, and that is a fact
@@ -2882,7 +2905,13 @@ func (g *game) drawNests(screen *ebiten.Image) {
 		x1, y1 := g.onScreen(n.X+n.W/2, n.Y+n.H/2)
 		vector.StrokeRect(screen, x0, y0, x1-x0, y1-y0, 1, colorNest, true)
 		cx, cy := g.onScreen(n.X, n.Y)
-		vector.DrawFilledRect(screen, cx-2, cy-2, 4, 4, colorNest, true)
+		// The mouth of it, where there is a picture of one. The outline
+		// stays either way: the square is how far the sort comes into the
+		// world from, which is a fact about the map and not about the hole,
+		// and no drawing of a hole says it.
+		if size := g.long(groundCell); !g.stampAt(screen, clipNest, cx, cy, size) {
+			vector.DrawFilledRect(screen, cx-2, cy-2, 4, 4, colorNest, true)
+		}
 	}
 	if len(nests) == 0 {
 		return
@@ -2960,7 +2989,29 @@ func (g *game) drawWeather(screen *ebiten.Image) {
 	}
 }
 
+// drawTerrain puts the country under everything else (stage 20): what the
+// ground is made of and how high it is.
+//
+// It is drawn from World.TerrainAt rather than from anything an agent knows,
+// like the regions above it - the viewer sees the map, the bodies feel the
+// cell they are standing on. A world with no map used to draw nothing at all,
+// which is what every measurement before stage 20 ran on; with art it gets
+// the level ground it is made of, because a white world is not what a world
+// with no hills in it looks like.
 func (g *game) drawTerrain(screen *ebiten.Image) {
+	// Drawn, where there is art to draw it with (ground.go, 2026-09-22). The
+	// washes below are what a set without the pictures falls back to, and
+	// they are still the only thing that says how high a cell is.
+	if g.drawGround(screen) {
+		return
+	}
+	g.paintTerrain(screen)
+}
+
+// paintTerrain is the country as flat washes of colour: what this drew from
+// stage 20 until the ground was drawn, and what an older set of art still
+// gets.
+func (g *game) paintTerrain(screen *ebiten.Image) {
 	cols, rows, cw, ch := g.world.TerrainSize()
 	if cols == 0 {
 		return
@@ -3259,7 +3310,15 @@ func (g *game) overlay() string {
 	b.WriteString("ring: grey forage, orange mate, green paired, red fighting, purple fleeing, blue resting\n")
 	b.WriteString("a line between two: red = one is coming for the other, orange = one is courting the other, green = calling others in on it, faint = a pair\n")
 	if cols, _, _, _ := g.world.TerrainSize(); cols > 0 {
-		b.WriteString("ground: blue = water (dear to cross, and it drowns), brown = rough, pale = higher, yellow = a ramp, dark line = a cliff\n")
+		if g.tiles.hasGround() {
+			// Drawn, so what the legend has to say is what the drawing does
+			// not: which of those places costs what, and that the pale wash
+			// over a place is how far up it is.
+			b.WriteString("ground: the stream is dear to cross and it drowns, broken ground is dear, steps are the only way up or down\n")
+			b.WriteString("pale ground = a ledge, dark ground = the floor of the world, a dark line = a drop nobody steps over\n")
+		} else {
+			b.WriteString("ground: blue = water (dear to cross, and it drowns), brown = rough, pale = higher, yellow = a ramp, dark line = a cliff\n")
+		}
 	}
 	b.WriteString("children are small circles: a newborn expresses 60% of its genes and grows into the rest by eating\n")
 	if g.played != 0 {

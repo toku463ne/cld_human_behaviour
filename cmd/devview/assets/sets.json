@@ -1,5 +1,5 @@
 {
-  "default": "set2",
+  "default": "set5",
   "sets": [
     {
       "name": "set1",
@@ -8,6 +8,18 @@
     {
       "name": "set2",
       "note": "the same, with six poses each for a boy, a girl, an old man and an old woman"
+    },
+    {
+      "name": "set3",
+      "note": "the same bodies on a drawn country: mossy forest floor, broken ground, a stream, ramps, ledges and the trunks of great trees"
+    },
+    {
+      "name": "set4",
+      "note": "the spirits: one cast drawn white and tinted as it is stamped, so a line of descent can have a colour of its own (the young and the old are still the old art)"
+    },
+    {
+      "name": "set5",
+      "note": "the whole cast as spirits: people, their young and old, and the beasts, drawn white with a dark outline so that a line of descent can be given a colour"
     }
   ]
 }

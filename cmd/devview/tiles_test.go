@@ -528,3 +528,76 @@ func TestTheGapReportMeasuresArtThatIsWrong(t *testing.T) {
 		}
 	}
 }
+
+// Whose line a body belongs to is read off how bright it is drawn.
+//
+// The rule is the whole of what the spirits were drawn white for, and it is
+// worth pinning because it is two rules that must not drift apart: the line
+// is drawn exactly as the art was drawn, and every stranger is drawn darker
+// than that. "A little darker for the children" would be the version that
+// looks reasonable in the code and fails on the screen, where the question
+// is which of sixty bodies is mine.
+func TestTheLineIsBrightAndEveryoneElseIsNot(t *testing.T) {
+	g := &game{played: 7, lineKids: []int{9, 11}}
+	light := func(c color.RGBA) float64 {
+		return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+	}
+	played := &engine.Agent{ID: 7}
+	child := &engine.Agent{ID: 9}
+	stranger := &engine.Agent{ID: 42}
+
+	if got := g.bodyPaint(played, false); got != colorOwnLine {
+		t.Errorf("the played body is painted %v, want the art as drawn %v", got, colorOwnLine)
+	}
+	if got := g.bodyPaint(child, false); got != colorOwnLine {
+		t.Errorf("a child of the line is painted %v, want the same as the line %v", got, colorOwnLine)
+	}
+	dim := g.bodyPaint(stranger, false)
+	if light(dim) >= light(colorOwnLine) {
+		t.Errorf("a stranger is painted %v (%.0f), which is not darker than the line (%.0f)",
+			dim, light(dim), light(colorOwnLine))
+	}
+	// Every stranger there can be, however the wobble falls.
+	for id := 1; id < 400; id++ {
+		if id == 7 || id == 9 || id == 11 {
+			continue
+		}
+		if c := g.bodyPaint(&engine.Agent{ID: id}, false); light(c) >= light(colorOwnLine) {
+			t.Fatalf("stranger #%d is painted %v (%.0f), as bright as the line", id, c, light(c))
+		}
+	}
+	// Nobody playing: nothing to pick out, so nothing is dimmed.
+	none := &game{}
+	if got := none.bodyPaint(stranger, false); got != colorOwnLine {
+		t.Errorf("with nobody played, a body is painted %v, want %v", got, colorOwnLine)
+	}
+	// And the old grey art still says the sex, which is all it ever said.
+	if got := g.bodyPaint(&engine.Agent{ID: 42, Sex: engine.Female}, true); got.R <= got.B {
+		t.Errorf("grey art for a female body is painted %v, which is not the pink it used to be", got)
+	}
+}
+
+// The set it draws with colours the people and leaves the beasts alone.
+//
+// Two decisions in one line of the manifest. The spirits are drawn white so
+// that a line can be given a colour, so they are tinted; the beasts are
+// turned inside out at packing time - dark, with a bright rim - so that they
+// read as something not made of the same light as the people, and giving
+// them a colour on top would undo it.
+func TestThePeopleAreColouredAndTheBeastsAreNot(t *testing.T) {
+	m := theManifest(t)
+	tint := map[string]bool{}
+	for _, c := range m.Clips {
+		tint[c.Name] = c.Tint
+	}
+	for _, name := range []string{"human.idle", "human.f.idle", "child.idle", "old.idle"} {
+		if !tint[name] {
+			t.Errorf("%s is not given a colour, so no line can be told from another", name)
+		}
+	}
+	for _, name := range []string{"enemy.big.idle", "enemy.small.idle", "enemy.water.idle", "enemy.fly.idle"} {
+		if tint[name] {
+			t.Errorf("%s is given a colour, which undoes the dark it was packed with", name)
+		}
+	}
+}

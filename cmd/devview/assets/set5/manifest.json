@@ -1,0 +1,906 @@
+{
+  "sheet": "tiles.415f5ea7.png",
+  "tile": 32,
+  "clips": [
+    {
+      "name": "enemy.big.idle",
+      "x": 0,
+      "y": 0,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.big.walk",
+      "x": 0,
+      "y": 32,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.big.eat",
+      "x": 0,
+      "y": 64,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.big.fight",
+      "x": 0,
+      "y": 96,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.big.hurt",
+      "x": 0,
+      "y": 128,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.big.dead",
+      "x": 0,
+      "y": 160,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.small.idle",
+      "x": 0,
+      "y": 192,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.small.walk",
+      "x": 0,
+      "y": 224,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.small.eat",
+      "x": 0,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.small.fight",
+      "x": 0,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.small.hurt",
+      "x": 0,
+      "y": 320,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.small.dead",
+      "x": 0,
+      "y": 352,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.water.idle",
+      "x": 0,
+      "y": 384,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.water.walk",
+      "x": 0,
+      "y": 416,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.water.eat",
+      "x": 0,
+      "y": 448,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.water.fight",
+      "x": 0,
+      "y": 480,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.water.hurt",
+      "x": 0,
+      "y": 512,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.water.dead",
+      "x": 0,
+      "y": 544,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.fly.idle",
+      "x": 0,
+      "y": 576,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.fly.walk",
+      "x": 0,
+      "y": 608,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.fly.eat",
+      "x": 0,
+      "y": 640,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.fly.fight",
+      "x": 0,
+      "y": 672,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.fly.hurt",
+      "x": 0,
+      "y": 704,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.fly.dead",
+      "x": 0,
+      "y": 736,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.fly.air",
+      "x": 0,
+      "y": 768,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "enemy.fly.flap",
+      "x": 0,
+      "y": 800,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "remains",
+      "x": 0,
+      "y": 832,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "aura.motes",
+      "x": 0,
+      "y": 864,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "aura.ring",
+      "x": 0,
+      "y": 896,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "aura.ripple",
+      "x": 0,
+      "y": 928,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.eat",
+      "x": 0,
+      "y": 960,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.f.eat",
+      "x": 0,
+      "y": 992,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.f.fight",
+      "x": 0,
+      "y": 1024,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": true
+    },
+    {
+      "name": "child.f.hurt",
+      "x": 0,
+      "y": 1056,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.f.idle",
+      "x": 0,
+      "y": 1088,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.f.swim",
+      "x": 0,
+      "y": 1120,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.f.walk",
+      "x": 0,
+      "y": 1152,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.fight",
+      "x": 0,
+      "y": 1184,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": true
+    },
+    {
+      "name": "child.hurt",
+      "x": 0,
+      "y": 1216,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.idle",
+      "x": 0,
+      "y": 1248,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.swim",
+      "x": 0,
+      "y": 1280,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "child.walk",
+      "x": 0,
+      "y": 1312,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "ground.bank.inner",
+      "x": 0,
+      "y": 1344,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.bank.outer",
+      "x": 0,
+      "y": 1376,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.bank.side",
+      "x": 0,
+      "y": 1408,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.block.a",
+      "x": 0,
+      "y": 1440,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.block.b",
+      "x": 0,
+      "y": 1472,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.block.rock",
+      "x": 0,
+      "y": 1504,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.cliff.inner",
+      "x": 0,
+      "y": 1536,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.cliff.outer",
+      "x": 0,
+      "y": 1568,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.cliff.side",
+      "x": 0,
+      "y": 1600,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.flat.a",
+      "x": 0,
+      "y": 1632,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.flat.b",
+      "x": 0,
+      "y": 1664,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.flat.c",
+      "x": 0,
+      "y": 1696,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.high.a",
+      "x": 0,
+      "y": 1728,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.high.b",
+      "x": 0,
+      "y": 1760,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.high.c",
+      "x": 0,
+      "y": 1792,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.nest",
+      "x": 0,
+      "y": 1824,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.root.inner",
+      "x": 0,
+      "y": 1856,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.root.outer",
+      "x": 0,
+      "y": 1888,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.root.side",
+      "x": 0,
+      "y": 1920,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.rough.a",
+      "x": 0,
+      "y": 1952,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.rough.b",
+      "x": 0,
+      "y": 1984,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.rough.c",
+      "x": 0,
+      "y": 2016,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.scree.inner",
+      "x": 0,
+      "y": 2048,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.scree.outer",
+      "x": 0,
+      "y": 2080,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.scree.side",
+      "x": 0,
+      "y": 2112,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.slope.a",
+      "x": 0,
+      "y": 2144,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.slope.b",
+      "x": 0,
+      "y": 2176,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.slope.c",
+      "x": 0,
+      "y": 2208,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.slope.free",
+      "x": 0,
+      "y": 2240,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": false
+    },
+    {
+      "name": "ground.water.a",
+      "x": 0,
+      "y": 2272,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "ground.water.b",
+      "x": 0,
+      "y": 2304,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": false
+    },
+    {
+      "name": "hair",
+      "x": 0,
+      "y": 2336,
+      "w": 32,
+      "h": 32,
+      "frames": 7,
+      "tint": false
+    },
+    {
+      "name": "human.dead",
+      "x": 0,
+      "y": 2368,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.eat",
+      "x": 0,
+      "y": 2400,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.f.eat",
+      "x": 0,
+      "y": 2432,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.f.fight",
+      "x": 0,
+      "y": 2464,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.f.hurt",
+      "x": 0,
+      "y": 2496,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.f.idle",
+      "x": 0,
+      "y": 2528,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.f.swim",
+      "x": 0,
+      "y": 2560,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.f.walk",
+      "x": 0,
+      "y": 2592,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.fight",
+      "x": 0,
+      "y": 2624,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.hurt",
+      "x": 0,
+      "y": 2656,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.idle",
+      "x": 0,
+      "y": 2688,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.swim",
+      "x": 0,
+      "y": 2720,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "human.walk",
+      "x": 0,
+      "y": 2752,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "item",
+      "x": 0,
+      "y": 2784,
+      "w": 32,
+      "h": 32,
+      "frames": 8,
+      "tint": false
+    },
+    {
+      "name": "old.eat",
+      "x": 0,
+      "y": 2816,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.f.eat",
+      "x": 0,
+      "y": 2848,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.f.fight",
+      "x": 0,
+      "y": 2880,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": true
+    },
+    {
+      "name": "old.f.hurt",
+      "x": 0,
+      "y": 2912,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.f.idle",
+      "x": 0,
+      "y": 2944,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.f.swim",
+      "x": 0,
+      "y": 2976,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.f.walk",
+      "x": 0,
+      "y": 3008,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.fight",
+      "x": 0,
+      "y": 3040,
+      "w": 32,
+      "h": 32,
+      "frames": 1,
+      "tint": true
+    },
+    {
+      "name": "old.hurt",
+      "x": 0,
+      "y": 3072,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.idle",
+      "x": 0,
+      "y": 3104,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.swim",
+      "x": 0,
+      "y": 3136,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    },
+    {
+      "name": "old.walk",
+      "x": 0,
+      "y": 3168,
+      "w": 32,
+      "h": 32,
+      "frames": 2,
+      "tint": true
+    }
+  ]
+}

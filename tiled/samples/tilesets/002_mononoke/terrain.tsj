@@ -1,0 +1,146 @@
+{
+  "columns": 9,
+  "image": "terrain.png",
+  "imageheight": 32,
+  "imagewidth": 288,
+  "margin": 0,
+  "name": "mononoke terrain",
+  "spacing": 0,
+  "tilecount": 9,
+  "tiledversion": "1.12.2",
+  "tileheight": 32,
+  "tilewidth": 32,
+  "tiles": [
+    {
+      "id": 0,
+      "class": "field",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "flat"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "class": "broken",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "rough"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "class": "stream",
+      "properties": [
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "water"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "class": "ramp 1",
+      "properties": [
+        {
+          "name": "height",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "slope"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "class": "ledge 1",
+      "properties": [
+        {
+          "name": "height",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "high"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "class": "ledge 2",
+      "properties": [
+        {
+          "name": "height",
+          "type": "int",
+          "value": 2
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "high"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "class": "tree",
+      "properties": [
+        {
+          "name": "height",
+          "type": "int",
+          "value": 3
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "high"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "class": "boulder",
+      "properties": [
+        {
+          "name": "height",
+          "type": "int",
+          "value": 5
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "high"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "class": "ramp 2",
+      "properties": [
+        {
+          "name": "height",
+          "type": "int",
+          "value": 2
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "value": "slope"
+        }
+      ]
+    }
+  ],
+  "type": "tileset",
+  "version": "1.10"
+}
