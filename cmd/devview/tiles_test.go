@@ -534,24 +534,25 @@ func TestTheGapReportMeasuresArtThatIsWrong(t *testing.T) {
 //
 // The rule is the whole of what the spirits were drawn white for, and it is
 // worth pinning because it is two rules that must not drift apart: the line
-// is drawn exactly as the art was drawn, and every stranger is drawn darker
+// is drawn exactly as the art was drawn, and everybody else is drawn darker
 // than that. "A little darker for the children" would be the version that
 // looks reasonable in the code and fails on the screen, where the question
 // is which of sixty bodies is mine.
+//
+// What is pinned below the brightness is the fall-back colour - where a
+// body's budget went - which is what a body with no family tag is drawn in
+// (2026-09-22). A tagged one is drawn in its family's colour instead, and
+// that is pinned in succession_test.go.
 func TestTheLineIsBrightAndEveryoneElseIsNot(t *testing.T) {
 	g := &game{played: 7, lineKids: []int{9, 11}}
 	light := func(c color.RGBA) float64 {
 		return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
 	}
 	played := &engine.Agent{ID: 7}
-	child := &engine.Agent{ID: 9}
 	stranger := &engine.Agent{ID: 42}
 
 	if got := g.bodyPaint(played, false); got != colorOwnLine {
 		t.Errorf("the played body is painted %v, want the art as drawn %v", got, colorOwnLine)
-	}
-	if got := g.bodyPaint(child, false); got != colorOwnLine {
-		t.Errorf("a child of the line is painted %v, want the same as the line %v", got, colorOwnLine)
 	}
 	dim := g.bodyPaint(stranger, false)
 	if light(dim) >= light(colorOwnLine) {
@@ -601,10 +602,14 @@ func TestTheLineIsBrightAndEveryoneElseIsNot(t *testing.T) {
 			"budget spent on fighting and blue on knowing", f, w)
 	}
 
-	// Nobody playing: nothing to pick out, so nothing is dimmed.
+	// Nobody playing and no family tag: the budget reading, which is the only
+	// thing left to say. (With a tag it is the family's colour, played or
+	// not - see succession_test.go. Until 2026-09-22 a world with nobody
+	// played drew everybody at full brightness, because there was nothing
+	// else for a colour to mean.)
 	none := &game{}
-	if got := none.bodyPaint(stranger, false); got != colorOwnLine {
-		t.Errorf("with nobody played, a body is painted %v, want %v", got, colorOwnLine)
+	if got := none.bodyPaint(stranger, false); got != strangerColour(stranger) {
+		t.Errorf("with nobody played, a body is painted %v, want %v", got, strangerColour(stranger))
 	}
 	// And the old grey art still says the sex, which is all it ever said.
 	if got := g.bodyPaint(&engine.Agent{ID: 42, Sex: engine.Female}, true); got.R <= got.B {
@@ -663,9 +668,12 @@ func TestACorpseKeepsTheColourItHad(t *testing.T) {
 		{ID: 4, Genome: genome(engine.GeneIntelligence)},
 	}
 	g.markFallen(agents, &cfg)
+	// #2 is a child of the line, but the world here has no blood links in it
+	// and the colour of the played line follows the succession rather than
+	// the whole family (2026-09-22), so it falls in its own colour.
 	want := map[int]color.RGBA{
 		1: colorOwnLine, // the played body
-		2: colorOwnLine, // a child of the line
+		2: strangerColour(&agents[1]),
 		3: strangerColour(&agents[2]),
 		4: strangerColour(&agents[3]),
 	}

@@ -1,312 +1,204 @@
 package main
 
 import (
+	"image/color"
 	"testing"
 
 	"github.com/toku463ne/cld_human_behaviour/engine"
 )
 
-// aWorldWithFamilies runs far enough for children to have been born, and
-// returns the world along with a parent and one of its children.
-func aWorldWithFamilies(t *testing.T) (*engine.World, int, int) {
-	t.Helper()
-	cfg := engine.DefaultConfig()
-	w := engine.NewWorld(cfg)
-	for i := 0; i < 6000; i++ {
-		w.Step()
-		for _, a := range w.Agents() {
-			if len(a.ChildIDs) == 0 {
-				continue
-			}
-			for _, kid := range a.ChildIDs {
-				if _, alive := w.AgentByID(kid); alive {
-					return w, a.ID, kid
-				}
+// A family is one colour, and the played line is white (2026-09-22).
+
+func light(c color.RGBA) float64 {
+	return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+}
+
+func TestAChildIsDrawnInItsFamilysColour(t *testing.T) {
+	g := &game{}
+	mother := &engine.Agent{ID: 1, Lineage: 3, Genome: make([]float64, engine.NumGenes)}
+	child := &engine.Agent{ID: 2, Lineage: 3, Genome: make([]float64, engine.NumGenes)}
+	// Bodies of the same family are drawn alike however differently they are
+	// built: the colour says who they are, not what they can do.
+	for i := range child.Genome {
+		mother.Genome[i], child.Genome[i] = 40, 40
+	}
+	child.Genome[engine.GeneAttack] = 200
+	if a, b := g.bodyPaint(mother, false), g.bodyPaint(child, false); a != b {
+		t.Fatalf("a mother is painted %v and her child %v", a, b)
+	}
+	other := &engine.Agent{ID: 3, Lineage: 4, Genome: mother.Genome}
+	if a, b := g.bodyPaint(mother, false), g.bodyPaint(other, false); a == b {
+		t.Fatalf("two families are both painted %v", a)
+	}
+}
+
+func TestEveryFamilyIsDrawnAtTheSameLightness(t *testing.T) {
+	// Brightness answers one question - is this my line - and a family that
+	// happened to be pale would answer it wrong.
+	var first float64
+	for tag := uint16(1); tag < 500; tag++ {
+		c, ok := lineColour(tag)
+		if !ok {
+			t.Fatalf("family %d has no colour", tag)
+		}
+		if l := light(c); tag == 1 {
+			first = l
+		} else if l < first-2 || l > first+2 {
+			t.Fatalf("family %d is drawn at %.0f and family 1 at %.0f", tag, l, first)
+		}
+		if light(c) >= light(colorOwnLine)*0.8 {
+			t.Fatalf("family %d is painted %v, too close to the played line", tag, c)
+		}
+	}
+	if _, ok := lineColour(0); ok {
+		t.Fatal("a body with no family was given a family's colour")
+	}
+}
+
+func TestNeighbouringFamiliesAreNotNeighbouringColours(t *testing.T) {
+	near := 0
+	for tag := uint16(1); tag < 60; tag++ {
+		a, _ := lineColour(tag)
+		b, _ := lineColour(tag + 1)
+		d := gap(int(a.R), int(b.R)) + gap(int(a.G), int(b.G)) + gap(int(a.B), int(b.B))
+		if d < 20 {
+			near++
+		}
+	}
+	if near > 2 {
+		t.Fatalf("%d of the first sixty families are the same colour as the next one", near)
+	}
+}
+
+func gap(a, b int) int {
+	if a > b {
+		return a - b
+	}
+	return b - a
+}
+
+// family is a hand-built stand-in for a world: who is alive and whose child
+// each one is. Growing a body with three children and a grandchild inside a
+// real world takes thousands of ticks and gives no control over the order
+// they arrived in, which is the whole of what the rule turns on.
+type family struct {
+	kids map[int][]int
+	dead map[int]bool
+}
+
+func (f *family) AgentByID(id int) (engine.Agent, bool) {
+	if f.dead[id] {
+		return engine.Agent{}, false
+	}
+	if _, ok := f.kids[id]; !ok {
+		return engine.Agent{}, false
+	}
+	return engine.Agent{ID: id, Alive: true, ChildIDs: f.kids[id], ParentIDs: f.parentsOf(id)}, true
+}
+
+func (f *family) parentsOf(id int) [2]int {
+	for parent, kids := range f.kids {
+		for _, kid := range kids {
+			if kid == id {
+				return [2]int{parent}
 			}
 		}
 	}
-	t.Fatal("nobody had a living child in 6000 ticks")
-	return nil, 0, 0
+	return [2]int{}
 }
 
-// The line does not end silently when the body dies: the player is asked, and
-// a child that has not finished growing is on the list. That is the whole
-// point of asking - World.Heirs would have left a newborn out and reported the
-// line over with the child alive on screen.
-func TestADeathRaisesTheChoiceOfBodyIncludingAChildStillGrowing(t *testing.T) {
-	w, parent, kid := aWorldWithFamilies(t)
-	cfg := w.Config()
-	child, _ := w.AgentByID(kid)
-	if child.IsAdult(&cfg) {
-		t.Skip("the first child found had already grown up")
-	}
-
-	g := &game{world: w, play: playAsked, guided: engine.NewGuidedController(),
-		played: parent, lineKids: []int{kid}, padKey: noKey}
-	w.SetController(parent, g.guided)
-
-	// The body is gone: this is what carryTheLineOn is called on every tick.
-	g.played = -1 // an ID no agent has, which is what a dead one amounts to here
-	g.lineKids = []int{kid}
-	g.carryTheLineOn()
-
-	if g.succession == nil {
-		t.Fatal("the line ended without asking")
-	}
-	if !g.paused {
-		t.Fatal("the world is still running behind the question")
-	}
-	if len(g.succession.picks) != 1 || g.succession.picks[0].id != kid {
-		t.Fatalf("offered %+v, want the one living child #%d", g.succession.picks, kid)
-	}
-
-	g.goOnAs(kid)
-	if g.succession != nil || g.played != kid {
-		t.Fatalf("playing #%d after answering, succession %+v", g.played, g.succession)
-	}
-	if g.bodies != 1 || g.paused {
-		t.Fatalf("bodies %d, paused %v after taking over", g.bodies, g.paused)
-	}
-}
-
-// Nobody left alive is the one case where the line really is over, and it ends
-// without a question standing in the way.
-func TestALineWithNobodyLeftEndsWithoutAQuestion(t *testing.T) {
-	w := engine.NewWorld(engine.DefaultConfig())
-	g := &game{world: w, play: playAsked, guided: engine.NewGuidedController(),
-		played: -1, lineKids: []int{-2, -3}, padKey: noKey}
-	g.carryTheLineOn()
-	if g.succession != nil {
-		t.Fatal("asked which of nobody to go on as")
-	}
-	if g.play != playOff || g.played != 0 || g.lineKids != nil {
-		t.Fatalf("the line did not end: play %v played %d kids %v", g.play, g.played, g.lineKids)
-	}
-}
-
-// The dead body's own children come before the rest of the line, and the grown
-// before the still growing.
-func TestTheNearestOfKinIsOfferedFirst(t *testing.T) {
-	w, parent, kid := aWorldWithFamilies(t)
-	other := 0
-	for _, a := range w.Agents() {
-		if a.ID != parent && a.ID != kid {
-			other = a.ID
-			break
+func (f *family) Agents() []engine.Agent {
+	var out []engine.Agent
+	for id := range f.kids {
+		if a, ok := f.AgentByID(id); ok {
+			out = append(out, a)
 		}
 	}
-	g := &game{world: w, lineKids: []int{other, kid}, padKey: noKey}
-	picks := g.survivors(parent)
-	if len(picks) != 2 {
-		t.Fatalf("offered %d bodies, want 2", len(picks))
-	}
-	if picks[0].id != kid {
-		t.Fatalf("offered #%d first, want the dead one's own child #%d", picks[0].id, kid)
+	return out
+}
+
+// #1 is the player, #2 #3 #4 its children in birth order, and #5 a child of #2.
+func lineFamily() *family {
+	return &family{
+		kids: map[int][]int{1: {2, 3, 4}, 2: {5}, 3: nil, 4: nil, 5: nil},
+		dead: map[int]bool{},
 	}
 }
 
-// h escalates: the AI has it, then you answer at the turning points, then you
-// drive it, then the AI has it again - and the node it let go of is still
-// selected, because h is how it is taken up again.
-func TestPressingHEscalatesControlAndLeavesTheNodeSelected(t *testing.T) {
-	w := engine.NewWorld(engine.DefaultConfig())
-	for i := 0; i < 200; i++ {
-		w.Step()
+func wears(f *family, played, id int) bool {
+	if id == played {
+		return true
 	}
-	id := w.Agents()[0].ID
+	return successionIn(f, played)[id]
+}
 
-	g := &game{world: w, padKey: noKey, effort: 1}
-	g.selectAgent(id)
-
-	g.toggleControl()
-	if g.play != playAsked || g.played != id || g.guided == nil {
-		t.Fatalf("first press: play %v played %d guided %v", g.play, g.played, g.guided != nil)
+func TestOnlyTheEldestChildWearsThePlayersColour(t *testing.T) {
+	f := lineFamily()
+	if !wears(f, 1, 2) {
+		t.Fatal("the eldest child does not wear it")
 	}
-	g.toggleControl()
-	if g.play != playDriven || g.played != id || g.human == nil || g.guided != nil {
-		t.Fatalf("second press: play %v played %d human %v", g.play, g.played, g.human != nil)
+	for _, id := range []int{3, 4} {
+		if wears(f, 1, id) {
+			t.Fatalf("#%d wears it while its elder is alive", id)
+		}
 	}
-	g.toggleControl()
-	if g.play != playOff || g.played != 0 {
-		t.Fatalf("third press: play %v played %d", g.play, g.played)
-	}
-	if g.selected != id {
-		t.Fatalf("selection is #%d after letting go of #%d: h could not take it up again",
-			g.selected, id)
-	}
-	g.toggleControl()
-	if g.play != playAsked || g.played != id {
-		t.Fatalf("fourth press: play %v played %d, want the same node taken up again", g.play, g.played)
+	// One a generation: the eldest child's own eldest child carries it on.
+	if !wears(f, 1, 5) {
+		t.Fatal("the eldest child's child does not wear it")
 	}
 }
 
-// Taking a node up puts a person behind its proposals: an unattended guided
-// controller answers with the node's own rule, and one a player is behind
-// waits for them.
-func TestTakingANodeUpMeansAnsweringItsProposals(t *testing.T) {
-	w := engine.NewWorld(engine.DefaultConfig())
-	for i := 0; i < 200; i++ {
-		w.Step()
+func TestTheColourPassesTheMomentTheEldestDies(t *testing.T) {
+	f := lineFamily()
+	f.dead[2] = true
+	if wears(f, 1, 2) {
+		t.Fatal("a body that is gone still wears it")
 	}
-	id := w.Agents()[0].ID
-
-	if got := engine.NewGuidedController().AnswerCourt(7); got != engine.CourtLeaveIt {
-		t.Fatalf("a guided controller nobody is behind answers %v, want it left to the node", got)
+	if !wears(f, 1, 3) {
+		t.Fatal("the second child did not take it when the first died")
 	}
-
-	g := &game{world: w, padKey: noKey, effort: 1}
-	g.selectAgent(id)
-	g.toggleControl() // the asked mode, which is where a person arrives first
-	if got := g.guided.AnswerCourt(7); got != engine.CourtWaiting {
-		t.Fatalf("a played node answers %v, want it to wait for the player", got)
+	if wears(f, 1, 4) {
+		t.Fatal("the third took it while the second is alive")
 	}
-	g.guided.AnswerProposal(7, false)
-	if got := g.guided.AnswerCourt(7); got != engine.CourtRefuse {
-		t.Fatalf("after the player said no the controller answers %v", got)
+	// The dead eldest's own child does not jump the queue: living brothers
+	// and sisters come first.
+	if wears(f, 1, 5) {
+		t.Fatal("a grandchild took it while an uncle is alive")
 	}
 }
 
-// The line can be followed forward while the parent is still alive: the child
-// is taken up, and the parent goes back to the world's own AI rather than
-// dying or being left with a controller nobody is behind.
-func TestMovingOnToAChildWhileTheParentLives(t *testing.T) {
-	w, parent, kid := aWorldWithFamilies(t)
-	g := &game{world: w, play: playAsked, guided: engine.NewGuidedController(),
-		played: parent, lineKids: []int{kid}, padKey: noKey}
-	w.SetController(parent, g.guided)
-
-	g.moveOnToAChild()
-	if g.succession == nil || g.succession.dead {
-		t.Fatalf("no living-body handover was raised: %+v", g.succession)
-	}
-	if !g.paused {
-		t.Fatal("the world is still running behind the question")
-	}
-
-	g.goOnAs(kid)
-	if g.played != kid || g.bodies != 1 {
-		t.Fatalf("playing #%d after moving on, bodies %d", g.played, g.bodies)
-	}
-	if a, alive := w.AgentByID(parent); !alive {
-		t.Fatal("the parent died of being left")
-	} else if a.Controller() != nil {
-		t.Fatalf("the parent is still on %T rather than the world's own AI", a.Controller())
-	}
-	if a, _ := w.AgentByID(kid); a.Controller() == nil {
-		t.Fatal("the child was not taken up")
+func TestWhenNoChildIsLeftItPassesToTheNextGeneration(t *testing.T) {
+	f := lineFamily()
+	f.dead[2], f.dead[3], f.dead[4] = true, true, true
+	if !wears(f, 1, 5) {
+		t.Fatal("with every child gone, the grandchild did not take it")
 	}
 }
 
-// Staying is an answer too, and it changes nothing.
-func TestStayingPutLeavesEverythingAsItWas(t *testing.T) {
-	w, parent, kid := aWorldWithFamilies(t)
-	g := &game{world: w, play: playAsked, guided: engine.NewGuidedController(),
-		played: parent, lineKids: []int{kid}, padKey: noKey}
-	w.SetController(parent, g.guided)
-
-	g.moveOnToAChild()
-	g.succession = nil // what pressing enter does, minus the key
-	if g.played != parent {
-		t.Fatalf("playing #%d, want the parent #%d", g.played, parent)
+func TestThePlayedBodyAlwaysWearsIt(t *testing.T) {
+	g := &game{played: 7}
+	if !g.carriesMyColour(7) {
+		t.Fatal("the played body does not wear its own colour")
 	}
-	if a, _ := w.AgentByID(parent); a.Controller() == nil {
-		t.Fatal("the parent lost its controller by being asked about")
+	none := &game{}
+	if none.carriesMyColour(7) {
+		t.Fatal("a world with nobody played has somebody wearing the player's colour")
 	}
 }
 
-// The editor paints the world and nothing else moves: the same tick, the same
-// bodies. It is a mode of the viewer, so the check is that opening it stops
-// the clock and closing it gives it back.
-func TestTheEditorPaintsWithoutRunningTheWorld(t *testing.T) {
-	w := engine.NewWorld(engine.DefaultConfig())
-	for i := 0; i < 200; i++ {
-		w.Step()
+func TestTheBudgetColourIsStillThere(t *testing.T) {
+	// -paint budget puts back what the colour meant until 2026-09-22: where
+	// this body's budget went.
+	body := &engine.Agent{ID: 9, Lineage: 3, Genome: make([]float64, engine.NumGenes)}
+	for i := range body.Genome {
+		body.Genome[i] = 40
 	}
-	g := &game{world: w, padKey: noKey, effort: 1}
-
-	g.toggleEditor()
-	if !g.editing || !g.paused {
-		t.Fatalf("editing=%v paused=%v after opening the editor", g.editing, g.paused)
+	byLine := (&game{}).bodyPaint(body, false)
+	byBudget := (&game{paintBy: paintByBudget}).bodyPaint(body, false)
+	if byLine == byBudget {
+		t.Fatalf("both rules paint this body %v", byLine)
 	}
-	if cols, rows, _, _ := w.TerrainSize(); cols == 0 || rows == 0 {
-		t.Fatal("a flat world got no map to draw on")
-	}
-
-	tick, pop := w.Tick(), w.Stats().Population
-	g.brush = brushRough
-	g.paintCell(50, 50)
-	if got := w.TerrainAt(50, 50); got.Kind != engine.GroundRough {
-		t.Fatalf("the painted cell is %v", got.Kind)
-	}
-	if w.Tick() != tick || w.Stats().Population != pop {
-		t.Fatal("painting moved the world on")
-	}
-
-	// Raising and ramping are the same brush set, and a ramp belongs to the
-	// level it leads up to.
-	g.brush = brushRaise
-	g.paintCell(400, 300)
-	if got := w.TerrainAt(400, 300); got.Height != 1 {
-		t.Fatalf("raising made height %d", got.Height)
-	}
-	g.brush = brushRamp
-	g.paintCell(400, 300)
-	if got := w.TerrainAt(400, 300); !got.Slope || got.Height != 1 {
-		t.Fatalf("the ramp reads %+v", got)
-	}
-
-	// Regions are the other map, and painting one does not touch the ground.
-	g.brush = brushRicher
-	before := w.Regions()[w.RegionAt(50, 50)].Food
-	g.paintRegion(50, 50)
-	if w.Regions()[w.RegionAt(50, 50)].Food <= before {
-		t.Fatal("the region did not get richer")
-	}
-	if got := w.TerrainAt(50, 50); got.Kind != engine.GroundRough {
-		t.Fatal("painting a region changed the ground under it")
-	}
-
-	g.toggleEditor()
-	if g.editing || g.paused {
-		t.Fatalf("editing=%v paused=%v after closing the editor on a running world",
-			g.editing, g.paused)
-	}
-}
-
-// The editor and the game want different cameras, and closing the editor gives
-// the game's back: a player who zoomed out to draw must not come back to a
-// world where their own body is a dot in a corner.
-func TestTheEditorGivesTheCameraBack(t *testing.T) {
-	w := engine.NewWorld(engine.DefaultConfig())
-	for i := 0; i < 100; i++ {
-		w.Step()
-	}
-	g := &game{world: w, padKey: noKey, effort: 1}
-	g.selectAgent(w.Agents()[0].ID)
-	g.toggleControl() // playing: the camera is close
-	close := g.zoom
-	if zoomLevels[close] <= 1 {
-		t.Fatalf("taking a node up left the camera at x%v", zoomLevels[close])
-	}
-
-	g.toggleEditor()
-	if zoomLevels[g.zoom] != 1 {
-		t.Fatalf("the editor opened at x%v, want the whole map", zoomLevels[g.zoom])
-	}
-	g.zoom = 2 // and the player moves it about while drawing
-	g.toggleEditor()
-	if g.zoom != close {
-		t.Fatalf("came back at x%v, want the x%v it was playing at",
-			zoomLevels[g.zoom], zoomLevels[close])
-	}
-
-	// And when there was nothing to go back to - watching the whole world
-	// before the editor was opened - a played body still gets a camera that
-	// follows it.
-	g.zoom = 0
-	g.toggleEditor()
-	g.toggleEditor()
-	if zoomLevels[g.zoom] <= 1 {
-		t.Fatalf("left the player at x%v with a camera that does not follow", zoomLevels[g.zoom])
+	if byBudget != strangerColour(body) {
+		t.Fatalf("-paint budget gives %v, and the budget reading is %v", byBudget, strangerColour(body))
 	}
 }

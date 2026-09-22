@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	_ "image/png"
+	"math"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -483,10 +484,90 @@ func (g *game) bodyPaint(a *engine.Agent, grey bool) color.RGBA {
 		}
 		return bodyTint(a, fill)
 	}
-	if g.played == 0 || a.ID == g.played || g.isKin(a.ID) {
+	// The played body and whoever would take over from it. Not every child:
+	// one per generation, the eldest living one, which is what a person means
+	// by "mine" when they are playing a line rather than a body.
+	if g.played != 0 && g.carriesMyColour(a.ID) {
 		return colorOwnLine
 	}
+	// Everybody else is drawn in the colour of the family they were born
+	// into, which a newborn takes from its mother (2026-09-22). It says
+	// nothing about what a body can do and nothing reads it - it is here so
+	// that a crowd of sixty can be seen to be four families rather than sixty
+	// strangers.
+	if g.paintBy != paintByBudget {
+		if c, ok := lineColour(a.Lineage); ok {
+			return c
+		}
+	}
 	return strangerColour(a)
+}
+
+// paintBy says what a body's colour is for.
+type paintRule int
+
+const (
+	// paintByLine is the default: the family a body was born into.
+	paintByLine paintRule = iota
+	// paintByBudget is what it was until 2026-09-22: where the body's budget
+	// went, red for fighting, green for getting about, blue for knowing. It
+	// is kept because it says something the family colour cannot, and a crowd
+	// is where a per-gene reading is too small to use.
+	paintByBudget
+)
+
+// How the eye weighs the channels (Rec. 601), which is what "the same
+// lightness" has to mean for a colour to say nothing by being bright.
+const (
+	lumaR = 0.299
+	lumaG = 0.587
+	lumaB = 0.114
+)
+
+// lineColour is the colour of a family, from the tag the engine already hands
+// down (Agent.Lineage): each founder starts one, and a newborn takes its
+// mother's. The second return is false for a body with no family tag at all -
+// a beast, or a world built before the tag - and then the caller falls back to
+// what it drew before.
+//
+// Nothing in the world reads the tag and nothing here changes what a body
+// does: this is a colour, and the whole of its job is that a person watching
+// can see who is related to whom.
+//
+// Why the mother's rather than either parent's: the engine hands the tag down
+// that way already, so a colour that follows it costs nothing, survives a save
+// and cannot disagree with itself. A colour picked from either parent would
+// need a memory of its own out here and would come out differently in two
+// viewers watching the same world.
+func lineColour(tag uint16) (color.RGBA, bool) {
+	if tag == 0 {
+		return color.RGBA{}, false
+	}
+	// Hues a third of a turn apart, one channel each, added to the same grey
+	// the strangers are built on. The three offsets sum to nought, so every
+	// family is drawn at exactly the same lightness - brightness already
+	// answers "is this my line" and a second meaning on that channel would
+	// spoil the first.
+	//
+	// The hue itself steps by the golden ratio, so families that were founded
+	// one after another are as far apart on the wheel as they can be rather
+	// than a shade apart.
+	const (
+		grey = 0.55
+		amp  = 0.18
+	)
+	h := math.Mod(float64(tag)*0.6180339887498949, 1)
+	off := func(turn float64) float64 { return amp * math.Cos(2*math.Pi*(h-turn)) }
+	r, gr, b := off(0), off(1.0/3), off(2.0/3)
+	// The three offsets already sum to nought, but the eye does not weigh the
+	// channels alike: a green-leaning family built that way comes out clearly
+	// brighter than a blue-leaning one. Taking off how much brighter the mix
+	// reads makes the perceived lightness the same for every family, which is
+	// what the rule above is actually about.
+	lift := lumaR*r + lumaG*gr + lumaB*b
+	r, gr, b = r-lift, gr-lift, b-lift
+	at := func(v float64) uint8 { return uint8(clamp01(grey+v) * 255) }
+	return color.RGBA{at(r), at(gr), at(b), 0xff}, true
 }
 
 // strangerColour is what a body not of the played line is drawn in: dimmer

@@ -307,6 +307,16 @@ type game struct {
 	bodies   int
 	lineKids []int
 
+	// Who wears the played body's colour, worked out once a tick
+	// (succession.go). heirsAt and heirsFrom are what it was worked out for.
+	heirs     map[int]bool
+	heirsAt   int
+	heirsFrom int
+
+	// What a body's colour is for: the family it was born into, or where its
+	// budget went (-paint).
+	paintBy paintRule
+
 	// The answer last taken up, so that the next question can say what it
 	// bought. Without it a choice is made into a void: the world moves on and
 	// nothing ever reports back.
@@ -3332,6 +3342,18 @@ func (g *game) overlay() string {
 			b.WriteString("ground: blue = water (dear to cross, and it drowns), brown = rough, pale = higher, yellow = a ramp, dark line = a cliff\n")
 		}
 	}
+	// What a body's colour means. It is the one thing on the screen that says
+	// who is related to whom, and nothing else says it at all.
+	if g.tiles != nil {
+		switch {
+		case g.paintBy == paintByBudget:
+			b.WriteString("colour: where the budget went - red fighting, green getting about, blue knowing\n")
+		case g.played != 0:
+			b.WriteString("colour: the family it was born into (a child takes its mother's). white = you, and after you the eldest living child, one a generation\n")
+		default:
+			b.WriteString("colour: the family it was born into (a child takes its mother's); it says nothing about what a body can do\n")
+		}
+	}
 	b.WriteString("children are small circles: a newborn expresses 60% of its genes and grows into the rest by eating\n")
 	if g.played != 0 {
 		b.WriteString("gold ring = you, green ring = the heir, faint gold ring = a child of your line\n")
@@ -4659,6 +4681,7 @@ func main() {
 	soakblind := flag.Bool("soakblind", false, "the control for -soak: the water takes just as much and no body can feel that it does (stage 99)")
 	knock := flag.Float64("knock", 0, "how far a blow pushes the one it lands on, in world units, for a full blow on an average body (#136; 0 = every world before it). Arm's length is 15, so 5 keeps the two in reach and 20 breaks the fight off. A body shoved off a ledge falls and pays for the drop")
 	playDynasty := flag.Bool("dynasty", false, "play the dynasty (TODO 6, #130): win by settling your line in every goal block the map marks at once, and pay for each death with ten years the world runs without you. Needs a map with goal blocks (-tiled, or -terrain with goals painted). Brings -play with it")
+	paint := flag.String("paint", "line", "what a body's colour says: \"line\" (the family it was born into, handed down from the mother, with the played line drawn white) or \"budget\" (where this body's budget went - red for fighting, green for getting about, blue for knowing), which is what it said until 2026-09-22. Neither changes anything a body does")
 	bosses := flag.Float64("bosses", 0, "how big the master of a den is, as a multiple of an ordinary one of its sort (TODO 19, #141; 0 = every world before it). Tap a den to be asked whether to call it out; kill what comes out and the den sends nobody for five years. Nothing calls it out but you. Above about 1.7 the world's own ceiling on a body takes over and the answer is the same creature")
 	settleHome := flag.Float64("settle", 0, "what leaving the place it was born costs a person, per region's width and per tick out there (TODO 6, #130; 0 = every world before it). The same rule stage 64 gave the beasts, and the same shape: a price, not a leash. Without it an ordinary life crosses seven of the twelve blocks, so travelling somewhere new is not something a player can be seen to have decided")
 	shove := flag.Float64("shove", 0, "how far a body throws another one when it spends the tick pushing instead of hitting, in world units (#139; 0 = every world before it). A fourth stance, scored beside the other three: it gives up most of the blow and buys the ticks the other one spends walking back in. 20 is past arm's length and actually breaks the fight off")
@@ -5089,6 +5112,14 @@ func main() {
 		log.Fatal(err)
 	}
 	g := &game{world: world, speed: normalSpeed, effort: 1.0, padKey: noKey}
+	switch *paint {
+	case "line", "":
+		g.paintBy = paintByLine
+	case "budget":
+		g.paintBy = paintByBudget
+	default:
+		log.Fatalf("-paint %q: it is \"line\" or \"budget\"", *paint)
+	}
 	g.boost = *boost
 	g.showWeather = *weather
 	if *slow {
