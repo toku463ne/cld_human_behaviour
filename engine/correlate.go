@@ -626,9 +626,12 @@ func (w *World) readEvents(a *Agent, ac *agentCorr, s *SelfView, now *corrSnap) 
 			}
 			w.corr.itemGot[k]++
 			ac.holds = append(ac.holds, corrHold{kind: k, at: w.tick})
-			// And the rule's own record of the same arrival (#148).
+			// And the rule's own record of the same arrival (#148), with
+			// what the formula already makes of it, so that what is
+			// learnt can be the part the formula did not see.
 			if a.itemSlots > 0 {
-				a.itemHolds = append(a.itemHolds, itemHold{kind: k, at: w.tick})
+				a.itemHolds = append(a.itemHolds, itemHold{
+					kind: k, at: w.tick, pred: w.itemPredicted(a, s, k)})
 			}
 			if k == int(FoodCoin) {
 				w.fireCorr(a, CorrCoin, 0)

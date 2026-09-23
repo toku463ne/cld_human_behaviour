@@ -207,3 +207,34 @@ func itemWorld(t *testing.T) (*World, *Agent) {
 	}
 	return w, &w.agents[0]
 }
+
+// The residual: what is learnt is what happened less what the formula had
+// already made of the thing, so that adding it to a score the formula has
+// already priced does not count the same worth twice.
+func TestTheResidualTakesOffWhatTheFormulaExpected(t *testing.T) {
+	learn := func(residual bool) float64 {
+		cfg := DefaultConfig()
+		cfg.Seed = 5
+		cfg.ItemSlots = 3
+		cfg.ItemValueResidual = residual
+		cfg.InitialPopulation = 4
+		cfg.InitialEnemies = 0
+		w := NewWorld(cfg)
+		a := &w.agents[0]
+		a.itemSlots = 3
+		w.Step()
+		// A meal, which is the one kind the formula has a firm figure for.
+		a.Hunger = w.cfg.MaxHunger * 0.8
+		a.carried = append(a.carried, Food{Kind: FoodPlant})
+		w.Step()
+		w.fireCorr(a, CorrFed, 40)
+		a.carried = a.carried[:0]
+		w.Step()
+		return a.itemValue(int(FoodPlant))
+	}
+	raw, residual := learn(false), learn(true)
+	if residual >= raw {
+		t.Fatalf("the residual is %.3f against the whole of %.3f: nothing was taken off",
+			residual, raw)
+	}
+}

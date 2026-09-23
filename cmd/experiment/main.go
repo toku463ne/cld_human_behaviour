@@ -2160,6 +2160,34 @@ var variants = []variant{
 		},
 	},
 	{
+		// The double counting, treated rather than shrunk: what is learnt is
+		// what happened less what the formula had already predicted of the
+		// same object, so the score an option gets comes out at the learnt
+		// figure instead of at the formula's estimate plus a second estimate
+		// of the same worth.
+		name:  "itemresid",
+		about: "148: learn the residual - what followed having one, less what the formula already made of it",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.ItemSlots, c.ItemValueResidual = 3, true
+		},
+	},
+	{
+		name:  "itemresidblind",
+		about: "control for itemresid: the same room bought and filled, and no opinion touches a decision",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.ItemSlots, c.ItemValueResidual = 3, true
+			c.ItemValueWeight = 0
+		},
+	},
+	{
 		name:  "itemhide",
 		about: "148: the same rule in the cold world where a coat has to be worked out of a hide",
 		apply: func(c *engine.Config) {

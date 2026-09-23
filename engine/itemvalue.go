@@ -63,6 +63,19 @@ type itemHold struct {
 	kind   int
 	at     int
 	credit float64
+
+	// pred is what the formula already reckoned this thing was worth when it
+	// arrived, and it is subtracted when the hold is banked (ItemValueResidual).
+	//
+	// Without it the rule counts twice. The formula prices a meal, a coin, a
+	// coat and a stone already; adding what a body has learnt about the same
+	// kind on top of that scores the same worth in two places, and the score
+	// an option gets is the formula's estimate plus a second estimate of the
+	// same thing. Learning the residual instead - what happened, less what
+	// was expected - makes the sum come out at the learnt figure rather than
+	// at both, and leaves the belief holding the one quantity that is worth
+	// holding: how much more than the designer thought.
+	pred float64
 }
 
 // itemValue is what this body reckons a kind of thing is worth, or nought when
@@ -173,11 +186,34 @@ func (w *World) creditItemHolds(a *Agent, value float64) {
 // itself. It is per tick because a coat is worn for a thousand ticks and a
 // meal is gone in one, and the two have to be comparable.
 func (w *World) itemExcess(a *Agent, h *itemHold) float64 {
+	credit := h.credit - h.pred
 	held := float64(w.tick - h.at)
 	if held <= 0 || a.lifeTicks <= 0 {
-		return h.credit
+		return credit
 	}
-	return h.credit - a.lifeCredit/float64(a.lifeTicks)*held
+	return credit - a.lifeCredit/float64(a.lifeTicks)*held
+}
+
+// itemPredicted is what the formula already makes of a thing of this kind in
+// this body's hands, which is what the residual is taken against.
+//
+// It is handWorth and nothing else - the same call spareIndex makes when it
+// asks which thing a body would part with most readily - so the rule and the
+// formula cannot come to different figures about the same object.
+func (w *World) itemPredicted(a *Agent, s *SelfView, kind int) float64 {
+	if !w.cfg.ItemValueResidual {
+		return 0
+	}
+	// The newest of that kind, which is the one that just arrived: carried is
+	// appended to, so the last match is the new one.
+	for i := len(a.carried) - 1; i >= 0; i-- {
+		if corrItemOf(&a.carried[i]) != kind {
+			continue
+		}
+		v := w.handView(a, &a.carried[i])
+		return handWorth(&w.cfg, s, &v)
+	}
+	return 0
 }
 
 // learnItem moves this body's opinion about a kind of thing towards what just

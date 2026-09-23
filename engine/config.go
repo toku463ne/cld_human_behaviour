@@ -2429,6 +2429,16 @@ type Config struct {
 	// had already predicted - rather than to shrink the term.
 	ItemValueWeight float64
 
+	// ItemValueResidual says what is learnt is the part the formula did not
+	// already predict: what followed having one, less what handWorth makes of
+	// it at the moment it arrives.
+	//
+	// False is the form this rule was first measured in, where the learnt
+	// figure is added on top of an estimate the formula has already made of
+	// the same object - so the same worth is scored twice, and shrinking the
+	// weight was the wrong way to deal with that (2026-09-23).
+	ItemValueResidual bool
+
 	// ItemValueRate and ItemValueCount are how fast an opinion moves and how
 	// much evidence it will hold, on the terms lore.go's facts use: the count
 	// is capped so that a lifetime of old evidence never stops a body
@@ -4082,13 +4092,14 @@ func DefaultConfig() Config {
 		// interval stage 70 used to count how often a hand was full.
 		// Off by default because room costs budget: see ItemSlots. The
 		// figures below are what an arm sets when it is on.
-		ItemSlots:       0,
-		ItemSlotCost:    2.5,
-		ItemValueWeight: 1,
-		ItemValueRate:   1,
-		ItemValueCount:  40,
-		ItemValueWindow: 700,
-		ItemsSpread:     true,
+		ItemSlots:         0,
+		ItemSlotCost:      2.5,
+		ItemValueWeight:   1,
+		ItemValueResidual: false,
+		ItemValueRate:     1,
+		ItemValueCount:    40,
+		ItemValueWindow:   700,
+		ItemsSpread:       true,
 
 		Correlate:       false,
 		CorrelateWindow: 700,
