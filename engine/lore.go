@@ -344,6 +344,13 @@ func (w *World) exchangeLore(a, o *Agent) {
 	// or not at all.
 	moved += float64(w.exchangeLessons(a, o)+w.exchangeLessons(o, a)) * cfg.HintTradeWorth
 
+	// And what either of them thinks a kind of thing is worth (#148). Same
+	// shape again, and the same reason it is a copy rather than a meeting in
+	// the middle: an opinion about a kind of thing goes into an empty slot or
+	// nowhere. This is the path by which a thing can come to be worth
+	// something because everybody agrees it is.
+	moved += float64(w.exchangeItemValues(a, o)+w.exchangeItemValues(o, a)) * cfg.HintTradeWorth
+
 	// A skill is a number on a line, so unlike an idea it can be compared -
 	// and what spreads by watching is the better of the two figures (stage
 	// 38a). This is the one place the copying differs from stage 12c's, and

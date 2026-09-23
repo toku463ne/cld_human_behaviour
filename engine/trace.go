@@ -124,6 +124,13 @@ type Utility struct {
 	// has bought no room for lessons.
 	Lesson float64
 
+	// Thing is what this body reckons the kind of thing this option would put
+	// in its hands - or take out of them - is followed by (#148,
+	// itemvalue.go). Same standing as Hint and Lesson above and the same one
+	// rule: it is added, and it decides nothing. Zero in every world that has
+	// bought no room for an opinion about anything.
+	Thing float64
+
 	// Hazard is what the ground this option would be spent on may do to the
 	// body (stage 34), priced the way everything else that ends a life is:
 	// the chance of it, times what a life is worth.
@@ -168,7 +175,7 @@ func (u Utility) Total() float64 {
 	return u.Life.Score() + u.Stake.Score() + u.Rival.Score() +
 		u.Offspring.Score() + u.Info.Score() + u.Explore.Score() + u.Lore.Score() +
 		u.Adorn.Score() +
-		u.Hint + u.Lesson - u.Risk - u.Hazard - u.Roam - u.Weather - u.VitalityCost - u.TimeCost
+		u.Hint + u.Lesson + u.Thing - u.Risk - u.Hazard - u.Roam - u.Weather - u.VitalityCost - u.TimeCost
 }
 
 // goalScore is everything this option was expected to be worth, before what it

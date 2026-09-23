@@ -2085,6 +2085,98 @@ var variants = []variant{
 			c.Correlate, c.CorrelateWindow = true, 30
 		},
 	},
+	// What a thing in the hand is worth, learnt (#148, itemvalue.go). The
+	// weight is the one number that had to be chosen rather than measured:
+	// what is learnt is in the formula's own units and the counting found it
+	// runs from twenty to a hundred and thirty against an evaluation error of
+	// ten, so a quarter puts the term at one to three times the noise.
+	//
+	// itemblind is the arm that decides what the rest did: the same slots
+	// bought out of the same budget, the same opinions formed and taught, and
+	// none of it reaching a decision. Anything the rule appears to do that
+	// this arm also does is the budget talking (#137's lesson, and the memory
+	// note that a control sharing the cost has to be the base).
+	{
+		name:  "itemvalue",
+		about: "148: a body learns what a kind of thing is followed by - three slots, bought out of the genes' budget",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.ItemSlots = 3
+		},
+	},
+	{
+		name:  "itemblind",
+		about: "control: the room is bought and filled exactly as it would be, and no opinion touches a decision",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.ItemSlots, c.ItemValueWeight = 3, 0
+		},
+	},
+	{
+		name:  "itemquiet",
+		about: "control: learnt but never taught (no opinion is copied from one body to another)",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.ItemSlots, c.ItemsSpread = 3, false
+		},
+	},
+	{
+		name:  "itemsoft",
+		about: "sweep: the same three slots at a tenth of the weight rather than a quarter",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.ItemSlots, c.ItemValueWeight = 3, 0.1
+		},
+	},
+	{
+		name:  "itemhard",
+		about: "sweep: the same three slots at the whole of what was learnt",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.ItemSlots, c.ItemValueWeight = 3, 1
+		},
+	},
+	{
+		name:  "itemhide",
+		about: "148: the same rule in the cold world where a coat has to be worked out of a hide",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 130, true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.ItemSlots = 3
+		},
+	},
+	{
+		name:  "itemhideblind",
+		about: "control for itemhide: the same room bought, and no opinion touches a decision",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 130, true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.ItemSlots, c.ItemValueWeight = 3, 0
+		},
+	},
 	// The one chain in this world whose far end is known to pay: a hide comes
 	// off a beast, a coat is worked out of the hide, and the coat stops the
 	// cold draining the body that wears it (stage 87a, warmthValue). If the
@@ -6553,6 +6645,8 @@ var metricNames = []string{
 	"corrCoinHold", "corrCoinStuck",
 	"corrSwap", "corrGain", "corrFoodSwap", "corrTrinketHands", "corrSellerReady",
 	"corrGifts", "corrBack", "corrBackTicks",
+	"itemSlots", "itemsHeld", "itemKinds", "itemLearnt", "itemCopied",
+	"worthCoin", "worthMeat", "worthPlant", "worthCoat", "worthTrinket", "worthHide",
 	"friendFightShare", "snatched", "snatchRate", "snatchFriend",
 	"snatchBite", "sideTaken", "fightChoice", "fightLiked", "mourned",
 	"claimSeen", "claimLiked",
@@ -7160,6 +7254,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	// And what a body could learn from what happens to it (TODO 24, #148).
 	// Zero in every world that did not ask to be counted.
 	endCorr := w.Correlate()
+	// And what the living think the things they pick up are followed by
+	// (#148, itemvalue.go). Zero in every world that bought no room for it.
+	endItems := w.ItemLore()
 	tail := tailAverage(series)
 	fate := fateOf(series, ticks, deadBelow)
 	lines := w.Lineages()
@@ -7413,6 +7510,25 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"corrSellerReady":  float64(endCorr.SellerReady),
 		// And the cheapest thing in this world that already looks like an
 		// exchange: a gift, and whether one is ever answered.
+		// What the living are carrying by way of opinions about things
+		// (#148): the room bought, what is in it, and how many distinct
+		// kinds anybody has an opinion about at all. Held against Slots the
+		// way the rules of thumb and the lessons are - a body that bought
+		// room it cannot fill paid for nothing.
+		"itemSlots":  endItems.Slots,
+		"itemsHeld":  endItems.Held,
+		"itemKinds":  endItems.Kinds,
+		"itemLearnt": float64(endItems.Learnt),
+		"itemCopied": float64(endItems.Copied),
+		// And what they reckon each kind is worth, averaged over the bodies
+		// that have an opinion about it. These are the figures to hold
+		// against what the counting said before the rule existed.
+		"worthCoin":     endItems.ItemWorth("coin"),
+		"worthMeat":     endItems.ItemWorth("meat"),
+		"worthPlant":    endItems.ItemWorth("plant"),
+		"worthCoat":     endItems.ItemWorth("coat"),
+		"worthTrinket":  endItems.ItemWorth("trinket"),
+		"worthHide":     endItems.ItemWorth("hide"),
 		"corrGifts":     float64(endCorr.Gifts),
 		"corrBack":      float64(endCorr.Back),
 		"corrBackTicks": endCorr.BackTicks,

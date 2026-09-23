@@ -316,6 +316,23 @@ type Agent struct {
 	// engine reads it.
 	corr *agentCorr
 
+	// What this body reckons each kind of thing is followed by (#148,
+	// itemvalue.go), the room it paid budget for, and the things in its hands
+	// whose opinion is still being formed. Empty in every world with
+	// ItemSlots at nought, which is every world by default.
+	itemLore  []itemOpinion
+	itemSlots int
+	itemHolds []itemHold
+	itemWas   [numItemKinds]uint8
+	itemReady bool
+
+	// lifeCredit and lifeTicks are how this body's life has been going, which
+	// is what an opinion about a thing is measured against: this world's
+	// events average out well above nought, so a thing held for long enough
+	// collects a fortune it had nothing to do with.
+	lifeCredit float64
+	lifeTicks  int
+
 	// sawFood and sawMate are what was in sight when this agent was last
 	// asked whether anything had turned up, so that "something came into
 	// view" can be told from "something is in view". Without them the two

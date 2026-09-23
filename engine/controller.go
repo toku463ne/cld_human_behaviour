@@ -98,6 +98,13 @@ type AIController struct {
 	// reading and nothing reads it back, like ChoiceGap beside it.
 	ChoiceGoals float64
 
+	// thing is what the kind of thing the next option is about is reckoned to
+	// be followed by (#148). It is set just before an add and cleared by it,
+	// which is what an argument to add would be if add took one; every option
+	// that is not about a thing therefore reads nought, without any site
+	// having to say so.
+	thing float64
+
 	// The best meal in sight and who is in the way of it, worked out while
 	// scoring the food and then reused when scoring a fight: driving that
 	// rival off is worth exactly the part of the meal they are costing.
@@ -618,7 +625,25 @@ func damagePerTick(cfg *Config, power, effort float64) float64 {
 	return cfg.AttackDamage * effort * power / midAbility
 }
 
+// wants is what this body reckons a kind of thing is followed by, positive
+// for taking one on and negative for letting one go (#148). Nought in every
+// world that has bought no room for an opinion.
+func (c *AIController) wants(p *Perception, kind FoodKind, ward float64) float64 {
+	k := int(kind)
+	if kind == FoodTrinket && ward > 0 {
+		k = corrCoat
+	}
+	if k < 0 || k >= numItemKinds {
+		return 0
+	}
+	return p.Self.ItemValues[k]
+}
+
 func (c *AIController) add(a Action, u Utility) {
+	// What this body thinks of the kind of thing this option is about (#148).
+	// One place, one term, and it only ever adds.
+	u.Thing, c.thing = c.thing, 0
+
 	// The one place a rule of thumb touches a decision, and all it does is
 	// add to the score. Nothing branches on it.
 	u.Hint = c.feats.score(c.hints, a.Kind)
@@ -1192,6 +1217,7 @@ func (c *AIController) addFood(p *Perception) {
 					TimeCost:     takeTicks * cfg.TimeCost,
 				}
 				if s.CarryRoom {
+					c.thing = c.wants(p, f.Kind, f.Ward)
 					c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, u)
 				} else if t := u.Total(); t > c.roomWorth {
 					// No room for it - so this is not an option, it is what
@@ -1417,6 +1443,12 @@ func (c *AIController) addGive(p *Perception, o *AgentView) {
 	for _, effort := range effortLevels {
 		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
 		cost := moveCostTo(cfg, s, effort, o.X, o.Y) * ticks
+		// What is being given away, when this body knows which one it would
+		// part with. A gift whose item is not settled reads nought, which is
+		// what an option that names no thing should read.
+		if item != nil {
+			c.thing = -c.wants(p, item.Kind, item.Ward)
+		}
 		c.add(Action{Kind: ActGive, TargetID: o.ID, Effort: effort}, Utility{
 			Lore:         Goal{Value: gift, Chance: 1},
 			Vitality:     cost,
@@ -1696,6 +1728,7 @@ func (c *AIController) addBooks(p *Perception) {
 		for _, effort := range effortLevels {
 			walk := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * walk
+			c.thing = c.wants(p, f.Kind, f.Ward)
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
 				Lore:         Goal{Value: f.Worth, Chance: 1},
 				Vitality:     cost,
@@ -1824,6 +1857,7 @@ func (c *AIController) addCoins(p *Perception) {
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * ticks
+			c.thing = c.wants(p, f.Kind, f.Ward)
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: want, Chance: chance},
 				Vitality:     cost,
@@ -1915,6 +1949,7 @@ func (c *AIController) addBuy(p *Perception, o *AgentView) {
 	for _, effort := range effortLevels {
 		ticks := o.Dist/speedAt(s.MaxSpeed, effort) + 1
 		cost := moveCostTo(cfg, s, effort, o.X, o.Y) * ticks
+		c.thing = c.wants(p, o.OfferKind, o.OfferWard)
 		c.add(Action{Kind: ActBuy, TargetID: o.ID, Effort: effort}, Utility{
 			Life:         Goal{Value: gain, Chance: 1},
 			Vitality:     cost,
@@ -2025,6 +2060,7 @@ func (c *AIController) addHides(p *Perception) {
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * ticks
+			c.thing = c.wants(p, f.Kind, f.Ward)
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
 				Adorn:        Goal{Value: want, Chance: chance},
 				Vitality:     cost,
@@ -2079,6 +2115,7 @@ func (c *AIController) addTrinkets(p *Perception) {
 		for _, effort := range effortLevels {
 			ticks := f.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCostTo(cfg, s, effort, f.X, f.Y) * ticks
+			c.thing = c.wants(p, f.Kind, f.Ward)
 			c.add(Action{Kind: ActTake, TargetID: f.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: warmth, Chance: chance},
 				Adorn:        Goal{Value: f.Worth, Chance: chance},
@@ -2158,6 +2195,11 @@ func (c *AIController) addDrop(p *Perception) {
 			// everything in sight.
 			continue
 		}
+		// Letting one of these go costs whatever this body reckons the kind
+		// is followed by (#148), which is the other half of what makes an
+		// opinion about a thing worth having: without it a body would pick a
+		// coin up for what it is worth and put it down again for nothing.
+		c.thing = -c.wants(p, h.Kind, h.Ward)
 		c.add(Action{Kind: ActDrop, TargetID: h.ID}, Utility{
 			Life:     Goal{Value: gain, Chance: 1},
 			Ticks:    1,
@@ -2236,6 +2278,7 @@ func (c *AIController) addStones(p *Perception) {
 		for _, effort := range effortLevels {
 			ticks := st.Dist/speedAt(s.MaxSpeed, effort) + 1
 			cost := moveCostTo(cfg, s, effort, st.X, st.Y) * ticks
+			c.thing = c.wants(p, st.Kind, 0)
 			c.add(Action{Kind: ActTake, TargetID: st.ID, Effort: effort}, Utility{
 				Life:         Goal{Value: want, Chance: 1},
 				Vitality:     cost,

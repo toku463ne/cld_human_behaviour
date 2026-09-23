@@ -513,7 +513,10 @@ func corrTargetOf(p *Perception, id int) *AgentView {
 // before they are compacted away - a body that stopped is the one event this
 // world was already sure mattered.
 func (w *World) stepCorrelate() {
-	if !w.corr.on {
+	// It runs for the rule as well as for the counting. The two read the same
+	// events out of the same diff on purpose: when the same question is
+	// answered in two places, the two answers drift.
+	if !w.corr.on && w.cfg.ItemSlots <= 0 {
 		return
 	}
 	for i := range w.agents {
@@ -542,6 +545,12 @@ func (w *World) stepCorrelate() {
 				}
 			}
 			continue
+		}
+		if a.itemSlots > 0 || len(a.itemHolds) > 0 {
+			// How long this body has been alive to have things happen to it,
+			// which is the denominator of the baseline its opinions about
+			// things are measured against (#148).
+			a.lifeTicks++
 		}
 		w.readEvents(a, ac, &s, &now)
 		ac.snap = now
@@ -617,6 +626,10 @@ func (w *World) readEvents(a *Agent, ac *agentCorr, s *SelfView, now *corrSnap) 
 			}
 			w.corr.itemGot[k]++
 			ac.holds = append(ac.holds, corrHold{kind: k, at: w.tick})
+			// And the rule's own record of the same arrival (#148).
+			if a.itemSlots > 0 {
+				a.itemHolds = append(a.itemHolds, itemHold{kind: k, at: w.tick})
+			}
 			if k == int(FoodCoin) {
 				w.fireCorr(a, CorrCoin, 0)
 			} else {
@@ -628,9 +641,13 @@ func (w *World) readEvents(a *Agent, ac *agentCorr, s *SelfView, now *corrSnap) 
 				w.corr.itemGone[k]++
 				ac.gotAt[k] = 0
 			}
+			// It has gone, so whatever happened while it was here is what
+			// this body now knows about that kind of thing.
+			w.bankItemHold(a, k)
 			w.fireCorr(a, CorrGave, 0)
 		}
 	}
+	w.expireItemHolds(a)
 	if n := w.cfg.CorrelateTrace * 2; n > 0 && len(ac.holds) > n {
 		ac.holds = append(ac.holds[:0], ac.holds[len(ac.holds)-n:]...)
 	}
@@ -659,7 +676,14 @@ func (w *World) corrIncoming(s *SelfView) float64 {
 // eligible for it, against whatever event this body last had, and against the
 // bodies that were there to see it.
 func (w *World) fireCorr(a *Agent, e CorrEvent, value float64) {
+	// The rule first (#148, itemvalue.go): what happens to a body is credited
+	// to whatever is in its hands, whether or not anybody is counting.
+	w.creditItemHolds(a, value)
+
 	c := &w.corr
+	if !c.on {
+		return
+	}
 	c.events[e]++
 	c.value[e] += value
 

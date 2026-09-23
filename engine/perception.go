@@ -89,6 +89,12 @@ type SelfView struct {
 	// a score - and empty in every world that has not bought room for them.
 	Lessons []Lesson
 
+	// ItemValues is what this body reckons each kind of thing is followed by
+	// (#148, itemvalue.go), already scaled by ItemValueWeight. Nought
+	// everywhere in a world that has bought no room for an opinion, which is
+	// every world by default.
+	ItemValues [numItemKinds]float64
+
 	// Nutrition is what one of each kind of food is worth to this agent right
 	// now, as a share of what it would be worth to one that had not been
 	// living on it (stage 16). Deliberately not hidden: an animal knows when
@@ -799,6 +805,7 @@ func (w *World) selfView(a *Agent) SelfView {
 		AttackerID:   a.attackerID,
 		Covered:      w.coveredFromAttacker(a),
 
+		ItemValues:        a.itemValues(&w.cfg),
 		Retaliation:       a.lore.retaliation.mean,
 		AcceptChance:      a.lore.accept.mean,
 		ShoveWorks:        a.lore.shoveWorks.mean,

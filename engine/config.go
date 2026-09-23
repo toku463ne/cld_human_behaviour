@@ -2392,6 +2392,54 @@ type Config struct {
 	// was not the eating.
 	CorrelateTrace int
 
+	// --- what a thing in the hand is worth (itemvalue.go, #148) ---------
+	//
+	// ItemSlots is the most kinds of thing a body may hold an opinion about,
+	// and nought - the default - is a world where nobody thinks anything of
+	// anything it picks up. The room comes out of the budget the genes are
+	// fitted to, exactly as a rule of thumb's room and a lesson's room do, so
+	// the default has to be nought or every figure ever measured moves.
+	ItemSlots int
+
+	// ItemSlotCost is what one of those takes out of that budget. The figures
+	// to hold it against are HintSlotCost and LessonSlotCost.
+	ItemSlotCost float64
+
+	// ItemValueWeight is what the learnt figure is multiplied by before it
+	// reaches a score, and it is the one number of this rule that had to be
+	// chosen rather than measured.
+	//
+	// What is learnt is in the formula's own units already - the value of
+	// what followed having one, priced by pressures -> gap -> LifeValue - and
+	// the counting found those figures run from about twenty to about a
+	// hundred and thirty against an evaluation error of ten. Passed through
+	// whole they would be the largest term in the comparison and would double
+	// count besides, since the formula already prices a meal and a coin. A
+	// quarter puts the term at one to three times the noise, which is the
+	// band stage 54 found things start to matter in and stop short of taking
+	// the comparison over.
+	ItemValueWeight float64
+
+	// ItemValueRate and ItemValueCount are how fast an opinion moves and how
+	// much evidence it will hold, on the terms lore.go's facts use: the count
+	// is capped so that a lifetime of old evidence never stops a body
+	// noticing that the world has changed.
+	ItemValueRate  float64
+	ItemValueCount float64
+
+	// ItemValueWindow is how long a thing goes on being credited with what
+	// happens to its holder. A coat is worn for a thousand ticks and a meal
+	// is gone in one, so without a window the things nobody puts down would
+	// collect the whole of a life.
+	ItemValueWindow int
+
+	// ItemsSpread says an opinion about a kind of thing can be copied from
+	// one body to another on the back of watching somebody. True by default,
+	// and the arm with it false is "learnt but never taught" - which for this
+	// rule is also "a thing cannot come to be worth something because
+	// everybody agrees it is".
+	ItemsSpread bool
+
 	// CorrelateSample is how often, in ticks, the pairwise questions are
 	// asked: whether two bodies in sight of each other each hold something
 	// the other would rather have, and whether a seller has a buyer with a
@@ -4023,6 +4071,16 @@ func DefaultConfig() Config {
 		// planning horizon, the trace is four decisions deep, and the
 		// pairwise questions are asked every twenty-five ticks - the sampling
 		// interval stage 70 used to count how often a hand was full.
+		// Off by default because room costs budget: see ItemSlots. The
+		// figures below are what an arm sets when it is on.
+		ItemSlots:       0,
+		ItemSlotCost:    2.5,
+		ItemValueWeight: 0.25,
+		ItemValueRate:   1,
+		ItemValueCount:  40,
+		ItemValueWindow: 700,
+		ItemsSpread:     true,
+
 		Correlate:       false,
 		CorrelateWindow: 700,
 		CorrelateTrace:  4,

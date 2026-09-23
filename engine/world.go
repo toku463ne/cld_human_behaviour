@@ -756,6 +756,11 @@ type World struct {
 	// with Correlate off, which is every world by default.
 	corr correlateWatch
 
+	// How often an opinion about a kind of thing was moved by what happened,
+	// and how often one was copied from one body to another (#148,
+	// itemvalue.go). Measurement only.
+	itemsLearnt, itemsCopied int
+
 	storeLearned int
 	storeFound   int
 	storeSeen    int
@@ -2318,7 +2323,11 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	// inherited: a newborn has seen nothing and holds nothing, which is the
 	// whole difference between a lesson and a rule of thumb.
 	lessonSlots := w.inheritLessonSlots(pa, pb, genius)
-	fitBudget(genome, budget-w.hintCost(slots)-w.lessonCost(lessonSlots))
+	// And room for what it will learn about the things it picks up (#148),
+	// bought out of the same budget on the same terms. Only the room is
+	// inherited: a newborn has held nothing and thinks nothing of anything.
+	itemSlots := w.inheritItemSlots(pa, pb, genius)
+	fitBudget(genome, budget-w.hintCost(slots)-w.lessonCost(lessonSlots)-w.itemSlotCost(itemSlots))
 
 	child := w.newAgent(
 		(pa.X+pb.X)/2+w.randRange(-8, 8),
@@ -2372,6 +2381,7 @@ func (w *World) tryBirth(pa, pb *Agent) {
 	child.adornWant = 1               // until the next tick prices its hands (stage 84)
 	child.hintSlots, child.hints = slots, hints
 	child.lessonSlots = lessonSlots
+	child.itemSlots = itemSlots
 	// What it knows for having been born where it was, merged with what it
 	// inherited by the one comparison there is (skill.go). A genius child
 	// goes further with what it already holds - a leap is about something the
@@ -2853,13 +2863,15 @@ func (w *World) randomAgentAt(species Species, kind int, x, y float64) Agent {
 	// Room for lessons, on the same terms (#137). A founder holds none: it
 	// has not watched anybody die yet either.
 	a.lessonSlots = w.drawLessonSlots()
+	a.itemSlots = w.drawItemSlots()
 	// And whatever the country it arrived in has to teach (stage 38a). The
 	// same rule a newborn gets, applied to where the world put it: nobody
 	// draws a skill out of nothing, so a flat world never contains one.
 	w.learnFromBirthplace(&a)
 	// Room for ideas comes out of the same budget the body does, for founders
 	// as for everybody else.
-	fitBudget(a.Genome, a.Budget()-w.hintCost(a.hintSlots)-w.lessonCost(a.lessonSlots))
+	fitBudget(a.Genome, a.Budget()-w.hintCost(a.hintSlots)-w.lessonCost(a.lessonSlots)-
+		w.itemSlotCost(a.itemSlots))
 	a.Vitality = w.randRange(a.MaxVitality(&w.cfg)*0.6, a.MaxVitality(&w.cfg))
 	a.Hunger = w.randRange(0, w.cfg.SatiatedHunger)
 	// Founders are spread across a range of remaining lifespan too, the same
