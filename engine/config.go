@@ -2366,6 +2366,39 @@ type Config struct {
 	// default, and the arm with it false is "learnt but never taught".
 	LessonsSpread bool
 
+	// --- counting what could be learnt (correlate.go, TODO 24, #148) -----
+	//
+	// Correlate switches on the instrument that counts what a body could
+	// learn from what happens to it. It is a measurement and not a rule: it
+	// adds no word, changes no comparison and draws nothing on the
+	// generator, so a world with it on runs the same world as one with it
+	// off - only slower, and with the tables filled in.
+	//
+	// Off by default all the same, because the counting walks every body
+	// every tick and builds a self view for each, which is not a cost to put
+	// on every run.
+	Correlate bool
+
+	// CorrelateWindow is how long a decision stays eligible to be credited
+	// with what happens next, in ticks. It is the one figure of the
+	// instrument that could hide a relation by being too short, so it is
+	// generous: the planning horizon, which is the furthest ahead anything
+	// in this world looks on purpose.
+	CorrelateWindow int
+
+	// CorrelateTrace is how many recent decisions a body keeps eligible. One
+	// would be lesson.go's rule, which can only ever learn what a body was
+	// doing at the moment - the move that took a starving body to the meat
+	// was not the eating.
+	CorrelateTrace int
+
+	// CorrelateSample is how often, in ticks, the pairwise questions are
+	// asked: whether two bodies in sight of each other each hold something
+	// the other would rather have, and whether a seller has a buyer with a
+	// coin. They are quadratic in the neighbourhood and the hands they read
+	// change slowly, so they are sampled rather than swept.
+	CorrelateSample int
+
 	// ShoveGroundSeen says a body reads the ground just behind the one in
 	// front of it - the drop or the river a push would put it in. True by
 	// default where the rule is on at all; false is the arm where pushing
@@ -3985,6 +4018,15 @@ func DefaultConfig() Config {
 		LessonWeight:    3,
 		LessonRipeTwice: true,
 		LessonsSpread:   true,
+
+		// The instrument of TODO 24, off by default. The window is the
+		// planning horizon, the trace is four decisions deep, and the
+		// pairwise questions are asked every twenty-five ticks - the sampling
+		// interval stage 70 used to count how often a hand was full.
+		Correlate:       false,
+		CorrelateWindow: 700,
+		CorrelateTrace:  4,
+		CorrelateSample: 25,
 
 		JudgementNoise:    40,
 		PriorStrength:     50,

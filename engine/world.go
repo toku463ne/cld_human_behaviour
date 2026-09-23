@@ -751,6 +751,11 @@ type World struct {
 	// (stage 75). It is measurement and no rule reads it: see trade.go.
 	trade tradeWatch
 
+	// What a body could learn from what happens to it, counted before any of
+	// it is built (correlate.go, TODO 24). Empty and untouched in a world
+	// with Correlate off, which is every world by default.
+	corr correlateWatch
+
 	storeLearned int
 	storeFound   int
 	storeSeen    int
@@ -936,6 +941,9 @@ func NewWorld(cfg Config) *World {
 	for i := 0; i < cfg.InitialFoodItems; i++ {
 		w.spawnFood()
 	}
+	// And the counting of TODO 24, which allocates its tables only in a world
+	// that asked for it and draws nothing here or anywhere else.
+	w.startCorrelate()
 	return w
 }
 
@@ -1214,6 +1222,14 @@ func (w *World) Step() {
 	w.nestsOfTick()
 
 	w.commitNewborns()
+
+	// What changed about each body this tick, and which decisions could have
+	// caused it (correlate.go, TODO 24). After the newborns so a child counts
+	// on the tick it arrives, before the dead are compacted away so that a
+	// body which stopped is still here to be read. Read only: it writes
+	// nothing a rule looks at and draws nothing.
+	w.stepCorrelate()
+
 	w.removeDead()
 }
 
@@ -1300,6 +1316,16 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 	a.Action = c.Decide(p)
 	if p.Trace != nil {
 		p.Trace.Action = a.Action
+	}
+	// Which (situation, move) pair this decision was, and what the formula
+	// reckoned the move would do to this body's chances (correlate.go, TODO
+	// 24). Read only, and taken from the perception that was built anyway.
+	// Only the world's own controller is asked: a hand-driven body is not
+	// answering this question.
+	if w.corr.on {
+		if ai, ok := c.(*AIController); ok {
+			w.noteDecisionKey(a, p, ai.ChoiceLife, ai.ChoiceNoiseSd)
+		}
 	}
 	// How often a decision is "go to country I think better of" (stage 15b),
 	// which is the only door a belief about a place has into a body. Counted

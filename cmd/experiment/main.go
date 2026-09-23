@@ -2035,6 +2035,41 @@ var variants = []variant{
 			c.AffinityAlly = 6
 		},
 	},
+	// Counting what a body could learn from what happens to it (TODO 24,
+	// #148). Nothing here is a rule - the three arms run exactly the world
+	// their names say and only fill in the tables - so they are read on their
+	// own rather than against a baseline. What they answer is whether the
+	// item is worth building: whether any strong relation exists that the
+	// formula has not already written down (corrUnwritten), whether two
+	// events ever share a middle term so that a pair of links could be
+	// composed (corrPairs, corrCoinFed), and whether two bodies ever each
+	// prefer what the other is holding (corrSwap).
+	{
+		name:  "count",
+		about: "148: count what a body could learn - the flat world, no rule changed",
+		apply: func(c *engine.Config) { c.Correlate = true },
+	},
+	{
+		name:  "countplay",
+		about: "148: the same count on the map a world would be played on",
+		apply: func(c *engine.Config) {
+			c.TerrainMap, c.SkillBirthplace, c.Correlate = mapCountry, 0.5, true
+		},
+	},
+	{
+		// On top of 89b, which is the one rule that has moved this world's
+		// market without costing it anything - the plan says anything else
+		// touching the market rides on it.
+		name:  "countmarket",
+		about: "148: the same count in the world where things are bought, sold and worn (on top of 89b)",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.Correlate = true
+		},
+	},
 	{
 		name:  "countryskill",
 		about: "the whole country with skills (the map a world would be played on)",
@@ -6457,6 +6492,15 @@ var metricNames = []string{
 	"shoved", "shoveBroke", "shoveWorks", "shoveErr", "shoveWait",
 	"deathSeen", "deathWatched", "lessonRipe", "lessonTaken", "lessonCopied",
 	"lessonSlots", "lessonHeld", "lessonKinds",
+	"corrNoise", "corrKeys", "corrLive", "corrLoud", "corrVarying", "corrUnwritten",
+	"corrRepeats", "corrPairs", "corrCoinFed",
+	"corrFed", "corrMended", "corrHurt", "corrSafe", "corrCoin", "corrThing", "corrGave",
+	"corrDied", "corrChild",
+	"corrSeen", "corrOnlookers",
+	"corrSpan30", "corrSpan200", "corrSpan700",
+	"corrCoinHold", "corrCoinStuck",
+	"corrSwap", "corrGain", "corrFoodSwap", "corrTrinketHands", "corrSellerReady",
+	"corrGifts", "corrBack", "corrBackTicks",
 	"friendFightShare", "snatched", "snatchRate", "snatchFriend",
 	"snatchBite", "sideTaken", "fightChoice", "fightLiked", "mourned",
 	"claimSeen", "claimLiked",
@@ -7061,6 +7105,9 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 	// And what watching bodies stop could teach (#137), on the same terms:
 	// the ceiling is a figure of the run, not of the arm.
 	endLesson := w.LessonUse()
+	// And what a body could learn from what happens to it (TODO 24, #148).
+	// Zero in every world that did not ask to be counted.
+	endCorr := w.Correlate()
 	tail := tailAverage(series)
 	fate := fateOf(series, ticks, deadBelow)
 	lines := w.Lineages()
@@ -7199,6 +7246,85 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"lessonSlots": endLesson.Slots,
 		"lessonHeld":  endLesson.Held,
 		"lessonKinds": endLesson.Kinds,
+		// What a body could learn from what happens to it, counted before
+		// any of it is built (TODO 24, #148). All of it is nought in a world
+		// that did not ask for the counting.
+		//
+		// corrNoise is the spread of the error this world's bodies make
+		// scoring an option, and it is the yardstick for the three below it:
+		// corrLive is how many (situation, move, event) triples ever fired,
+		// corrLoud how many of those were worth more than a quarter of that
+		// noise, corrVarying how many are keyed on something that differs
+		// between the candidates of one decision (a term that lifts every
+		// option alike cancels out - stage 86), and corrUnwritten how many
+		// of the loud ones the formula had not already scored the move for.
+		//
+		// corrUnwritten is the figure the whole item turns on. A relation the
+		// formula already prices is one the learning would count twice, so a
+		// nought here says there is nothing to learn that is not already
+		// known.
+		"corrNoise":     endCorr.Noise,
+		"corrKeys":      float64(endCorr.Keys),
+		"corrLive":      float64(endCorr.Live),
+		"corrLoud":      float64(endCorr.Loud),
+		"corrVarying":   float64(endCorr.Varying),
+		"corrUnwritten": float64(endCorr.Unwritten),
+		// corrRepeats is how often a body met a triple it had already met -
+		// what a promotion rule would be waiting for. corrPairs is how many
+		// of the hundred (event, event) cells ever fired, which is whether
+		// two links ever share a middle term to be composed on, and
+		// corrCoinFed is the one cell the money question turns on: money
+		// coming in, followed by eating or mending.
+		"corrRepeats": float64(endCorr.Repeats),
+		"corrPairs":   float64(endCorr.PairKinds),
+		"corrCoinFed": float64(endCorr.CoinToFed),
+		// The events themselves, for the size of the target.
+		"corrFed":    float64(endCorr.Events[engine.CorrFed]),
+		"corrMended": float64(endCorr.Events[engine.CorrMended]),
+		"corrHurt":   float64(endCorr.Events[engine.CorrHurt]),
+		"corrThing":  float64(endCorr.Events[engine.CorrThing]),
+		"corrChild":  float64(endCorr.Events[engine.CorrChild]),
+		"corrSafe":   float64(endCorr.Events[engine.CorrSafe]),
+		"corrCoin":   float64(endCorr.Events[engine.CorrCoin]),
+		"corrGave":   float64(endCorr.Events[engine.CorrGave]),
+		"corrDied":   float64(endCorr.Events[engine.CorrDied]),
+		// And the witness channel measured before it is built: the share of
+		// the events somebody was there to see, and how many onlookers each
+		// had. Read against deathWatched and deathSeen above, which are the
+		// same two figures for the one event #137 already counted.
+		"corrSeen":      endCorr.Watched[engine.CorrFed],
+		"corrOnlookers": endCorr.Onlookers[engine.CorrFed],
+		// What a fixed window says instead of an event: how much of the
+		// spread in what became of a body is accounted for by which key it
+		// was, at a skirmish, at something between, and at the planning
+		// horizon. Near nought at all three is the reading that says the
+		// horizon has to be an event rather than a number of ticks.
+		"corrSpan30":  endCorr.SpanTold[0],
+		"corrSpan200": endCorr.SpanTold[1],
+		"corrSpan700": endCorr.SpanTold[2],
+		// How long money sits in a hand before it is spent, and the share
+		// that arrived and never left. #116 found coins are held and not
+		// used; if that is so, no amount of composing will make a coin worth
+		// anything, because the chain never closes.
+		"corrCoinHold":  endCorr.CoinHold,
+		"corrCoinStuck": endCorr.Stuck,
+		// And whether the barter this world skipped could ever fire: the
+		// share of sampled moments where two bodies in sight of each other
+		// each held an ornament the other would rather have, what the two of
+		// them together stood to make, the same asked of food (where the only
+		// thing that tells two bodies apart is the discount on sameness), the
+		// share of sampled bodies holding an ornament at all, and how often
+		// all three things a sale needs were true at once.
+		"corrSwap":         endCorr.Swap,
+		"corrGain":         endCorr.Gain,
+		"corrFoodSwap":     endCorr.FoodSwap,
+		"corrTrinketHands": endCorr.TrinketHands,
+		"corrSellerReady":  float64(endCorr.SellerReady),
+		// And the cheapest thing in this world that already looks like an
+		// exchange: a gift, and whether one is ever answered.
+		"corrGifts":     float64(endCorr.Gifts),
+		"corrBack":      float64(endCorr.Back),
+		"corrBackTicks": endCorr.BackTicks,
 		// What the two unwritten rules of TODO 14 have to work with, counted
 		// before either is written (sides.go). friendFightShare is the share
 		// of decisions taken in front of a friend fighting somebody the body
@@ -8855,6 +8981,8 @@ func main() {
 	csvPath := flag.String("csv", "", "write the sampled time series here")
 	jobs := flag.Int("jobs", runtime.NumCPU(), "runs in parallel")
 	list := flag.Bool("list", false, "list the arms and exit")
+	corrKeys := flag.Bool("corrkeys", false,
+		"run the first arm on one seed and print what the counting of TODO 24 found, rather than the table")
 	flag.Parse()
 
 	if dupes := checkVariantNames(); len(dupes) > 0 {
@@ -8885,6 +9013,10 @@ func main() {
 	if len(chosen) == 0 {
 		fmt.Fprintln(os.Stderr, "no variants selected")
 		os.Exit(1)
+	}
+	if *corrKeys {
+		printCorrelate(chosen[0], *firstSeed, *ticks)
+		return
 	}
 	if *base == "" {
 		*base = chosen[0].name
@@ -9147,4 +9279,77 @@ func riverMapForFish() []string {
 		out[i] = "......~~......"
 	}
 	return out
+}
+
+// printCorrelate runs one arm on one seed and prints what the counting of
+// TODO 24 found, which is the half of it that will not fit in a table of
+// scalars: which (situation, move, event) triples were loudest, and which
+// events follow which.
+//
+// One seed, because this is for reading rather than for comparing: the arms
+// that matter are run the ordinary way.
+func printCorrelate(v variant, seed int64, ticks int) {
+	cfg := engine.DefaultConfig()
+	cfg.Seed = seed
+	v.apply(&cfg)
+	if !cfg.Correlate {
+		fmt.Fprintf(os.Stderr, "arm %q does not switch the counting on\n", v.name)
+		os.Exit(1)
+	}
+	w := engine.NewWorld(cfg)
+	for i := 0; i < ticks; i++ {
+		w.Step()
+	}
+	c := w.Correlate()
+
+	fmt.Printf("%s, seed %d, %d ticks\n\n", v.name, seed, ticks)
+	fmt.Printf("decisions %d over %d keys; the error a body makes scoring an option is %.2f\n",
+		c.Decisions, c.Keys, c.Noise)
+	fmt.Printf("live triples %d, of which loud %d, varying %d, unwritten %d\n\n",
+		c.Live, c.Loud, c.Varying, c.Unwritten)
+
+	fmt.Println("what the keys turned out to be about")
+	for f := engine.HintFeature(0); f < engine.NumHintFeatures; f++ {
+		fmt.Printf("  %-12s %6d\n", f.String(), c.Features[f])
+	}
+	fmt.Println()
+
+	fmt.Println("the loudest triples")
+	fmt.Printf("  %-12s %-10s %-10s %7s %6s %9s %9s %7s\n",
+		"situation", "move", "event", "n", "lift", "value", "predicted", "lag")
+	for _, k := range c.Top {
+		fmt.Printf("  %-12s %-10s %-10s %7d %6.2f %9.2f %9.2f %7.0f\n",
+			k.Feature.String(), k.Act.String(), k.Event.String(),
+			k.N, k.Lift, k.Value, k.Pred, k.Lag)
+	}
+	fmt.Println()
+
+	fmt.Println("one event after another, over the same body (rows are the first)")
+	fmt.Printf("  %-10s", "")
+	for e := engine.CorrEvent(0); e < engine.NumCorrEvents; e++ {
+		fmt.Printf("%9s", e.String())
+	}
+	fmt.Println()
+	for b := engine.CorrEvent(0); b < engine.NumCorrEvents; b++ {
+		fmt.Printf("  %-10s", b.String())
+		for e := engine.CorrEvent(0); e < engine.NumCorrEvents; e++ {
+			fmt.Printf("%9d", c.Pairs[b][e])
+		}
+		fmt.Println()
+	}
+	fmt.Println()
+
+	fmt.Printf("money sits in a hand %.0f ticks and %.0f%% of it never leaves\n",
+		c.CoinHold, c.Stuck*100)
+	fmt.Printf("two bodies each holding an ornament the other would rather have: %.0f%% of sampled moments, worth %.2f to the two of them\n",
+		c.Swap*100, c.Gain)
+	fmt.Printf("the same asked of food: %.0f%%, worth %.2f\n", c.FoodSwap*100, c.FoodGain)
+	fmt.Printf("a seller with something spare, a buyer in sight and a coin in its hand: %d times\n",
+		c.SellerReady)
+	fmt.Printf("%d things handed over, %d of them answered by a gift the other way, after %.0f ticks\n",
+		c.Gifts, c.Back, c.BackTicks)
+	for i, h := range []int{30, 200, 700} {
+		fmt.Printf("a fixed window of %d ticks: the key accounts for %.3f of the spread over %d readings\n",
+			h, c.SpanTold[i], c.SpanN[i])
+	}
 }

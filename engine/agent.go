@@ -311,6 +311,11 @@ type Agent struct {
 	lessonSlots int
 	seenDeaths  deathMarks
 
+	// corr is the counting of TODO 24: what this body decided lately and what
+	// followed it. Nil in every world with Correlate off, and nothing in the
+	// engine reads it.
+	corr *agentCorr
+
 	// sawFood and sawMate are what was in sight when this agent was last
 	// asked whether anything had turned up, so that "something came into
 	// view" can be told from "something is in view". Without them the two

@@ -64,6 +64,11 @@ func (w *World) giveItem(from, to *Agent) bool {
 		w.giftsUseless++
 	}
 
+	// One thing handed over, for the count that asks whether a gift is ever
+	// answered (correlate.go, TODO 24). It rides here because this is the one
+	// place a gift happens, so nothing is detected twice or anew.
+	w.noteGift(from, to)
+
 	w.removeCarried(from, at)
 	item.PricePaid = 0 // a gift cost its new holder nothing (stage 83)
 	to.carried = append(to.carried, item)

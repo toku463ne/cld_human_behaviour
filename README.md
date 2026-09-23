@@ -517,6 +517,15 @@ go run ./cmd/experiment -variants baseline,nogate -ticks 200000  # 世界が保�
 | `-csv <path>` | 推移の時系列をCSVで書き出す |
 | `-jobs <n>` | 並列実行数（既定CPU数） |
 | `-deadbelow <n>` | **その個体数を下回った世界を「終わった」と読む**（既定10）。`collapsed` / `fellAt` の目盛り |
+| `-corrkeys` | **表の代わりに「経験から何が学べるか」の計器の中身を印字する**（下記） |
+
+**`-corrkeys` だけは表を出しません。** 最初に挙げた条件を1シードだけ回し、**`Config.Correlate` の計器が数えたもの**——〈状況×行動×イベント〉のうち値打ちの大きかったもの、〈イベント→イベント〉の表、硬貨の保有時間、互いに相手の持ち物を欲しがる2体の割合、贈与の往復——を読める形で印字します。**条件は `Correlate` を立てるもの**（`count` / `countplay` / `countmarket`）でなければなりません。
+
+```
+go run ./cmd/experiment -variants countmarket -corrkeys -ticks 20000
+```
+
+**この計器は世界の規則を1つも変えず、乱数を1つも引きません**（オンとオフの世界が1ビット違わないことをテストで固定してあります）。**ただし毎tickすべての身体を読み直すので1.9倍ほど遅くなります**ので、既定はオフです。数えたものは `docs/history/findings/4.md`。
 
 出力は2つの表です。
 

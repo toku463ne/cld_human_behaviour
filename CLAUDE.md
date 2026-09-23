@@ -215,7 +215,7 @@ Goモジュール名は `github.com/toku463ne/cld_human_behaviour`。現時点�
 - 挙動の指紋（`engine/golden_test.go`）: 既定条件・シード1〜3を5000tick回した結果を固定値で押さえたテスト。**「速くするだけの変更」が世界を変えていないことの唯一の証拠。** ルールを意図して変えたときだけ、その変更と同じコミットで数値を更新する（赤いテストを緑にするために書き換えない）。
 - テスト: `engine/world_test.go`（ルールごとの単体テストと8000tickの統合テスト）と `engine/decision_test.go`（状況を手で組み立てて `Decide()` を1回呼ぶシナリオテスト）。ベンチマークは `engine/bench_test.go`。
 - 空間インデックス（`engine/grid.go`、非公開）: 一様グリッド。**世界のルールを何も変えない**のが唯一の条件なので、セル幅は `Config` ではなく `PerceptionRadius` から導出する。**移動ループの途中で問い合わせない**（コーディング規約）。
-- 測定器（どれも**読み取り専用で、世界に書き込まず乱数も引かない**）: `Clusters` / `ClusterGaps` / `MembershipTracker` / `FightTracker` / `CensusTracker` / `Spacing` / `Banks`（両岸）/ `Trade`（商売）/ `Wading`（水中の速度）/ `CarryUse`（手の塞がり）。**連結距離のような測る側の目盛りは `Config` に入れない**（世界のルールではないため。距離が違う測定値どうしは比べられない）。
+- 測定器（どれも**読み取り専用で、世界に書き込まず乱数も引かない**）: `Clusters` / `ClusterGaps` / `MembershipTracker` / `FightTracker` / `CensusTracker` / `Spacing` / `Banks`（両岸）/ `Trade`（商売）/ `Wading`（水中の速度）/ `CarryUse`（手の塞がり）/ `Correlate`（経験から何が学べるか。#148。**既定オフ**——世界は変えないが1.9倍遅い）。**連結距離のような測る側の目盛りは `Config` に入れない**（世界のルールではないため。距離が違う測定値どうしは比べられない）。
 - 世界を外から変える（`engine/edit.go` / `engine/endow.go`）: `SetTerrain` / `SetRegion` / `Tune` / `SetDifficulty` / `Inspire` / `Endow` は**シミュレーションの側からは誰も呼ばず、乱数を1つも引かない**。
 - 地図を読む（`engine/tiled.go`）: **Tiled の `.tmj`（JSON）からバイト列で受け取り、地形と地域を組み立てる**（2026-09-19）。**`engine` はファイルを知らない**——読むのは `cmd/devview -tiled` か、将来のブラウザの `fetch`。**地域は等しいブロックの格子だけでなく、作者が描いた矩形にも、1セル1文字で塗った任意の形にもできる**（`Config.RegionShapes` / `Config.RegionMap`。空なら従来どおり）。
 - 保存と読込（`engine/save.go`）: 世界まるごとと個体群だけの2つを JSON で出し入れする。**乱数は「種と、いくつ引いたか」を保存して読込時に引き直す。** 個体群に持ち込めるのは「その身体が何であるか」だけ。
