@@ -6543,6 +6543,7 @@ var metricNames = []string{
 	"corrActed", "corrRepeats", "corrPairs", "corrCoinFed",
 	"corrGainCoin", "corrGainMeat", "corrGainPlant", "corrGainTrinket", "corrGainHide",
 	"corrGainCoat", "corrGotHide", "corrGotCoat",
+	"corrPerCoat", "corrPerTrinket", "corrPerHide", "corrPerMeat", "corrPerCoin",
 	"corrComposeErr", "corrComposeN",
 	"corrFed", "corrMended", "corrHurt", "corrSafe", "corrCoin", "corrThing", "corrGave",
 	"corrDied", "corrChild",
@@ -7329,8 +7330,15 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"corrGainTrinket": endCorr.ItemGain("trinket"),
 		"corrGainHide":    endCorr.ItemGain("hide"),
 		"corrGainCoat":    endCorr.ItemGain("coat"),
-		"corrGotHide":     float64(endCorr.ItemGot("hide")),
-		"corrGotCoat":     float64(endCorr.ItemGot("coat")),
+		// And the same over one of the things rather than over one event,
+		// which is the figure comparable with what the formula pays.
+		"corrPerCoat":    endCorr.ItemPer("coat"),
+		"corrPerTrinket": endCorr.ItemPer("trinket"),
+		"corrPerHide":    endCorr.ItemPer("hide"),
+		"corrPerMeat":    endCorr.ItemPer("meat"),
+		"corrPerCoin":    endCorr.ItemPer("coin"),
+		"corrGotHide":    float64(endCorr.ItemGot("hide")),
+		"corrGotCoat":    float64(endCorr.ItemGot("coat")),
 		// And whether composing two links tells the truth: what the
 		// composition claims over what the same move is worth by direct
 		// observation, over the compositions where both were seen. One is
@@ -9448,10 +9456,15 @@ func printCorrelate(v variant, seed int64, ticks int) {
 	fmt.Println()
 
 	fmt.Println("what a thing in the hand turns out to be worth (gain is against any event at all)")
-	fmt.Printf("  %-10s %8s %8s %9s %9s %8s\n", "thing", "got", "left", "value", "gain", "held")
+	fmt.Printf("  %-10s %8s %8s %9s %9s %9s %8s %9s\n",
+		"thing", "got", "left", "events", "value", "gain", "held", "per one")
 	for _, it := range c.Items {
-		fmt.Printf("  %-10s %8d %8d %9.3f %9.3f %8.0f\n",
-			it.Name, it.Got, it.Gone, it.Value, it.Gain, it.Held)
+		// And what the gain comes to over one of them, which is the figure
+		// to hold against what the formula pays for anything: the mean is
+		// divided by every event credited while the thing was in the hand,
+		// and most of those have nothing to do with it.
+		fmt.Printf("  %-10s %8d %8d %9d %9.3f %9.3f %8.0f %9.2f\n",
+			it.Name, it.Got, it.Gone, it.N, it.Value, it.Gain, it.Held, it.Per)
 	}
 	fmt.Println()
 

@@ -883,6 +883,19 @@ type CorrItem struct {
 	Gain  float64 // that, less what any event comes to on average
 	Held  float64 // ticks it stays in a hand before it goes
 	Gone  int     // times one left a hand
+
+	// Per is Gain over one of them rather than over one event: the excess
+	// summed across every event credited while it was in a hand, divided by
+	// how many came into one.
+	//
+	// It is the figure to hold against what the formula pays for anything,
+	// and the two are a long way apart. Gain is a mean over every event
+	// credited in the window, and most of those have nothing to do with the
+	// thing - a body mends and is hit dozens of times while a coat is on its
+	// back. Dividing the whole of what a thing predicts by the whole of what
+	// happened to its holder is not the thing being small; it is the average
+	// being taken over the wrong denominator.
+	Per float64
 }
 
 // CorrComposed is two links joined at their middle term: this situation and
@@ -1023,6 +1036,16 @@ func (u CorrelateUse) ItemGain(name string) float64 {
 	for _, it := range u.Items {
 		if it.Name == name {
 			return it.Gain
+		}
+	}
+	return 0
+}
+
+// ItemPer is what one of that kind predicts, over one of them.
+func (u CorrelateUse) ItemPer(name string) float64 {
+	for _, it := range u.Items {
+		if it.Name == name {
+			return it.Per
 		}
 	}
 	return 0
@@ -1230,6 +1253,9 @@ func (c *correlateWatch) items() []CorrItem {
 		}
 		if it.Gone > 0 {
 			it.Held = c.itemHeld[k] / float64(it.Gone)
+		}
+		if it.Got > 0 {
+			it.Per = it.Gain * float64(it.N) / float64(it.Got)
 		}
 		out = append(out, it)
 	}
