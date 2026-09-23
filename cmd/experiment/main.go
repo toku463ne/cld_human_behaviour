@@ -6509,6 +6509,8 @@ var metricNames = []string{
 	"lessonSlots", "lessonHeld", "lessonKinds",
 	"corrNoise", "corrKeys", "corrLive", "corrLoud", "corrVarying", "corrUnwritten",
 	"corrActed", "corrRepeats", "corrPairs", "corrCoinFed",
+	"corrGainCoin", "corrGainMeat", "corrGainPlant", "corrGainTrinket", "corrGainHide",
+	"corrComposeErr", "corrComposeN",
 	"corrFed", "corrMended", "corrHurt", "corrSafe", "corrCoin", "corrThing", "corrGave",
 	"corrDied", "corrChild",
 	"corrSeen", "corrOnlookers",
@@ -7278,13 +7280,28 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		// formula already prices is one the learning would count twice, so a
 		// nought here says there is nothing to learn that is not already
 		// known.
-		"corrNoise":     endCorr.Noise,
-		"corrKeys":      float64(endCorr.Keys),
-		"corrLive":      float64(endCorr.Live),
-		"corrLoud":      float64(endCorr.Loud),
-		"corrVarying":   float64(endCorr.Varying),
-		"corrActed":     float64(endCorr.Acted),
-		"corrUnwritten": float64(endCorr.Unwritten),
+		"corrNoise":   endCorr.Noise,
+		"corrKeys":    float64(endCorr.Keys),
+		"corrLive":    float64(endCorr.Live),
+		"corrLoud":    float64(endCorr.Loud),
+		"corrVarying": float64(endCorr.Varying),
+		"corrActed":   float64(endCorr.Acted),
+		// What each kind of thing turned out to be worth, by what followed
+		// holding one (the back propagation of #148): the mean value of the
+		// events credited to it, less the mean over every event there was.
+		// A kind that never came into a hand is nought.
+		"corrGainCoin":    endCorr.ItemGain(engine.FoodCoin),
+		"corrGainMeat":    endCorr.ItemGain(engine.FoodMeat),
+		"corrGainPlant":   endCorr.ItemGain(engine.FoodPlant),
+		"corrGainTrinket": endCorr.ItemGain(engine.FoodTrinket),
+		"corrGainHide":    endCorr.ItemGain(engine.FoodHide),
+		// And whether composing two links tells the truth: what the
+		// composition claims over what the same move is worth by direct
+		// observation, over the compositions where both were seen. One is
+		// honest; far from one is a rule of thumb that would mislead.
+		"corrComposeErr": endCorr.ComposeErr,
+		"corrComposeN":   float64(endCorr.ComposeN),
+		"corrUnwritten":  float64(endCorr.Unwritten),
 		// corrRepeats is how often a body met a triple it had already met -
 		// what a promotion rule would be waiting for. corrPairs is how many
 		// of the hundred (event, event) cells ever fired, which is whether
@@ -9359,6 +9376,48 @@ func printCorrelate(v variant, seed int64, ticks int) {
 	head("the ones the formula did not see coming", func(k engine.CorrKey) bool {
 		return math.Abs(k.Want) > c.Noise*0.25 && math.Abs(k.Pred) < math.Abs(k.Want)*0.5
 	}, 12)
+
+	// The ones a body has the most evidence for, which is a different list
+	// from the loudest: a rule nobody sees often is a rule nobody can learn.
+	fmt.Println("the ones seen most often")
+	fmt.Printf("  %-12s %-10s %-10s %7s %6s %9s %9s %9s %6s\n",
+		"situation", "move", "event", "n", "lift", "value", "expected", "predicted", "lag")
+	seen := append([]engine.CorrKey(nil), c.Top...)
+	for i := 1; i < len(seen); i++ {
+		for j := i; j > 0 && seen[j].N > seen[j-1].N; j-- {
+			seen[j], seen[j-1] = seen[j-1], seen[j]
+		}
+	}
+	for i, k := range seen {
+		if i >= 10 {
+			break
+		}
+		fmt.Printf("  %-12s %-10s %-10s %7d %6.2f %9.2f %9.2f %9.2f %6.0f\n",
+			k.Feature.String(), k.Act.String(), k.Event.String(),
+			k.N, k.Lift, k.Value, k.Want, k.Pred, k.Lag)
+	}
+	fmt.Println()
+
+	fmt.Println("composed: this move tends to be followed by that, and that by the other")
+	fmt.Printf("  %-12s %-10s %-10s %-10s %7s %9s %9s %9s %6s\n",
+		"situation", "move", "then", "and then", "n", "composed", "direct", "predicted", "lag")
+	for i, m := range c.Composed {
+		if i >= 12 {
+			break
+		}
+		fmt.Printf("  %-12s %-10s %-10s %-10s %7d %9.2f %9.2f %9.2f %6.0f\n",
+			m.Feature.String(), m.Act.String(), m.Middle.String(), m.Event.String(),
+			m.N, m.Want, m.Direct, m.Pred, m.Lag)
+	}
+	fmt.Println()
+
+	fmt.Println("what a thing in the hand turns out to be worth (gain is against any event at all)")
+	fmt.Printf("  %-10s %8s %8s %9s %9s %8s\n", "thing", "got", "left", "value", "gain", "held")
+	for _, it := range c.Items {
+		fmt.Printf("  %-10s %8d %8d %9.3f %9.3f %8.0f\n",
+			it.Kind.String(), it.Got, it.Gone, it.Value, it.Gain, it.Held)
+	}
+	fmt.Println()
 
 	fmt.Println("which event raises the odds of which (rate is over the second one's own count)")
 	fmt.Printf("  %-10s %-10s %8s %7s %7s\n", "first", "then", "n", "rate", "lift")

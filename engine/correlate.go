@@ -209,9 +209,29 @@ type corrProbe struct {
 type corrSnap struct {
 	hunger, vitality float64
 	drown            float64
-	carried, coins   int
+	kinds            [NumFoodKinds]uint8
 	attacked         bool
 	alive            bool
+}
+
+// corrHold is one thing that came into a hand and is still eligible to be
+// credited with what happens next. It is the decision trace's shape, applied
+// to things instead of moves.
+//
+// This is the back propagation of #148 (the user's, 2026-09-23). Composing two
+// links drops the middle term - "offer, then get a coin, then eat" composes to
+// "offer, then eat" and the coin is gone from it - so a body that learnt only
+// composed links would have no reason to pick a coin up, keep it, or not hand
+// it away. Crediting the thing rather than dropping it puts the reason back,
+// and it is far cheaper than composing: eight numbers rather than a key space.
+//
+// Both signs, which is the user's own rule applied to their own idea. An
+// outcome is worth what it is worth; crediting only the good ones would walk
+// every kind of thing upwards, because everything is followed by something
+// good eventually.
+type corrHold struct {
+	kind FoodKind
+	at   int
 }
 
 // agentCorr is the per body half, allocated the first time a body is seen and
@@ -227,9 +247,13 @@ type agentCorr struct {
 	// history. It is lesson.go's trick, widened by the event.
 	seen []uint64
 
-	// coinAt is when the money now in this body's hands first arrived, for
-	// the one figure that says whether a coin is ever spent.
-	coinAt int
+	// holds is what has lately come into this body's hands, still eligible to
+	// be credited with what happens next.
+	holds []corrHold
+
+	// gotAt is when the run of each kind now in this body's hands began, for
+	// the figure that says how long a thing stays in a hand before it goes.
+	gotAt [NumFoodKinds]int
 
 	// last is the tick each kind of event last happened to this body. Ten
 	// ints, so the co-occurrence table costs no history either.
@@ -276,7 +300,8 @@ type correlateWatch struct {
 	// One event after another, which is the whole of whether two links can be
 	// composed into one. pairs[b][c] is how often c followed b inside the
 	// window, over the same body.
-	pairs [NumCorrEvents][NumCorrEvents]int
+	pairs   [NumCorrEvents][NumCorrEvents]int
+	pairLag [NumCorrEvents][NumCorrEvents]int
 
 	// The time-keyed reading, for each window: what became of a body so many
 	// ticks after a decision, both overall and per key. A key that says no
@@ -284,11 +309,15 @@ type correlateWatch struct {
 	spanAll [numCorrHorizons]corrSpread
 	spanKey [][]corrSpread // numCorrHorizons x numCorrKeys
 
-	// How long money sits in a hand: sum and count over the coins that were
-	// spent or handed on, and how many are still sitting there at the end.
-	coinHeld  float64
-	coinSpent int
-	coinFirst int // coins that arrived in a hand at all
+	// What a thing in the hand turns out to be followed by: how many events
+	// were credited to holding one of each kind and what they came to, how
+	// many of each came into a hand at all, how many left one, and how long
+	// they stayed. Money is the coin row of these.
+	itemN    [NumFoodKinds]int
+	itemSum  [NumFoodKinds]float64
+	itemGot  [NumFoodKinds]int
+	itemGone [NumFoodKinds]int
+	itemHeld [NumFoodKinds]float64
 
 	// Whether two bodies in sight of each other each hold something the other
 	// would rather have (the double coincidence of wants), sampled rather
@@ -424,8 +453,12 @@ func (w *World) stepCorrelate() {
 		s := w.selfView(a)
 		now := corrSnap{
 			hunger: a.Hunger, vitality: a.Vitality, drown: s.Drown,
-			carried: len(a.carried), coins: a.coinsHeld(),
 			attacked: a.attackerID != 0, alive: a.Alive,
+		}
+		for j := range a.carried {
+			if k := a.carried[j].Kind; k < NumFoodKinds && now.kinds[k] < 255 {
+				now.kinds[k]++
+			}
 		}
 		if !ac.ready {
 			ac.snap, ac.ready = now, true
@@ -502,31 +535,35 @@ func (w *World) readEvents(a *Agent, ac *agentCorr, s *SelfView, now *corrSnap) 
 	if was.drown <= 0 && now.drown > 0 {
 		w.fireCorr(a, CorrWet, -now.drown*w.cfg.LifeValue)
 	}
-	if now.coins > was.coins {
-		if ac.coinAt == 0 {
-			ac.coinAt = w.tick
-			w.corr.coinFirst++
-		}
-		w.fireCorr(a, CorrCoin, 0)
-	}
-	if now.coins < was.coins {
-		if ac.coinAt != 0 {
-			w.corr.coinHeld += float64(w.tick - ac.coinAt)
-			w.corr.coinSpent++
-			ac.coinAt = 0
-		}
-	}
-	if now.coins == 0 {
-		ac.coinAt = 0
-	}
-	// What is in the hands, money aside: one event for something arriving and
+	// What is in the hands, kind by kind: one event for something arriving and
 	// one for something leaving, because the two are the two sides of every
-	// exchange this world could have.
-	wasThings, nowThings := was.carried-was.coins, now.carried-now.coins
-	if nowThings > wasThings {
-		w.fireCorr(a, CorrThing, 0)
-	} else if nowThings < wasThings {
-		w.fireCorr(a, CorrGave, 0)
+	// exchange this world could have. Money is one of the kinds rather than a
+	// case of its own - what makes a coin a coin here is what follows it, and
+	// that is what the item table is for.
+	for k := FoodKind(0); k < NumFoodKinds; k++ {
+		switch {
+		case now.kinds[k] > was.kinds[k]:
+			if ac.gotAt[k] == 0 {
+				ac.gotAt[k] = w.tick
+			}
+			w.corr.itemGot[k]++
+			ac.holds = append(ac.holds, corrHold{kind: k, at: w.tick})
+			if k == FoodCoin {
+				w.fireCorr(a, CorrCoin, 0)
+			} else {
+				w.fireCorr(a, CorrThing, 0)
+			}
+		case now.kinds[k] < was.kinds[k]:
+			if now.kinds[k] == 0 && ac.gotAt[k] != 0 {
+				w.corr.itemHeld[k] += float64(w.tick - ac.gotAt[k])
+				w.corr.itemGone[k]++
+				ac.gotAt[k] = 0
+			}
+			w.fireCorr(a, CorrGave, 0)
+		}
+	}
+	if n := w.cfg.CorrelateTrace * 2; n > 0 && len(ac.holds) > n {
+		ac.holds = append(ac.holds[:0], ac.holds[len(ac.holds)-n:]...)
 	}
 }
 
@@ -585,9 +622,25 @@ func (w *World) fireCorr(a *Agent, e CorrEvent, value float64) {
 	for prev := CorrEvent(0); prev < NumCorrEvents; prev++ {
 		if t := ac.lastOf(prev); t != 0 && w.tick-t <= window {
 			c.pairs[prev][e]++
+			c.pairLag[prev][e] += w.tick - t
 		}
 	}
 	ac.note(e, w.tick)
+
+	// And back onto the things that came into this body's hands lately, which
+	// is the other half of #148: what a thing turns out to be worth is what
+	// follows holding it. Signed, so a kind that is followed by trouble loses
+	// what a kind followed by a meal gains.
+	live := ac.holds[:0]
+	for _, h := range ac.holds {
+		if w.tick-h.at > window {
+			continue
+		}
+		live = append(live, h)
+		c.itemN[h.kind]++
+		c.itemSum[h.kind] += value
+	}
+	ac.holds = live
 
 	// And who was there. This is the witness channel of #148 measured before
 	// it is built: an event nobody sees can teach nobody but the one it
@@ -790,6 +843,40 @@ type CorrPair struct {
 	Rate, Lift    float64
 }
 
+// CorrItem is one kind of thing, priced by what followed holding it: the back
+// propagation of #148.
+//
+// Gain is the figure that matters. Value on its own says only how the world
+// was going while this was in a hand, and the world is mostly going the same
+// way for everybody; what the thing is worth is how far it moves that.
+type CorrItem struct {
+	Kind FoodKind
+
+	Got   int     // times one came into a hand
+	N     int     // events credited to holding one
+	Value float64 // what those events came to, on average
+	Gain  float64 // that, less what any event comes to on average
+	Held  float64 // ticks it stays in a hand before it goes
+	Gone  int     // times one left a hand
+}
+
+// CorrComposed is two links joined at their middle term: this situation and
+// this move tend to be followed by that, and that tends to be followed by the
+// other. The other is what the composed link is about, and the middle term is
+// gone from it - which is why the item table above exists.
+type CorrComposed struct {
+	Feature HintFeature
+	Act     ActionKind
+	Middle  CorrEvent
+	Event   CorrEvent
+
+	N      int     // the smaller of the two links' counts, as a weight
+	Want   float64 // what the composition says this move is worth
+	Direct float64 // what the same move is worth by direct observation, if seen
+	Pred   float64 // what the formula expected of the move
+	Lag    float64 // the two lags added
+}
+
 // CorrelateUse is what the counting came to. Every figure is taken whether or
 // not anything would use it, and none of it is read by any rule.
 type CorrelateUse struct {
@@ -877,6 +964,23 @@ type CorrelateUse struct {
 	FoodSwap, FoodGain float64
 	TrinketHands       float64
 
+	// Items is what each kind of thing turned out to be followed by, and
+	// Composed is what two links make when they share a middle term. Both
+	// are the two halves of #148 measured before either is built.
+	Items    []CorrItem
+	Composed []CorrComposed
+
+	// ComposeErr is what a composition claims over what the same move is
+	// worth by direct observation, averaged over the compositions where the
+	// triple was also seen directly. One is a composition that tells the
+	// truth; far above one is a rule of thumb that would have a body chasing
+	// something that does not pay.
+	//
+	// It is the test the whole of composing turns on, and it is why Direct
+	// is carried at all.
+	ComposeErr float64
+	ComposeN   int
+
 	// SellerReady is how often all three things a sale needs were true at
 	// once: something spare, a body in sight, and a coin in its hand.
 	SellerReady int
@@ -885,6 +989,18 @@ type CorrelateUse struct {
 	// answered by a gift the other way, and BackTicks how long that took.
 	Gifts, Back int
 	BackTicks   float64
+}
+
+// ItemGain is what one kind of thing turned out to be worth, or nought for a
+// kind that never came into a hand. For the measuring, which wants one figure
+// rather than a table.
+func (u CorrelateUse) ItemGain(k FoodKind) float64 {
+	for _, it := range u.Items {
+		if it.Kind == k {
+			return it.Gain
+		}
+	}
+	return 0
 }
 
 // Correlate reports it. It writes nothing and draws nothing.
@@ -897,7 +1013,7 @@ func (w *World) Correlate() CorrelateUse {
 		Events:    c.events,
 		Pairs:     c.pairs,
 		Repeats:   c.repeats,
-		Spent:     c.coinSpent,
+		Spent:     c.itemGone[FoodCoin],
 		Gifts:     c.gifts,
 		Back:      c.back,
 	}
@@ -1014,11 +1130,22 @@ func (w *World) Correlate() CorrelateUse {
 			}
 		}
 	}
-	if c.coinSpent > 0 {
-		out.CoinHold = c.coinHeld / float64(c.coinSpent)
+	out.Items = c.items()
+	out.Composed = c.compose(quiet)
+	for _, m := range out.Composed {
+		if m.Direct != 0 {
+			out.ComposeErr += m.Want / m.Direct
+			out.ComposeN++
+		}
 	}
-	if c.coinFirst > 0 {
-		out.Stuck = 1 - float64(c.coinSpent)/float64(c.coinFirst)
+	if out.ComposeN > 0 {
+		out.ComposeErr /= float64(out.ComposeN)
+	}
+	if c.itemGone[FoodCoin] > 0 {
+		out.CoinHold = c.itemHeld[FoodCoin] / float64(c.itemGone[FoodCoin])
+	}
+	if c.itemGot[FoodCoin] > 0 {
+		out.Stuck = 1 - float64(c.itemGone[FoodCoin])/float64(c.itemGot[FoodCoin])
 	}
 	if c.samples > 0 {
 		out.Swap = float64(c.swaps) / float64(c.samples)
@@ -1034,6 +1161,140 @@ func (w *World) Correlate() CorrelateUse {
 	out.SellerReady = c.sellerReady
 	if c.back > 0 {
 		out.BackTicks = float64(c.backTicks) / float64(c.back)
+	}
+	return out
+}
+
+// items is what each kind of thing turned out to be worth, by what followed
+// holding one.
+//
+// The baseline is every event credited to anything at all. A thing in a hand
+// while the world goes the way it usually goes has told its holder nothing;
+// what it is worth is the difference.
+func (c *correlateWatch) items() []CorrItem {
+	var n int
+	var sum float64
+	for k := FoodKind(0); k < NumFoodKinds; k++ {
+		n += c.itemN[k]
+		sum += c.itemSum[k]
+	}
+	if n == 0 {
+		return nil
+	}
+	base := sum / float64(n)
+	out := make([]CorrItem, 0, NumFoodKinds)
+	for k := FoodKind(0); k < NumFoodKinds; k++ {
+		if c.itemGot[k] == 0 {
+			continue
+		}
+		it := CorrItem{Kind: k, Got: c.itemGot[k], N: c.itemN[k], Gone: c.itemGone[k]}
+		if it.N > 0 {
+			it.Value = c.itemSum[k] / float64(it.N)
+			it.Gain = it.Value - base
+		}
+		if it.Gone > 0 {
+			it.Held = c.itemHeld[k] / float64(it.Gone)
+		}
+		out = append(out, it)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j].Gain > out[j-1].Gain; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out
+}
+
+// compose joins two links at their middle term: (situation, move) -> B, and
+// B -> C, giving (situation, move) -> C.
+//
+// What the composition claims the move is worth is the far outcome's value
+// times both rates - how often B follows the move, and how often C follows B.
+// Where the same triple was also seen directly, Direct says what it came to,
+// and the two together are the test: a composition that does not agree with
+// direct observation is a rule of thumb this world would be wrong to carry.
+//
+// Nothing here is a rule. No body composes anything; this asks whether it
+// would be worth teaching one to.
+func (c *correlateWatch) compose(quiet float64) []CorrComposed {
+	if c.decisions == 0 {
+		return nil
+	}
+	// How often each event has each other one behind it, over all events, so
+	// that a middle term can be charged for how often it precedes anything.
+	// Without this the composition multiplies in a base rate: a mend follows
+	// a coin twenty-three times over, because mending follows everything.
+	var afterAny float64
+	for e := CorrEvent(0); e < NumCorrEvents; e++ {
+		afterAny += float64(c.events[e])
+	}
+	var before [NumCorrEvents]float64
+	for b := CorrEvent(0); b < NumCorrEvents; b++ {
+		n := 0
+		for e := CorrEvent(0); e < NumCorrEvents; e++ {
+			n += c.pairs[b][e]
+		}
+		if afterAny > 0 {
+			before[b] = float64(n) / afterAny
+		}
+	}
+	out := make([]CorrComposed, 0, 32)
+	for k := 0; k < numCorrKeys; k++ {
+		if c.keyN[k] == 0 {
+			continue
+		}
+		for b := CorrEvent(0); b < NumCorrEvents; b++ {
+			first := &c.cells[k*int(NumCorrEvents)+int(b)]
+			if first.n == 0 || c.events[b] == 0 {
+				continue
+			}
+			toB := float64(first.n) / float64(c.keyN[k])
+			for e := CorrEvent(0); e < NumCorrEvents; e++ {
+				if e == b || c.pairs[b][e] == 0 || c.events[e] == 0 {
+					continue
+				}
+				second := &c.cells[k*int(NumCorrEvents)+int(e)]
+				// Only the part of "e follows b" that is more than e
+				// follows anything: the rest is the base rate, and
+				// multiplying base rates together is how a composition
+				// ends up claiming a move is worth four hundred.
+				rate := float64(c.pairs[b][e]) / float64(c.events[e])
+				if before[b] <= 0 || rate <= before[b] {
+					continue
+				}
+				excess := 1 - before[b]/rate
+				toC := float64(c.pairs[b][e]) / float64(c.events[b]) * excess
+				worth := c.value[e] / float64(c.events[e])
+				want := worth * toB * toC
+				if math.Abs(want) <= quiet {
+					continue
+				}
+				n := first.n
+				if c.pairs[b][e] < n {
+					n = c.pairs[b][e]
+				}
+				cm := CorrComposed{
+					Feature: HintFeature(k / int(numActionKinds)),
+					Act:     ActionKind(k % int(numActionKinds)),
+					Middle:  b, Event: e, N: n, Want: want,
+					Lag:  first.lag/float64(first.n) + float64(c.pairLag[b][e])/float64(c.pairs[b][e]),
+					Pred: first.pred / float64(first.n),
+				}
+				if second.n > 0 {
+					cm.Direct = second.value / float64(second.n) *
+						float64(second.n) / float64(c.keyN[k])
+				}
+				out = append(out, cm)
+			}
+		}
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && math.Abs(out[j].Want) > math.Abs(out[j-1].Want); j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	if len(out) > 40 {
+		out = out[:40]
 	}
 	return out
 }
