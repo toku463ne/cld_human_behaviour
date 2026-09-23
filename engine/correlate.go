@@ -144,6 +144,44 @@ const corrQuietShare = 0.25 // of the mean evaluation noise, the floor for "says
 // whose whole point it prices exactly.
 const corrWrittenShare = 0.5
 
+// The confound this world cannot avoid, and what is done about it.
+//
+// A body holding a coin is a body with a free hand and a full stomach. So a
+// thing that is only ever held by bodies that are doing well will be followed
+// by good things whether or not it had anything to do with them, and the first
+// count could not tell the two apart: the coin came out highest of everything
+// in a world where money buys something 1.58 times a run.
+//
+// The answer is the one any observational count has to reach for, which is to
+// compare a thing against what a body in that state gets anyway. Every event
+// is filed by the state of the body it happened to, and a thing's baseline is
+// then its own mix of states rather than the world's. What is left after that
+// subtraction is what the thing adds over being the sort of body that holds
+// one.
+//
+// It is a control and not a cure. It removes only as much of the confound as
+// the two figures below capture, and a thing held by bodies that differ in
+// some third way still gets the credit for that way.
+const (
+	corrHungerBins = 4
+	corrWornBins   = 4
+	corrBins       = corrHungerBins * corrWornBins
+)
+
+// corrBinOf is which state a body is in, coarsely: how hungry, and how far
+// below full. Those two because they are what the risk itself is worked out
+// from (pressures), so a body matched on them is a body the formula would
+// give the same odds.
+func corrBinOf(cfg *Config, hunger, vitality, maxVitality float64) int {
+	h := int(clamp(hunger/cfg.MaxHunger, 0, 0.999) * corrHungerBins)
+	w := 0.0
+	if maxVitality > 0 {
+		w = 1 - vitality/maxVitality
+	}
+	v := int(clamp(w, 0, 0.999) * corrWornBins)
+	return h*corrWornBins + v
+}
+
 // corrCell is one (key, event) pair as the counting sees it.
 type corrCell struct {
 	n     int
@@ -338,8 +376,14 @@ type correlateWatch struct {
 	// were credited to holding one of each kind and what they came to, how
 	// many of each came into a hand at all, how many left one, and how long
 	// they stayed. Money is the coin row of these.
-	itemN    [numCorrItems]int
-	itemSum  [numCorrItems]float64
+	itemN   [numCorrItems]int
+	itemSum [numCorrItems]float64
+	itemBin [numCorrItems][corrBins]int
+
+	// And the same for every event there was, whoever it happened to: the
+	// baseline a thing is held against, state by state.
+	binN     [corrBins]int
+	binSum   [corrBins]float64
 	itemGot  [numCorrItems]int
 	itemGone [numCorrItems]int
 	itemHeld [numCorrItems]float64
@@ -619,6 +663,12 @@ func (w *World) fireCorr(a *Agent, e CorrEvent, value float64) {
 	c.events[e]++
 	c.value[e] += value
 
+	// What sort of body this happened to, which is the baseline the things in
+	// its hands are held against.
+	bin := corrBinOf(&w.cfg, a.Hunger, a.Vitality, a.MaxVitality(&w.cfg))
+	c.binN[bin]++
+	c.binSum[bin] += value
+
 	ac := w.corrOf(a)
 	window := w.cfg.CorrelateWindow
 	kept := ac.trace[:0]
@@ -664,6 +714,7 @@ func (w *World) fireCorr(a *Agent, e CorrEvent, value float64) {
 		live = append(live, h)
 		c.itemN[h.kind]++
 		c.itemSum[h.kind] += value
+		c.itemBin[h.kind][bin]++
 	}
 	ac.holds = live
 
@@ -884,6 +935,15 @@ type CorrItem struct {
 	Held  float64 // ticks it stays in a hand before it goes
 	Gone  int     // times one left a hand
 
+	// Held0 is what a body in the states this thing is held in gets anyway,
+	// and Adj is Value less that: the gain with the confound taken out as far
+	// as two figures can take it out. PerAdj is Adj over one of them.
+	//
+	// The pair to read is Per against PerAdj. Where they agree, the thing is
+	// doing the work; where PerAdj collapses, what was being measured was the
+	// sort of body that holds one.
+	Held0, Adj, PerAdj float64
+
 	// Per is Gain over one of them rather than over one event: the excess
 	// summed across every event credited while it was in a hand, divided by
 	// how many came into one.
@@ -1046,6 +1106,16 @@ func (u CorrelateUse) ItemPer(name string) float64 {
 	for _, it := range u.Items {
 		if it.Name == name {
 			return it.Per
+		}
+	}
+	return 0
+}
+
+// ItemPerAdj is the same with the holder's own state taken out.
+func (u CorrelateUse) ItemPerAdj(name string) float64 {
+	for _, it := range u.Items {
+		if it.Name == name {
+			return it.PerAdj
 		}
 	}
 	return 0
@@ -1231,11 +1301,16 @@ func (w *World) Correlate() CorrelateUse {
 // while the world goes the way it usually goes has told its holder nothing;
 // what it is worth is the difference.
 func (c *correlateWatch) items() []CorrItem {
+	// The baseline is every event there was, whoever it happened to and
+	// whatever was in their hands. It has to be that rather than "events
+	// while something was held", so that Gain and Adj differ by the state
+	// matching and by nothing else - two columns measured against two
+	// different reference sets cannot be read as a control.
 	var n int
 	var sum float64
-	for k := 0; k < numCorrItems; k++ {
-		n += c.itemN[k]
-		sum += c.itemSum[k]
+	for b := 0; b < corrBins; b++ {
+		n += c.binN[b]
+		sum += c.binSum[b]
 	}
 	if n == 0 {
 		return nil
@@ -1250,12 +1325,30 @@ func (c *correlateWatch) items() []CorrItem {
 		if it.N > 0 {
 			it.Value = c.itemSum[k] / float64(it.N)
 			it.Gain = it.Value - base
+			// And the same against what a body in the states this thing is
+			// held in gets anyway, which is the control for the confound:
+			// the thing's own mix of states, priced at the world's figure
+			// for each of them.
+			var matched, weight float64
+			for b := 0; b < corrBins; b++ {
+				n := c.itemBin[k][b]
+				if n == 0 || c.binN[b] == 0 {
+					continue
+				}
+				matched += c.binSum[b] / float64(c.binN[b]) * float64(n)
+				weight += float64(n)
+			}
+			if weight > 0 {
+				it.Held0 = matched / weight
+				it.Adj = it.Value - it.Held0
+			}
 		}
 		if it.Gone > 0 {
 			it.Held = c.itemHeld[k] / float64(it.Gone)
 		}
 		if it.Got > 0 {
 			it.Per = it.Gain * float64(it.N) / float64(it.Got)
+			it.PerAdj = it.Adj * float64(it.N) / float64(it.Got)
 		}
 		out = append(out, it)
 	}

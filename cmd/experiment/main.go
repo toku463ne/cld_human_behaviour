@@ -6544,6 +6544,7 @@ var metricNames = []string{
 	"corrGainCoin", "corrGainMeat", "corrGainPlant", "corrGainTrinket", "corrGainHide",
 	"corrGainCoat", "corrGotHide", "corrGotCoat",
 	"corrPerCoat", "corrPerTrinket", "corrPerHide", "corrPerMeat", "corrPerCoin",
+	"corrAdjCoat", "corrAdjTrinket", "corrAdjHide", "corrAdjMeat", "corrAdjCoin", "corrAdjPlant",
 	"corrComposeErr", "corrComposeN",
 	"corrFed", "corrMended", "corrHurt", "corrSafe", "corrCoin", "corrThing", "corrGave",
 	"corrDied", "corrChild",
@@ -7337,6 +7338,19 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"corrPerHide":    endCorr.ItemPer("hide"),
 		"corrPerMeat":    endCorr.ItemPer("meat"),
 		"corrPerCoin":    endCorr.ItemPer("coin"),
+		// And the same with the holder's own state taken out, which is the
+		// control for the confound: a body that can hold a coin is a body
+		// with a free hand and a full stomach, and a thing only ever held by
+		// bodies doing well is followed by good things whether or not it had
+		// anything to do with them. Where Per and Adj agree the thing is
+		// doing the work; where Adj collapses, what was measured was the
+		// sort of body that holds one.
+		"corrAdjCoat":    endCorr.ItemPerAdj("coat"),
+		"corrAdjTrinket": endCorr.ItemPerAdj("trinket"),
+		"corrAdjHide":    endCorr.ItemPerAdj("hide"),
+		"corrAdjMeat":    endCorr.ItemPerAdj("meat"),
+		"corrAdjCoin":    endCorr.ItemPerAdj("coin"),
+		"corrAdjPlant":   endCorr.ItemPerAdj("plant"),
 		"corrGotHide":    float64(endCorr.ItemGot("hide")),
 		"corrGotCoat":    float64(endCorr.ItemGot("coat")),
 		// And whether composing two links tells the truth: what the
@@ -9456,15 +9470,17 @@ func printCorrelate(v variant, seed int64, ticks int) {
 	fmt.Println()
 
 	fmt.Println("what a thing in the hand turns out to be worth (gain is against any event at all)")
-	fmt.Printf("  %-10s %8s %8s %9s %9s %9s %8s %9s\n",
-		"thing", "got", "left", "events", "value", "gain", "held", "per one")
+	fmt.Printf("  %-10s %8s %8s %9s %9s %8s %9s %9s\n",
+		"thing", "got", "left", "events", "gain", "held", "per one", "matched")
 	for _, it := range c.Items {
-		// And what the gain comes to over one of them, which is the figure
-		// to hold against what the formula pays for anything: the mean is
-		// divided by every event credited while the thing was in the hand,
-		// and most of those have nothing to do with it.
-		fmt.Printf("  %-10s %8d %8d %9d %9.3f %9.3f %8.0f %9.2f\n",
-			it.Name, it.Got, it.Gone, it.N, it.Value, it.Gain, it.Held, it.Per)
+		// per one is what the gain comes to over one of them rather than over
+		// one event, which is the figure to hold against what the formula
+		// pays for anything. matched is the same with the holder's own state
+		// taken out: where the two agree the thing is doing the work, and
+		// where matched collapses, what was being measured was the sort of
+		// body that gets to hold one.
+		fmt.Printf("  %-10s %8d %8d %9d %9.3f %8.0f %9.2f %9.2f\n",
+			it.Name, it.Got, it.Gone, it.N, it.Gain, it.Held, it.Per, it.PerAdj)
 	}
 	fmt.Println()
 
