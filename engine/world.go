@@ -1318,13 +1318,13 @@ func (w *World) decide(a *Agent, trigger Trigger) {
 		p.Trace.Action = a.Action
 	}
 	// Which (situation, move) pair this decision was, and what the formula
-	// reckoned the move would do to this body's chances (correlate.go, TODO
-	// 24). Read only, and taken from the perception that was built anyway.
+	// reckoned the move was worth before its costs (correlate.go, TODO 24).
+	// Read only, and taken from the perception that was built anyway.
 	// Only the world's own controller is asked: a hand-driven body is not
 	// answering this question.
 	if w.corr.on {
 		if ai, ok := c.(*AIController); ok {
-			w.noteDecisionKey(a, p, ai.ChoiceLife, ai.ChoiceNoiseSd)
+			w.noteDecisionKey(a, p, ai.ChoiceGoals, ai.ChoiceNoiseSd)
 		}
 	}
 	// How often a decision is "go to country I think better of" (stage 15b),

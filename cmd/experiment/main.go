@@ -2071,6 +2071,21 @@ var variants = []variant{
 		},
 	},
 	{
+		// The window matters more than it looks. At 700 ticks almost every
+		// event has almost every other one behind it, so the shares saturate
+		// near one and nothing can be told from anything; a short window is
+		// what says whether two events are actually linked.
+		name:  "countnear",
+		about: "148: the same count with a window of 30 ticks rather than 700",
+		apply: func(c *engine.Config) {
+			c.OfferTicks, c.Coins = 30, 60
+			c.CarrySlotsWeigh, c.CoinPrices = true, true
+			c.Trinkets = true
+			c.GiftWorthScaled = true
+			c.Correlate, c.CorrelateWindow = true, 30
+		},
+	},
+	{
 		name:  "countryskill",
 		about: "the whole country with skills (the map a world would be played on)",
 		apply: func(c *engine.Config) { c.TerrainMap, c.SkillBirthplace = mapCountry, 0.5 },
@@ -6493,7 +6508,7 @@ var metricNames = []string{
 	"deathSeen", "deathWatched", "lessonRipe", "lessonTaken", "lessonCopied",
 	"lessonSlots", "lessonHeld", "lessonKinds",
 	"corrNoise", "corrKeys", "corrLive", "corrLoud", "corrVarying", "corrUnwritten",
-	"corrRepeats", "corrPairs", "corrCoinFed",
+	"corrActed", "corrRepeats", "corrPairs", "corrCoinFed",
 	"corrFed", "corrMended", "corrHurt", "corrSafe", "corrCoin", "corrThing", "corrGave",
 	"corrDied", "corrChild",
 	"corrSeen", "corrOnlookers",
@@ -7268,6 +7283,7 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		"corrLive":      float64(endCorr.Live),
 		"corrLoud":      float64(endCorr.Loud),
 		"corrVarying":   float64(endCorr.Varying),
+		"corrActed":     float64(endCorr.Acted),
 		"corrUnwritten": float64(endCorr.Unwritten),
 		// corrRepeats is how often a body met a triple it had already met -
 		// what a promotion rule would be waiting for. corrPairs is how many
@@ -9305,8 +9321,8 @@ func printCorrelate(v variant, seed int64, ticks int) {
 	fmt.Printf("%s, seed %d, %d ticks\n\n", v.name, seed, ticks)
 	fmt.Printf("decisions %d over %d keys; the error a body makes scoring an option is %.2f\n",
 		c.Decisions, c.Keys, c.Noise)
-	fmt.Printf("live triples %d, of which loud %d, varying %d, unwritten %d\n\n",
-		c.Live, c.Loud, c.Varying, c.Unwritten)
+	fmt.Printf("live triples %d, of which loud %d, varying %d, worth acting on %d, unwritten %d\n\n",
+		c.Live, c.Loud, c.Varying, c.Acted, c.Unwritten)
 
 	fmt.Println("what the keys turned out to be about")
 	for f := engine.HintFeature(0); f < engine.NumHintFeatures; f++ {
@@ -9314,13 +9330,44 @@ func printCorrelate(v variant, seed int64, ticks int) {
 	}
 	fmt.Println()
 
-	fmt.Println("the loudest triples")
-	fmt.Printf("  %-12s %-10s %-10s %7s %6s %9s %9s %7s\n",
-		"situation", "move", "event", "n", "lift", "value", "predicted", "lag")
-	for _, k := range c.Top {
-		fmt.Printf("  %-12s %-10s %-10s %7d %6.2f %9.2f %9.2f %7.0f\n",
-			k.Feature.String(), k.Act.String(), k.Event.String(),
-			k.N, k.Lift, k.Value, k.Pred, k.Lag)
+	head := func(title string, keep func(engine.CorrKey) bool, n int) {
+		fmt.Println(title)
+		fmt.Printf("  %-12s %-10s %-10s %7s %6s %9s %9s %9s %6s\n",
+			"situation", "move", "event", "n", "lift", "value", "expected", "predicted", "lag")
+		for _, k := range c.Top {
+			if n == 0 {
+				break
+			}
+			if !keep(k) {
+				continue
+			}
+			fmt.Printf("  %-12s %-10s %-10s %7d %6.2f %9.2f %9.2f %9.2f %6.0f\n",
+				k.Feature.String(), k.Act.String(), k.Event.String(),
+				k.N, k.Lift, k.Value, k.Want, k.Pred, k.Lag)
+			n--
+		}
+		fmt.Println()
+	}
+	head("the loudest triples", func(engine.CorrKey) bool { return true }, 10)
+	// And the same without the one event that is worth a whole life. A death
+	// outranks everything it touches because of what it costs, so the head of
+	// the list says only that dying is bad, which the formula knows.
+	head("the loudest that are not about dying",
+		func(k engine.CorrKey) bool { return k.Event != engine.CorrDied }, 12)
+	// And the ones the whole item is about: worth something on average, and
+	// the formula expected less than half of it.
+	head("the ones the formula did not see coming", func(k engine.CorrKey) bool {
+		return math.Abs(k.Want) > c.Noise*0.25 && math.Abs(k.Pred) < math.Abs(k.Want)*0.5
+	}, 12)
+
+	fmt.Println("which event raises the odds of which (rate is over the second one's own count)")
+	fmt.Printf("  %-10s %-10s %8s %7s %7s\n", "first", "then", "n", "rate", "lift")
+	for i, l := range c.Links {
+		if i >= 12 {
+			break
+		}
+		fmt.Printf("  %-10s %-10s %8d %7.3f %7.2f\n",
+			l.Before.String(), l.After.String(), l.N, l.Rate, l.Lift)
 	}
 	fmt.Println()
 

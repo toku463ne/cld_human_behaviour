@@ -125,17 +125,30 @@ const numCorrHorizons = len(corrHorizons)
 const corrQuietShare = 0.25 // of the mean evaluation noise, the floor for "says anything"
 
 // corrWrittenShare is how much of an outcome the formula has to have predicted
-// before the relation counts as one the designer already wrote down. A key
-// whose realised value is large while the formula scored the move at nothing
+// before the relation counts as one the designer already wrote down.
+//
+// What is compared is two expectations and not a value against an expectation.
+// The realised figure has to be multiplied by how often the event follows the
+// key, because the formula's own number is already a value times a chance: a
+// courtship that works is worth a whole child, and reading that against what
+// the formula expects of a courtship that might not work counts every goal in
+// the world as unwritten. A key
+// whose realised value is large while the formula expected nothing of the move
 // is a relation the formula does not have; one where the two move together is
 // a relation it does.
+//
+// What is compared is all of the option's goals rather than its life term
+// alone (Utility.goalScore). Reading only the life term got this wrong for
+// every goal that lives somewhere else: a courtship costs vitality and buys a
+// child, so by the life term the formula "expected nothing" from the one move
+// whose whole point it prices exactly.
 const corrWrittenShare = 0.5
 
 // corrCell is one (key, event) pair as the counting sees it.
 type corrCell struct {
 	n     int
 	value float64 // what the event was worth, summed
-	pred  float64 // what the formula had scored the move at, summed
+	pred  float64 // what the formula expected the move to be worth, summed
 	lag   float64 // ticks between the decision and the event, summed
 }
 
@@ -333,7 +346,7 @@ func (w *World) corrOf(a *Agent) *agentCorr {
 // perception it reads has already been built, so nothing is computed twice and
 // nothing new is looked at: the situation is read by the same hintFeatures the
 // rules of thumb read, and the prediction is the life term of the option the
-// body actually took.
+// body actually took, before what it costs.
 func (w *World) noteDecisionKey(a *Agent, p *Perception, pred, noise float64) {
 	if !w.corr.on {
 		return
@@ -757,9 +770,24 @@ type CorrKey struct {
 
 	N     int     // times the event followed this key inside the window
 	Lift  float64 // how much more often than the event happens at all
-	Value float64 // what it was worth, on average
-	Pred  float64 // what the formula had scored the move at, on average
+	Value float64 // what it was worth when it happened, on average
+	Want  float64 // Value times how often it follows this key: the expectation
+	Pred  float64 // what the formula expected the move to be worth, on average
 	Lag   float64 // ticks between the decision and the event
+}
+
+// CorrPair is one event following another over the same body, with the figure
+// that says whether the two are associated at all.
+//
+// Rate is the share of the second event's occurrences that had the first
+// inside the window before them, and Lift is that against how often the first
+// precedes any event. Lift near one means the pair fires often only because
+// both events are common, which is the trap the raw counts fall into: eating
+// follows everything, because eating happens.
+type CorrPair struct {
+	Before, After CorrEvent
+	N             int
+	Rate, Lift    float64
 }
 
 // CorrelateUse is what the counting came to. Every figure is taken whether or
@@ -793,19 +821,30 @@ type CorrelateUse struct {
 	// Varying how many are keyed on something that differs between the
 	// candidates of one decision (a term that lifts every option alike
 	// cancels out of the comparison - stage 86), and Unwritten how many of
-	// the loud ones the formula had not already scored the move for.
+	// the loud ones the formula expected nothing of.
+	//
+	// Acted is how many of the loud ones are worth anything on average
+	// rather than only when they come off: an outcome worth a whole child
+	// that follows one courtship in fifty is not something to lean on.
 	//
 	// Unwritten is the figure this whole item turns on. A relation the
 	// formula prices is one the learning would count twice.
-	Live, Loud, Varying, Unwritten int
+	Live, Loud, Varying, Acted, Unwritten int
 
 	// Repeats is how often a body met a (key, event) pair it had already met
 	// once - the event "the second time" turns on, which is what a promotion
 	// rule would wait for.
 	Repeats int
 
-	// Top is the loudest handful, for reading.
+	// Top is the loudest, for reading. Held deeper than anything would print
+	// because the terminal event swamps the head of it: a death is worth the
+	// whole of LifeValue, so every key it touches outranks every key it does
+	// not, and what is worth reading is further down.
 	Top []CorrKey
+
+	// Links is the same for the pairs: which event actually raises the odds
+	// of which, rather than which pair happens to fire most.
+	Links []CorrPair
 
 	// Pairs is one event following another over the same body, and PairKinds
 	// how many of those hundred cells ever fired. CoinToFed is the one cell
@@ -904,6 +943,10 @@ func (w *World) Correlate() CorrelateUse {
 			}
 			value := cell.value / float64(cell.n)
 			pred := cell.pred / float64(cell.n)
+			// What choosing this move in this situation is worth on
+			// average, which is the figure the formula's own number is
+			// comparable with.
+			want := value * rate
 			if math.Abs(value) <= quiet {
 				continue
 			}
@@ -915,8 +958,14 @@ func (w *World) Correlate() CorrelateUse {
 				// another within a decision.
 				out.Varying++
 			}
-			if math.Abs(pred) < math.Abs(value)*corrWrittenShare {
+			if math.Abs(pred) < math.Abs(want)*corrWrittenShare {
 				out.Unwritten++
+			}
+			if math.Abs(want) > quiet {
+				// And the ones a body could act on: an outcome that is
+				// worth a great deal but hardly ever follows is not worth
+				// leaning on, however loud it is when it comes.
+				out.Acted++
 			}
 			out.Top = append(out.Top, CorrKey{
 				Feature: feature,
@@ -925,15 +974,17 @@ func (w *World) Correlate() CorrelateUse {
 				N:       cell.n,
 				Lift:    lift,
 				Value:   value,
+				Want:    want,
 				Pred:    pred,
 				Lag:     cell.lag / float64(cell.n),
 			})
 		}
 	}
 	sortCorrKeys(out.Top)
-	if len(out.Top) > 12 {
-		out.Top = out.Top[:12]
+	if len(out.Top) > 60 {
+		out.Top = out.Top[:60]
 	}
+	out.Links = c.links()
 	for b := CorrEvent(0); b < NumCorrEvents; b++ {
 		for e := CorrEvent(0); e < NumCorrEvents; e++ {
 			if c.pairs[b][e] > 0 {
@@ -983,6 +1034,49 @@ func (w *World) Correlate() CorrelateUse {
 	out.SellerReady = c.sellerReady
 	if c.back > 0 {
 		out.BackTicks = float64(c.backTicks) / float64(c.back)
+	}
+	return out
+}
+
+// links is which event raises the odds of which.
+//
+// pairs[b][c] is how many occurrences of c had a b inside the window before
+// them, so the share is over c's own count. What that share has to be held
+// against is how often b precedes anything at all - otherwise every column
+// ranks by how common its event is, and the table says only that eating is
+// common.
+func (c *correlateWatch) links() []CorrPair {
+	var afterAny float64
+	for e := CorrEvent(0); e < NumCorrEvents; e++ {
+		afterAny += float64(c.events[e])
+	}
+	if afterAny == 0 {
+		return nil
+	}
+	var before [NumCorrEvents]float64
+	for b := CorrEvent(0); b < NumCorrEvents; b++ {
+		n := 0
+		for e := CorrEvent(0); e < NumCorrEvents; e++ {
+			n += c.pairs[b][e]
+		}
+		before[b] = float64(n) / afterAny
+	}
+	out := make([]CorrPair, 0, int(NumCorrEvents)*int(NumCorrEvents))
+	for b := CorrEvent(0); b < NumCorrEvents; b++ {
+		for e := CorrEvent(0); e < NumCorrEvents; e++ {
+			n := c.pairs[b][e]
+			if n == 0 || c.events[e] == 0 || before[b] <= 0 {
+				continue
+			}
+			rate := float64(n) / float64(c.events[e])
+			out = append(out, CorrPair{Before: b, After: e, N: n,
+				Rate: rate, Lift: rate / before[b]})
+		}
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j].Lift > out[j-1].Lift; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
 	}
 	return out
 }

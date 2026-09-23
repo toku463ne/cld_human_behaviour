@@ -85,18 +85,18 @@ type AIController struct {
 	terms   []Utility
 	tracing bool
 
-	// lifeOf is each option's life term on its own, filled in on the same
-	// terms as terms above and for the instrument of #148: what the formula
-	// predicted this move would do to the odds of dying, so that the counting
-	// can ask whether a relation it found was one the formula had already
-	// written down. A body nobody is counting pays one predictable branch per
-	// candidate and nothing else.
-	lifeOf   []float64
-	wantLife bool
+	// goalOf is what each option was expected to be worth before its costs,
+	// filled in on the same terms as terms above and for the instrument of
+	// #148: the counting asks whether a relation it found was one the formula
+	// had already written down, and that question is about all the goals and
+	// not only about staying alive. A body nobody is counting pays one
+	// predictable branch per candidate and nothing else.
+	goalOf   []float64
+	wantGoal bool
 
-	// ChoiceLife is that figure for the option actually taken. It is a
+	// ChoiceGoals is that figure for the option actually taken. It is a
 	// reading and nothing reads it back, like ChoiceGap beside it.
-	ChoiceLife float64
+	ChoiceGoals float64
 
 	// The best meal in sight and who is in the way of it, worked out while
 	// scoring the food and then reused when scoring a fight: driving that
@@ -216,7 +216,7 @@ func (c *AIController) Decide(p *Perception) Action {
 	c.opts = c.opts[:0]
 	c.terms = c.terms[:0]
 	c.tracing = p.Trace != nil
-	c.lifeOf, c.wantLife = c.lifeOf[:0], p.Cfg.Correlate
+	c.goalOf, c.wantGoal = c.goalOf[:0], p.Cfg.Correlate
 	c.bestFood, c.bestFoodGap, c.bestFoodRival = 0, 0, 0
 	c.roomWorth = 0
 	c.betterGroundOpt, c.ChoseBetterGround = -1, false
@@ -693,8 +693,8 @@ func (c *AIController) add(a Action, u Utility) {
 	if c.tracing {
 		c.terms = append(c.terms, u)
 	}
-	if c.wantLife {
-		c.lifeOf = append(c.lifeOf, u.Life.Score())
+	if c.wantGoal {
+		c.goalOf = append(c.goalOf, u.goalScore())
 	}
 }
 
@@ -2878,9 +2878,9 @@ func (c *AIController) pick(p *Perception) Action {
 	}
 	c.ChoiceOpts = len(c.opts)
 	c.ChoiceNoiseSd = noise
-	c.ChoiceLife = 0
-	if c.wantLife && best < len(c.lifeOf) {
-		c.ChoiceLife = c.lifeOf[best]
+	c.ChoiceGoals = 0
+	if c.wantGoal && best < len(c.goalOf) {
+		c.ChoiceGoals = c.goalOf[best]
 	}
 	c.ChoseBetterGround = best == c.betterGroundOpt
 	c.ChoseMissing = best == c.lonelyOpt

@@ -171,6 +171,21 @@ func (u Utility) Total() float64 {
 		u.Hint + u.Lesson - u.Risk - u.Hazard - u.Roam - u.Weather - u.VitalityCost - u.TimeCost
 }
 
+// goalScore is everything this option was expected to be worth, before what it
+// costs: the same terms Total adds, without the costs and without the two
+// nudges that stand for nothing in particular.
+//
+// It exists for the counting of #148, which asks whether a relation it found
+// was one the formula had already written down. Asking that of the life term
+// alone gets the answer wrong for every goal that lives somewhere else - a
+// courtship's whole point is in Offspring, and reading only Life says the
+// formula expected nothing from it.
+func (u Utility) goalScore() float64 {
+	return u.Life.Score() + u.Stake.Score() + u.Rival.Score() +
+		u.Offspring.Score() + u.Info.Score() + u.Explore.Score() +
+		u.Lore.Score() + u.Adorn.Score()
+}
+
 // NamedGoal is a goal together with the name it goes by, for display.
 type NamedGoal struct {
 	Name string
