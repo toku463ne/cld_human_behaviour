@@ -2085,6 +2085,38 @@ var variants = []variant{
 			c.Correlate, c.CorrelateWindow = true, 30
 		},
 	},
+	// The one chain in this world whose far end is known to pay: a hide comes
+	// off a beast, a coat is worked out of the hide, and the coat stops the
+	// cold draining the body that wears it (stage 87a, warmthValue). If the
+	// back propagation of #148 works at all, it works here - and counthidefree
+	// is what says whether it is the chain doing it or the circumstances a
+	// body has to be in to hold a hide at all.
+	{
+		name:  "counthide",
+		about: "148: a coat has to be worked out of a hide, in weather cold enough to want one",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 130, true
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.Correlate = true
+		},
+	},
+	{
+		name:  "counthidefree",
+		about: "control: the same cold world, but a coat can be made out of nothing (a hide leads nowhere)",
+		apply: func(c *engine.Config) {
+			c.ClimateMap = []string{"..99", "..99", "..99"}
+			c.ChillDrain = 0.05
+			c.Trinkets = true
+			c.WardShare, c.WardStrength = 1, 1
+			c.HidePerBudget, c.WardNeedsHide = 130, false
+			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
+			c.Correlate = true
+		},
+	},
 	{
 		name:  "countryskill",
 		about: "the whole country with skills (the map a world would be played on)",
@@ -6510,6 +6542,7 @@ var metricNames = []string{
 	"corrNoise", "corrKeys", "corrLive", "corrLoud", "corrVarying", "corrUnwritten",
 	"corrActed", "corrRepeats", "corrPairs", "corrCoinFed",
 	"corrGainCoin", "corrGainMeat", "corrGainPlant", "corrGainTrinket", "corrGainHide",
+	"corrGainCoat", "corrGotHide", "corrGotCoat",
 	"corrComposeErr", "corrComposeN",
 	"corrFed", "corrMended", "corrHurt", "corrSafe", "corrCoin", "corrThing", "corrGave",
 	"corrDied", "corrChild",
@@ -7290,11 +7323,14 @@ func measure(v variant, seed int64, ticks, interval int, keepSeries bool, deadBe
 		// holding one (the back propagation of #148): the mean value of the
 		// events credited to it, less the mean over every event there was.
 		// A kind that never came into a hand is nought.
-		"corrGainCoin":    endCorr.ItemGain(engine.FoodCoin),
-		"corrGainMeat":    endCorr.ItemGain(engine.FoodMeat),
-		"corrGainPlant":   endCorr.ItemGain(engine.FoodPlant),
-		"corrGainTrinket": endCorr.ItemGain(engine.FoodTrinket),
-		"corrGainHide":    endCorr.ItemGain(engine.FoodHide),
+		"corrGainCoin":    endCorr.ItemGain("coin"),
+		"corrGainMeat":    endCorr.ItemGain("meat"),
+		"corrGainPlant":   endCorr.ItemGain("plant"),
+		"corrGainTrinket": endCorr.ItemGain("trinket"),
+		"corrGainHide":    endCorr.ItemGain("hide"),
+		"corrGainCoat":    endCorr.ItemGain("coat"),
+		"corrGotHide":     float64(endCorr.ItemGot("hide")),
+		"corrGotCoat":     float64(endCorr.ItemGot("coat")),
 		// And whether composing two links tells the truth: what the
 		// composition claims over what the same move is worth by direct
 		// observation, over the compositions where both were seen. One is
@@ -9415,7 +9451,7 @@ func printCorrelate(v variant, seed int64, ticks int) {
 	fmt.Printf("  %-10s %8s %8s %9s %9s %8s\n", "thing", "got", "left", "value", "gain", "held")
 	for _, it := range c.Items {
 		fmt.Printf("  %-10s %8d %8d %9.3f %9.3f %8.0f\n",
-			it.Kind.String(), it.Got, it.Gone, it.Value, it.Gain, it.Held)
+			it.Name, it.Got, it.Gone, it.Value, it.Gain, it.Held)
 	}
 	fmt.Println()
 

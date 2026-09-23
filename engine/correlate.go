@@ -206,10 +206,35 @@ type corrProbe struct {
 
 // corrSnap is what a body looked like at the end of last tick, which is the
 // whole of how an event is detected. Nothing is recorded in advance.
+// The things the item table keeps apart. It is the food kinds, plus one: a
+// coat is a trinket with the weather kept off it (stage 87a built it on the
+// ornaments), and lumping the two together would bury the one chain in this
+// world with a payoff at the far end of it under four thousand ornaments.
+const (
+	corrCoat     = int(NumFoodKinds)
+	numCorrItems = corrCoat + 1
+)
+
+// corrItemName is what the item table calls each of them.
+func corrItemName(i int) string {
+	if i == corrCoat {
+		return "coat"
+	}
+	return FoodKind(i).String()
+}
+
+// corrItemOf is which row of the item table a thing in a hand belongs to.
+func corrItemOf(f *Food) int {
+	if f.Kind == FoodTrinket && f.Ward > 0 {
+		return corrCoat
+	}
+	return int(f.Kind)
+}
+
 type corrSnap struct {
 	hunger, vitality float64
 	drown            float64
-	kinds            [NumFoodKinds]uint8
+	kinds            [numCorrItems]uint8
 	attacked         bool
 	alive            bool
 }
@@ -230,7 +255,7 @@ type corrSnap struct {
 // every kind of thing upwards, because everything is followed by something
 // good eventually.
 type corrHold struct {
-	kind FoodKind
+	kind int
 	at   int
 }
 
@@ -253,7 +278,7 @@ type agentCorr struct {
 
 	// gotAt is when the run of each kind now in this body's hands began, for
 	// the figure that says how long a thing stays in a hand before it goes.
-	gotAt [NumFoodKinds]int
+	gotAt [numCorrItems]int
 
 	// last is the tick each kind of event last happened to this body. Ten
 	// ints, so the co-occurrence table costs no history either.
@@ -313,11 +338,11 @@ type correlateWatch struct {
 	// were credited to holding one of each kind and what they came to, how
 	// many of each came into a hand at all, how many left one, and how long
 	// they stayed. Money is the coin row of these.
-	itemN    [NumFoodKinds]int
-	itemSum  [NumFoodKinds]float64
-	itemGot  [NumFoodKinds]int
-	itemGone [NumFoodKinds]int
-	itemHeld [NumFoodKinds]float64
+	itemN    [numCorrItems]int
+	itemSum  [numCorrItems]float64
+	itemGot  [numCorrItems]int
+	itemGone [numCorrItems]int
+	itemHeld [numCorrItems]float64
 
 	// Whether two bodies in sight of each other each hold something the other
 	// would rather have (the double coincidence of wants), sampled rather
@@ -456,7 +481,7 @@ func (w *World) stepCorrelate() {
 			attacked: a.attackerID != 0, alive: a.Alive,
 		}
 		for j := range a.carried {
-			if k := a.carried[j].Kind; k < NumFoodKinds && now.kinds[k] < 255 {
+			if k := corrItemOf(&a.carried[j]); k < numCorrItems && now.kinds[k] < 255 {
 				now.kinds[k]++
 			}
 		}
@@ -540,7 +565,7 @@ func (w *World) readEvents(a *Agent, ac *agentCorr, s *SelfView, now *corrSnap) 
 	// exchange this world could have. Money is one of the kinds rather than a
 	// case of its own - what makes a coin a coin here is what follows it, and
 	// that is what the item table is for.
-	for k := FoodKind(0); k < NumFoodKinds; k++ {
+	for k := 0; k < numCorrItems; k++ {
 		switch {
 		case now.kinds[k] > was.kinds[k]:
 			if ac.gotAt[k] == 0 {
@@ -548,7 +573,7 @@ func (w *World) readEvents(a *Agent, ac *agentCorr, s *SelfView, now *corrSnap) 
 			}
 			w.corr.itemGot[k]++
 			ac.holds = append(ac.holds, corrHold{kind: k, at: w.tick})
-			if k == FoodCoin {
+			if k == int(FoodCoin) {
 				w.fireCorr(a, CorrCoin, 0)
 			} else {
 				w.fireCorr(a, CorrThing, 0)
@@ -850,7 +875,7 @@ type CorrPair struct {
 // was going while this was in a hand, and the world is mostly going the same
 // way for everybody; what the thing is worth is how far it moves that.
 type CorrItem struct {
-	Kind FoodKind
+	Name string
 
 	Got   int     // times one came into a hand
 	N     int     // events credited to holding one
@@ -994,10 +1019,21 @@ type CorrelateUse struct {
 // ItemGain is what one kind of thing turned out to be worth, or nought for a
 // kind that never came into a hand. For the measuring, which wants one figure
 // rather than a table.
-func (u CorrelateUse) ItemGain(k FoodKind) float64 {
+func (u CorrelateUse) ItemGain(name string) float64 {
 	for _, it := range u.Items {
-		if it.Kind == k {
+		if it.Name == name {
 			return it.Gain
+		}
+	}
+	return 0
+}
+
+// ItemGot is how many of that kind came into a hand at all, which is the
+// ceiling on what its row can say.
+func (u CorrelateUse) ItemGot(name string) int {
+	for _, it := range u.Items {
+		if it.Name == name {
+			return it.Got
 		}
 	}
 	return 0
@@ -1174,7 +1210,7 @@ func (w *World) Correlate() CorrelateUse {
 func (c *correlateWatch) items() []CorrItem {
 	var n int
 	var sum float64
-	for k := FoodKind(0); k < NumFoodKinds; k++ {
+	for k := 0; k < numCorrItems; k++ {
 		n += c.itemN[k]
 		sum += c.itemSum[k]
 	}
@@ -1182,12 +1218,12 @@ func (c *correlateWatch) items() []CorrItem {
 		return nil
 	}
 	base := sum / float64(n)
-	out := make([]CorrItem, 0, NumFoodKinds)
-	for k := FoodKind(0); k < NumFoodKinds; k++ {
+	out := make([]CorrItem, 0, numCorrItems)
+	for k := 0; k < numCorrItems; k++ {
 		if c.itemGot[k] == 0 {
 			continue
 		}
-		it := CorrItem{Kind: k, Got: c.itemGot[k], N: c.itemN[k], Gone: c.itemGone[k]}
+		it := CorrItem{Name: corrItemName(k), Got: c.itemGot[k], N: c.itemN[k], Gone: c.itemGone[k]}
 		if it.N > 0 {
 			it.Value = c.itemSum[k] / float64(it.N)
 			it.Gain = it.Value - base
