@@ -2096,9 +2096,16 @@ var variants = []variant{
 	// none of it reaching a decision. Anything the rule appears to do that
 	// this arm also does is the budget talking (#137's lesson, and the memory
 	// note that a control sharing the cost has to be the base).
+	//
+	// The weight moved from a quarter to the whole on 2026-09-23, when 32
+	// seeds and 200,000 ticks said the whole figure was better on sales, on
+	// collapses, on when a falling world falls and on the peak. itemquarter
+	// keeps the old dose so the two can still be read against each other, and
+	// itemquiet and the two hide arms are pinned to it because that is the
+	// weight their recorded figures were taken at.
 	{
 		name:  "itemvalue",
-		about: "148: a body learns what a kind of thing is followed by - three slots, bought out of the genes' budget",
+		about: "148: a body learns what a kind of thing is followed by - three slots at the whole of what was learnt",
 		apply: func(c *engine.Config) {
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2127,11 +2134,12 @@ var variants = []variant{
 			c.Trinkets = true
 			c.GiftWorthScaled = true
 			c.ItemSlots, c.ItemsSpread = 3, false
+			c.ItemValueWeight = 0.25 // the weight its recorded figures were taken at
 		},
 	},
 	{
 		name:  "itemsoft",
-		about: "sweep: the same three slots at a tenth of the weight rather than a quarter",
+		about: "sweep: the same three slots at a tenth of what was learnt",
 		apply: func(c *engine.Config) {
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
@@ -2141,14 +2149,14 @@ var variants = []variant{
 		},
 	},
 	{
-		name:  "itemhard",
-		about: "sweep: the same three slots at the whole of what was learnt",
+		name:  "itemquarter",
+		about: "sweep: the same three slots at a quarter of what was learnt (the weight this rule shipped with first)",
 		apply: func(c *engine.Config) {
 			c.OfferTicks, c.Coins = 30, 60
 			c.CarrySlotsWeigh, c.CoinPrices = true, true
 			c.Trinkets = true
 			c.GiftWorthScaled = true
-			c.ItemSlots, c.ItemValueWeight = 3, 1
+			c.ItemSlots, c.ItemValueWeight = 3, 0.25
 		},
 	},
 	{
@@ -2162,6 +2170,7 @@ var variants = []variant{
 			c.HidePerBudget, c.WardNeedsHide = 130, true
 			c.CarrySlotsWeigh, c.CoinPrices, c.OfferTicks, c.Coins = true, true, 30, 60
 			c.ItemSlots = 3
+			c.ItemValueWeight = 0.25 // the weight its recorded figures were taken at
 		},
 	},
 	{

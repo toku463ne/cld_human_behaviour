@@ -2406,18 +2406,27 @@ type Config struct {
 	ItemSlotCost float64
 
 	// ItemValueWeight is what the learnt figure is multiplied by before it
-	// reaches a score, and it is the one number of this rule that had to be
-	// chosen rather than measured.
+	// reaches a score.
 	//
-	// What is learnt is in the formula's own units already - the value of
-	// what followed having one, priced by pressures -> gap -> LifeValue - and
-	// the counting found those figures run from about twenty to about a
-	// hundred and thirty against an evaluation error of ten. Passed through
-	// whole they would be the largest term in the comparison and would double
-	// count besides, since the formula already prices a meal and a coin. A
-	// quarter puts the term at one to three times the noise, which is the
-	// band stage 54 found things start to matter in and stop short of taking
-	// the comparison over.
+	// It was chosen at a quarter and then measured at one, and the measuring
+	// won. The argument for a quarter was that what is learnt runs from about
+	// twenty to about a hundred and thirty against an evaluation error of
+	// ten, so passing it through whole would be the largest term in the
+	// comparison and would double count besides, since the formula already
+	// prices a meal and a coin.
+	//
+	// Over 32 seeds and 200,000 ticks the whole figure is better on every
+	// count that matters: sales +292 *** against +151 *** at a quarter,
+	// collapsed -0.09 * against +0.06, worlds that do fall falling 16,000
+	// ticks later, and a peak population 15.7 higher. A quarter is mildly
+	// negative on all three population figures and the whole figure is
+	// positive on all three, which is not what noise looks like.
+	//
+	// The reading is that a body which half wants a thing picks it up and
+	// does nothing with it, while one that wants it properly goes and trades
+	// it. That the whole figure also double counts is still true, and the fix
+	// for that is to learn the residual - what happened less what the formula
+	// had already predicted - rather than to shrink the term.
 	ItemValueWeight float64
 
 	// ItemValueRate and ItemValueCount are how fast an opinion moves and how
@@ -4075,7 +4084,7 @@ func DefaultConfig() Config {
 		// figures below are what an arm sets when it is on.
 		ItemSlots:       0,
 		ItemSlotCost:    2.5,
-		ItemValueWeight: 0.25,
+		ItemValueWeight: 1,
 		ItemValueRate:   1,
 		ItemValueCount:  40,
 		ItemValueWindow: 700,
